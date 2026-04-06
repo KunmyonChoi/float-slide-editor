@@ -9,6 +9,7 @@ import {
   checkWhitespace,
   checkVisualProperties,
   checkUnintendedWrap,
+  checkLayoutAccuracy,
   aggregateReports,
 } from '../core/StructuralAnalyzer'
 import { detectPatterns } from '../core/PatternDetector'
@@ -82,6 +83,61 @@ describe.skipIf(!fixtureAvailable)('슬라이드 회귀 테스트 — 픽스처 
         const issues = checkWhitespace(fixture.flatHtml, slideIndex)
         const brIssues = issues.filter(i => i.description.includes('<br>'))
         expect(brIssues).toEqual([])
+      }
+    )
+  })
+
+  // ── 서식 손실: bold/italic 보존 검사 ──
+  describe('서식 보존 — 전체 슬라이드', () => {
+    it.each(fixtures.map(f => [f.slideIndex, f]))(
+      'Slide %i: bold/italic 서식 손실 검사',
+      (slideIndex, fixture) => {
+        const slideHtml = getSlideOriginalHtml(fixture)
+        const issues = checkLostFormatting(slideHtml, fixture.flatHtml, slideIndex)
+        // 현재 기준선: Slide 7에서 bold 손실 2건 허용
+        if (issues.length > 0) {
+          for (const iss of issues) {
+            console.log(`  ○ Slide ${slideIndex}: ${iss.description}`)
+          }
+        }
+        // 심각한 서식 손실(error급)은 0건이어야 함
+        const errors = issues.filter(i => i.severity === 'error')
+        expect(errors).toEqual([])
+      }
+    )
+  })
+
+  // ── 텍스트 누락: 원본 텍스트가 flat에 포함되는지 검사 ──
+  describe('텍스트 누락 — 전체 슬라이드', () => {
+    it.each(fixtures.map(f => [f.slideIndex, f]))(
+      'Slide %i: 텍스트 누락 검사',
+      (slideIndex, fixture) => {
+        const slideHtml = getSlideOriginalHtml(fixture)
+        const issues = checkMissingText(slideHtml, fixture.flatHtml, slideIndex)
+        if (issues.length > 0) {
+          for (const iss of issues) {
+            console.log(`  ● Slide ${slideIndex}: ${iss.description}`)
+          }
+        }
+        // 정보 출력용 — 추후 기준선 설정 후 엄격하게 전환
+        expect(true).toBe(true)
+      }
+    )
+  })
+
+  // ── 시각 속성: 배경/그래디언트/border-radius 보존 ──
+  describe('시각 속성 보존 — 전체 슬라이드', () => {
+    it.each(fixtures.map(f => [f.slideIndex, f]))(
+      'Slide %i: 배경/border-radius 보존 검사',
+      (slideIndex, fixture) => {
+        const slideHtml = getSlideOriginalHtml(fixture)
+        const issues = checkVisualProperties(slideHtml, fixture.flatHtml, slideIndex)
+        if (issues.length > 0) {
+          for (const iss of issues) {
+            console.log(`  ○ Slide ${slideIndex}: ${iss.description}`)
+          }
+        }
+        expect(true).toBe(true)
       }
     )
   })

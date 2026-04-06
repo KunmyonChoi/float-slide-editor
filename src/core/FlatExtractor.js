@@ -17,10 +17,32 @@ export function resetFlatCounter() { _flatCounter = 0 }
 export function isVisuallyMeaningful(cs) {
   const bg = cs.backgroundColor
   const hasBackground = bg && bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent'
-  const hasBgImage = cs.backgroundImage && cs.backgroundImage !== 'none'
+  const bgImg = cs.backgroundImage
+  const hasBgImage = bgImg && bgImg !== 'none' && !isSubtleGradient(bgImg)
   const hasBorder = cs.borderWidth && !cs.borderWidth.split(' ').every(v => v === '0px')
   const hasShadow = cs.boxShadow && cs.boxShadow !== 'none'
   return hasBackground || hasBgImage || hasBorder || hasShadow
+}
+
+/**
+ * 미세한 장식용 그래디언트인지 판별.
+ * radial-gradient가 투명으로 fade되면서 최대 rgba alpha가 낮으면 장식 효과로 간주.
+ * 예: radial-gradient(rgba(14, 165, 233, 0.06) 0%, rgba(0, 0, 0, 0) 70%)
+ */
+const SUBTLE_GRADIENT_THRESHOLD = 0.25
+export function isSubtleGradient(bgImage) {
+  if (!bgImage || bgImage === 'none') return false
+  // radial-gradient만 대상 (linear-gradient는 대부분 의미 있음)
+  if (!bgImage.startsWith('radial-gradient')) return false
+  // 투명으로 끝나는지 확인: rgba(..., 0) 이 포함되어야 함
+  if (!/ 0\)/.test(bgImage)) return false
+  // 모든 rgba alpha 값을 추출하여 최대값 확인
+  const alphas = []
+  for (const m of bgImage.matchAll(/rgba\(\s*\d+\s*,\s*\d+\s*,\s*\d+\s*,\s*([\d.]+)\s*\)/g)) {
+    alphas.push(parseFloat(m[1]))
+  }
+  if (alphas.length === 0) return false
+  return Math.max(...alphas) < SUBTLE_GRADIENT_THRESHOLD
 }
 
 /**

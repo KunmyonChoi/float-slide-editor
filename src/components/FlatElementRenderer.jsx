@@ -7,7 +7,7 @@ import { useFlatStore } from '../store/flatStore'
  * 클릭으로 선택, 드래그로 이동 (Phase 3에서 추가).
  */
 export default function FlatElementRenderer({ element, isSelected, scale }) {
-  const { setSelectedFlat } = useFlatStore()
+  const { setSelectedFlat, canvasSize } = useFlatStore()
 
   const handleMouseDown = useCallback((e) => {
     e.stopPropagation()
@@ -15,6 +15,11 @@ export default function FlatElementRenderer({ element, isSelected, scale }) {
   }, [element.id, setSelectedFlat])
 
   const { x, y, width, height, zIndex, type, content, isRich, merged, styles } = element
+
+  // 전체 캔버스를 덮는 배경 shape → 클릭 통과 (콘텐츠 선택 방해 방지)
+  const isFullCanvasBg = type === 'shape' && !content
+    && Math.abs(width - canvasSize.w) < 2 && Math.abs(height - canvasSize.h) < 2
+    && Math.abs(x) < 2 && Math.abs(y) < 2
 
   const baseStyle = {
     position: 'absolute',
@@ -24,7 +29,8 @@ export default function FlatElementRenderer({ element, isSelected, scale }) {
     height,
     zIndex,
     boxSizing: 'border-box',
-    cursor: 'default',
+    cursor: isFullCanvasBg ? 'default' : 'default',
+    pointerEvents: isFullCanvasBg ? 'none' : undefined,
     outline: isSelected
       ? '2px solid rgba(99,102,241,0.8)'
       : undefined,
@@ -53,6 +59,8 @@ export default function FlatElementRenderer({ element, isSelected, scale }) {
   }
 
   if (type === 'text') {
+    // border 단축 속성과 개별 속성 충돌 방지 (React 경고)
+    const borderProps = resolveBorders(styles)
     return (
       <div
         style={{
@@ -74,11 +82,7 @@ export default function FlatElementRenderer({ element, isSelected, scale }) {
             WebkitTextFillColor: styles.webkitTextFillColor || 'transparent',
           } : {}),
           borderRadius: styles.borderRadius,
-          border: styles.border,
-          borderTop: styles.borderTop,
-          borderRight: styles.borderRight,
-          borderBottom: styles.borderBottom,
-          borderLeft: styles.borderLeft,
+          ...borderProps,
           boxShadow: styles.boxShadow,
           opacity: styles.opacity,
           padding: styles.padding,
@@ -113,6 +117,7 @@ export default function FlatElementRenderer({ element, isSelected, scale }) {
   }
 
   // shape (시각적 컨테이너)
+  const shapeBorderProps = resolveBorders(styles)
   return (
     <div
       style={{
@@ -120,15 +125,29 @@ export default function FlatElementRenderer({ element, isSelected, scale }) {
         backgroundColor: styles.backgroundColor,
         backgroundImage: styles.backgroundImage,
         borderRadius: styles.borderRadius,
-        border: styles.border,
-        borderTop: styles.borderTop,
-        borderRight: styles.borderRight,
-        borderBottom: styles.borderBottom,
-        borderLeft: styles.borderLeft,
+        ...shapeBorderProps,
         boxShadow: styles.boxShadow,
         opacity: styles.opacity,
       }}
       onMouseDown={handleMouseDown}
     />
   )
+}
+
+/**
+ * border 단축 속성과 개별 속성이 동시에 존재하면 React 경고가 발생한다.
+ * 개별 속성(borderTop 등)이 하나라도 유효하면 단축 속성을 제외하고 개별만 사용한다.
+ */
+function resolveBorders(s) {
+  const hasIndividual = [s.borderTop, s.borderRight, s.borderBottom, s.borderLeft]
+    .some(v => v && !v.startsWith('0px'))
+  if (hasIndividual) {
+    return {
+      borderTop: s.borderTop,
+      borderRight: s.borderRight,
+      borderBottom: s.borderBottom,
+      borderLeft: s.borderLeft,
+    }
+  }
+  return { border: s.border }
 }

@@ -335,3 +335,150 @@ describe('exportFlatHtml — z-index 순서', () => {
     expect(idx1).toBeLessThan(idx2)
   })
 })
+
+// ═══════════════════════════════════════════════════════════════
+//  border 단축/개별 속성 충돌 방지
+// ═══════════════════════════════════════════════════════════════
+describe('exportFlatHtml — border 단축/개별 속성 분리', () => {
+  it('border 단축 속성만 있을 때 border:로 출력', () => {
+    const el = makeEl({
+      type: 'shape',
+      styles: {
+        ...makeEl().styles,
+        border: '2px solid rgb(79, 70, 229)',
+        borderTop: '0px none',
+        borderRight: '0px none',
+        borderBottom: '0px none',
+        borderLeft: '0px none',
+      },
+    })
+    const html = exportFlatHtml([el], CANVAS)
+    expect(html).toContain('border:2px solid rgb(79, 70, 229)')
+    expect(html).not.toContain('border-top:')
+  })
+
+  it('개별 border만 있을 때 border-left:로 출력 (단축 없음)', () => {
+    const el = makeEl({
+      type: 'shape',
+      styles: {
+        ...makeEl().styles,
+        border: '0px none',
+        borderLeft: '4px solid rgb(99, 102, 241)',
+      },
+    })
+    const html = exportFlatHtml([el], CANVAS)
+    expect(html).toContain('border-left:4px solid')
+    expect(html).not.toMatch(/border:(?!left)/)
+  })
+
+  it('여러 개별 border가 있을 때 각각 출력', () => {
+    const el = makeEl({
+      type: 'text',
+      content: '테두리 테스트',
+      styles: {
+        ...makeEl().styles,
+        border: '0px none',
+        borderTop: '2px solid red',
+        borderBottom: '2px solid blue',
+      },
+    })
+    const html = exportFlatHtml([el], CANVAS)
+    expect(html).toContain('border-top:2px solid red')
+    expect(html).toContain('border-bottom:2px solid blue')
+  })
+
+  it('모든 border가 0px이면 아무 border도 출력하지 않음', () => {
+    const el = makeEl({ type: 'shape' })
+    const html = exportFlatHtml([el], CANVAS)
+    expect(html).not.toMatch(/border[^-]/)
+    expect(html).not.toContain('border-top')
+  })
+})
+
+// ═══════════════════════════════════════════════════════════════
+//  gap CSS 속성 — flex 컨테이너
+// ═══════════════════════════════════════════════════════════════
+describe('exportFlatHtml — gap 속성 (flex 컨테이너)', () => {
+  it('merged 요소에 유효한 gap이 있으면 출력', () => {
+    const el = makeEl({
+      type: 'text',
+      content: '<svg viewBox="0 0 24 24"></svg>AI 가속화',
+      isRich: true,
+      merged: true,
+      styles: {
+        ...makeEl().styles,
+        isFlex: true,
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: '8px',
+      },
+    })
+    const html = exportFlatHtml([el], CANVAS)
+    expect(html).toContain('gap:8px')
+    expect(html).toContain('display:flex')
+  })
+
+  it('gap이 0px이면 출력하지 않음', () => {
+    const el = makeEl({
+      type: 'text',
+      content: '텍스트',
+      merged: true,
+      styles: { ...makeEl().styles, gap: '0px' },
+    })
+    const html = exportFlatHtml([el], CANVAS)
+    expect(html).not.toContain('gap:')
+  })
+
+  it('gap이 normal이면 출력하지 않음', () => {
+    const el = makeEl({
+      type: 'text',
+      content: '텍스트',
+      merged: true,
+      styles: { ...makeEl().styles, gap: 'normal' },
+    })
+    const html = exportFlatHtml([el], CANVAS)
+    expect(html).not.toContain('gap:')
+  })
+
+  it('비merged 요소에는 gap이 적용되지 않는다', () => {
+    const el = makeEl({
+      type: 'text',
+      content: '일반',
+      merged: false,
+      styles: { ...makeEl().styles, gap: '12px' },
+    })
+    const html = exportFlatHtml([el], CANVAS)
+    expect(html).not.toContain('gap:')
+  })
+})
+
+// ═══════════════════════════════════════════════════════════════
+//  텍스트 overflow:visible 기본값 (한글 descender 클리핑 방지)
+// ═══════════════════════════════════════════════════════════════
+describe('exportFlatHtml — 텍스트 overflow 처리', () => {
+  it('텍스트 요소의 기본 overflow는 visible', () => {
+    const el = makeEl({
+      type: 'text',
+      content: '한글 텍스트',
+      styles: { ...makeEl().styles },
+    })
+    const html = exportFlatHtml([el], CANVAS)
+    expect(html).toContain('overflow:visible')
+  })
+
+  it('원본이 overflow:hidden이면 hidden 유지', () => {
+    const el = makeEl({
+      type: 'text',
+      content: '코드 블록',
+      styles: { ...makeEl().styles, overflow: 'hidden' },
+    })
+    const html = exportFlatHtml([el], CANVAS)
+    expect(html).toContain('overflow:hidden')
+  })
+
+  it('shape 요소는 overflow:hidden', () => {
+    const el = makeEl({ type: 'shape' })
+    const html = exportFlatHtml([el], CANVAS)
+    expect(html).toContain('overflow:hidden')
+  })
+})

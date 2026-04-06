@@ -39,9 +39,17 @@ export default function QualityDashboard({ open, onClose }) {
     setReport(null)
     fixturesRef.current = []
 
-    // 슬라이드 수 파악
-    const slides = iframe.contentDocument.querySelectorAll('.slide')
-    const total = slides.length || 1
+    // 슬라이드 수 파악 — reveal.js 또는 .slide 패턴
+    const doc = iframe.contentDocument
+    const isReveal = !!doc.querySelector('.reveal')
+    let total
+    if (isReveal && win.Reveal) {
+      // reveal.js: 수평 슬라이드 수 (수직 슬라이드는 별도 순회)
+      total = win.Reveal.getTotalSlides?.() || doc.querySelectorAll('.reveal .slides > section').length || 1
+    } else {
+      const slides = doc.querySelectorAll('.slide')
+      total = slides.length || 1
+    }
     setProgress({ current: 0, total })
 
     // 전체 덱 HTML을 파싱하여 개별 슬라이드 추출 (구조적 분석용)
@@ -56,13 +64,11 @@ export default function QualityDashboard({ open, onClose }) {
     for (let i = 0; i < total; i++) {
       setProgress({ current: i + 1, total })
 
-      // 슬라이드 이동 — 덱마다 네비게이션 방식이 다르므로 여러 방법 시도
-      if (typeof win.showSlide === 'function') {
+      // 슬라이드 이동 — reveal.js API 또는 postMessage
+      if (isReveal && win.Reveal) {
+        win.Reveal.slide(i, 0)
+      } else if (typeof win.showSlide === 'function') {
         win.showSlide(i)
-      } else if (typeof win.show === 'function') {
-        win.show(i)
-      } else if (typeof win.nav === 'function') {
-        win.postMessage({ type: 'goto', index: i }, '*')
       } else {
         win.postMessage({ type: 'goto', index: i }, '*')
       }
@@ -103,10 +109,10 @@ export default function QualityDashboard({ open, onClose }) {
     const patterns = detectPatterns(slideReports)
 
     // 첫 슬라이드로 복귀
-    if (typeof win.showSlide === 'function') {
+    if (isReveal && win.Reveal) {
+      win.Reveal.slide(0, 0)
+    } else if (typeof win.showSlide === 'function') {
       win.showSlide(0)
-    } else if (typeof win.show === 'function') {
-      win.show(0)
     } else {
       win.postMessage({ type: 'goto', index: 0 }, '*')
     }

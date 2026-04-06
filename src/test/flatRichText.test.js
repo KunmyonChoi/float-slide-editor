@@ -67,6 +67,8 @@ function getRichTextContent(el) {
       afterBr = false
       const tag = node.tagName.toLowerCase()
       if (tag === 'br') { html += '<br>'; plain += '\n'; hasHtml = true; afterBr = true; continue }
+      // SVG 요소 → outerHTML 보존 (인라인 아이콘 등)
+      if (tag === 'svg') { html += node.outerHTML; hasHtml = true; continue }
       if (node.hasAttribute('data-editor-id')) {
         if (!INLINE_TAGS.has(tag)) continue
         if (hasDistinctStyle(node) && isEmbeddedInline(node)) {
@@ -304,6 +306,34 @@ describe('getRichTextContent — 복합 리치 텍스트 (실제 패턴)', () =>
     // 앞뒤 공백 trim됨
     expect(text).not.toMatch(/^\s/)
     expect(text).not.toMatch(/\s$/)
+  })
+
+  it('인라인 SVG 아이콘이 outerHTML로 보존된다', () => {
+    // <div>AI 가속화 <svg viewBox="0 0 24 24"><path d="M12 ..."/></svg></div>
+    const div = h('div', { 'data-editor-id': 'fe-200', 'data-editor-type': 'container' })
+    div.appendChild(document.createTextNode('AI 가속화 '))
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+    svg.setAttribute('viewBox', '0 0 24 24')
+    svg.setAttribute('width', '16')
+    svg.setAttribute('height', '16')
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path')
+    path.setAttribute('d', 'M12 2l3 7h7l-5.5 4 2 7L12 16l-6.5 4 2-7L2 9h7z')
+    svg.appendChild(path)
+    div.appendChild(svg)
+
+    const { text, isRich } = getRichTextContent(div)
+    expect(isRich).toBe(true)
+    expect(text).toContain('AI 가속화')
+    expect(text).toContain('<svg')
+    expect(text).toContain('viewBox')
+    expect(text).toContain('<path')
+  })
+
+  it('SVG 없이 텍스트만 있으면 plain text 반환', () => {
+    const div = h('div', {}, '순수 텍스트')
+    const { text, isRich } = getRichTextContent(div)
+    expect(isRich).toBe(false)
+    expect(text).toBe('순수 텍스트')
   })
 
   it('핵심 메시지 배너: <span> + 일반 텍스트 혼합', () => {

@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import {
   isVisuallyMeaningful,
+  isSubtleGradient,
   isNavigationElement,
   hasChildTextElements,
   hasDistinctStyle,
@@ -73,6 +74,96 @@ describe('isVisuallyMeaningful — 시각적 의미 판별', () => {
     expect(isVisuallyMeaningful(fakeCS({
       backgroundColor: 'transparent',
     }))).toBe(false)
+  })
+
+  it('미세한 radial-gradient만 있으면 → false', () => {
+    expect(isVisuallyMeaningful(fakeCS({
+      backgroundImage: 'radial-gradient(rgba(14, 165, 233, 0.06) 0%, rgba(0, 0, 0, 0) 70%)',
+    }))).toBe(false)
+  })
+
+  it('미세한 radial-gradient(circle)만 있으면 → false', () => {
+    expect(isVisuallyMeaningful(fakeCS({
+      backgroundImage: 'radial-gradient(circle, rgba(0, 229, 255, 0.15) 0%, rgba(0, 0, 0, 0) 70%)',
+    }))).toBe(false)
+  })
+
+  it('뚜렷한 radial-gradient → true', () => {
+    expect(isVisuallyMeaningful(fakeCS({
+      backgroundImage: 'radial-gradient(rgba(79, 70, 229, 0.5) 0%, rgba(0, 0, 0, 0) 70%)',
+    }))).toBe(true)
+  })
+
+  it('linear-gradient → true (장식 필터 적용 안 함)', () => {
+    expect(isVisuallyMeaningful(fakeCS({
+      backgroundImage: 'linear-gradient(135deg, rgb(10, 15, 44) 0%, rgb(13, 27, 62) 100%)',
+    }))).toBe(true)
+  })
+
+  it('미세한 radial-gradient + border 있으면 → true', () => {
+    expect(isVisuallyMeaningful(fakeCS({
+      backgroundImage: 'radial-gradient(rgba(14, 165, 233, 0.06) 0%, rgba(0, 0, 0, 0) 70%)',
+      borderWidth: '1px',
+    }))).toBe(true)
+  })
+})
+
+// ═══════════════════════════════════════════════════════════════
+//  isSubtleGradient — 미세한 장식 그래디언트 판별
+// ═══════════════════════════════════════════════════════════════
+describe('isSubtleGradient — 미세한 장식 그래디언트 판별', () => {
+  it('none → false', () => {
+    expect(isSubtleGradient('none')).toBe(false)
+  })
+
+  it('빈 문자열 → false', () => {
+    expect(isSubtleGradient('')).toBe(false)
+  })
+
+  it('linear-gradient → false (대상 아님)', () => {
+    expect(isSubtleGradient('linear-gradient(135deg, #f00, #00f)')).toBe(false)
+  })
+
+  it('alpha 0.06 radial-gradient → true', () => {
+    expect(isSubtleGradient(
+      'radial-gradient(rgba(14, 165, 233, 0.06) 0%, rgba(0, 0, 0, 0) 70%)'
+    )).toBe(true)
+  })
+
+  it('alpha 0.05 radial-gradient → true', () => {
+    expect(isSubtleGradient(
+      'radial-gradient(rgba(79, 70, 229, 0.05) 0%, rgba(0, 0, 0, 0) 70%)'
+    )).toBe(true)
+  })
+
+  it('alpha 0.15 radial-gradient (circle) → true', () => {
+    expect(isSubtleGradient(
+      'radial-gradient(circle, rgba(0, 229, 255, 0.15) 0%, rgba(0, 0, 0, 0) 70%)'
+    )).toBe(true)
+  })
+
+  it('alpha 0.2 radial-gradient → true', () => {
+    expect(isSubtleGradient(
+      'radial-gradient(circle, rgba(79, 70, 229, 0.2) 0%, rgba(0, 0, 0, 0) 70%)'
+    )).toBe(true)
+  })
+
+  it('alpha 0.5 radial-gradient → false (뚜렷함)', () => {
+    expect(isSubtleGradient(
+      'radial-gradient(rgba(79, 70, 229, 0.5) 0%, rgba(0, 0, 0, 0) 70%)'
+    )).toBe(false)
+  })
+
+  it('투명으로 끝나지 않는 radial-gradient → false', () => {
+    expect(isSubtleGradient(
+      'radial-gradient(rgba(79, 70, 229, 0.1) 0%, rgba(0, 0, 0, 0.3) 70%)'
+    )).toBe(false)
+  })
+
+  it('rgb만 있는 radial-gradient (alpha 없음) → false', () => {
+    expect(isSubtleGradient(
+      'radial-gradient(rgb(79, 70, 229), rgb(0, 0, 0))'
+    )).toBe(false)
   })
 })
 
