@@ -82,7 +82,7 @@ export default function SlideCanvas() {
         handlePasteImage(e.data.dataUrl, e.data.fileName)
       }
       else if (e.data.type === 'fe:pageChange') {
-        useEditorStore.getState()._onPageChange(e.data.page, e.data.total)
+        useEditorStore.getState()._onPageChange(e.data)
       }
     }
     window.addEventListener('message', onMessage)

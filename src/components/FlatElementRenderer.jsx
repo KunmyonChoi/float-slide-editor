@@ -90,6 +90,7 @@ export default function FlatElementRenderer({ element, isSelected, scale }) {
             display: 'flex',
             alignItems: styles.isFlex ? (styles.alignItems || 'center') : 'center',
             justifyContent: styles.isFlex ? (styles.justifyContent || 'center') : (styles.textAlign === 'center' ? 'center' : styles.textAlign === 'right' ? 'flex-end' : 'flex-start'),
+            ...(styles.gap && styles.gap !== '0px' && styles.gap !== 'normal' ? { gap: styles.gap } : {}),
           } : {}),
         }}
         onMouseDown={handleMouseDown}

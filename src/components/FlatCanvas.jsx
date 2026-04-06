@@ -14,35 +14,58 @@ export default function FlatCanvas() {
   const [scale, setScale] = useState(1)
 
   const { flatElements, selectedFlatId, setSelectedFlat, canvasSize,
-          removeFlatElement, updateFlatElement, undo, redo, viewMode, reExtract } = useFlatStore()
-  const { currentPage, totalPages, navigatePage } = useEditorStore()
+          removeFlatElement, updateFlatElement, undo, redo, viewMode, reExtract,
+          fontImports } = useFlatStore()
+  const { currentPage, revealV } = useEditorStore()
+
+  // 웹폰트를 부모 문서 <head>에 주입 — iframe 폰트와 동일하게 렌더링
+  useEffect(() => {
+    if (!fontImports || fontImports.length === 0) return
+    const injected = []
+    for (const imp of fontImports) {
+      const urlMatch = imp.match(/@import\s+url\(['"]?([^'")\s]+)['"]?\)/)
+      if (urlMatch) {
+        // 이미 동일한 href가 있으면 스킵
+        const href = urlMatch[1]
+        if (document.querySelector(`link[href="${href}"]`)) continue
+        const link = document.createElement('link')
+        link.rel = 'stylesheet'
+        link.href = href
+        link.dataset.flatFont = 'true'
+        document.head.appendChild(link)
+        injected.push(link)
+      } else if (imp.includes('@font-face')) {
+        const style = document.createElement('style')
+        style.textContent = imp
+        style.dataset.flatFont = 'true'
+        document.head.appendChild(style)
+        injected.push(style)
+      }
+    }
+    return () => { for (const el of injected) el.remove() }
+  }, [fontImports])
 
   const selectedEl = selectedFlatId
     ? flatElements.find(e => e.id === selectedFlatId)
     : null
 
-  // 페이지 변경 시 flat 뷰 재추출 (split 모드에서만 — iframe이 살아있어야 함)
-  const prevPage = useRef(currentPage)
+  // 페이지 변경 시 flat 뷰 재추출 (flat/split 모드 — iframe은 항상 마운트됨)
+  // reveal.js 수직 슬라이드 변경도 감지하기 위해 revealV도 의존성에 포함
+  const prevPage = useRef(`${currentPage}-${revealV}`)
   useEffect(() => {
-    if (prevPage.current === currentPage) return
-    prevPage.current = currentPage
-    if (viewMode === 'split') reExtract()
-  }, [currentPage, viewMode, reExtract])
+    const key = `${currentPage}-${revealV}`
+    if (prevPage.current === key) return
+    prevPage.current = key
+    if (viewMode === 'split' || viewMode === 'flat') reExtract()
+  }, [currentPage, revealV, viewMode, reExtract])
 
-  // 키보드 단축키: Delete, 화살표 이동, Ctrl+Z/Y, PageUp/PageDown
+  // 키보드 단축키: Delete, 화살표 이동, Ctrl+Z/Y
+  // 페이지 네비게이션(PageUp/PageDown)은 PageBar에서 전역 처리
   useEffect(() => {
     const onKeyDown = (e) => {
-      // input/textarea 내부에서는 무시
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return
 
-      // 페이지 네비게이션 (PageUp/PageDown, 또는 요소 미선택 상태에서 좌우 화살표)
       const { selectedFlatId } = useFlatStore.getState()
-
-      if (e.key === 'PageDown' || e.key === 'PageUp') {
-        e.preventDefault()
-        navigatePage(e.key === 'PageDown' ? 1 : -1)
-        return
-      }
 
       if ((e.key === 'Delete' || e.key === 'Backspace') && selectedFlatId) {
         e.preventDefault()
@@ -56,12 +79,7 @@ export default function FlatCanvas() {
         if (e.key === 'y')                { e.preventDefault(); redo(); return }
       }
 
-      // 요소 미선택 시 좌우 화살표로 페이지 이동
-      if (!selectedFlatId && ['ArrowLeft', 'ArrowRight'].includes(e.key)) {
-        e.preventDefault()
-        navigatePage(e.key === 'ArrowRight' ? 1 : -1)
-        return
-      }
+      // 요소 미선택 시 화살표 키는 PageBar의 전역 핸들러가 처리 (중복 방지)
 
       const step = e.shiftKey ? 10 : 1
       if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key) && selectedFlatId) {
@@ -78,7 +96,7 @@ export default function FlatCanvas() {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [removeFlatElement, updateFlatElement, undo, redo, navigatePage])
+  }, [removeFlatElement, updateFlatElement, undo, redo])
 
   /** scale 재계산 */
   const recalcScale = useCallback(() => {
@@ -146,38 +164,7 @@ export default function FlatCanvas() {
         </div>
       )}
 
-      {/* 페이지 인디케이터 */}
-      {totalPages > 1 && flatElements.length > 0 && (
-        <div style={{
-          position: 'absolute', bottom: 16, left: '50%', transform: 'translateX(-50%)',
-          display: 'flex', alignItems: 'center', gap: 8,
-          background: 'rgba(15,23,42,0.88)', backdropFilter: 'blur(12px)',
-          borderRadius: 12, padding: '6px 16px',
-          border: '1px solid rgba(255,255,255,0.08)',
-          boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
-          zIndex: 50,
-        }}>
-          <button
-            onClick={() => navigatePage(-1)}
-            disabled={currentPage <= 0}
-            style={{
-              background: 'none', border: 'none', color: currentPage <= 0 ? '#334155' : '#94a3b8',
-              cursor: currentPage <= 0 ? 'default' : 'pointer', fontSize: 16, padding: '0 4px',
-            }}
-          >&#8249;</button>
-          <span style={{ color: '#94a3b8', fontSize: 12, fontVariantNumeric: 'tabular-nums' }}>
-            {currentPage + 1} / {totalPages}
-          </span>
-          <button
-            onClick={() => navigatePage(1)}
-            disabled={currentPage >= totalPages - 1}
-            style={{
-              background: 'none', border: 'none', color: currentPage >= totalPages - 1 ? '#334155' : '#94a3b8',
-              cursor: currentPage >= totalPages - 1 ? 'default' : 'pointer', fontSize: 16, padding: '0 4px',
-            }}
-          >&#8250;</button>
-        </div>
-      )}
+      {/* 페이지 인디케이터 — App.jsx의 공통 PageBar로 이동됨 */}
 
       {flatElements.length === 0 && (
         <div style={{

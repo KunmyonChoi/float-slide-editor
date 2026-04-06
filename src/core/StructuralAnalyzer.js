@@ -9,7 +9,9 @@
  *  3. 이중 인코딩 (double_encoding)
  *  4. 공백 이슈 (whitespace)
  *  5. 시각 속성 누락 (missing_background, missing_border_radius)
- *  6. 요소 수 불일치 (element_count)
+ *  6. 의도치 않은 줄바꿈 (unintended_wrap)
+ *  7. 레이아웃 정확도 (out_of_bounds, size_correction, overlap, zero_size)
+ *  8. 요소 수 불일치 (element_count)
  */
 
 import { extractVisibleTexts, extractFormattedText } from './SlideParser.js'
@@ -30,15 +32,19 @@ import { extractVisibleTexts, extractFormattedText } from './SlideParser.js'
  * @param {string} originalHtml — 원본 슬라이드 HTML
  * @param {string} flatHtml — Flat 변환 결과 HTML
  * @param {number} slideIndex
+ * @param {Array|null} flatElements — 추출된 flat 요소 배열
+ * @param {{ w: number, h: number }|null} canvasSize — 캔버스 크기
  * @returns {{ issues: StructuralIssue[], score: number }}
  */
-export function analyzeStructural(originalHtml, flatHtml, slideIndex = 0) {
+export function analyzeStructural(originalHtml, flatHtml, slideIndex = 0, flatElements = null, canvasSize = null) {
   const issues = [
     ...checkMissingText(originalHtml, flatHtml, slideIndex),
     ...checkDoubleEncoding(flatHtml, slideIndex),
     ...checkLostFormatting(originalHtml, flatHtml, slideIndex),
     ...checkWhitespace(flatHtml, slideIndex),
     ...checkVisualProperties(originalHtml, flatHtml, slideIndex),
+    ...checkUnintendedWrap(flatElements, slideIndex),
+    ...checkLayoutAccuracy(flatElements, canvasSize, slideIndex),
   ]
 
   // 점수 계산: error = -10, warning = -3, 최저 0
@@ -274,6 +280,182 @@ export function checkVisualProperties(originalHtml, flatHtml, slideIndex = 0) {
 }
 
 // ═══════════════════════════════════════════════════════════════
+//  6. 의도치 않은 줄바꿈 검사
+// ═══════════════════════════════════════════════════════════════
+
+/**
+ * Flat 요소의 너비와 텍스트 길이를 비교하여
+ * 텍스트 박스 너비로 인한 의도치 않은 줄바꿈을 검출한다.
+ *
+ * 검사 로직:
+ * - height / lineHeight 로 실제 렌더링 줄 수 추정
+ * - 내용의 <br> + \n 수로 의도된 줄 수 파악
+ * - 실제 줄 수 > 의도된 줄 수 → 너비 부족으로 인한 강제 줄바꿈
+ *
+ * @param {Array|null} flatElements — 픽스처의 flatElements 배열
+ * @param {number} slideIndex
+ * @returns {StructuralIssue[]}
+ */
+export function checkUnintendedWrap(flatElements, slideIndex = 0) {
+  if (!flatElements || !Array.isArray(flatElements)) return []
+
+  const issues = []
+
+  for (const el of flatElements) {
+    if (el.type !== 'text') continue
+
+    const content = el.content || ''
+    const styles = el.styles || {}
+
+    // plain text 추출
+    const plain = content.replace(/<[^>]+>/g, '').trim()
+    if (!plain || plain.length < 5) continue
+
+    // font-size 파싱
+    const fsPx = parsePx(styles.fontSize) || 16
+
+    // line-height 파싱
+    let lhPx = fsPx * 1.5
+    if (styles.lineHeight) {
+      const lhVal = parsePx(styles.lineHeight)
+      if (lhVal) {
+        lhPx = lhVal
+      } else {
+        // unitless (e.g. "1.5")
+        const num = parseFloat(styles.lineHeight)
+        if (!isNaN(num) && num < 10) lhPx = num * fsPx
+      }
+    }
+
+    const w = el.width
+    const h = el.height
+
+    // 실제 렌더링 줄 수 추정
+    const renderedLines = Math.max(1, Math.round(h / Math.max(lhPx, 1)))
+
+    // 의도된 줄 수: <br> + \n 기반
+    const brCount = (content.match(/<br\s*\/?>/gi) || []).length
+    const nlCount = (plain.match(/\n/g) || []).length
+    const intendedLines = brCount + nlCount + 1
+
+    // pre/code 내용은 의도된 줄바꿈이 있을 수 있으므로 스킵
+    if (content.includes('<code') || content.includes('<pre') ||
+        styles.fontFamily?.includes('monospace') || styles.whiteSpace === 'pre') {
+      continue
+    }
+
+    // 줄바꿈 차이가 있으면 너비 부족 확인
+    if (renderedLines > intendedLines) {
+      // 문자 너비 추정: CJK ~0.9em, Latin ~0.5em, mixed ~0.6em
+      const cjkRatio = (plain.match(/[\u3000-\u9fff\uac00-\ud7af]/g) || []).length / plain.length
+      const avgCharW = fsPx * (0.5 + cjkRatio * 0.4)
+      const estimatedLineW = (plain.length * avgCharW) / intendedLines
+
+      // 추정 너비가 실제 너비를 초과하면 강제 줄바꿈
+      if (estimatedLineW > w * 0.85) {
+        const extraLines = renderedLines - intendedLines
+        issues.push({
+          type: 'unintended_wrap',
+          severity: 'warning',
+          description: `텍스트 줄바꿈 (${extraLines}줄 초과, w=${Math.round(w)}px): "${truncate(plain, 50)}"`,
+          slideIndex,
+        })
+      }
+    }
+  }
+
+  return issues
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  7. 레이아웃 정확도 검사
+// ═══════════════════════════════════════════════════════════════
+
+/**
+ * Flat 요소의 위치/크기를 검사하여 레이아웃 이슈를 검출한다.
+ *
+ * 검사 항목:
+ * - 캔버스 밖 요소 (out_of_bounds): 요소가 캔버스 영역 밖에 위치
+ * - 크기 보정 편차 (size_correction): 너비 보정(nowrap 측정)으로 원본 rect와 차이 발생
+ * - 요소 겹침 (overlap): 같은 유형의 요소가 과도하게 겹침
+ * - 제로 크기 (zero_size): 너비 또는 높이가 0에 가까운 요소
+ *
+ * @param {Array|null} flatElements
+ * @param {{ w: number, h: number }|null} canvasSize
+ * @param {number} slideIndex
+ * @returns {StructuralIssue[]}
+ */
+export function checkLayoutAccuracy(flatElements, canvasSize, slideIndex = 0) {
+  if (!flatElements || !Array.isArray(flatElements) || !canvasSize) return []
+
+  const issues = []
+  const cw = canvasSize.w
+  const ch = canvasSize.h
+  const MARGIN = 50 // 허용 오차 (px)
+
+  for (const el of flatElements) {
+    // 캔버스 밖 요소 검사
+    const right = el.x + el.width
+    const bottom = el.y + el.height
+    if (el.x > cw + MARGIN || el.y > ch + MARGIN || right < -MARGIN || bottom < -MARGIN) {
+      issues.push({
+        type: 'out_of_bounds',
+        severity: 'warning',
+        description: `캔버스 밖 요소 (${el.type}, pos=${Math.round(el.x)},${Math.round(el.y)})`,
+        slideIndex,
+      })
+    }
+
+    // 크기 보정 편차: 원본 rect 대비 너비가 크게 변경된 경우
+    if (el.originalRect && el.type === 'text') {
+      const widthDelta = Math.abs(el.width - el.originalRect.w)
+      if (widthDelta > 20) {
+        issues.push({
+          type: 'size_correction',
+          severity: 'warning',
+          description: `너비 보정 ${Math.round(el.originalRect.w)}→${Math.round(el.width)}px (Δ${Math.round(widthDelta)}px): "${truncate(stripHtml(el.content), 40)}"`,
+          slideIndex,
+        })
+      }
+    }
+
+    // 제로 크기 요소 (배경/shape 제외)
+    if (el.type === 'text' && (el.width < 2 || el.height < 2)) {
+      issues.push({
+        type: 'zero_size',
+        severity: 'error',
+        description: `크기 0 텍스트 요소 (${Math.round(el.width)}×${Math.round(el.height)}px)`,
+        slideIndex,
+      })
+    }
+  }
+
+  // 텍스트 요소 간 과도한 겹침 검사
+  const textEls = flatElements.filter(e => e.type === 'text' && e.width > 5 && e.height > 5)
+  for (let i = 0; i < textEls.length; i++) {
+    for (let j = i + 1; j < textEls.length; j++) {
+      const a = textEls[i]
+      const b = textEls[j]
+      const overlapX = Math.max(0, Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x))
+      const overlapY = Math.max(0, Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y))
+      const overlapArea = overlapX * overlapY
+      const minArea = Math.min(a.width * a.height, b.width * b.height)
+      // 작은 요소 면적의 80% 이상이 겹치면 문제
+      if (minArea > 0 && overlapArea / minArea > 0.8) {
+        issues.push({
+          type: 'overlap',
+          severity: 'warning',
+          description: `텍스트 요소 겹침 (${Math.round(overlapArea / minArea * 100)}%): "${truncate(stripHtml(a.content), 25)}" ↔ "${truncate(stripHtml(b.content), 25)}"`,
+          slideIndex,
+        })
+      }
+    }
+  }
+
+  return issues
+}
+
+// ═══════════════════════════════════════════════════════════════
 //  전체 덱 분석
 // ═══════════════════════════════════════════════════════════════
 
@@ -333,6 +515,18 @@ function normalizeText(text) {
 
 function truncate(str, max) {
   return str.length > max ? str.slice(0, max) + '…' : str
+}
+
+/** HTML 태그 제거 → plain text */
+function stripHtml(str) {
+  return (str || '').replace(/<[^>]+>/g, '').trim()
+}
+
+/** "16px" → 16, "1.5em" → null */
+function parsePx(val) {
+  if (!val) return null
+  const m = String(val).match(/([\d.]+)\s*px/)
+  return m ? parseFloat(m[1]) : null
 }
 
 /**

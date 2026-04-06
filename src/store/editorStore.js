@@ -21,6 +21,17 @@ export const useEditorStore = create((set, get) => ({
   /** 전체 페이지 수 */
   totalPages: 1,
 
+  /** reveal.js 확장 네비게이션 상태 */
+  isReveal: false,
+  revealH: 0,
+  revealV: 0,
+  revealTotalH: 0,
+  revealTotalV: 0,
+  canLeft: false,
+  canRight: false,
+  canUp: false,
+  canDown: false,
+
   /** 삽입 플레이스홀더 클릭 시 대기 중인 삽입 정보 */
   pendingInsert: null,
 
@@ -66,13 +77,32 @@ export const useEditorStore = create((set, get) => ({
   },
 
   /** 페이지 변경 알림 수신 (iframe → parent) */
-  _onPageChange(page, total) {
-    set({ currentPage: page, totalPages: total })
+  _onPageChange(data) {
+    const update = { currentPage: data.page, totalPages: data.total }
+    if (data.reveal) {
+      update.isReveal = true
+      update.revealH = data.h ?? 0
+      update.revealV = data.v ?? 0
+      update.revealTotalH = data.totalH ?? data.total
+      update.revealTotalV = data.totalV ?? 0
+      update.canLeft = !!data.canLeft
+      update.canRight = !!data.canRight
+      update.canUp = !!data.canUp
+      update.canDown = !!data.canDown
+    } else {
+      update.isReveal = false
+    }
+    set(update)
   },
 
-  /** iframe에 페이지 이동 명령 전송 */
+  /** iframe에 페이지 이동 명령 전송 (선형) */
   navigatePage(delta) {
     get().iframeRef?.current?.contentWindow?.postMessage({ type: 'fe:navigate', delta }, '*')
+  },
+
+  /** iframe에 방향 네비게이션 전송 (reveal.js 4방향) */
+  navigateDirection(direction) {
+    get().iframeRef?.current?.contentWindow?.postMessage({ type: 'fe:navigate', direction }, '*')
   },
 
   getElement(id) {

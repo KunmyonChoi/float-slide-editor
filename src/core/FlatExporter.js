@@ -19,6 +19,8 @@ export function exportOriginalHtml(iframeRef) {
   // 에디터 에이전트/스타일 제거
   const agentScript = clone.querySelector('#__fe-agent')
   if (agentScript) agentScript.remove()
+  const histPatch = clone.querySelector('#__fe-history-patch')
+  if (histPatch) histPatch.remove()
   const agentStyle = clone.querySelector('#__fe-style')
   if (agentStyle) agentStyle.remove()
 
@@ -38,7 +40,7 @@ export function exportOriginalHtml(iframeRef) {
 /**
  * Flat 요소 배열을 독립 HTML 파일로 내보낸다.
  */
-export function exportFlatHtml(flatElements, canvasSize) {
+export function exportFlatHtml(flatElements, canvasSize, fontImports = []) {
   const els = flatElements.map(el => {
     if (el.type === 'image') {
       return `<div style="${flatStyle(el)}"><img src="${escHtml(el.content)}" alt="" style="width:100%;height:100%;object-fit:${el.styles.objectFit || 'cover'};display:block;border-radius:${el.styles.borderRadius || '0'};" /></div>`
@@ -47,7 +49,8 @@ export function exportFlatHtml(flatElements, canvasSize) {
       const textContent = el.isRich ? el.content : escHtml(el.content)
       const hasBg = el.styles.backgroundColor && el.styles.backgroundColor !== 'rgba(0, 0, 0, 0)' && el.styles.backgroundColor !== 'transparent'
       const needsFlex = el.merged || hasBg
-      const mergedFlex = needsFlex ? `display:flex;align-items:${el.styles.isFlex ? (el.styles.alignItems || 'center') : 'center'};justify-content:${el.styles.isFlex ? (el.styles.justifyContent || 'center') : (el.styles.textAlign === 'center' ? 'center' : el.styles.textAlign === 'right' ? 'flex-end' : 'flex-start')};` : ''
+      const gapStyle = (el.styles.gap && el.styles.gap !== '0px' && el.styles.gap !== 'normal') ? `gap:${el.styles.gap};` : ''
+      const mergedFlex = needsFlex ? `display:flex;align-items:${el.styles.isFlex ? (el.styles.alignItems || 'center') : 'center'};justify-content:${el.styles.isFlex ? (el.styles.justifyContent || 'center') : (el.styles.textAlign === 'center' ? 'center' : el.styles.textAlign === 'right' ? 'flex-end' : 'flex-start')};${gapStyle}` : ''
       return `<div style="${flatStyle(el)};${mergedFlex}${textStyle(el.styles)}">${textContent}</div>`
     }
     if (el.type === 'svg') {
@@ -57,12 +60,36 @@ export function exportFlatHtml(flatElements, canvasSize) {
     return `<div style="${flatStyle(el)};${shapeStyle(el.styles)}"></div>`
   })
 
+  // 폰트 임포트를 <link> 태그와 <style> 블록으로 분리
+  // @import url(...) → <link rel="stylesheet"> (더 빠른 로딩)
+  // @font-face → <style> 블록
+  let fontLinks = ''
+  let fontStyleBlock = ''
+  if (fontImports.length > 0) {
+    const links = []
+    const styles = []
+    for (const imp of fontImports) {
+      const urlMatch = imp.match(/@import\s+url\(['"]?([^'")\s]+)['"]?\)/)
+      if (urlMatch) {
+        links.push(`<link rel="stylesheet" href="${urlMatch[1]}">`)
+      } else {
+        styles.push(imp)
+      }
+    }
+    fontLinks = links.length > 0 ? '\n' + links.join('\n') : ''
+    fontStyleBlock = styles.length > 0 ? `\n<style>${styles.join('\n')}</style>` : ''
+  }
+
+  const preconnect = fontLinks
+    ? '\n<link rel="preconnect" href="https://fonts.googleapis.com">\n<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>'
+    : ''
+
   return `<!DOCTYPE html>
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
-<title>Flat Export</title>
-<style>* { box-sizing: border-box; margin: 0; padding: 0; }</style>
+<title>Flat Export</title>${preconnect}${fontLinks}
+<style>* { box-sizing: border-box; margin: 0; padding: 0; }</style>${fontStyleBlock}
 </head>
 <body style="width:${canvasSize.w}px;height:${canvasSize.h}px;overflow:hidden;position:relative;">
 ${els.join('\n')}
@@ -86,8 +113,17 @@ export function downloadHtml(htmlString, filename) {
 // ── 헬퍼 ─────────────────────────────────────────────────────
 
 function flatStyle(el) {
-  // 텍스트 요소는 overflow:visible — 한글 descender 등이 잘리지 않도록
-  const overflow = el.type === 'text' ? 'visible' : 'hidden'
+  // 텍스트 요소: 기본 overflow:visible (한글 descender 클리핑 방지)
+  // 단, 원본이 hidden/auto/scroll이면 보존 (코드 블록 등)
+  let overflow = el.type === 'text' ? 'visible' : 'hidden'
+  if (el.type === 'text' && el.styles) {
+    const origOvf = el.styles.overflow || ''
+    const origOvfX = el.styles.overflowX || ''
+    if (origOvf.includes('hidden') || origOvf.includes('auto') || origOvf.includes('scroll') ||
+        origOvfX === 'hidden' || origOvfX === 'auto' || origOvfX === 'scroll') {
+      overflow = 'hidden'
+    }
+  }
   return [
     `position:absolute`,
     `left:${r(el.x)}px`,

@@ -4,9 +4,9 @@
  * iframe srcdoc에 주입할 에디터 에이전트 스크립트도 함께 삽입한다.
  */
 
-export const EDITABLE_TAGS = new Set(['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'span', 'li', 'td', 'th', 'a', 'strong', 'em', 'label', 'figcaption'])
+export const EDITABLE_TAGS = new Set(['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'span', 'li', 'td', 'th', 'a', 'strong', 'em', 'label', 'figcaption', 'pre', 'code', 'blockquote', 'dt', 'dd'])
 export const IMAGE_TAGS = new Set(['img'])
-export const CONTAINER_TAGS = new Set(['div', 'section', 'article', 'header', 'footer', 'main', 'aside', 'nav', 'figure', 'table', 'thead', 'tbody', 'tfoot', 'tr'])
+export const CONTAINER_TAGS = new Set(['div', 'section', 'article', 'header', 'footer', 'main', 'aside', 'nav', 'figure', 'table', 'thead', 'tbody', 'tfoot', 'tr', 'ul', 'ol', 'dl', 'details', 'summary'])
 
 export function classifyTag(tag) {
   if (IMAGE_TAGS.has(tag)) return 'image'
@@ -18,6 +18,27 @@ export function classifyTag(tag) {
 let _counter = 0
 export const nextId = () => `fe-${++_counter}`
 export function resetCounter() { _counter = 0 }
+
+/**
+ * History API 패치 — <head>에 주입되어 reveal.js 등의 initialize()보다 먼저 실행.
+ * iframe srcdoc에서 history.replaceState/pushState SecurityError를 방지한다.
+ */
+const HISTORY_PATCH = `
+(function () {
+  if (window.__feHistoryPatched) return;
+  window.__feHistoryPatched = true;
+  try {
+    var origReplace = history.replaceState.bind(history);
+    history.replaceState = function () {
+      try { return origReplace.apply(history, arguments); } catch (e) {}
+    };
+    var origPush = history.pushState.bind(history);
+    history.pushState = function () {
+      try { return origPush.apply(history, arguments); } catch (e) {}
+    };
+  } catch (e) {}
+})();
+`
 
 /**
  * 에디터 에이전트 — iframe 내부에서 실행되는 스크립트.
@@ -142,8 +163,38 @@ const EDITOR_AGENT = `
     }
   });
 
-  /* ── 페이지 변경 감시 (MutationObserver) ── */
+  /* ── 페이지 변경 감시 ── */
+  var __feIsReveal = false;
+
   function __feDetectPage() {
+    if (__feIsReveal) {
+      var R = window.Reveal;
+      var hSections = document.querySelectorAll('.reveal .slides > section');
+      var totalH = hSections.length;
+      var indices = R.getIndices();
+      /* 현재 수평 섹션 내 수직 슬라이드 수 */
+      var currentSection = hSections[indices.h];
+      var vSlides = currentSection ? currentSection.querySelectorAll(':scope > section') : [];
+      var totalV = vSlides.length; /* 0이면 수직 슬라이드 없음 */
+      /* 전체 방향별 이동 가능 여부 */
+      window.parent.postMessage({
+        type: 'fe:pageChange',
+        page: indices.h || 0,
+        total: totalH,
+        /* reveal.js 확장 정보 */
+        reveal: true,
+        h: indices.h || 0,
+        v: indices.v || 0,
+        totalH: totalH,
+        totalV: totalV,
+        canLeft: indices.h > 0,
+        canRight: indices.h < totalH - 1,
+        canUp: (indices.v || 0) > 0,
+        canDown: totalV > 0 && (indices.v || 0) < totalV - 1,
+      }, '*');
+      return;
+    }
+    /* 기본 .slide.active 패턴 */
     var slides = document.querySelectorAll('.slide');
     if (slides.length === 0) return;
     var total = slides.length;
@@ -158,17 +209,44 @@ const EDITOR_AGENT = `
     }, '*');
   }
 
-  /* 클래스 변경 감시 — .slide 요소의 active 클래스 토글을 감지 */
+  /* reveal.js 바인딩 */
+  function __feBindReveal() {
+    __feIsReveal = true;
+    window.Reveal.configure({ hash: false, history: false, transition: 'none', transitionSpeed: 'fast' });
+    window.Reveal.on('slidechanged', function () { __feDetectPage(); });
+    __feDetectPage();
+  }
+
+  /* 클래스 변경 감시 (기본 패턴용) */
   var __feMo = new MutationObserver(function (muts) {
     for (var i = 0; i < muts.length; i++) {
       if (muts[i].attributeName === 'class') { __feDetectPage(); return; }
     }
   });
-  document.querySelectorAll('.slide').forEach(function (sl) {
-    __feMo.observe(sl, { attributes: true, attributeFilter: ['class'] });
-  });
-  /* 초기 페이지 보고 */
-  setTimeout(__feDetectPage, 100);
+
+  /* reveal.js 감지 — 비동기 초기화 대응을 위한 폴링 */
+  function __feInitPageDetection() {
+    var hasRevealEl = document.querySelector('.reveal');
+    if (hasRevealEl) {
+      var poll = setInterval(function () {
+        var hasObj = (typeof window.Reveal === 'object' || typeof window.Reveal === 'function') && !!window.Reveal;
+        var hasIsReady = hasObj && typeof window.Reveal.isReady === 'function';
+        var ready = hasIsReady && window.Reveal.isReady();
+        if (ready) {
+          clearInterval(poll);
+          __feBindReveal();
+        }
+      }, 200);
+      setTimeout(function () { clearInterval(poll); }, 30000);
+    } else {
+      /* 기본 .slide 패턴 */
+      document.querySelectorAll('.slide').forEach(function (sl) {
+        __feMo.observe(sl, { attributes: true, attributeFilter: ['class'] });
+      });
+      setTimeout(__feDetectPage, 100);
+    }
+  }
+  __feInitPageDetection();
 
   /* ── 부모로부터 명령 수신 ── */
   window.addEventListener('message', function (e) {
@@ -177,10 +255,61 @@ const EDITOR_AGENT = `
 
     /* 페이지 이동 명령 */
     if (e.data.type === 'fe:navigate') {
-      if (typeof window.nav === 'function') {
-        window.nav(e.data.delta);
-      } else if (typeof window.show === 'function') {
-        window.show(e.data.page);
+      if (__feIsReveal) {
+        /* 방향 지정 네비게이션 (4방향) */
+        if (e.data.direction) {
+          if (e.data.direction === 'left') window.Reveal.left();
+          else if (e.data.direction === 'right') window.Reveal.right();
+          else if (e.data.direction === 'up') window.Reveal.up();
+          else if (e.data.direction === 'down') window.Reveal.down();
+        } else {
+          var delta = e.data.delta;
+          if (delta > 0) window.Reveal.next();
+          else if (delta < 0) window.Reveal.prev();
+          else if (e.data.page != null) window.Reveal.slide(e.data.page, 0);
+        }
+      } else {
+        /* 기본 .slide 패턴: 직접 DOM 조작 */
+        var slides = document.querySelectorAll('.slide');
+        if (slides.length === 0) return;
+        var curIdx = 0;
+        for (var si = 0; si < slides.length; si++) {
+          if (slides[si].classList.contains('active')) { curIdx = si; break; }
+        }
+        var targetIdx;
+        if (e.data.page != null) {
+          targetIdx = e.data.page;
+        } else {
+          targetIdx = curIdx + (e.data.delta || 0);
+        }
+        if (targetIdx < 0 || targetIdx >= slides.length || targetIdx === curIdx) return;
+        slides[curIdx].classList.remove('active');
+        slides[curIdx].style.display = 'none';
+        slides[targetIdx].classList.add('active');
+        slides[targetIdx].style.display = 'flex';
+        __feDetectPage();
+      }
+      return;
+    }
+
+    /* 외부 goto 명령 (QualityDashboard 등) */
+    if (e.data.type === 'goto') {
+      var idx = e.data.index != null ? e.data.index : 0;
+      if (__feIsReveal) {
+        window.Reveal.slide(idx, 0);
+      } else {
+        var slides = document.querySelectorAll('.slide');
+        if (slides.length === 0) return;
+        var curIdx = 0;
+        for (var si = 0; si < slides.length; si++) {
+          if (slides[si].classList.contains('active')) { curIdx = si; break; }
+        }
+        if (idx < 0 || idx >= slides.length || idx === curIdx) return;
+        slides[curIdx].classList.remove('active');
+        slides[curIdx].style.display = 'none';
+        slides[idx].classList.add('active');
+        slides[idx].style.display = 'flex';
+        __feDetectPage();
       }
       return;
     }
@@ -250,7 +379,7 @@ export function prepareHtmlForEditor(fullHtml) {
   const walk = (node) => {
     if (node.nodeType !== Node.ELEMENT_NODE) return
     const tag = node.tagName.toLowerCase()
-    if (node.id === '__fe-style' || node.id === '__fe-agent') return
+    if (node.id === '__fe-style' || node.id === '__fe-agent' || node.id === '__fe-history-patch') return
 
     const type = IMAGE_TAGS.has(tag)
       ? 'image'
@@ -272,6 +401,17 @@ export function prepareHtmlForEditor(fullHtml) {
 
   walk(doc.body)
 
+  // history API 패치: <head> 맨 앞에 주입 → reveal.js initialize()보다 먼저 실행
+  const historyPatch = doc.createElement('script')
+  historyPatch.id = '__fe-history-patch'
+  historyPatch.textContent = HISTORY_PATCH
+  if (doc.head.firstChild) {
+    doc.head.insertBefore(historyPatch, doc.head.firstChild)
+  } else {
+    doc.head.appendChild(historyPatch)
+  }
+
+  // 에이전트 본체: <body> 끝에 주입 (DOM이 파싱된 후 실행)
   const agentScript = doc.createElement('script')
   agentScript.id = '__fe-agent'
   agentScript.textContent = EDITOR_AGENT
@@ -297,6 +437,8 @@ export function exportCleanHtml(iframeDoc) {
   })
   const agent = clone.querySelector('#__fe-agent')
   if (agent) agent.remove()
+  const histPatch = clone.querySelector('#__fe-history-patch')
+  if (histPatch) histPatch.remove()
   const style = clone.querySelector('#__fe-style')
   if (style) style.remove()
   // 삽입 플레이스홀더 스타일 및 요소 제거

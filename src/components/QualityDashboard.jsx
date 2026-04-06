@@ -7,6 +7,7 @@ import { exportOriginalHtml, exportFlatHtml } from '../core/FlatExporter'
 import { analyzeStructural, aggregateReports } from '../core/StructuralAnalyzer'
 import { detectPatterns } from '../core/PatternDetector'
 import { captureFixture, downloadAllFixtures } from '../core/FixtureManager'
+import { parseSlideDeck, wrapSlideAsDocument } from '../core/SlideParser'
 
 /**
  * QualityDashboard
@@ -43,25 +44,46 @@ export default function QualityDashboard({ open, onClose }) {
     const total = slides.length || 1
     setProgress({ current: 0, total })
 
+    // 전체 덱 HTML을 파싱하여 개별 슬라이드 추출 (구조적 분석용)
+    const fullDeckHtml = exportOriginalHtml(iframeRef) || ''
+    let parsedDeck = null
+    try {
+      parsedDeck = parseSlideDeck(fullDeckHtml)
+    } catch { /* 파싱 실패 시 fullDeckHtml 폴백 */ }
+
     const slideReports = []
 
     for (let i = 0; i < total; i++) {
       setProgress({ current: i + 1, total })
 
-      // 슬라이드 이동
-      win.postMessage({ type: 'goto', index: i }, '*')
+      // 슬라이드 이동 — 덱마다 네비게이션 방식이 다르므로 여러 방법 시도
+      if (typeof win.showSlide === 'function') {
+        win.showSlide(i)
+      } else if (typeof win.show === 'function') {
+        win.show(i)
+      } else if (typeof win.nav === 'function') {
+        win.postMessage({ type: 'goto', index: i }, '*')
+      } else {
+        win.postMessage({ type: 'goto', index: i }, '*')
+      }
       await wait(350) // 렌더링 대기
 
       // 추출
-      const { elements, canvasSize } = extractFlatElements(iframeRef)
+      const { elements, canvasSize, fontImports } = extractFlatElements(iframeRef)
       const originalHtml = exportOriginalHtml(iframeRef) || ''
-      const flatHtml = exportFlatHtml(elements, canvasSize)
+      const flatHtml = exportFlatHtml(elements, canvasSize, fontImports)
+
+      // 개별 슬라이드 HTML 추출 — 전체 덱이 아닌 해당 슬라이드만 비교
+      let slideOriginalHtml = originalHtml
+      if (parsedDeck && parsedDeck.slides[i]) {
+        slideOriginalHtml = wrapSlideAsDocument(parsedDeck.slides[i], parsedDeck.globalStyles)
+      }
 
       // 레이아웃 비교 (라이브 DOM)
       const comparison = compareFlatConversion(iframeRef, elements)
 
-      // 구조적 분석 (오프라인)
-      const structural = analyzeStructural(originalHtml, flatHtml, i)
+      // 구조적 분석 — 개별 슬라이드 HTML vs flat HTML + 줄바꿈 검사
+      const structural = analyzeStructural(slideOriginalHtml, flatHtml, i, elements, canvasSize)
 
       slideReports.push({
         slideIndex: i,
@@ -73,7 +95,7 @@ export default function QualityDashboard({ open, onClose }) {
       })
 
       // 픽스처 저장
-      fixturesRef.current.push(captureFixture(i, originalHtml, elements, canvasSize))
+      fixturesRef.current.push(captureFixture(i, originalHtml, elements, canvasSize, fontImports))
     }
 
     // 집계
@@ -81,7 +103,13 @@ export default function QualityDashboard({ open, onClose }) {
     const patterns = detectPatterns(slideReports)
 
     // 첫 슬라이드로 복귀
-    win.postMessage({ type: 'goto', index: 0 }, '*')
+    if (typeof win.showSlide === 'function') {
+      win.showSlide(0)
+    } else if (typeof win.show === 'function') {
+      win.show(0)
+    } else {
+      win.postMessage({ type: 'goto', index: 0 }, '*')
+    }
 
     setReport({ slideReports, aggregate, patterns })
     setRunning(false)
@@ -291,6 +319,11 @@ const ISSUE_LABELS = {
   whitespace: '공백 이슈',
   missing_background: '배경 누락',
   missing_border_radius: 'border-radius 누락',
+  unintended_wrap: '의도치 않은 줄바꿈',
+  out_of_bounds: '캔버스 밖 요소',
+  size_correction: '크기 보정 편차',
+  overlap: '요소 겹침',
+  zero_size: '크기 0 요소',
   element_count: '요소 수 불일치',
 }
 

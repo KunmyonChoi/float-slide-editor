@@ -13,6 +13,8 @@ export const useFlatStore = create((set, get) => ({
   viewMode: 'html',
   /** 캔버스 크기 */
   canvasSize: { w: 1280, h: 800 },
+  /** 폰트 임포트 CSS (원본 문서에서 추출) */
+  fontImports: [],
   /** 추출 시 사용한 iframeRef 캐시 (페이지 변경 시 재추출용) */
   _iframeRef: null,
 
@@ -21,11 +23,12 @@ export const useFlatStore = create((set, get) => ({
 
   /** iframe DOM에서 flat 요소를 추출 */
   extractFromIframe(iframeRef) {
-    const { elements, canvasSize } = extractFlatElements(iframeRef)
+    const { elements, canvasSize, fontImports } = extractFlatElements(iframeRef)
     _history.clear()
     set({
       flatElements: elements,
       canvasSize,
+      fontImports: fontImports || [],
       selectedFlatId: null,
       _iframeRef: iframeRef,
       canUndo: false,
@@ -39,11 +42,12 @@ export const useFlatStore = create((set, get) => ({
     if (!ref) return
     // 약간의 딜레이: DOM 전환 후 렌더 대기
     setTimeout(() => {
-      const { elements, canvasSize } = extractFlatElements(ref)
+      const { elements, canvasSize, fontImports } = extractFlatElements(ref)
       _history.clear()
       set({
         flatElements: elements,
         canvasSize,
+        fontImports: fontImports || [],
         selectedFlatId: null,
         canUndo: false,
         canRedo: false,

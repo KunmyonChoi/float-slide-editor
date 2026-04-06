@@ -138,10 +138,11 @@ export function extractFormattedText(html) {
 // ── 내부 헬퍼 ────────────────────────────────────────────────
 
 function extractSlideTitle(el, index) {
-  const h1 = el.querySelector('h1')
-  if (h1) return h1.textContent.trim()
-  const h2 = el.querySelector('h2')
-  if (h2) return h2.textContent.trim()
+  // h1~h6 순서대로 찾기
+  for (const level of ['h1', 'h2', 'h3', 'h4', 'h5', 'h6']) {
+    const heading = el.querySelector(level)
+    if (heading) return heading.textContent.trim()
+  }
   const tag = el.querySelector('.tag')
   if (tag) return tag.textContent.trim()
   return `Slide ${index}`

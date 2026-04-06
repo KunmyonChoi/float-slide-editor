@@ -279,6 +279,45 @@ describe('exportFlatHtml — SVG 요소', () => {
 })
 
 // ═══════════════════════════════════════════════════════════════
+//  ::before 의사 요소 (불릿 등)
+// ═══════════════════════════════════════════════════════════════
+describe('exportFlatHtml — ::before 의사 요소 (불릿)', () => {
+  it('pseudo shape 요소가 배경색/border-radius와 함께 출력된다', () => {
+    const bullet = makeEl({
+      id: 'flat-bullet',
+      type: 'shape',
+      x: 80, y: 179,
+      width: 8, height: 8,
+      zIndex: 2,
+      styles: {
+        ...makeEl().styles,
+        backgroundColor: 'rgb(137, 180, 250)',
+        borderRadius: '50%',
+      },
+    })
+    const text = makeEl({
+      id: 'flat-text',
+      type: 'text',
+      x: 104, y: 165,
+      width: 536, height: 41,
+      zIndex: 3,
+      content: '사용자가 한국어로 일기를 작성',
+      styles: {
+        ...makeEl().styles,
+        color: 'rgb(205, 214, 244)',
+        fontSize: '18px',
+        fontFamily: "'Noto Sans KR'",
+      },
+    })
+    const html = exportFlatHtml([bullet, text], CANVAS)
+    expect(html).toContain('background-color:rgb(137, 180, 250)')
+    expect(html).toContain('border-radius:50%')
+    expect(html).toContain('width:8px')
+    expect(html).toContain('사용자가 한국어로 일기를 작성')
+  })
+})
+
+// ═══════════════════════════════════════════════════════════════
 //  z-index 순서
 // ═══════════════════════════════════════════════════════════════
 describe('exportFlatHtml — z-index 순서', () => {

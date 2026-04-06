@@ -11,7 +11,7 @@ import { exportOriginalHtml, exportFlatHtml, downloadHtml } from '../core/FlatEx
  */
 export default function ComparePanel() {
   const iframeRef = useEditorStore(s => s.iframeRef)
-  const { flatElements, canvasSize, viewMode } = useFlatStore()
+  const { flatElements, canvasSize, fontImports, viewMode } = useFlatStore()
   const [report, setReport] = useState(null)
   const [expanded, setExpanded] = useState(null) // 'missing' | 'extra' | 'drift' | null
 
@@ -30,9 +30,9 @@ export default function ComparePanel() {
   }, [iframeRef])
 
   const handleExportFlat = useCallback(() => {
-    const html = exportFlatHtml(flatElements, canvasSize)
+    const html = exportFlatHtml(flatElements, canvasSize, fontImports)
     downloadHtml(html, 'flat.html')
-  }, [flatElements, canvasSize])
+  }, [flatElements, canvasSize, fontImports])
 
   if (!isActive) return null
 

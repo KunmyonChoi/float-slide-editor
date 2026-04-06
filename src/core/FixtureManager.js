@@ -27,13 +27,14 @@ import { exportFlatHtml } from './FlatExporter.js'
  * @param {{ w: number, h: number }} canvasSize
  * @returns {SlideFixture}
  */
-export function captureFixture(slideIndex, originalHtml, flatElements, canvasSize) {
-  const flatHtml = exportFlatHtml(flatElements, canvasSize)
+export function captureFixture(slideIndex, originalHtml, flatElements, canvasSize, fontImports = []) {
+  const flatHtml = exportFlatHtml(flatElements, canvasSize, fontImports)
   return {
     slideIndex,
     originalHtml,
     flatElements: flatElements.map(stripInternals),
     canvasSize,
+    fontImports,
     flatHtml,
     timestamp: new Date().toISOString(),
     elementCount: flatElements.length,

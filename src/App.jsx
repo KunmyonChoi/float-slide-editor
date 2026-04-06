@@ -3,6 +3,7 @@ import FloatingToolbar from './components/FloatingToolbar'
 import FloatingEditorPanel from './components/FloatingEditorPanel'
 import FlatCanvas from './components/FlatCanvas'
 import ComparePanel from './components/ComparePanel'
+import PageBar from './components/PageBar'
 import { useFlatStore } from './store/flatStore'
 
 export default function App() {
@@ -28,6 +29,7 @@ export default function App() {
           </div>
         )}
       </div>
+      <PageBar />
       <FloatingToolbar />
       <FloatingEditorPanel />
       <ComparePanel />

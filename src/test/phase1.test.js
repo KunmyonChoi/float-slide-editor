@@ -110,6 +110,86 @@ describe('prepareHtmlForEditor — 타입 분류', () => {
 })
 
 // ═══════════════════════════════════════════════════════════════
+//  확장된 태그 분류 — 추가 태그 지원
+// ═══════════════════════════════════════════════════════════════
+describe('prepareHtmlForEditor — 확장 태그 분류', () => {
+  const EXTENDED_HTML = `<!DOCTYPE html><html><body>
+    <pre>코드 블록</pre>
+    <code>인라인 코드</code>
+    <blockquote>인용문</blockquote>
+    <dl><dt>정의 제목</dt><dd>정의 내용</dd></dl>
+    <ul><li>목록 항목</li></ul>
+    <ol><li>순서 항목</li></ol>
+    <details><summary>요약</summary></details>
+  </body></html>`
+
+  it('pre → text 타입', () => {
+    resetCounter()
+    const { elements } = prepareHtmlForEditor(EXTENDED_HTML)
+    const pre = [...elements.values()].find(m => m.tag === 'pre')
+    expect(pre).toBeDefined()
+    expect(pre.type).toBe('text')
+  })
+
+  it('code → text 타입', () => {
+    resetCounter()
+    const { elements } = prepareHtmlForEditor(EXTENDED_HTML)
+    const code = [...elements.values()].find(m => m.tag === 'code')
+    expect(code).toBeDefined()
+    expect(code.type).toBe('text')
+  })
+
+  it('blockquote → text 타입', () => {
+    resetCounter()
+    const { elements } = prepareHtmlForEditor(EXTENDED_HTML)
+    const bq = [...elements.values()].find(m => m.tag === 'blockquote')
+    expect(bq).toBeDefined()
+    expect(bq.type).toBe('text')
+  })
+
+  it('dt, dd → text 타입', () => {
+    resetCounter()
+    const { elements } = prepareHtmlForEditor(EXTENDED_HTML)
+    const dt = [...elements.values()].find(m => m.tag === 'dt')
+    const dd = [...elements.values()].find(m => m.tag === 'dd')
+    expect(dt).toBeDefined()
+    expect(dt.type).toBe('text')
+    expect(dd).toBeDefined()
+    expect(dd.type).toBe('text')
+  })
+
+  it('ul, ol → container 타입', () => {
+    resetCounter()
+    const { elements } = prepareHtmlForEditor(EXTENDED_HTML)
+    const ul = [...elements.values()].find(m => m.tag === 'ul')
+    const ol = [...elements.values()].find(m => m.tag === 'ol')
+    expect(ul).toBeDefined()
+    expect(ul.type).toBe('container')
+    expect(ol).toBeDefined()
+    expect(ol.type).toBe('container')
+  })
+
+  it('dl → container 타입', () => {
+    resetCounter()
+    const { elements } = prepareHtmlForEditor(EXTENDED_HTML)
+    const dl = [...elements.values()].find(m => m.tag === 'dl')
+    expect(dl).toBeDefined()
+    expect(dl.type).toBe('container')
+  })
+
+  it('details, summary → container 타입', () => {
+    resetCounter()
+    const { elements } = prepareHtmlForEditor(EXTENDED_HTML)
+    const details = [...elements.values()].find(m => m.tag === 'details')
+    const summary = [...elements.values()].find(m => m.tag === 'summary')
+    expect(details).toBeDefined()
+    expect(details.type).toBe('container')
+    expect(summary).toBeDefined()
+    expect(summary.type).toBe('container')
+  })
+})
+
+// ═══════════════════════════════════════════════════════════════
 //  SelectionManager
 // ═══════════════════════════════════════════════════════════════
 describe('SelectionManager', () => {
@@ -320,6 +400,24 @@ describe('에디터 에이전트 — 부모 명령 수신', () => {
 
   it('fe: 접두사가 아닌 메시지는 무시한다', () => {
     expect(agentCode).toContain("!e.data.type.startsWith('fe:')")
+  })
+
+  it('goto 메시지 핸들러가 존재한다', () => {
+    expect(agentCode).toContain("e.data.type === 'goto'")
+  })
+
+  it('goto 핸들러에서 .slide 직접 DOM 조작을 수행한다', () => {
+    const gotoPos = agentCode.indexOf("e.data.type === 'goto'")
+    // 직접 DOM 조작: querySelectorAll('.slide') 사용
+    const slideQueryInGoto = agentCode.indexOf("querySelectorAll('.slide')", gotoPos)
+    expect(slideQueryInGoto).toBeGreaterThan(gotoPos)
+  })
+
+  it('fe:navigate 핸들러에서 .slide 직접 DOM 조작을 수행한다', () => {
+    const navPos = agentCode.indexOf("e.data.type === 'fe:navigate'")
+    // 직접 DOM 조작: querySelectorAll('.slide') 사용
+    const slideQueryInNav = agentCode.indexOf("querySelectorAll('.slide')", navPos)
+    expect(slideQueryInNav).toBeGreaterThan(navPos)
   })
 })
 

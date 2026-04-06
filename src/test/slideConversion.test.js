@@ -7,6 +7,8 @@ import {
   checkLostFormatting,
   checkWhitespace,
   checkVisualProperties,
+  checkUnintendedWrap,
+  checkLayoutAccuracy,
   aggregateReports,
 } from '../core/StructuralAnalyzer'
 import { detectPatterns, diffReports } from '../core/PatternDetector'
@@ -378,8 +380,318 @@ describe('FixtureManager — 픽스처 관리', () => {
 })
 
 // ═══════════════════════════════════════════════════════════════
+//  코드/리스트 태그를 사용하는 덱 파싱
+// ═══════════════════════════════════════════════════════════════
+describe('SlideParser — 코드/리스트 태그 덱', () => {
+  const CODE_DECK = `<!DOCTYPE html>
+<html lang="ko">
+<head>
+<style>
+  .slide { display: none; width: 100%; height: 100%; }
+  .slide.active { display: flex; }
+  pre { background: #1e1e2e; color: #cdd6f4; padding: 16px; border-radius: 8px; }
+  code { font-family: monospace; }
+  .card { background: rgba(255,255,255,0.05); border-radius: 12px; padding: 20px; }
+</style>
+</head>
+<body>
+<div class="deck">
+  <div class="slide active">
+    <h4>아키텍처 개요</h4>
+    <ul>
+      <li>프론트엔드: React</li>
+      <li>백엔드: FastAPI</li>
+    </ul>
+  </div>
+  <div class="slide">
+    <h4>코드 예시</h4>
+    <pre><code>def hello():
+    print("Hello, World!")</code></pre>
+    <blockquote>Python 3.12 이상 필요</blockquote>
+  </div>
+  <div class="slide">
+    <h4>설정</h4>
+    <dl>
+      <dt>환경변수</dt>
+      <dd>API_KEY, DB_URL</dd>
+    </dl>
+    <details><summary>상세 보기</summary><p>추가 설명</p></details>
+  </div>
+</div>
+</body>
+</html>`
+
+  it('코드/리스트 덱의 슬라이드를 모두 추출한다', () => {
+    const result = parseSlideDeck(CODE_DECK)
+    expect(result.slideCount).toBe(3)
+  })
+
+  it('h4 제목을 추출한다', () => {
+    const { slides } = parseSlideDeck(CODE_DECK)
+    expect(slides[0].title).toBe('아키텍처 개요')
+    expect(slides[1].title).toBe('코드 예시')
+  })
+
+  it('pre/code 내용이 슬라이드 HTML에 포함된다', () => {
+    const { slides } = parseSlideDeck(CODE_DECK)
+    expect(slides[1].html).toContain('<pre>')
+    expect(slides[1].html).toContain('<code>')
+    expect(slides[1].html).toContain('def hello()')
+  })
+
+  it('ul/li 내용이 슬라이드 HTML에 포함된다', () => {
+    const { slides } = parseSlideDeck(CODE_DECK)
+    expect(slides[0].html).toContain('<ul>')
+    expect(slides[0].html).toContain('<li>')
+    expect(slides[0].html).toContain('프론트엔드: React')
+  })
+
+  it('blockquote 내용이 슬라이드 HTML에 포함된다', () => {
+    const { slides } = parseSlideDeck(CODE_DECK)
+    expect(slides[1].html).toContain('<blockquote>')
+    expect(slides[1].html).toContain('Python 3.12')
+  })
+
+  it('dl/dt/dd 내용이 슬라이드 HTML에 포함된다', () => {
+    const { slides } = parseSlideDeck(CODE_DECK)
+    expect(slides[2].html).toContain('<dl>')
+    expect(slides[2].html).toContain('환경변수')
+    expect(slides[2].html).toContain('API_KEY')
+  })
+
+  it('코드 블록 텍스트가 extractVisibleTexts로 추출된다', () => {
+    const { slides, globalStyles } = parseSlideDeck(CODE_DECK)
+    const doc = wrapSlideAsDocument(slides[1], globalStyles)
+    const texts = extractVisibleTexts(doc)
+    expect(texts.some(t => t.includes('hello'))).toBe(true)
+  })
+
+  it('CSS 클래스 기반 스타일(.card, pre 배경)이 globalStyles에 보존된다', () => {
+    const { globalStyles } = parseSlideDeck(CODE_DECK)
+    expect(globalStyles).toContain('pre')
+    expect(globalStyles).toContain('#1e1e2e')
+    expect(globalStyles).toContain('.card')
+  })
+})
+
+// ═══════════════════════════════════════════════════════════════
+//  StructuralAnalyzer — 확장 태그 텍스트 검사
+// ═══════════════════════════════════════════════════════════════
+describe('StructuralAnalyzer — 확장 태그 텍스트 비교', () => {
+  it('pre/code 텍스트 누락을 감지한다', () => {
+    const original = '<html><body><pre><code>print("hello")</code></pre></body></html>'
+    const flat = '<html><body></body></html>'
+    const issues = checkMissingText(original, flat)
+    expect(issues.length).toBeGreaterThan(0)
+  })
+
+  it('pre/code 텍스트가 보존되면 이슈 없음', () => {
+    const original = '<html><body><pre><code>print("hello")</code></pre></body></html>'
+    const flat = '<html><body><div>print("hello")</div></body></html>'
+    const issues = checkMissingText(original, flat)
+    expect(issues).toHaveLength(0)
+  })
+
+  it('ul/li 텍스트 누락을 감지한다', () => {
+    const original = '<html><body><ul><li>항목 1</li><li>항목 2</li></ul></body></html>'
+    const flat = '<html><body><div>항목 1</div></body></html>'
+    const issues = checkMissingText(original, flat)
+    expect(issues.length).toBeGreaterThan(0)
+  })
+
+  it('blockquote 텍스트 누락을 감지한다', () => {
+    const original = '<html><body><blockquote>인용문 내용</blockquote></body></html>'
+    const flat = '<html><body></body></html>'
+    const issues = checkMissingText(original, flat)
+    expect(issues.length).toBeGreaterThan(0)
+  })
+})
+
+// ═══════════════════════════════════════════════════════════════
 //  실제 슬라이드 덱 파싱 (통합 테스트)
 // ═══════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════
+//  checkUnintendedWrap — 의도치 않은 줄바꿈 검사
+// ═══════════════════════════════════════════════════════════════
+describe('checkUnintendedWrap — 줄바꿈 검사', () => {
+  it('너비 충분한 텍스트: 이슈 없음', () => {
+    const elements = [{
+      type: 'text',
+      content: '짧은 텍스트',
+      width: 500, height: 24,
+      styles: { fontSize: '16px', lineHeight: '24px' },
+    }]
+    const issues = checkUnintendedWrap(elements)
+    expect(issues).toHaveLength(0)
+  })
+
+  it('너비 부족으로 줄바꿈 발생 감지', () => {
+    const elements = [{
+      type: 'text',
+      content: '이것은 매우 긴 텍스트로 좁은 박스에서 강제 줄바꿈이 발생합니다',
+      width: 100, height: 48,
+      styles: { fontSize: '16px', lineHeight: '24px' },
+    }]
+    const issues = checkUnintendedWrap(elements)
+    expect(issues.length).toBeGreaterThan(0)
+    expect(issues[0].type).toBe('unintended_wrap')
+  })
+
+  it('의도된 줄바꿈(<br>)이 있는 경우: 오탐 없음', () => {
+    const elements = [{
+      type: 'text',
+      content: '첫 번째 줄<br>두 번째 줄<br>세 번째 줄',
+      width: 200, height: 72,
+      styles: { fontSize: '16px', lineHeight: '24px' },
+    }]
+    const issues = checkUnintendedWrap(elements)
+    expect(issues).toHaveLength(0)
+  })
+
+  it('코드 블록(monospace)은 스킵', () => {
+    const elements = [{
+      type: 'text',
+      content: 'const longVariableName = someFunction(parameter1, parameter2)',
+      width: 100, height: 48,
+      styles: { fontSize: '14px', lineHeight: '22px', fontFamily: 'monospace' },
+    }]
+    const issues = checkUnintendedWrap(elements)
+    expect(issues).toHaveLength(0)
+  })
+
+  it('null/빈 요소: 에러 없이 빈 배열', () => {
+    expect(checkUnintendedWrap(null)).toHaveLength(0)
+    expect(checkUnintendedWrap([])).toHaveLength(0)
+  })
+
+  it('이미지/shape 요소는 무시', () => {
+    const elements = [
+      { type: 'image', content: 'img.png', width: 50, height: 50, styles: {} },
+      { type: 'shape', content: '', width: 50, height: 50, styles: {} },
+    ]
+    const issues = checkUnintendedWrap(elements)
+    expect(issues).toHaveLength(0)
+  })
+
+  it('CJK 텍스트의 넓은 문자 폭을 반영한다', () => {
+    // 한글 20자 × ~14.4px/char (16px * 0.9) = 288px needed
+    const elements = [{
+      type: 'text',
+      content: '가나다라마바사아자차카타파하가나다라마바',
+      width: 150, height: 48,
+      styles: { fontSize: '16px', lineHeight: '24px' },
+    }]
+    const issues = checkUnintendedWrap(elements)
+    expect(issues.length).toBeGreaterThan(0)
+  })
+})
+
+// ═══════════════════════════════════════════════════════════════
+//  checkLayoutAccuracy — 레이아웃 정확도 검사
+// ═══════════════════════════════════════════════════════════════
+describe('checkLayoutAccuracy — 레이아웃 검사', () => {
+  const CANVAS = { w: 1280, h: 800 }
+
+  it('정상 배치: 이슈 없음', () => {
+    const elements = [
+      { type: 'text', x: 60, y: 48, width: 400, height: 40, content: '제목', styles: {} },
+      { type: 'text', x: 60, y: 100, width: 400, height: 24, content: '본문', styles: {} },
+    ]
+    const issues = checkLayoutAccuracy(elements, CANVAS)
+    expect(issues).toHaveLength(0)
+  })
+
+  it('캔버스 밖 요소 감지', () => {
+    const elements = [
+      { type: 'text', x: 1400, y: 900, width: 200, height: 40, content: '밖에 있는 요소', styles: {} },
+    ]
+    const issues = checkLayoutAccuracy(elements, CANVAS)
+    expect(issues.some(i => i.type === 'out_of_bounds')).toBe(true)
+  })
+
+  it('크기 보정 편차 감지 (originalRect 대비)', () => {
+    const elements = [{
+      type: 'text', x: 60, y: 48, width: 750, height: 40,
+      content: '긴 제목 텍스트',
+      styles: {},
+      originalRect: { x: 60, y: 48, w: 686, h: 77 },
+    }]
+    const issues = checkLayoutAccuracy(elements, CANVAS)
+    expect(issues.some(i => i.type === 'size_correction')).toBe(true)
+  })
+
+  it('제로 크기 텍스트 요소 감지', () => {
+    const elements = [
+      { type: 'text', x: 60, y: 48, width: 0, height: 0, content: '빈?', styles: {} },
+    ]
+    const issues = checkLayoutAccuracy(elements, CANVAS)
+    expect(issues.some(i => i.type === 'zero_size')).toBe(true)
+  })
+
+  it('텍스트 요소 과도한 겹침 감지', () => {
+    const elements = [
+      { type: 'text', x: 60, y: 48, width: 400, height: 40, content: '텍스트 A', styles: {} },
+      { type: 'text', x: 62, y: 49, width: 398, height: 38, content: '텍스트 B', styles: {} },
+    ]
+    const issues = checkLayoutAccuracy(elements, CANVAS)
+    expect(issues.some(i => i.type === 'overlap')).toBe(true)
+  })
+
+  it('null/빈 입력: 에러 없이 빈 배열', () => {
+    expect(checkLayoutAccuracy(null, CANVAS)).toHaveLength(0)
+    expect(checkLayoutAccuracy([], null)).toHaveLength(0)
+    expect(checkLayoutAccuracy([], CANVAS)).toHaveLength(0)
+  })
+
+  it('shape/image 요소는 겹침 검사에서 제외', () => {
+    const elements = [
+      { type: 'shape', x: 0, y: 0, width: 1280, height: 800, content: '', styles: {} },
+      { type: 'image', x: 0, y: 0, width: 1280, height: 800, content: 'img.png', styles: {} },
+    ]
+    const issues = checkLayoutAccuracy(elements, CANVAS)
+    expect(issues.filter(i => i.type === 'overlap')).toHaveLength(0)
+  })
+})
+
+// ═══════════════════════════════════════════════════════════════
+//  FlatExporter — 폰트 임포트 포함
+// ═══════════════════════════════════════════════════════════════
+describe('exportFlatHtml — 폰트 임포트 포함', () => {
+  it('fontImports 없으면 기존 동작 유지', () => {
+    const html = exportFlatHtml([], { w: 1280, h: 800 })
+    expect(html).toContain('<!DOCTYPE html>')
+    expect(html).not.toContain('@import')
+  })
+
+  it('fontImports(@import)가 있으면 <link> 태그로 변환', () => {
+    const fonts = [
+      "@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;600;700&display=swap');",
+    ]
+    const html = exportFlatHtml([], { w: 1280, h: 800 }, fonts)
+    expect(html).toContain('<link rel="stylesheet"')
+    expect(html).toContain('Noto+Sans+KR')
+  })
+
+  it('여러 폰트 임포트를 모두 <link>로 포함', () => {
+    const fonts = [
+      "@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400&display=swap');",
+      "@import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@400&display=swap');",
+    ]
+    const html = exportFlatHtml([], { w: 1280, h: 800 }, fonts)
+    expect(html).toContain('Inter')
+    expect(html).toContain('Fira+Code')
+  })
+
+  it('@font-face 규칙도 포함', () => {
+    const fonts = [
+      "@font-face { font-family: 'CustomFont'; src: url('font.woff2') format('woff2'); }",
+    ]
+    const html = exportFlatHtml([], { w: 1280, h: 800 }, fonts)
+    expect(html).toContain('@font-face')
+    expect(html).toContain('CustomFont')
+  })
+})
+
 describe('실제 슬라이드 덱 통합 테스트', () => {
   let deckHtml
   let parsed
