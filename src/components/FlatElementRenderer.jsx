@@ -6,13 +6,20 @@ import { useFlatStore } from '../store/flatStore'
  * 단일 FlatElement를 절대 좌표로 렌더링한다.
  * 클릭으로 선택, 드래그로 이동 (Phase 3에서 추가).
  */
-export default function FlatElementRenderer({ element, isSelected, scale }) {
-  const { setSelectedFlat, canvasSize } = useFlatStore()
+export default function FlatElementRenderer({ element, isSelected, isEditing, scale }) {
+  const { setSelectedFlat, setEditingFlat, canvasSize } = useFlatStore()
 
   const handleMouseDown = useCallback((e) => {
     e.stopPropagation()
     setSelectedFlat(element.id)
   }, [element.id, setSelectedFlat])
+
+  const handleDoubleClick = useCallback((e) => {
+    if (element.type === 'text') {
+      e.stopPropagation()
+      setEditingFlat(element.id)
+    }
+  }, [element.id, element.type, setEditingFlat])
 
   const { x, y, width, height, zIndex, type, content, isRich, merged, styles } = element
 
@@ -96,8 +103,10 @@ export default function FlatElementRenderer({ element, isSelected, scale }) {
             justifyContent: styles.isFlex ? (styles.justifyContent || 'center') : (styles.textAlign === 'center' ? 'center' : styles.textAlign === 'right' ? 'flex-end' : 'flex-start'),
             ...(styles.gap && styles.gap !== '0px' && styles.gap !== 'normal' ? { gap: styles.gap } : {}),
           } : {}),
+          visibility: isEditing ? 'hidden' : undefined,
         }}
         onMouseDown={handleMouseDown}
+        onDoubleClick={handleDoubleClick}
       >
         {isRich
           ? <span dangerouslySetInnerHTML={{ __html: content }} />

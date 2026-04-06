@@ -3,6 +3,7 @@ import { useFlatStore } from '../store/flatStore'
 import { useEditorStore } from '../store/editorStore'
 import FlatElementRenderer from './FlatElementRenderer'
 import FlatSelectionOverlay from './FlatSelectionOverlay'
+import FlatInlineEditor from './FlatInlineEditor'
 
 /**
  * FlatCanvas
@@ -13,7 +14,7 @@ export default function FlatCanvas() {
   const stageRef = useRef(null)
   const [scale, setScale] = useState(1)
 
-  const { flatElements, selectedFlatId, setSelectedFlat, canvasSize,
+  const { flatElements, selectedFlatId, editingFlatId, setSelectedFlat, canvasSize,
           removeFlatElement, updateFlatElement, undo, redo, viewMode, reExtract,
           fontImports } = useFlatStore()
   const { currentPage, revealV } = useEditorStore()
@@ -56,16 +57,29 @@ export default function FlatCanvas() {
     const key = `${currentPage}-${revealV}`
     if (prevPage.current === key) return
     prevPage.current = key
-    if (viewMode === 'split' || viewMode === 'flat') reExtract()
+    if (viewMode === 'split' || viewMode === 'flat') reExtract(key)
   }, [currentPage, revealV, viewMode, reExtract])
 
   // 키보드 단축키: Delete, 화살표 이동, Ctrl+Z/Y
   // 페이지 네비게이션(PageUp/PageDown)은 PageBar에서 전역 처리
   useEffect(() => {
     const onKeyDown = (e) => {
+      if (useFlatStore.getState().editingFlatId) return  // 텍스트 편집 중
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return
+      if (e.target.contentEditable === 'true') return
 
       const { selectedFlatId } = useFlatStore.getState()
+
+      // Enter → 텍스트 요소 편집 모드 진입 (더블클릭과 동일)
+      if (e.key === 'Enter' && selectedFlatId) {
+        const els = useFlatStore.getState().flatElements
+        const el = els.find(e => e.id === selectedFlatId)
+        if (el && el.type === 'text') {
+          e.preventDefault()
+          useFlatStore.getState().setEditingFlat(selectedFlatId)
+          return
+        }
+      }
 
       if ((e.key === 'Delete' || e.key === 'Backspace') && selectedFlatId) {
         e.preventDefault()
@@ -74,9 +88,9 @@ export default function FlatCanvas() {
       }
 
       if ((e.ctrlKey || e.metaKey) && !e.altKey) {
-        if (e.key === 'z' && !e.shiftKey) { e.preventDefault(); undo(); return }
-        if (e.key === 'z' && e.shiftKey)  { e.preventDefault(); redo(); return }
-        if (e.key === 'y')                { e.preventDefault(); redo(); return }
+        if (e.code === 'KeyZ' && !e.shiftKey) { e.preventDefault(); undo(); return }
+        if (e.code === 'KeyZ' && e.shiftKey)  { e.preventDefault(); redo(); return }
+        if (e.code === 'KeyY')                { e.preventDefault(); redo(); return }
       }
 
       // 요소 미선택 시 화살표 키는 PageBar의 전역 핸들러가 처리 (중복 방지)
@@ -120,6 +134,7 @@ export default function FlatCanvas() {
   }, [recalcScale])
 
   const handleStageClick = useCallback(() => {
+    if (useFlatStore.getState().editingFlatId) return // blur 이벤트가 커밋 처리
     setSelectedFlat(null)
   }, [setSelectedFlat])
 
@@ -154,11 +169,17 @@ export default function FlatCanvas() {
                 key={el.id}
                 element={el}
                 isSelected={el.id === selectedFlatId}
+                isEditing={el.id === editingFlatId}
                 scale={scale}
               />
             ))}
             {selectedEl && (
               <FlatSelectionOverlay element={selectedEl} scale={scale} />
+            )}
+            {editingFlatId && flatElements.find(e => e.id === editingFlatId) && (
+              <FlatInlineEditor
+                element={flatElements.find(e => e.id === editingFlatId)}
+              />
             )}
           </div>
         </div>

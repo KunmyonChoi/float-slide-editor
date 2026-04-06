@@ -105,7 +105,7 @@ export default function FloatingToolbar() {
   const { slideHtml, mode, canUndo, canRedo, selectedId, elements, loadHtml, enterPresentation, undo, redo, insertElement } = useEditorStore()
   const [insertOpen, setInsertOpen] = useState(false)
   const insertRef = useRef(null)
-  const { viewMode, setViewMode, extractFromIframe } = useFlatStore()
+  const { viewMode, setViewMode, extractFromIframe, clearPageCache } = useFlatStore()
   const iframeRef = useEditorStore(s => s.iframeRef)
   const [qualityOpen, setQualityOpen] = useState(false)
 
@@ -116,10 +116,13 @@ export default function FloatingToolbar() {
         e.preventDefault()
         enterPresentation()
       }
+      // flat/split 모드에서는 FlatCanvas가 undo/redo 처리
+      const vm = useFlatStore.getState().viewMode
+      if (vm === 'flat' || vm === 'split') return
       if ((e.ctrlKey || e.metaKey) && !e.altKey) {
-        if (e.key === 'z' && !e.shiftKey) { e.preventDefault(); undo() }
-        if (e.key === 'z' && e.shiftKey)  { e.preventDefault(); redo() }
-        if (e.key === 'y')                { e.preventDefault(); redo() }
+        if (e.code === 'KeyZ' && !e.shiftKey) { e.preventDefault(); undo() }
+        if (e.code === 'KeyZ' && e.shiftKey)  { e.preventDefault(); redo() }
+        if (e.code === 'KeyY')                { e.preventDefault(); redo() }
       }
     }
     window.addEventListener('keydown', onKeyDown)
@@ -130,7 +133,7 @@ export default function FloatingToolbar() {
     const file = e.target.files?.[0]
     if (!file) return
     const reader = new FileReader()
-    reader.onload = (ev) => loadHtml(ev.target.result)
+    reader.onload = (ev) => { clearPageCache(); loadHtml(ev.target.result) }
     reader.readAsText(file)
     e.target.value = ''
   }
@@ -172,7 +175,7 @@ export default function FloatingToolbar() {
         <ToolBtn onClick={() => fileRef.current?.click()} title="HTML 파일 열기">
           <FolderIcon /><span className="text-xs ml-1">열기</span>
         </ToolBtn>
-        <ToolBtn onClick={() => loadHtml(FALLBACK_SAMPLE)} title="샘플 슬라이드 로드">
+        <ToolBtn onClick={() => { clearPageCache(); loadHtml(FALLBACK_SAMPLE) }} title="샘플 슬라이드 로드">
           <span className="text-xs">샘플</span>
         </ToolBtn>
 
@@ -225,7 +228,10 @@ export default function FloatingToolbar() {
           viewMode={viewMode}
           disabled={!slideHtml}
           onChange={(mode) => {
-            if (mode !== 'html' && iframeRef) extractFromIframe(iframeRef)
+            if (mode !== 'html' && iframeRef) {
+              const pk = `${useEditorStore.getState().currentPage}-${useEditorStore.getState().revealV || 0}`
+              extractFromIframe(iframeRef, pk)
+            }
             setViewMode(mode)
           }}
         />

@@ -40,4 +40,15 @@ export class HistoryStack {
     this._stack.length = 0
     this._pointer = -1
   }
+
+  /** 스냅샷 저장 (페이지별 캐시용) */
+  getState() {
+    return { stack: this._stack.slice(), pointer: this._pointer }
+  }
+
+  /** 스냅샷 복원 */
+  setState({ stack, pointer }) {
+    this._stack = stack.slice()
+    this._pointer = pointer
+  }
 }

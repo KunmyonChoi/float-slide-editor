@@ -21,11 +21,20 @@ const HANDLES = [
  * 드래그로 이동, 핸들로 리사이즈.
  */
 export default function FlatSelectionOverlay({ element, scale }) {
-  const { previewFlatElement, updateFlatElement } = useFlatStore()
+  const { previewFlatElement, updateFlatElement, editingFlatId, setEditingFlat } = useFlatStore()
   const dragRef = useRef(null)
+
+  // 더블클릭 → 텍스트 편집 모드 진입
+  const handleDoubleClick = useCallback((e) => {
+    if (element.type === 'text') {
+      e.stopPropagation()
+      setEditingFlat(element.id)
+    }
+  }, [element.id, element.type, setEditingFlat])
 
   // 드래그 이동
   const handleMoveStart = useCallback((e) => {
+    if (editingFlatId) return // 편집 중 드래그 비활성화
     if (e.target.dataset.resizeHandle) return
     e.stopPropagation()
     dragRef.current = {
@@ -39,6 +48,7 @@ export default function FlatSelectionOverlay({ element, scale }) {
 
   // 리사이즈 시작
   const handleResizeStart = useCallback((e, dir) => {
+    if (editingFlatId) return // 편집 중 리사이즈 비활성화
     e.stopPropagation()
     e.preventDefault()
     dragRef.current = {
@@ -127,6 +137,7 @@ export default function FlatSelectionOverlay({ element, scale }) {
         pointerEvents: 'auto',
       }}
       onMouseDown={handleMoveStart}
+      onDoubleClick={handleDoubleClick}
     >
       {/* 리사이즈 핸들 */}
       {HANDLES.map(h => (
