@@ -45,7 +45,9 @@ export function exportFlatHtml(flatElements, canvasSize) {
     }
     if (el.type === 'text') {
       const textContent = el.isRich ? el.content : escHtml(el.content)
-      const mergedFlex = el.merged ? `display:flex;align-items:${el.styles.isFlex ? (el.styles.alignItems || 'center') : 'center'};justify-content:${el.styles.isFlex ? (el.styles.justifyContent || 'center') : (el.styles.textAlign === 'center' ? 'center' : el.styles.textAlign === 'right' ? 'flex-end' : 'flex-start')};` : ''
+      const hasBg = el.styles.backgroundColor && el.styles.backgroundColor !== 'rgba(0, 0, 0, 0)' && el.styles.backgroundColor !== 'transparent'
+      const needsFlex = el.merged || hasBg
+      const mergedFlex = needsFlex ? `display:flex;align-items:${el.styles.isFlex ? (el.styles.alignItems || 'center') : 'center'};justify-content:${el.styles.isFlex ? (el.styles.justifyContent || 'center') : (el.styles.textAlign === 'center' ? 'center' : el.styles.textAlign === 'right' ? 'flex-end' : 'flex-start')};` : ''
       return `<div style="${flatStyle(el)};${mergedFlex}${textStyle(el.styles)}">${textContent}</div>`
     }
     if (el.type === 'svg') {
@@ -84,6 +86,8 @@ export function downloadHtml(htmlString, filename) {
 // ── 헬퍼 ─────────────────────────────────────────────────────
 
 function flatStyle(el) {
+  // 텍스트 요소는 overflow:visible — 한글 descender 등이 잘리지 않도록
+  const overflow = el.type === 'text' ? 'visible' : 'hidden'
   return [
     `position:absolute`,
     `left:${r(el.x)}px`,
@@ -92,7 +96,7 @@ function flatStyle(el) {
     `height:${r(el.height)}px`,
     `z-index:${el.zIndex}`,
     `box-sizing:border-box`,
-    `overflow:hidden`,
+    `overflow:${overflow}`,
   ].join(';')
 }
 
@@ -102,8 +106,9 @@ function textStyle(s) {
     s.backgroundImage && s.backgroundImage !== 'none' ? `background-image:${s.backgroundImage}` : '',
     s.color ? `color:${s.color}` : '',
     s.fontSize ? `font-size:${s.fontSize}` : '',
-    s.fontFamily ? `font-family:${s.fontFamily}` : '',
+    s.fontFamily ? `font-family:${s.fontFamily.replace(/"/g, "'")}` : '',
     s.fontWeight ? `font-weight:${s.fontWeight}` : '',
+    s.fontStyle && s.fontStyle !== 'normal' ? `font-style:${s.fontStyle}` : '',
     s.lineHeight ? `line-height:${s.lineHeight}` : '',
     s.textAlign ? `text-align:${s.textAlign}` : '',
     s.letterSpacing && s.letterSpacing !== 'normal' ? `letter-spacing:${s.letterSpacing}` : '',

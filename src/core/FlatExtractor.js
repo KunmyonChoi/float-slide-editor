@@ -135,6 +135,13 @@ function getRichTextContent(el) {
         // 인라인 + 고유 스타일 + 비embedded → 독립 추출 대상, 제외
         if (hasDistinctStyle(node) && !isEmbeddedInline(node)) continue
       }
+      // <li> 요소 → 불릿 마커 삽입 (CSS list-style로 렌더링되어 textContent에 없음)
+      if (tag === 'li') {
+        const bullet = '• '
+        html += escapeHtml(bullet + node.textContent)
+        plain += bullet + node.textContent
+        continue
+      }
       // 시맨틱 서식 태그(strong, em, b, i, u 등) → 태그 보존
       if (SEMANTIC_FORMAT_TAGS.has(tag)) {
         html += `<${tag}>${escapeHtml(node.textContent)}</${tag}>`
@@ -173,6 +180,7 @@ function extractStyles(cs) {
     fontSize: cs.fontSize,
     fontFamily: cs.fontFamily,
     fontWeight: cs.fontWeight,
+    fontStyle: cs.fontStyle,
     lineHeight: cs.lineHeight,
     textAlign: cs.textAlign,
     borderRadius: cs.borderRadius,
@@ -291,6 +299,16 @@ function buildFlatElement(el, rect, cs, domOrder, forceType) {
     if (inherited) styles.borderRadius = inherited
   }
 
+  // 텍스트 요소의 높이 보정: 인라인 요소의 getBoundingClientRect 높이가
+  // 실제 텍스트 렌더링(font descender 포함)보다 작을 수 있음
+  let height = rect.height
+  if (type === 'text') {
+    const fontSize = parseFloat(cs.fontSize) || 0
+    const lineHeight = cs.lineHeight === 'normal' ? fontSize * 1.2 : parseFloat(cs.lineHeight) || 0
+    const minHeight = Math.max(fontSize, lineHeight)
+    if (height < minHeight) height = Math.ceil(minHeight)
+  }
+
   return {
     id: nextFlatId(),
     sourceId: el.getAttribute('data-editor-id'),
@@ -298,7 +316,7 @@ function buildFlatElement(el, rect, cs, domOrder, forceType) {
     x: rect.left,
     y: rect.top,
     width: rect.width,
-    height: rect.height,
+    height,
     zIndex: 0, // 후처리에서 재할당
     _domOrder: domOrder,
     _originalZIndex: effectiveZIndex,
@@ -352,6 +370,7 @@ function tryMergeContainerText(containerEl, containerRect, containerCs, win) {
         fontSize: containerCs.fontSize,
         fontFamily: containerCs.fontFamily,
         fontWeight: containerCs.fontWeight,
+        fontStyle: containerCs.fontStyle,
         lineHeight: containerCs.lineHeight,
         textAlign: containerCs.textAlign,
         letterSpacing: containerCs.letterSpacing,
@@ -385,8 +404,62 @@ function tryMergeContainerText(containerEl, containerRect, containerCs, win) {
 
   if (hasNonDirectChild) return null
 
-  // Case A: 단일 텍스트 자식 → 기존 병합 (텍스트 스타일 사용)
+  // Case A: 단일 텍스트 자식 → 컨테이너에 자체 텍스트 노드가 있으면
+  // getRichTextContent로 전체 콘텐츠 추출 (예: "CPU / GPU<br><span>핫스팟</span>")
+  // 자체 텍스트가 없으면 자식 텍스트만 사용
   if (singleTextChild && singleTextChild !== false) {
+    // 컨테이너에 자식 외의 텍스트 노드가 있는지 확인
+    let hasOwnText = false
+    for (const node of containerEl.childNodes) {
+      if (node === singleTextChild) continue
+      if (node.nodeType === Node.TEXT_NODE && node.textContent.trim()) { hasOwnText = true; break }
+    }
+
+    if (hasOwnText) {
+      // 부모 텍스트 + 자식 텍스트를 함께 추출 (getRichTextContent)
+      const rich = getRichTextContent(containerEl)
+      const richText = rich.text
+      if (!richText || richText.replace(/<br\s*\/?>/gi, '').trim() === '') return null
+      return {
+        sourceId: containerEl.getAttribute('data-editor-id'),
+        type: 'text',
+        x: containerRect.left,
+        y: containerRect.top,
+        width: containerRect.width,
+        height: containerRect.height,
+        content: richText,
+        isRich: rich.isRich,
+        styles: {
+          backgroundColor: containerCs.backgroundColor,
+          backgroundImage: containerCs.backgroundImage,
+          borderRadius: containerCs.borderRadius,
+          border: containerCs.border,
+          borderTop: containerCs.borderTop,
+          borderRight: containerCs.borderRight,
+          borderBottom: containerCs.borderBottom,
+          borderLeft: containerCs.borderLeft,
+          boxShadow: containerCs.boxShadow,
+          opacity: containerCs.opacity,
+          padding: containerCs.padding,
+          color: containerCs.color,
+          fontSize: containerCs.fontSize,
+          fontFamily: containerCs.fontFamily,
+          fontWeight: containerCs.fontWeight,
+          fontStyle: containerCs.fontStyle,
+          lineHeight: containerCs.lineHeight,
+          textAlign: containerCs.textAlign,
+          letterSpacing: containerCs.letterSpacing,
+          textTransform: containerCs.textTransform,
+          textDecoration: containerCs.textDecoration,
+          isFlex,
+          justifyContent: origJustify,
+          alignItems: origAlign,
+        },
+        merged: true,
+      }
+    }
+
+    // 자체 텍스트 없음 → 자식 텍스트만 사용
     const text = (singleTextChild.textContent || '').trim()
     if (!text) return null
     const textCs = win.getComputedStyle(singleTextChild)
@@ -415,6 +488,7 @@ function tryMergeContainerText(containerEl, containerRect, containerCs, win) {
         fontSize: textCs.fontSize,
         fontFamily: textCs.fontFamily,
         fontWeight: textCs.fontWeight,
+        fontStyle: textCs.fontStyle,
         lineHeight: textCs.lineHeight,
         textAlign: textCs.textAlign,
         letterSpacing: textCs.letterSpacing,
@@ -458,6 +532,7 @@ function tryMergeContainerText(containerEl, containerRect, containerCs, win) {
         fontSize: containerCs.fontSize,
         fontFamily: containerCs.fontFamily,
         fontWeight: containerCs.fontWeight,
+        fontStyle: containerCs.fontStyle,
         lineHeight: containerCs.lineHeight,
         textAlign: containerCs.textAlign,
         letterSpacing: containerCs.letterSpacing,
@@ -543,16 +618,31 @@ export function extractFlatElements(iframeRef) {
       // - 고유 스타일 없음 → 항상 부모에 포함
       // - 고유 스타일 있음 + embedded(텍스트 흐름 속) → 부모에 HTML로 포함
       // - 고유 스타일 있음 + 비embedded → 독립 추출
+      // 단, 부모가 display:flex이면 자식들이 각각 독립 위치를 가지므로 스킵하지 않음
       const tag = el.tagName.toLowerCase()
       if (INLINE_TAGS.has(tag)) {
         const parent = el.parentElement
         if (parent && parent.hasAttribute('data-editor-id')) {
           const parentType = parent.getAttribute('data-editor-type')
-          // 부모가 text이거나, 부모가 container이면서 텍스트 흐름 속에 있는 경우
-          if (parentType === 'text' || (parentType === 'container' && isEmbeddedInline(el))) {
-            if (!hasDistinctStyle(el) || isEmbeddedInline(el)) continue
+          const parentCs = win.getComputedStyle(parent)
+          const parentIsFlex = parentCs.display === 'flex' || parentCs.display === 'inline-flex'
+          // 부모가 flex이면 자식은 독립 위치 → 스킵하지 않고 독립 추출
+          if (!parentIsFlex) {
+            if (parentType === 'text' || (parentType === 'container' && isEmbeddedInline(el))) {
+              if (!hasDistinctStyle(el) || isEmbeddedInline(el)) continue
+            }
           }
         }
+      }
+
+      // display:flex인 텍스트 요소(예: li): 자식들이 독립 위치를 가지므로
+      // 부모 자체는 시각 속성이 있을 때만 shape로 추출하고, 텍스트는 자식에 맡긴다
+      const isFlex = cs.display === 'flex' || cs.display === 'inline-flex'
+      if (isFlex && hasChildTextElements(el)) {
+        if (isVisuallyMeaningful(cs)) {
+          result.push(buildFlatElement(el, rect, cs, zCounter++, 'shape'))
+        }
+        continue
       }
 
       // 자식 독립 텍스트 요소가 있으면: 고유 텍스트가 비어있고 시각 속성도 없으면 스킵
@@ -607,8 +697,16 @@ export function extractFlatElements(iframeRef) {
             // flex 컨테이너는 병합하지 않음 — 자식들이 각각 독립 위치를 가짐
             const isFlex = cs.display === 'flex' || cs.display === 'inline-flex'
             if (!isFlex) {
-              mergedContainerIds.add(el.getAttribute('data-editor-id'))
-              result.push(buildFlatElement(el, rect, cs, zCounter++, 'text'))
+              // 병합 전 실제 콘텐츠 확인: getRichTextContent가 빈 문자열을 반환하면
+              // (자식이 모두 독립 추출 대상이어서 스킵될 때) 병합하지 않고
+              // 자식들이 독립적으로 추출되도록 한다.
+              const { text: mergeText } = getRichTextContent(el)
+              const mergeContent = mergeText.replace(/<br\s*\/?>/gi, '').trim()
+              if (mergeContent) {
+                mergedContainerIds.add(el.getAttribute('data-editor-id'))
+                result.push(buildFlatElement(el, rect, cs, zCounter++, 'text'))
+              }
+              // mergeContent가 비어있으면: 컨테이너 스킵, 자식들이 독립 추출됨
             }
             // flex인 경우: 컨테이너 스킵, 자식 span들이 독립 추출됨
           }

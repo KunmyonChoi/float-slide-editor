@@ -82,11 +82,11 @@ export default function FlatElementRenderer({ element, isSelected, scale }) {
           boxShadow: styles.boxShadow,
           opacity: styles.opacity,
           padding: styles.padding,
-          overflow: 'hidden',
+          overflow: 'visible',
           whiteSpace: 'pre-wrap',
           wordBreak: 'break-word',
-          // 병합 요소: flex로 텍스트 중앙 배치
-          ...(merged ? {
+          // 배경이 있는 텍스트 또는 병합 요소: flex로 텍스트 중앙 배치
+          ...((merged || (styles.backgroundColor && styles.backgroundColor !== 'rgba(0, 0, 0, 0)' && styles.backgroundColor !== 'transparent')) ? {
             display: 'flex',
             alignItems: styles.isFlex ? (styles.alignItems || 'center') : 'center',
             justifyContent: styles.isFlex ? (styles.justifyContent || 'center') : (styles.textAlign === 'center' ? 'center' : styles.textAlign === 'right' ? 'flex-end' : 'flex-start'),

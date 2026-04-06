@@ -11,7 +11,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "test:phase1": "vitest run src/test/phase1.test.js --reporter=verbose"
+    "test:phase1": "vitest run src/test/phase1.test.js --reporter=verbose",
+    "test:slides": "vitest run src/test/slideConversion.test.js --reporter=verbose"
   },
   "dependencies": {
     "react": "^19.2.4",

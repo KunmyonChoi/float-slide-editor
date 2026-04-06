@@ -6,7 +6,7 @@
 
 export const EDITABLE_TAGS = new Set(['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'span', 'li', 'td', 'th', 'a', 'strong', 'em', 'label', 'figcaption'])
 export const IMAGE_TAGS = new Set(['img'])
-export const CONTAINER_TAGS = new Set(['div', 'section', 'article', 'header', 'footer', 'main', 'aside', 'nav', 'figure'])
+export const CONTAINER_TAGS = new Set(['div', 'section', 'article', 'header', 'footer', 'main', 'aside', 'nav', 'figure', 'table', 'thead', 'tbody', 'tfoot', 'tr'])
 
 export function classifyTag(tag) {
   if (IMAGE_TAGS.has(tag)) return 'image'

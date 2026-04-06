@@ -2,6 +2,7 @@ import { useRef, useState, useEffect } from 'react'
 import { useEditorStore } from '../store/editorStore'
 import { useFlatStore } from '../store/flatStore'
 import CanvasSizeSelector from './CanvasSizeSelector'
+import QualityDashboard from './QualityDashboard'
 
 const FALLBACK_SAMPLE = `<!DOCTYPE html>
 <html lang="ko">
@@ -106,6 +107,7 @@ export default function FloatingToolbar() {
   const insertRef = useRef(null)
   const { viewMode, setViewMode, extractFromIframe } = useFlatStore()
   const iframeRef = useEditorStore(s => s.iframeRef)
+  const [qualityOpen, setQualityOpen] = useState(false)
 
   // F5 키 → 발표 모드, Ctrl+Z → 실행취소, Ctrl+Y/Ctrl+Shift+Z → 다시실행
   useEffect(() => {
@@ -230,10 +232,24 @@ export default function FloatingToolbar() {
 
         <Divider />
 
+        {/* 품질 분석 대시보드 */}
+        <ToolBtn
+          onClick={() => setQualityOpen(v => !v)}
+          disabled={!slideHtml || viewMode === 'html'}
+          title="전체 슬라이드 품질 분석"
+        >
+          <QualityIcon /><span className="text-xs ml-1">품질</span>
+        </ToolBtn>
+
+        <Divider />
+
         <span className="text-xs text-slate-600 px-2 select-none">Phase 6</span>
 
         <input ref={fileRef} type="file" accept=".html,.htm" className="hidden" onChange={handleFileChange} />
       </div>
+
+      {/* 품질 대시보드 패널 */}
+      <QualityDashboard open={qualityOpen} onClose={() => setQualityOpen(false)} />
 
       {/* 핸들 — 숨겨진 상태의 존재 힌트 */}
       <div
@@ -389,6 +405,14 @@ function InsertDropdown({ innerRef, open, setOpen, disabled, onInsert }) {
         </div>
       )}
     </div>
+  )
+}
+
+function QualityIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
+    </svg>
   )
 }
 
