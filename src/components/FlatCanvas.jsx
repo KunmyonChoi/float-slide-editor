@@ -4,6 +4,7 @@ import { useEditorStore } from '../store/editorStore'
 import FlatElementRenderer from './FlatElementRenderer'
 import FlatSelectionOverlay, { FlatGroupOverlay } from './FlatSelectionOverlay'
 import FlatInlineEditor from './FlatInlineEditor'
+import FlatContextMenu from './FlatContextMenu'
 
 /**
  * FlatCanvas
@@ -16,6 +17,7 @@ export default function FlatCanvas() {
   const [scale, setScale] = useState(1)
   const [marquee, setMarquee] = useState(null)
   const marqueeRef = useRef(null) // 마키 시작 좌표 기억
+  const [contextMenu, setContextMenu] = useState(null)
 
   const { flatElements, selectedFlatIds, editingFlatId, setSelectedFlat, setSelectedFlats, canvasSize,
           removeSelectedElements, updateFlatElement, undo, redo, viewMode, reExtract,
@@ -171,6 +173,8 @@ export default function FlatCanvas() {
   // 배경 요소는 stopPropagation 안 하므로 여기까지 버블링됨
   // 선택 해제는 mouseup에서 판단 (드래그 없고 배경도 안 눌렸으면 해제)
   const handleStageMouseDown = useCallback((e) => {
+    if (e.button === 2) return // 우클릭은 컨텍스트 메뉴가 처리
+    setContextMenu(null) // 좌클릭 시 컨텍스트 메뉴 닫기
     if (useFlatStore.getState().editingFlatId) return
     if (!canvasRef.current) return
     const rect = canvasRef.current.getBoundingClientRect()
@@ -237,11 +241,29 @@ export default function FlatCanvas() {
 
   // 캔버스 바깥 (회색 영역) 클릭 시 선택 해제
   const handleOuterClick = useCallback((e) => {
+    if (e.button === 2) return // 우클릭은 컨텍스트 메뉴가 처리
+    setContextMenu(null) // 좌클릭 시 컨텍스트 메뉴 닫기
     // canvasRef 내부 클릭이면 무시 (마키 핸들러가 처리)
     if (canvasRef.current && canvasRef.current.contains(e.target)) return
     if (useFlatStore.getState().editingFlatId) return
     setSelectedFlat(null)
   }, [setSelectedFlat])
+
+  // 우클릭 컨텍스트 메뉴
+  const handleContextMenu = useCallback((e) => {
+    e.preventDefault()
+    if (!stageRef.current) return
+    const stageRect = stageRef.current.getBoundingClientRect()
+    const menuX = e.clientX - stageRect.left
+    const menuY = e.clientY - stageRect.top
+    let cx = canvasSize.w / 2, cy = canvasSize.h / 2
+    if (canvasRef.current) {
+      const canvasRect = canvasRef.current.getBoundingClientRect()
+      cx = (e.clientX - canvasRect.left) / scale
+      cy = (e.clientY - canvasRect.top) / scale
+    }
+    setContextMenu({ x: menuX, y: menuY, canvasX: cx, canvasY: cy })
+  }, [scale, canvasSize])
 
   return (
     <div
@@ -253,6 +275,7 @@ export default function FlatCanvas() {
         background: '#0f172a',
       }}
       onMouseDown={handleOuterClick}
+      onContextMenu={handleContextMenu}
     >
       {flatElements.length > 0 && (
         <div
@@ -310,6 +333,16 @@ export default function FlatCanvas() {
       )}
 
       {/* 페이지 인디케이터 — App.jsx의 공통 PageBar로 이동됨 */}
+
+      {contextMenu && (
+        <FlatContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          canvasX={contextMenu.canvasX}
+          canvasY={contextMenu.canvasY}
+          onClose={() => setContextMenu(null)}
+        />
+      )}
 
       {flatElements.length === 0 && (
         <div style={{
