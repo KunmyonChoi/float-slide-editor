@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { useEditorStore } from '../store/editorStore'
+import { useFlatStore } from '../store/flatStore'
 
 export const CANVAS_PRESETS = [
   { id: 'auto',      label: '자동 감지',    w: null, h: null,  ratio: null       },
@@ -49,9 +50,15 @@ export default function CanvasSizeSelector() {
     return () => document.removeEventListener('mousedown', handler)
   }, [open])
 
+  const applySize = (size) => {
+    setCanvasSize(size)
+    // flat 캔버스에도 동기화
+    if (size) useFlatStore.setState({ canvasSize: size })
+  }
+
   const selectPreset = (preset) => {
-    if (preset.id === 'auto') setCanvasSize(null)
-    else setCanvasSize({ w: preset.w, h: preset.h })
+    if (preset.id === 'auto') applySize(null)
+    else applySize({ w: preset.w, h: preset.h })
     setOpen(false)
     setCustomErr('')
   }
@@ -63,7 +70,7 @@ export default function CanvasSizeSelector() {
       setCustomErr('200–7680 × 100–4320 범위로 입력하세요')
       return
     }
-    setCanvasSize({ w, h })
+    applySize({ w, h })
     setOpen(false)
     setCustomErr('')
     setCustomW('')

@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react'
+import { useState, useCallback, useRef, useEffect } from 'react'
 import { useEditorStore } from '../store/editorStore'
 import { useFlatStore } from '../store/flatStore'
 import { extractFlatElements } from '../core/FlatExtractor'
@@ -26,6 +26,34 @@ export default function QualityDashboard({ open, onClose }) {
   const [expandedSlide, setExpandedSlide] = useState(null)
   const [expandedPatterns, setExpandedPatterns] = useState(false)
   const fixturesRef = useRef([])
+  const dragging = useRef(null)
+  const [pos, setPos] = useState({ x: null, y: 60 })
+
+  useEffect(() => {
+    const onMove = (e) => {
+      if (!dragging.current) return
+      setPos({
+        x: Math.min(Math.max(0, e.clientX - dragging.current.startX), window.innerWidth - 380),
+        y: Math.min(Math.max(0, e.clientY - dragging.current.startY), window.innerHeight - 100),
+      })
+    }
+    const onUp = () => { dragging.current = null }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+    return () => {
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+    }
+  }, [])
+
+  const handleMouseDown = (e) => {
+    if (e.target.closest('[data-no-drag]')) return
+    dragging.current = {
+      startX: e.clientX - (pos.x ?? window.innerWidth - 396),
+      startY: e.clientY - pos.y,
+    }
+    e.preventDefault()
+  }
 
   const isActive = open && viewMode !== 'html'
 
@@ -133,7 +161,9 @@ export default function QualityDashboard({ open, onClose }) {
     <div
       className="fixed z-50 rounded-xl overflow-hidden select-none"
       style={{
-        right: 16, top: 60,
+        right: pos.x === null ? 16 : 'auto',
+        left: pos.x !== null ? pos.x : 'auto',
+        top: pos.y,
         width: 380,
         maxHeight: 'calc(100vh - 80px)',
         background: 'rgba(15,23,42,0.95)',
@@ -142,15 +172,16 @@ export default function QualityDashboard({ open, onClose }) {
         boxShadow: '0 12px 48px rgba(0,0,0,0.6)',
         overflowY: 'auto',
       }}
+      onMouseDown={handleMouseDown}
     >
-      {/* 헤더 */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-white/5">
+      {/* 헤더 — 드래그 핸들 */}
+      <div className="flex items-center justify-between px-4 py-3 border-b border-white/5 cursor-grab active:cursor-grabbing">
         <span className="text-white text-sm font-semibold">Quality Dashboard</span>
-        <button onClick={onClose} className="text-slate-500 hover:text-slate-300 text-lg leading-none">&times;</button>
+        <button onClick={onClose} data-no-drag className="text-slate-500 hover:text-slate-300 text-lg leading-none">&times;</button>
       </div>
 
       {/* 액션 버튼 */}
-      <div className="px-4 py-3 flex gap-2">
+      <div className="px-4 py-3 flex gap-2" data-no-drag>
         <button
           onClick={runFullAnalysis}
           disabled={running}
@@ -181,7 +212,7 @@ export default function QualityDashboard({ open, onClose }) {
       )}
 
       {/* 결과 */}
-      {report && (
+      {report && (<div data-no-drag>
         <>
           {/* 요약 */}
           <div className="px-4 py-3 border-t border-white/5">
@@ -276,7 +307,7 @@ export default function QualityDashboard({ open, onClose }) {
             ))}
           </div>
         </>
-      )}
+      </div>)}
     </div>
   )
 }
