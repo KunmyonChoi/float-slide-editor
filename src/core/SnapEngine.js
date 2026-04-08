@@ -101,105 +101,54 @@ export function computeResizeSnapGuides(rect, dir, otherRects, canvasSize, thres
     targetYPoints.push(r.y, r.y + r.height / 2, r.y + r.height)
   }
 
-  const guides = []
-
-  // X축: 드래그 중인 변의 edge 우선, 없으면 center 폴백
-  if (dir.includes('e')) {
-    const right = x + width
-    // 1) edge 스냅 먼저
+  // edge 우선 스냅: edgePos에서 먼저 찾고, 없으면 centerPos 폴백
+  function findSnap(targets, edgePos, centerPos) {
     let bestDist = Infinity, bestDelta = 0, bestGuide = null
-    for (const tp of targetXPoints) {
-      const dist = Math.abs(right - tp)
+    for (const tp of targets) {
+      const dist = Math.abs(edgePos - tp)
       if (dist < threshold && dist < bestDist) {
-        bestDist = dist; bestDelta = tp - right; bestGuide = tp
+        bestDist = dist; bestDelta = tp - edgePos; bestGuide = tp
       }
     }
-    // 2) edge 매치 없으면 center 폴백
     if (bestGuide === null) {
-      const center = x + width / 2
-      for (const tp of targetXPoints) {
-        const dist = Math.abs(center - tp)
+      for (const tp of targets) {
+        const dist = Math.abs(centerPos - tp)
         if (dist < threshold && dist < bestDist) {
-          bestDist = dist; bestDelta = (tp - center) * 2; bestGuide = tp
+          bestDist = dist; bestDelta = (tp - centerPos) * 2; bestGuide = tp
         }
       }
     }
+    return { bestDelta, bestGuide }
+  }
+
+  const guides = []
+
+  // X축
+  if (dir.includes('e')) {
+    const { bestDelta, bestGuide } = findSnap(targetXPoints, x + width, x + width / 2)
     if (bestGuide !== null) {
       width += bestDelta
       guides.push({ orientation: 'v', position: bestGuide })
     }
   } else if (dir.includes('w')) {
-    // 1) edge 스냅 먼저
-    let bestDist = Infinity, bestDelta = 0, bestGuide = null
-    for (const tp of targetXPoints) {
-      const dist = Math.abs(x - tp)
-      if (dist < threshold && dist < bestDist) {
-        bestDist = dist; bestDelta = tp - x; bestGuide = tp
-      }
-    }
-    // 2) edge 매치 없으면 center 폴백
-    if (bestGuide === null) {
-      const center = x + width / 2
-      for (const tp of targetXPoints) {
-        const dist = Math.abs(center - tp)
-        if (dist < threshold && dist < bestDist) {
-          bestDist = dist; bestDelta = (tp - center) * 2; bestGuide = tp
-        }
-      }
-    }
+    const { bestDelta, bestGuide } = findSnap(targetXPoints, x, x + width / 2)
     if (bestGuide !== null) {
-      x += bestDelta
-      width -= bestDelta
+      x += bestDelta; width -= bestDelta
       guides.push({ orientation: 'v', position: bestGuide })
     }
   }
 
+  // Y축
   if (dir.includes('s')) {
-    const bottom = y + height
-    // 1) edge 스냅 먼저
-    let bestDist = Infinity, bestDelta = 0, bestGuide = null
-    for (const tp of targetYPoints) {
-      const dist = Math.abs(bottom - tp)
-      if (dist < threshold && dist < bestDist) {
-        bestDist = dist; bestDelta = tp - bottom; bestGuide = tp
-      }
-    }
-    // 2) edge 매치 없으면 center 폴백
-    if (bestGuide === null) {
-      const middle = y + height / 2
-      for (const tp of targetYPoints) {
-        const dist = Math.abs(middle - tp)
-        if (dist < threshold && dist < bestDist) {
-          bestDist = dist; bestDelta = (tp - middle) * 2; bestGuide = tp
-        }
-      }
-    }
+    const { bestDelta, bestGuide } = findSnap(targetYPoints, y + height, y + height / 2)
     if (bestGuide !== null) {
       height += bestDelta
       guides.push({ orientation: 'h', position: bestGuide })
     }
   } else if (dir.includes('n')) {
-    // 1) edge 스냅 먼저
-    let bestDist = Infinity, bestDelta = 0, bestGuide = null
-    for (const tp of targetYPoints) {
-      const dist = Math.abs(y - tp)
-      if (dist < threshold && dist < bestDist) {
-        bestDist = dist; bestDelta = tp - y; bestGuide = tp
-      }
-    }
-    // 2) edge 매치 없으면 center 폴백
-    if (bestGuide === null) {
-      const middle = y + height / 2
-      for (const tp of targetYPoints) {
-        const dist = Math.abs(middle - tp)
-        if (dist < threshold && dist < bestDist) {
-          bestDist = dist; bestDelta = (tp - middle) * 2; bestGuide = tp
-        }
-      }
-    }
+    const { bestDelta, bestGuide } = findSnap(targetYPoints, y, y + height / 2)
     if (bestGuide !== null) {
-      y += bestDelta
-      height -= bestDelta
+      y += bestDelta; height -= bestDelta
       guides.push({ orientation: 'h', position: bestGuide })
     }
   }

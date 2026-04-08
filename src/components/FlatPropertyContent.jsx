@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef } from 'react'
 import { useFlatStore } from '../store/flatStore'
 import ColorPicker, { parseColor } from './ColorPicker'
 import { computeAlignmentChanges, computeDistributionChanges } from '../core/SnapEngine'
