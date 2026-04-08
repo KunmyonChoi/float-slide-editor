@@ -27,6 +27,13 @@ export const useFlatStore = create((set, get) => ({
   canRedo: false,
   /** 복사/붙여넣기용 클립보드 */
   clipboard: null,
+  /** 속성 패널 모드: 'docked' | 'floating' */
+  panelMode: 'docked',
+  /** 플로팅 패널 위치 기억 */
+  floatingPos: { x: null, y: 80 },
+
+  setPanelMode(mode) { set({ panelMode: mode }) },
+  setFloatingPos(pos) { set({ floatingPos: pos }) },
 
   /** 편집 중 커밋 콜백 등록/해제 (FlatInlineEditor에서 사용) */
   _setPendingEditCommit(fn) {
@@ -148,6 +155,10 @@ export const useFlatStore = create((set, get) => ({
     if (idx === -1) return
 
     const old = els[idx]
+    // styles 중첩 머지 — 개별 스타일 키만 변경해도 나머지 보존
+    if (changes.styles && old.styles) {
+      changes = { ...changes, styles: { ...old.styles, ...changes.styles } }
+    }
     const oldValues = {}
     for (const key of Object.keys(changes)) {
       oldValues[key] = old[key]
@@ -166,6 +177,9 @@ export const useFlatStore = create((set, get) => ({
     const idx = els.findIndex(e => e.id === id)
     if (idx === -1) return
 
+    if (changes.styles && els[idx].styles) {
+      changes = { ...changes, styles: { ...els[idx].styles, ...changes.styles } }
+    }
     const updated = [...els]
     updated[idx] = { ...updated[idx], ...changes }
     set({ flatElements: updated })

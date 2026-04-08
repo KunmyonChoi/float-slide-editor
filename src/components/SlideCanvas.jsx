@@ -1,5 +1,6 @@
 import { useRef, useEffect, useCallback, useState, useMemo } from 'react'
 import { useEditorStore } from '../store/editorStore'
+import { useFlatStore } from '../store/flatStore'
 import { DropZoneManager } from '../core/DropZoneManager'
 import { InsertionPlaceholders } from '../core/InsertionPlaceholders'
 import { FlexResizeHandle } from '../core/FlexResizeHandle'
@@ -62,7 +63,11 @@ export default function SlideCanvas() {
   useEffect(() => {
     const onMessage = (e) => {
       if (!e.data?.type?.startsWith('fe:')) return
-      if (e.data.type === 'fe:select')        setSelected(e.data.id)
+      if (e.data.type === 'fe:select') {
+        setSelected(e.data.id)
+        // split 모드: Flat 쪽 선택 해제
+        useFlatStore.getState().setSelectedFlat(null)
+      }
       else if (e.data.type === 'fe:deselect') setSelected(null)
       else if (e.data.type === 'fe:insertAt') {
         const iframe = iframeRef.current

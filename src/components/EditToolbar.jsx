@@ -53,8 +53,9 @@ export default function EditToolbar() {
     <div
       className="flex items-center gap-1 px-3 py-1 shrink-0"
       style={{
-        background: 'rgba(15,23,42,0.7)',
-        borderBottom: '1px solid rgba(255,255,255,0.05)',
+        background: 'rgba(15,23,42,0.9)',
+        backdropFilter: 'blur(16px)',
+        borderBottom: '1px solid rgba(255,255,255,0.08)',
       }}
     >
       <ToolBtn onClick={undo} disabled={!canUndo} title="실행취소 (Ctrl+Z)">

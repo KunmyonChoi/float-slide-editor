@@ -103,7 +103,7 @@ const FALLBACK_SAMPLE = `<!DOCTYPE html>
 export default function FloatingToolbar() {
   const fileRef = useRef(null)
   const { slideHtml, mode, loadHtml, enterPresentation } = useEditorStore()
-  const { viewMode, setViewMode, extractFromIframe, clearPageCache } = useFlatStore()
+  const { viewMode, setViewMode, extractFromIframe, clearPageCache, panelMode, setPanelMode } = useFlatStore()
   const iframeRef = useEditorStore(s => s.iframeRef)
   const [qualityOpen, setQualityOpen] = useState(false)
 
@@ -136,7 +136,8 @@ export default function FloatingToolbar() {
     <div
       className="flex items-center gap-1 px-3 py-1.5 shrink-0"
       style={{
-        background: 'rgba(15,23,42,0.95)',
+        background: 'rgba(15,23,42,0.9)',
+        backdropFilter: 'blur(16px)',
         borderBottom: '1px solid rgba(255,255,255,0.08)',
       }}
     >
@@ -179,6 +180,17 @@ export default function FloatingToolbar() {
           setViewMode(mode)
         }}
       />
+
+      <Divider />
+
+      {/* 패널 모드 토글 */}
+      <ToolBtn
+        onClick={() => setPanelMode(panelMode === 'docked' ? 'floating' : 'docked')}
+        title={panelMode === 'docked' ? '패널 분리 (Floating)' : '패널 고정 (Docked)'}
+      >
+        {panelMode === 'docked' ? <UndockIcon /> : <DockIcon />}
+        <span className="text-xs ml-1">{panelMode === 'docked' ? '분리' : '고정'}</span>
+      </ToolBtn>
 
       <Divider />
 
@@ -301,6 +313,24 @@ function QualityIcon() {
   return (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
       <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
+    </svg>
+  )
+}
+
+function DockIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <rect x="3" y="3" width="18" height="18" rx="2" />
+      <path d="M15 3v18" />
+    </svg>
+  )
+}
+
+function UndockIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <rect x="3" y="3" width="18" height="18" rx="2" />
+      <rect x="8" y="6" width="12" height="12" rx="1" />
     </svg>
   )
 }
