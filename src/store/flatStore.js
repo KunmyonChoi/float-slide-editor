@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { extractFlatElements } from '../core/FlatExtractor'
+import { extractFlatElements, nextFlatId } from '../core/FlatExtractor'
 import { HistoryStack } from '../core/HistoryStack'
 
 const _history = new HistoryStack()
@@ -25,6 +25,8 @@ export const useFlatStore = create((set, get) => ({
 
   canUndo: false,
   canRedo: false,
+  /** 복사/붙여넣기용 클립보드 */
+  clipboard: null,
 
   /** 편집 중 커밋 콜백 등록/해제 (FlatInlineEditor에서 사용) */
   _setPendingEditCommit(fn) {
@@ -184,6 +186,121 @@ export const useFlatStore = create((set, get) => ({
     set(updates)
   },
 
+  /** 요소 복사 (클립보드에 저장) */
+  copyElement(id) {
+    const el = get().flatElements.find(e => e.id === id)
+    if (el) set({ clipboard: structuredClone(el) })
+  },
+
+  /** 요소 잘라내기 (복사 + 삭제) */
+  cutElement(id) {
+    get().copyElement(id)
+    get().removeFlatElement(id)
+  },
+
+  /** 클립보드에서 붙여넣기 */
+  pasteElement() {
+    const { clipboard } = get()
+    if (!clipboard) return
+    const newEl = {
+      ...structuredClone(clipboard),
+      id: nextFlatId(),
+      sourceId: null,
+      x: clipboard.x + 20,
+      y: clipboard.y + 20,
+    }
+    get().addFlatElement(newEl)
+    set({ selectedFlatId: newEl.id })
+  },
+
+  /** 요소 복제 (copy + paste) */
+  duplicateElement(id) {
+    get().copyElement(id)
+    get().pasteElement()
+  },
+
+  /** 요소 추가 (히스토리 기록) */
+  addFlatElement(element) {
+    const els = get().flatElements
+    _history.push({ type: 'add', element: structuredClone(element) })
+    set({
+      flatElements: [...els, element],
+      canUndo: _history.canUndo, canRedo: _history.canRedo,
+    })
+  },
+
+  /** z-순서: 한 단계 앞으로 */
+  bringForward(id) {
+    const els = get().flatElements
+    const el = els.find(e => e.id === id)
+    if (!el) return
+    const sorted = [...els].sort((a, b) => a.zIndex - b.zIndex)
+    const above = sorted.find(e => e.zIndex > el.zIndex)
+    if (!above) return
+    _history.push({ type: 'zorder', changes: [
+      { id: el.id, oldZ: el.zIndex, newZ: above.zIndex },
+      { id: above.id, oldZ: above.zIndex, newZ: el.zIndex },
+    ]})
+    const updated = els.map(e => {
+      if (e.id === el.id) return { ...e, zIndex: above.zIndex }
+      if (e.id === above.id) return { ...e, zIndex: el.zIndex }
+      return e
+    })
+    set({ flatElements: updated, canUndo: _history.canUndo, canRedo: _history.canRedo })
+  },
+
+  /** z-순서: 한 단계 뒤로 */
+  sendBackward(id) {
+    const els = get().flatElements
+    const el = els.find(e => e.id === id)
+    if (!el) return
+    const sorted = [...els].sort((a, b) => b.zIndex - a.zIndex)
+    const below = sorted.find(e => e.zIndex < el.zIndex)
+    if (!below) return
+    _history.push({ type: 'zorder', changes: [
+      { id: el.id, oldZ: el.zIndex, newZ: below.zIndex },
+      { id: below.id, oldZ: below.zIndex, newZ: el.zIndex },
+    ]})
+    const updated = els.map(e => {
+      if (e.id === el.id) return { ...e, zIndex: below.zIndex }
+      if (e.id === below.id) return { ...e, zIndex: el.zIndex }
+      return e
+    })
+    set({ flatElements: updated, canUndo: _history.canUndo, canRedo: _history.canRedo })
+  },
+
+  /** z-순서: 맨 앞으로 */
+  bringToFront(id) {
+    const els = get().flatElements
+    const el = els.find(e => e.id === id)
+    if (!el) return
+    const maxZ = Math.max(...els.map(e => e.zIndex))
+    if (el.zIndex >= maxZ) return
+    _history.push({ type: 'zorder', changes: [
+      { id: el.id, oldZ: el.zIndex, newZ: maxZ + 1 },
+    ]})
+    const updated = els.map(e =>
+      e.id === el.id ? { ...e, zIndex: maxZ + 1 } : e
+    )
+    set({ flatElements: updated, canUndo: _history.canUndo, canRedo: _history.canRedo })
+  },
+
+  /** z-순서: 맨 뒤로 */
+  sendToBack(id) {
+    const els = get().flatElements
+    const el = els.find(e => e.id === id)
+    if (!el) return
+    const minZ = Math.min(...els.map(e => e.zIndex))
+    if (el.zIndex <= minZ) return
+    _history.push({ type: 'zorder', changes: [
+      { id: el.id, oldZ: el.zIndex, newZ: minZ - 1 },
+    ]})
+    const updated = els.map(e =>
+      e.id === el.id ? { ...e, zIndex: minZ - 1 } : e
+    )
+    set({ flatElements: updated, canUndo: _history.canUndo, canRedo: _history.canRedo })
+  },
+
   undo() {
     const cmd = _history.undo()
     if (!cmd) return
@@ -198,6 +315,15 @@ export const useFlatStore = create((set, get) => ({
     } else if (cmd.type === 'remove') {
       const updated = [...els]
       updated.splice(cmd.index, 0, cmd.element)
+      set({ flatElements: updated })
+    } else if (cmd.type === 'add') {
+      set({ flatElements: els.filter(e => e.id !== cmd.element.id) })
+    } else if (cmd.type === 'zorder') {
+      const updated = [...els]
+      for (const c of cmd.changes) {
+        const idx = updated.findIndex(e => e.id === c.id)
+        if (idx !== -1) updated[idx] = { ...updated[idx], zIndex: c.oldZ }
+      }
       set({ flatElements: updated })
     }
 
@@ -216,7 +342,15 @@ export const useFlatStore = create((set, get) => ({
       updated[idx] = { ...updated[idx], ...cmd.newValues }
       set({ flatElements: updated })
     } else if (cmd.type === 'remove') {
-      const updated = els.filter(e => e.id !== cmd.element.id)
+      set({ flatElements: els.filter(e => e.id !== cmd.element.id) })
+    } else if (cmd.type === 'add') {
+      set({ flatElements: [...els, cmd.element] })
+    } else if (cmd.type === 'zorder') {
+      const updated = [...els]
+      for (const c of cmd.changes) {
+        const idx = updated.findIndex(e => e.id === c.id)
+        if (idx !== -1) updated[idx] = { ...updated[idx], zIndex: c.newZ }
+      }
       set({ flatElements: updated })
     }
 

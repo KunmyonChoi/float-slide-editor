@@ -1,5 +1,6 @@
 import SlideCanvas, { InsertPopup } from './components/SlideCanvas'
 import FloatingToolbar from './components/FloatingToolbar'
+import EditToolbar from './components/EditToolbar'
 import FloatingEditorPanel from './components/FloatingEditorPanel'
 import FlatCanvas from './components/FlatCanvas'
 import ComparePanel from './components/ComparePanel'
@@ -15,6 +16,8 @@ export default function App() {
 
   return (
     <div className="flex flex-col h-screen overflow-hidden">
+      <FloatingToolbar />
+      <EditToolbar />
       <div className={`flex flex-1 overflow-hidden ${isSplit ? '' : 'flex-col'}`}>
         {/* SlideCanvas는 항상 마운트 유지 — iframe 재로드 방지 */}
         <div
@@ -30,7 +33,6 @@ export default function App() {
         )}
       </div>
       <PageBar />
-      <FloatingToolbar />
       <FloatingEditorPanel />
       <ComparePanel />
       <InsertPopup />

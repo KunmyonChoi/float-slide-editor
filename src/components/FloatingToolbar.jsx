@@ -96,38 +96,28 @@ const FALLBACK_SAMPLE = `<!DOCTYPE html>
 </html>`
 
 /**
- * FloatingToolbar — 편집 모드에서만 표시
+ * FloatingToolbar (AppBar) — 글로벌 앱 기능
+ * 브랜딩, 파일 열기/샘플, 발표, 뷰 모드 토글
  * 발표 모드에서는 완전히 숨겨진다.
  */
 export default function FloatingToolbar() {
   const fileRef = useRef(null)
-  const [visible, setVisible] = useState(false)
-  const { slideHtml, mode, canUndo, canRedo, selectedId, elements, loadHtml, enterPresentation, undo, redo, insertElement } = useEditorStore()
-  const [insertOpen, setInsertOpen] = useState(false)
-  const insertRef = useRef(null)
+  const { slideHtml, mode, loadHtml, enterPresentation } = useEditorStore()
   const { viewMode, setViewMode, extractFromIframe, clearPageCache } = useFlatStore()
   const iframeRef = useEditorStore(s => s.iframeRef)
   const [qualityOpen, setQualityOpen] = useState(false)
 
-  // F5 키 → 발표 모드, Ctrl+Z → 실행취소, Ctrl+Y/Ctrl+Shift+Z → 다시실행
+  // F5 키 → 발표 모드
   useEffect(() => {
     const onKeyDown = (e) => {
       if (e.key === 'F5') {
         e.preventDefault()
         enterPresentation()
       }
-      // flat/split 모드에서는 FlatCanvas가 undo/redo 처리
-      const vm = useFlatStore.getState().viewMode
-      if (vm === 'flat' || vm === 'split') return
-      if ((e.ctrlKey || e.metaKey) && !e.altKey) {
-        if (e.code === 'KeyZ' && !e.shiftKey) { e.preventDefault(); undo() }
-        if (e.code === 'KeyZ' && e.shiftKey)  { e.preventDefault(); redo() }
-        if (e.code === 'KeyY')                { e.preventDefault(); redo() }
-      }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [enterPresentation, undo, redo])
+  }, [enterPresentation])
 
   const handleFileChange = (e) => {
     const file = e.target.files?.[0]
@@ -143,137 +133,83 @@ export default function FloatingToolbar() {
 
   return (
     <>
-      {/* 호버 트리거 존 */}
-      <div
-        className="fixed top-0 left-0 right-0 z-50"
-        style={{ height: visible ? 0 : 10 }}
-        onMouseEnter={() => setVisible(true)}
-      />
+    <div
+      className="flex items-center gap-1 px-3 py-1.5 shrink-0"
+      style={{
+        background: 'rgba(15,23,42,0.95)',
+        borderBottom: '1px solid rgba(255,255,255,0.08)',
+      }}
+    >
+      <span className="text-white font-semibold text-sm tracking-wide px-2 mr-1">
+        float-editor
+      </span>
 
-      {/* 메인 툴바 */}
-      <div
-        className="fixed left-1/2 z-50 flex items-center gap-1 px-3 py-2 rounded-b-2xl"
-        style={{
-          top: 0,
-          transform: `translateX(-50%) translateY(${visible ? 0 : -100}%)`,
-          transition: 'transform 0.25s cubic-bezier(0.34,1.56,0.64,1)',
-          background: 'rgba(15,23,42,0.88)',
-          backdropFilter: 'blur(12px)',
-          border: '1px solid rgba(255,255,255,0.08)',
-          borderTop: 'none',
-          boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
-          minWidth: 520,
-        }}
-        onMouseLeave={() => setVisible(false)}
+      <Divider />
+
+      <ToolBtn onClick={() => fileRef.current?.click()} title="HTML 파일 열기">
+        <FolderIcon /><span className="text-xs ml-1">열기</span>
+      </ToolBtn>
+      <ToolBtn onClick={() => { clearPageCache(); loadHtml(FALLBACK_SAMPLE) }} title="샘플 슬라이드 로드">
+        <span className="text-xs">샘플</span>
+      </ToolBtn>
+
+      <Divider />
+
+      {/* 발표 모드 진입 */}
+      <ToolBtn
+        onClick={enterPresentation}
+        disabled={!slideHtml}
+        title="발표 모드 (F5) — 전체화면, 슬라이드 자체 네비게이션 동작"
+        highlight
       >
-        <span className="text-white font-semibold text-sm tracking-wide px-2 mr-1">
-          float-editor
-        </span>
+        <PresentIcon /><span className="text-xs ml-1">발표</span>
+      </ToolBtn>
 
-        <Divider />
+      <Divider />
 
-        <ToolBtn onClick={() => fileRef.current?.click()} title="HTML 파일 열기">
-          <FolderIcon /><span className="text-xs ml-1">열기</span>
-        </ToolBtn>
-        <ToolBtn onClick={() => { clearPageCache(); loadHtml(FALLBACK_SAMPLE) }} title="샘플 슬라이드 로드">
-          <span className="text-xs">샘플</span>
-        </ToolBtn>
-
-        <Divider />
-
-        <ToolBtn onClick={undo} disabled={!canUndo} title="실행취소 (Ctrl+Z)">
-          <UndoIcon />
-        </ToolBtn>
-        <ToolBtn onClick={redo} disabled={!canRedo} title="다시실행 (Ctrl+Y)">
-          <RedoIcon />
-        </ToolBtn>
-
-        <Divider />
-
-        {/* 요소 삽입 */}
-        <InsertDropdown
-          innerRef={insertRef}
-          open={insertOpen}
-          setOpen={setInsertOpen}
-          disabled={!slideHtml}
-          onInsert={(tag, attrs) => {
-            const meta = selectedId ? elements.get(selectedId) : null
-            const parentId = meta?.type === 'container' ? selectedId : null
-            insertElement(parentId, tag, attrs)
-            setInsertOpen(false)
-          }}
-        />
-
-        <Divider />
-
-        {/* 캔버스 크기 선택 */}
-        <CanvasSizeSelector />
-
-        <Divider />
-
-        {/* 발표 모드 진입 */}
-        <ToolBtn
-          onClick={enterPresentation}
-          disabled={!slideHtml}
-          title="발표 모드 (F5) — 전체화면, 슬라이드 자체 네비게이션 동작"
-          highlight
-        >
-          <PresentIcon /><span className="text-xs ml-1">발표</span>
-        </ToolBtn>
-
-        <Divider />
-
-        {/* 뷰 모드 토글 */}
-        <ViewModeToggle
-          viewMode={viewMode}
-          disabled={!slideHtml}
-          onChange={(mode) => {
-            if (mode !== 'html' && iframeRef) {
-              const pk = `${useEditorStore.getState().currentPage}-${useEditorStore.getState().revealV || 0}`
-              extractFromIframe(iframeRef, pk)
-            }
-            setViewMode(mode)
-          }}
-        />
-
-        <Divider />
-
-        {/* 품질 분석 대시보드 */}
-        <ToolBtn
-          onClick={() => setQualityOpen(v => !v)}
-          disabled={!slideHtml || viewMode === 'html'}
-          title="전체 슬라이드 품질 분석"
-        >
-          <QualityIcon /><span className="text-xs ml-1">품질</span>
-        </ToolBtn>
-
-        <Divider />
-
-        <span className="text-xs text-slate-600 px-2 select-none">Phase 6</span>
-
-        <input ref={fileRef} type="file" accept=".html,.htm" className="hidden" onChange={handleFileChange} />
-      </div>
-
-      {/* 품질 대시보드 패널 */}
-      <QualityDashboard open={qualityOpen} onClose={() => setQualityOpen(false)} />
-
-      {/* 핸들 — 숨겨진 상태의 존재 힌트 */}
-      <div
-        className="fixed left-1/2 z-40 pointer-events-none"
-        style={{
-          top: 0,
-          transform: 'translateX(-50%)',
-          width: 48,
-          height: 4,
-          borderRadius: '0 0 4px 4px',
-          background: 'rgba(99,102,241,0.6)',
-          opacity: visible ? 0 : 1,
-          transition: 'opacity 0.2s',
+      {/* 뷰 모드 토글 */}
+      <ViewModeToggle
+        viewMode={viewMode}
+        disabled={!slideHtml}
+        onChange={(mode) => {
+          if (mode !== 'html' && iframeRef) {
+            const pk = `${useEditorStore.getState().currentPage}-${useEditorStore.getState().revealV || 0}`
+            extractFromIframe(iframeRef, pk)
+          }
+          setViewMode(mode)
         }}
       />
+
+      <Divider />
+
+      {/* 캔버스 크기 선택 */}
+      <CanvasSizeSelector />
+
+      <Divider />
+
+      {/* 품질 분석 대시보드 */}
+      <ToolBtn
+        onClick={() => setQualityOpen(v => !v)}
+        disabled={!slideHtml || viewMode === 'html'}
+        title="전체 슬라이드 품질 분석"
+      >
+        <QualityIcon /><span className="text-xs ml-1">품질</span>
+      </ToolBtn>
+
+      <div className="flex-1" />
+
+      <span className="text-xs text-slate-600 px-2 select-none">Phase 6</span>
+
+      <input ref={fileRef} type="file" accept=".html,.htm" className="hidden" onChange={handleFileChange} />
+    </div>
+
+    {/* 품질 대시보드 패널 */}
+    <QualityDashboard open={qualityOpen} onClose={() => setQualityOpen(false)} />
     </>
   )
 }
+
+// ── 공유 컴포넌트 (EditToolbar에서도 사용) ──────────────
 
 const VIEW_MODES = [
   { mode: 'html',  label: 'HTML',  title: 'HTML DOM 뷰' },
@@ -305,7 +241,7 @@ function ViewModeToggle({ viewMode, disabled, onChange }) {
   )
 }
 
-function ToolBtn({ children, onClick, disabled, title, highlight }) {
+export function ToolBtn({ children, onClick, disabled, title, highlight }) {
   return (
     <button
       onClick={onClick}
@@ -323,7 +259,7 @@ function ToolBtn({ children, onClick, disabled, title, highlight }) {
   )
 }
 
-function Divider() {
+export function Divider() {
   return <div className="w-px h-5 bg-white/10 mx-1 shrink-0" />
 }
 
@@ -335,7 +271,7 @@ function FolderIcon() {
   )
 }
 
-function UndoIcon() {
+export function UndoIcon() {
   return (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
       <path d="M3 7v6h6" /><path d="M3 13C5 7 11 4 17 6s9 8 7 14" />
@@ -343,7 +279,7 @@ function UndoIcon() {
   )
 }
 
-function RedoIcon() {
+export function RedoIcon() {
   return (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
       <path d="M21 7v6h-6" /><path d="M21 13C19 7 13 4 7 6S-2 14 0 20" />
@@ -361,71 +297,10 @@ function PresentIcon() {
   )
 }
 
-const INSERT_ITEMS = [
-  { tag: 'p',   label: '텍스트', icon: '📝', attrs: { textContent: '새 텍스트' } },
-  { tag: 'img', label: '이미지', icon: '🖼', attrs: { src: 'https://placehold.co/400x300', alt: '이미지' } },
-  { tag: 'div', label: '박스',   icon: '📦', attrs: {} },
-]
-
-function InsertDropdown({ innerRef, open, setOpen, disabled, onInsert }) {
-  useEffect(() => {
-    if (!open) return
-    const handler = (e) => {
-      if (innerRef.current && !innerRef.current.contains(e.target)) setOpen(false)
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [open, innerRef, setOpen])
-
-  return (
-    <div ref={innerRef} style={{ position: 'relative' }}>
-      <ToolBtn onClick={() => setOpen(v => !v)} disabled={disabled} title="요소 삽입">
-        <PlusIcon /><span className="text-xs ml-1">삽입</span>
-      </ToolBtn>
-      {open && (
-        <div
-          style={{
-            position: 'absolute', top: 'calc(100% + 8px)', left: '50%',
-            transform: 'translateX(-50%)',
-            width: 140,
-            background: 'rgba(15,23,42,0.97)',
-            backdropFilter: 'blur(16px)',
-            border: '1px solid rgba(255,255,255,0.1)',
-            borderRadius: 10,
-            boxShadow: '0 12px 40px rgba(0,0,0,0.6)',
-            zIndex: 100,
-            overflow: 'hidden',
-            padding: '4px',
-          }}
-        >
-          {INSERT_ITEMS.map(item => (
-            <button
-              key={item.tag}
-              onClick={() => onInsert(item.tag, item.attrs)}
-              className="flex items-center gap-2 w-full px-3 py-2 rounded-lg text-xs text-slate-300 hover:bg-white/10 transition-colors"
-            >
-              <span>{item.icon}</span>
-              <span>{item.label}</span>
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
-
 function QualityIcon() {
   return (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
       <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
-    </svg>
-  )
-}
-
-function PlusIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <path d="M12 5v14M5 12h14" />
     </svg>
   )
 }

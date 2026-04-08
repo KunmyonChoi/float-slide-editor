@@ -10,7 +10,7 @@
  */
 
 let _flatCounter = 0
-function nextFlatId() { return `flat-${++_flatCounter}` }
+export function nextFlatId() { return `flat-${++_flatCounter}` }
 export function resetFlatCounter() { _flatCounter = 0 }
 
 /** 컨테이너가 시각적으로 의미 있는지 판별 (배경/테두리/그림자) */

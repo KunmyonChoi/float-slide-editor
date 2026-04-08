@@ -16,7 +16,8 @@ export default function FlatCanvas() {
 
   const { flatElements, selectedFlatId, editingFlatId, setSelectedFlat, canvasSize,
           removeFlatElement, updateFlatElement, undo, redo, viewMode, reExtract,
-          fontImports } = useFlatStore()
+          fontImports, copyElement, cutElement, pasteElement, duplicateElement,
+          bringForward, sendBackward, bringToFront, sendToBack } = useFlatStore()
   const { currentPage, revealV } = useEditorStore()
 
   // 웹폰트를 부모 문서 <head>에 주입 — iframe 폰트와 동일하게 렌더링
@@ -91,6 +92,14 @@ export default function FlatCanvas() {
         if (e.code === 'KeyZ' && !e.shiftKey) { e.preventDefault(); undo(); return }
         if (e.code === 'KeyZ' && e.shiftKey)  { e.preventDefault(); redo(); return }
         if (e.code === 'KeyY')                { e.preventDefault(); redo(); return }
+        if (e.code === 'KeyC' && selectedFlatId)  { copyElement(selectedFlatId); return }
+        if (e.code === 'KeyX' && selectedFlatId)  { cutElement(selectedFlatId); return }
+        if (e.code === 'KeyV')                    { pasteElement(); return }
+        if (e.code === 'KeyD' && selectedFlatId)  { e.preventDefault(); duplicateElement(selectedFlatId); return }
+        if (e.code === 'BracketRight' && !e.shiftKey && selectedFlatId) { bringForward(selectedFlatId); return }
+        if (e.code === 'BracketLeft' && !e.shiftKey && selectedFlatId)  { sendBackward(selectedFlatId); return }
+        if (e.code === 'BracketRight' && e.shiftKey && selectedFlatId)  { bringToFront(selectedFlatId); return }
+        if (e.code === 'BracketLeft' && e.shiftKey && selectedFlatId)   { sendToBack(selectedFlatId); return }
       }
 
       // 요소 미선택 시 화살표 키는 PageBar의 전역 핸들러가 처리 (중복 방지)
@@ -110,7 +119,7 @@ export default function FlatCanvas() {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [removeFlatElement, updateFlatElement, undo, redo])
+  }, [removeFlatElement, updateFlatElement, undo, redo, copyElement, cutElement, pasteElement, duplicateElement, bringForward, sendBackward, bringToFront, sendToBack])
 
   /** scale 재계산 */
   const recalcScale = useCallback(() => {
