@@ -1,5 +1,6 @@
 import { useCallback } from 'react'
 import { useFlatStore } from '../store/flatStore'
+import { useEditorStore } from '../store/editorStore'
 
 /**
  * FlatElementRenderer
@@ -12,6 +13,8 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
   const handleMouseDown = useCallback((e) => {
     e.stopPropagation()
     setSelectedFlat(element.id)
+    // split 모드: HTML 쪽 선택 해제
+    useEditorStore.getState().setSelected(null)
   }, [element.id, setSelectedFlat])
 
   const handleDoubleClick = useCallback((e) => {

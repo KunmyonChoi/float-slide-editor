@@ -231,13 +231,13 @@ function StyleRow({ prop, value, onChange, onCommit, onReset }) {
   }
 
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center gap-2 min-w-0">
       <span className="text-xs text-slate-400 w-16 shrink-0 truncate" title={prop.label}>
         {prop.label}
       </span>
 
       {prop.type === 'color' && (
-        <div className="flex items-center gap-1.5 flex-1">
+        <div className="flex items-center gap-1.5 flex-1 min-w-0">
           <input
             type="color"
             value={toHex(value) || '#000000'}
@@ -287,7 +287,7 @@ function StyleRow({ prop, value, onChange, onCommit, onReset }) {
   )
 }
 
-const inputClass = 'flex-1 text-xs text-slate-200 bg-white/5 rounded px-2 py-1 border border-white/10 outline-none focus:border-indigo-500/50 transition-colors'
+const inputClass = 'flex-1 min-w-0 text-xs text-slate-200 bg-white/5 rounded px-2 py-1 border border-white/10 outline-none focus:border-indigo-500/50 transition-colors'
 
 const chevronBg = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2.5'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")`
 
