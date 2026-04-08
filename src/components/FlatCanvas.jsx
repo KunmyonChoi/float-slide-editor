@@ -1,6 +1,7 @@
-import { useRef, useEffect, useCallback, useState } from 'react'
+import { useRef, useEffect, useCallback, useState, useMemo } from 'react'
 import { useFlatStore } from '../store/flatStore'
 import { useEditorStore } from '../store/editorStore'
+import { isBackgroundElement } from '../core/SnapEngine'
 import FlatElementRenderer from './FlatElementRenderer'
 import FlatSelectionOverlay, { FlatGroupOverlay } from './FlatSelectionOverlay'
 import FlatInlineEditor from './FlatInlineEditor'
@@ -18,6 +19,7 @@ export default function FlatCanvas() {
   const [marquee, setMarquee] = useState(null)
   const marqueeRef = useRef(null) // 마키 시작 좌표 기억
   const [contextMenu, setContextMenu] = useState(null)
+  const [snapGuides, setSnapGuides] = useState([])
 
   const { flatElements, selectedFlatIds, editingFlatId, setSelectedFlat, setSelectedFlats, canvasSize,
           removeSelectedElements, updateFlatElement, undo, redo, viewMode, reExtract,
@@ -54,6 +56,14 @@ export default function FlatCanvas() {
 
   const selectedEls = flatElements.filter(e => selectedFlatIds.includes(e.id))
   const selectedEl = selectedEls.length === 1 ? selectedEls[0] : null
+
+  // 스냅 대상: 비선택 + 비배경 요소들의 rect
+  const otherRects = useMemo(() =>
+    flatElements
+      .filter(e => !selectedFlatIds.includes(e.id) && !isBackgroundElement(e, canvasSize))
+      .map(e => ({ x: e.x, y: e.y, width: e.width, height: e.height })),
+    [flatElements, selectedFlatIds, canvasSize]
+  )
 
   // 페이지 변경 시 flat 뷰 재추출 (flat/split 모드 — iframe은 항상 마운트됨)
   // reveal.js 수직 슬라이드 변경도 감지하기 위해 revealV도 의존성에 포함
@@ -304,11 +314,25 @@ export default function FlatCanvas() {
               />
             ))}
             {selectedEls.length === 1 && selectedEl && (
-              <FlatSelectionOverlay element={selectedEl} scale={scale} />
+              <FlatSelectionOverlay element={selectedEl} scale={scale}
+                otherRects={otherRects} canvasSize={canvasSize} onSnapGuides={setSnapGuides} />
             )}
             {selectedEls.length > 1 && (
-              <FlatGroupOverlay elements={selectedEls} scale={scale} />
+              <FlatGroupOverlay elements={selectedEls} scale={scale}
+                otherRects={otherRects} canvasSize={canvasSize} onSnapGuides={setSnapGuides} />
             )}
+            {/* 스냅 가이드 */}
+            {snapGuides.map((g, i) => (
+              <div key={i} style={{
+                position: 'absolute',
+                ...(g.orientation === 'v'
+                  ? { left: g.position, top: 0, width: 1, height: '100%' }
+                  : { top: g.position, left: 0, height: 1, width: '100%' }),
+                background: '#ff2d55',
+                pointerEvents: 'none',
+                zIndex: 9997,
+              }} />
+            ))}
             {editingFlatId && flatElements.find(e => e.id === editingFlatId) && (
               <FlatInlineEditor
                 element={flatElements.find(e => e.id === editingFlatId)}

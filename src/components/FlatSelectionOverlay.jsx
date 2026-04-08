@@ -1,5 +1,6 @@
 import { useCallback, useRef, useEffect, useMemo } from 'react'
 import { useFlatStore } from '../store/flatStore'
+import { computeSnapGuides, computeResizeSnapGuides } from '../core/SnapEngine'
 
 const HANDLE_SIZE = 8
 const MIN_SIZE = 20
@@ -21,9 +22,9 @@ const HANDLES = [
  * 선택된 요소 주변에 8방향 리사이즈 핸들을 렌더링한다.
  * 드래그로 이동, 핸들로 리사이즈.
  */
-export default function FlatSelectionOverlay({ element, scale }) {
+export default function FlatSelectionOverlay({ element, scale, otherRects, canvasSize, onSnapGuides }) {
   const { previewFlatElement, updateFlatElement, editingFlatId, setEditingFlat,
-          setSelectedFlat, toggleSelectFlat, flatElements, canvasSize } = useFlatStore()
+          setSelectedFlat, toggleSelectFlat, flatElements } = useFlatStore()
   const dragRef = useRef(null)
 
   // 더블클릭 → 텍스트 편집 모드 진입
@@ -74,8 +75,9 @@ export default function FlatSelectionOverlay({ element, scale }) {
       startMouseY: e.clientY,
       startX: element.x,
       startY: element.y,
+      otherRects: otherRects || [],
     }
-  }, [element, editingFlatId, scale, flatElements, canvasSize, setSelectedFlat, toggleSelectFlat])
+  }, [element, editingFlatId, scale, flatElements, canvasSize, otherRects, setSelectedFlat, toggleSelectFlat])
 
   // 리사이즈 시작
   const handleResizeStart = useCallback((e, dir) => {
@@ -91,8 +93,9 @@ export default function FlatSelectionOverlay({ element, scale }) {
       startY: element.y,
       startW: element.width,
       startH: element.height,
+      otherRects: otherRects || [],
     }
-  }, [element])
+  }, [element, otherRects])
 
   useEffect(() => {
     const onMove = (e) => {
@@ -103,10 +106,19 @@ export default function FlatSelectionOverlay({ element, scale }) {
       const dy = (e.clientY - d.startMouseY) / scale
 
       if (d.mode === 'move') {
-        previewFlatElement(element.id, {
-          x: d.startX + dx,
-          y: d.startY + dy,
-        })
+        let px = d.startX + dx
+        let py = d.startY + dy
+        // 스냅 가이드 계산
+        if (d.otherRects && onSnapGuides) {
+          const snap = computeSnapGuides(
+            { x: px, y: py, width: element.width, height: element.height },
+            d.otherRects, canvasSize
+          )
+          if (snap.snappedX !== null) px = snap.snappedX
+          if (snap.snappedY !== null) py = snap.snappedY
+          onSnapGuides(snap.guides)
+        }
+        previewFlatElement(element.id, { x: px, y: py })
       } else if (d.mode === 'resize') {
         let { startX: x, startY: y, startW: w, startH: h } = d
         const dir = d.dir
@@ -116,6 +128,15 @@ export default function FlatSelectionOverlay({ element, scale }) {
         if (dir.includes('s')) h = Math.max(MIN_SIZE, d.startH + dy)
         if (dir.includes('n')) { h = Math.max(MIN_SIZE, d.startH - dy); y = d.startY + (d.startH - h) }
 
+        // 리사이즈 스냅
+        if (d.otherRects && onSnapGuides) {
+          const snap = computeResizeSnapGuides(
+            { x, y, width: w, height: h }, dir, d.otherRects, canvasSize
+          )
+          x = snap.x; y = snap.y; w = snap.width; h = snap.height
+          onSnapGuides(snap.guides)
+        }
+
         previewFlatElement(element.id, { x, y, width: w, height: h })
       }
     }
@@ -124,6 +145,7 @@ export default function FlatSelectionOverlay({ element, scale }) {
       const d = dragRef.current
       if (!d) return
       dragRef.current = null
+      if (onSnapGuides) onSnapGuides([])
 
       // 현재 위치를 히스토리에 기록
       const els = useFlatStore.getState().flatElements
@@ -203,7 +225,7 @@ const GROUP_HANDLES = [
   { dir: 'sw', cursor: 'nesw-resize', x: 0, y: 1 },
 ]
 
-export function FlatGroupOverlay({ elements, scale }) {
+export function FlatGroupOverlay({ elements, scale, otherRects, canvasSize, onSnapGuides }) {
   const { batchPreviewFlatElements, batchUpdateFlatElementsIndividual } = useFlatStore()
   const dragRef = useRef(null)
 
@@ -227,8 +249,10 @@ export function FlatGroupOverlay({ elements, scale }) {
       startMouseX: e.clientX,
       startMouseY: e.clientY,
       startPositions: elements.map(el => ({ id: el.id, x: el.x, y: el.y })),
+      bbox: { ...bbox },
+      otherRects: otherRects || [],
     }
-  }, [elements])
+  }, [elements, bbox, otherRects])
 
   // 그룹 리사이즈 시작
   const handleResizeStart = useCallback((e, dir) => {
@@ -243,8 +267,9 @@ export function FlatGroupOverlay({ elements, scale }) {
       startPositions: elements.map(el => ({
         id: el.id, x: el.x, y: el.y, width: el.width, height: el.height,
       })),
+      otherRects: otherRects || [],
     }
-  }, [elements, bbox])
+  }, [elements, bbox, otherRects])
 
   useEffect(() => {
     const onMove = (e) => {
@@ -255,9 +280,22 @@ export function FlatGroupOverlay({ elements, scale }) {
       const dy = (e.clientY - d.startMouseY) / scale
 
       if (d.mode === 'move') {
+        let bx = d.bbox.x + dx
+        let by = d.bbox.y + dy
+        let snapDx = 0, snapDy = 0
+        // 그룹 bbox 기준 스냅
+        if (d.otherRects && onSnapGuides) {
+          const snap = computeSnapGuides(
+            { x: bx, y: by, width: d.bbox.w, height: d.bbox.h },
+            d.otherRects, canvasSize
+          )
+          if (snap.snappedX !== null) snapDx = snap.snappedX - bx
+          if (snap.snappedY !== null) snapDy = snap.snappedY - by
+          onSnapGuides(snap.guides)
+        }
         const changesMap = d.startPositions.map(sp => ({
           id: sp.id,
-          changes: { x: sp.x + dx, y: sp.y + dy },
+          changes: { x: sp.x + dx + snapDx, y: sp.y + dy + snapDy },
         }))
         batchPreviewFlatElements(changesMap)
       } else if (d.mode === 'resize') {
@@ -269,6 +307,15 @@ export function FlatGroupOverlay({ elements, scale }) {
         if (dir.includes('w')) { newW = Math.max(MIN_SIZE, origBbox.w - dx); newX = origBbox.x + (origBbox.w - newW) }
         if (dir.includes('s')) newH = Math.max(MIN_SIZE, origBbox.h + dy)
         if (dir.includes('n')) { newH = Math.max(MIN_SIZE, origBbox.h - dy); newY = origBbox.y + (origBbox.h - newH) }
+
+        // 그룹 리사이즈 스냅
+        if (d.otherRects && onSnapGuides) {
+          const snap = computeResizeSnapGuides(
+            { x: newX, y: newY, width: newW, height: newH }, dir, d.otherRects, canvasSize
+          )
+          newX = snap.x; newY = snap.y; newW = snap.width; newH = snap.height
+          onSnapGuides(snap.guides)
+        }
 
         const scaleX = newW / origBbox.w
         const scaleY = newH / origBbox.h
@@ -290,6 +337,7 @@ export function FlatGroupOverlay({ elements, scale }) {
       const d = dragRef.current
       if (!d) return
       dragRef.current = null
+      if (onSnapGuides) onSnapGuides([])
 
       const els = useFlatStore.getState().flatElements
 

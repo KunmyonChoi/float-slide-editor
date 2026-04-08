@@ -1,6 +1,7 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useCallback } from 'react'
 import { useFlatStore } from '../store/flatStore'
 import ColorPicker, { parseColor } from './ColorPicker'
+import { computeAlignmentChanges, computeDistributionChanges } from '../core/SnapEngine'
 
 // ── 글꼴 크기 프리셋 ────────────────────────────────
 
@@ -84,7 +85,7 @@ export default function FlatPropertyContent() {
 // ── 다중 선택 패널 ──────────────────────────────────
 
 function MultiElementPanel({ elements }) {
-  const { batchUpdateFlatElements, removeSelectedElements, selectedFlatIds } = useFlatStore()
+  const { batchUpdateFlatElements, batchUpdateFlatElementsIndividual, removeSelectedElements, selectedFlatIds } = useFlatStore()
 
   // 공통 값 계산 헬퍼: 모든 요소에서 동일하면 그 값, 아니면 null
   const getCommon = (getter) => {
@@ -138,6 +139,56 @@ function MultiElementPanel({ elements }) {
           </div>
         </div>
 
+        {/* 정렬 / 분배 */}
+        <div className="pt-1 border-t border-white/5">
+          <SectionTitle>정렬</SectionTitle>
+          <div className="flex gap-1">
+            {[
+              { action: 'alignLeft', label: '왼쪽', icon: <AlignLeftIcon /> },
+              { action: 'alignCenterH', label: '가운데', icon: <AlignCenterHIcon /> },
+              { action: 'alignRight', label: '오른쪽', icon: <AlignRightIcon /> },
+              { action: 'alignTop', label: '위', icon: <AlignTopIcon /> },
+              { action: 'alignMiddleV', label: '중간', icon: <AlignMiddleVIcon /> },
+              { action: 'alignBottom', label: '아래', icon: <AlignBottomIcon /> },
+            ].map(({ action, label, icon }) => (
+              <button
+                key={action}
+                title={label}
+                onClick={() => {
+                  const changes = computeAlignmentChanges(elements, action)
+                  if (changes.length > 0) batchUpdateFlatElementsIndividual(changes)
+                }}
+                className="flex-1 flex items-center justify-center py-1.5 rounded text-slate-300 hover:bg-white/10 transition-colors"
+              >
+                {icon}
+              </button>
+            ))}
+          </div>
+          {elements.length >= 3 && (
+            <>
+              <SectionTitle>분배</SectionTitle>
+              <div className="flex gap-1">
+                {[
+                  { action: 'distributeH', label: '가로 균등', icon: <DistributeHIcon /> },
+                  { action: 'distributeV', label: '세로 균등', icon: <DistributeVIcon /> },
+                ].map(({ action, label, icon }) => (
+                  <button
+                    key={action}
+                    title={label}
+                    onClick={() => {
+                      const changes = computeDistributionChanges(elements, action)
+                      if (changes.length > 0) batchUpdateFlatElementsIndividual(changes)
+                    }}
+                    className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded text-xs text-slate-300 hover:bg-white/10 transition-colors"
+                  >
+                    {icon} {label}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+
         {/* 텍스트 전용: 전체가 text일 때만 */}
         {allText && (
           <div className="pt-1 border-t border-white/5">
@@ -153,9 +204,9 @@ function MultiElementPanel({ elements }) {
               <p className={`${labelClass} mb-0.5`}>맞춤</p>
               <div className="flex gap-1.5">
                 {[
-                  { value: 'left', label: '왼쪽', icon: <AlignLeftIcon /> },
-                  { value: 'center', label: '가운데', icon: <AlignCenterIcon /> },
-                  { value: 'right', label: '오른쪽', icon: <AlignRightIcon /> },
+                  { value: 'left', label: '왼쪽', icon: <TextAlignLeftIcon /> },
+                  { value: 'center', label: '가운데', icon: <TextAlignCenterIcon /> },
+                  { value: 'right', label: '오른쪽', icon: <TextAlignRightIcon /> },
                 ].map(a => (
                   <button
                     key={a.value}
@@ -321,9 +372,9 @@ function FontSection({ styles, updateStyle }) {
         <p className={`${labelClass} mb-0.5`}>맞춤</p>
         <div className="flex gap-1.5">
           {[
-            { value: 'left', label: '왼쪽', icon: <AlignLeftIcon /> },
-            { value: 'center', label: '가운데', icon: <AlignCenterIcon /> },
-            { value: 'right', label: '오른쪽', icon: <AlignRightIcon /> },
+            { value: 'left', label: '왼쪽', icon: <TextAlignLeftIcon /> },
+            { value: 'center', label: '가운데', icon: <TextAlignCenterIcon /> },
+            { value: 'right', label: '오른쪽', icon: <TextAlignRightIcon /> },
           ].map(a => (
             <button
               key={a.value}
@@ -623,7 +674,93 @@ function TrashIcon() {
   )
 }
 
+// ── 오브젝트 정렬/분배 아이콘 (속성 패널 다중 선택용) ──
+
 function AlignLeftIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <line x1="1" y1="1" x2="1" y2="15" strokeWidth="2" />
+      <rect x="3" y="3" width="8" height="4" rx="0.5" fill="currentColor" opacity="0.4" stroke="none" />
+      <rect x="3" y="9" width="5" height="4" rx="0.5" fill="currentColor" opacity="0.4" stroke="none" />
+    </svg>
+  )
+}
+
+function AlignCenterHIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <line x1="8" y1="1" x2="8" y2="15" strokeDasharray="2 1.5" />
+      <rect x="2" y="3" width="12" height="4" rx="0.5" fill="currentColor" opacity="0.4" stroke="none" />
+      <rect x="4" y="9" width="8" height="4" rx="0.5" fill="currentColor" opacity="0.4" stroke="none" />
+    </svg>
+  )
+}
+
+function AlignRightIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <line x1="15" y1="1" x2="15" y2="15" strokeWidth="2" />
+      <rect x="5" y="3" width="8" height="4" rx="0.5" fill="currentColor" opacity="0.4" stroke="none" />
+      <rect x="8" y="9" width="5" height="4" rx="0.5" fill="currentColor" opacity="0.4" stroke="none" />
+    </svg>
+  )
+}
+
+function AlignTopIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <line x1="1" y1="1" x2="15" y2="1" strokeWidth="2" />
+      <rect x="3" y="3" width="4" height="8" rx="0.5" fill="currentColor" opacity="0.4" stroke="none" />
+      <rect x="9" y="3" width="4" height="5" rx="0.5" fill="currentColor" opacity="0.4" stroke="none" />
+    </svg>
+  )
+}
+
+function AlignMiddleVIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <line x1="1" y1="8" x2="15" y2="8" strokeDasharray="2 1.5" />
+      <rect x="3" y="2" width="4" height="12" rx="0.5" fill="currentColor" opacity="0.4" stroke="none" />
+      <rect x="9" y="4" width="4" height="8" rx="0.5" fill="currentColor" opacity="0.4" stroke="none" />
+    </svg>
+  )
+}
+
+function AlignBottomIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <line x1="1" y1="15" x2="15" y2="15" strokeWidth="2" />
+      <rect x="3" y="5" width="4" height="8" rx="0.5" fill="currentColor" opacity="0.4" stroke="none" />
+      <rect x="9" y="8" width="4" height="5" rx="0.5" fill="currentColor" opacity="0.4" stroke="none" />
+    </svg>
+  )
+}
+
+function DistributeHIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <line x1="1" y1="1" x2="1" y2="15" strokeWidth="1.5" opacity="0.5" />
+      <line x1="15" y1="1" x2="15" y2="15" strokeWidth="1.5" opacity="0.5" />
+      <rect x="3" y="4" width="3" height="8" rx="0.5" fill="currentColor" opacity="0.4" stroke="none" />
+      <rect x="10" y="4" width="3" height="8" rx="0.5" fill="currentColor" opacity="0.4" stroke="none" />
+    </svg>
+  )
+}
+
+function DistributeVIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <line x1="1" y1="1" x2="15" y2="1" strokeWidth="1.5" opacity="0.5" />
+      <line x1="1" y1="15" x2="15" y2="15" strokeWidth="1.5" opacity="0.5" />
+      <rect x="4" y="3" width="8" height="3" rx="0.5" fill="currentColor" opacity="0.4" stroke="none" />
+      <rect x="4" y="10" width="8" height="3" rx="0.5" fill="currentColor" opacity="0.4" stroke="none" />
+    </svg>
+  )
+}
+
+// ── 텍스트 정렬 아이콘 (텍스트 속성 패널용) ──
+
+function TextAlignLeftIcon() {
   return (
     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
       <path d="M17 10H3M21 6H3M21 14H3M17 18H3" />
@@ -631,7 +768,7 @@ function AlignLeftIcon() {
   )
 }
 
-function AlignCenterIcon() {
+function TextAlignCenterIcon() {
   return (
     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
       <path d="M18 10H6M21 6H3M21 14H3M18 18H6" />
@@ -639,7 +776,7 @@ function AlignCenterIcon() {
   )
 }
 
-function AlignRightIcon() {
+function TextAlignRightIcon() {
   return (
     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
       <path d="M21 10H7M21 6H3M21 14H3M21 18H7" />

@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useFlatStore } from '../store/flatStore'
 import { nextFlatId } from '../core/FlatExtractor'
+import { computeAlignmentChanges, computeDistributionChanges } from '../core/SnapEngine'
 
 const DEFAULT_STYLES = {
   backgroundColor: 'rgba(0, 0, 0, 0)', backgroundImage: 'none',
@@ -37,7 +38,7 @@ export default function FlatContextMenu({ x, y, canvasX, canvasY, onClose }) {
     copyElement, cutElement, pasteElement, duplicateElement,
     removeSelectedElements, selectAllFlats,
     bringForward, sendBackward, bringToFront, sendToBack,
-    addFlatElement, setSelectedFlat,
+    addFlatElement, setSelectedFlat, batchUpdateFlatElementsIndividual,
   } = useFlatStore()
 
   const menuRef = useRef(null)
@@ -120,11 +121,25 @@ export default function FlatContextMenu({ x, y, canvasX, canvasY, onClose }) {
       case 'insertText': insertElement('text'); break
       case 'insertRect': insertElement('rect'); break
       case 'insertCircle': insertElement('circle'); break
+      case 'alignLeft': case 'alignCenterH': case 'alignRight':
+      case 'alignTop': case 'alignMiddleV': case 'alignBottom': {
+        const selectedEls = flatElements.filter(e => selectedFlatIds.includes(e.id))
+        const changes = computeAlignmentChanges(selectedEls, action)
+        if (changes.length > 0) batchUpdateFlatElementsIndividual(changes)
+        break
+      }
+      case 'distributeH': case 'distributeV': {
+        const selectedEls = flatElements.filter(e => selectedFlatIds.includes(e.id))
+        const changes = computeDistributionChanges(selectedEls, action)
+        if (changes.length > 0) batchUpdateFlatElementsIndividual(changes)
+        break
+      }
     }
     onClose()
   }, [singleId, cutElement, copyElement, pasteElement, duplicateElement,
       removeSelectedElements, selectAllFlats, bringForward, sendBackward,
-      bringToFront, sendToBack, insertElement, onClose])
+      bringToFront, sendToBack, insertElement, onClose,
+      flatElements, selectedFlatIds, batchUpdateFlatElementsIndividual])
 
   // 서브메뉴 hover
   const enterSubmenu = (key) => {
@@ -149,6 +164,22 @@ export default function FlatContextMenu({ x, y, canvasX, canvasY, onClose }) {
         { id: 'forward', label: '앞으로', shortcut: 'Ctrl+]', action: 'bringForward' },
         { id: 'backward', label: '뒤로', shortcut: 'Ctrl+[', action: 'sendBackward' },
         { id: 'back', label: '맨 뒤로', shortcut: 'Ctrl+Shift+[', action: 'sendToBack' },
+      ],
+    },
+    { id: 'align', label: '정렬', submenu: 'align', disabled: selectedFlatIds.length < 2,
+      children: [
+        { id: 'alignLeft', label: '왼쪽 맞춤', action: 'alignLeft' },
+        { id: 'alignCenterH', label: '가로 가운데', action: 'alignCenterH' },
+        { id: 'alignRight', label: '오른쪽 맞춤', action: 'alignRight' },
+        { id: 'sepA', type: 'separator' },
+        { id: 'alignTop', label: '위쪽 맞춤', action: 'alignTop' },
+        { id: 'alignMiddleV', label: '세로 가운데', action: 'alignMiddleV' },
+        { id: 'alignBottom', label: '아래쪽 맞춤', action: 'alignBottom' },
+        ...(selectedFlatIds.length >= 3 ? [
+          { id: 'sepD', type: 'separator' },
+          { id: 'distH', label: '가로 균등 분배', action: 'distributeH' },
+          { id: 'distV', label: '세로 균등 분배', action: 'distributeV' },
+        ] : []),
       ],
     },
     { id: 'sep2', type: 'separator' },
