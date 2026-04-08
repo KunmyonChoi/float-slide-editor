@@ -26,7 +26,7 @@ function makeEl(overrides = {}) {
 function seedStore(elements) {
   useFlatStore.setState({
     flatElements: elements,
-    selectedFlatId: null,
+    selectedFlatIds: [],
     editingFlatId: null,
     clipboard: null,
     canvasSize: { w: 1280, h: 800 },
@@ -43,9 +43,10 @@ describe('copyElement / pasteElement', () => {
 
   it('copy → paste: 새 ID, +20 오프셋, sourceId 제거', () => {
     const s = useFlatStore.getState
-    s().copyElement('a')
+    s().setSelectedFlat('a')
+    s().copyElement()
     expect(s().clipboard).not.toBeNull()
-    expect(s().clipboard.id).toBe('a')
+    expect(s().clipboard[0].id).toBe('a')
 
     s().pasteElement()
     const els = s().flatElements
@@ -57,7 +58,7 @@ describe('copyElement / pasteElement', () => {
     expect(pasted.y).toBe(220)       // +20
     expect(pasted.sourceId).toBeNull()
     expect(pasted.content).toBe('Hello')
-    expect(s().selectedFlatId).toBe(pasted.id)  // 붙여넣은 요소 선택됨
+    expect(s().selectedFlatIds).toEqual([pasted.id])  // 붙여넣은 요소 선택됨
   })
 
   it('paste는 clipboard 없으면 무시', () => {
@@ -68,7 +69,8 @@ describe('copyElement / pasteElement', () => {
 
   it('paste 후 undo → 추가된 요소 제거', () => {
     const s = useFlatStore.getState
-    s().copyElement('a')
+    s().setSelectedFlat('a')
+    s().copyElement()
     s().pasteElement()
     expect(s().flatElements.length).toBe(2)
 
@@ -79,7 +81,8 @@ describe('copyElement / pasteElement', () => {
 
   it('paste 후 undo → redo → 요소 다시 추가', () => {
     const s = useFlatStore.getState
-    s().copyElement('a')
+    s().setSelectedFlat('a')
+    s().copyElement()
     s().pasteElement()
     const pastedId = s().flatElements[1].id
 
@@ -99,16 +102,18 @@ describe('cutElement', () => {
 
   it('cut → 원본 삭제 + 클립보드에 저장', () => {
     const s = useFlatStore.getState
-    s().cutElement('a')
+    s().setSelectedFlat('a')
+    s().cutElement()
     expect(s().flatElements.length).toBe(1)
     expect(s().flatElements[0].id).toBe('b')
     expect(s().clipboard).not.toBeNull()
-    expect(s().clipboard.id).toBe('a')
+    expect(s().clipboard[0].id).toBe('a')
   })
 
   it('cut → paste → 원본 위치 +20에 새 요소', () => {
     const s = useFlatStore.getState
-    s().cutElement('a')
+    s().setSelectedFlat('a')
+    s().cutElement()
     s().pasteElement()
     expect(s().flatElements.length).toBe(2)
     const pasted = s().flatElements[1]
@@ -124,7 +129,8 @@ describe('duplicateElement', () => {
 
   it('duplicate = copy + paste 한 번에', () => {
     const s = useFlatStore.getState
-    s().duplicateElement('a')
+    s().setSelectedFlat('a')
+    s().duplicateElement()
     expect(s().flatElements.length).toBe(2)
     const dup = s().flatElements[1]
     expect(dup.id).not.toBe('a')

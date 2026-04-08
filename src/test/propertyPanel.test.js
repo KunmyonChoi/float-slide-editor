@@ -27,7 +27,7 @@ function makeEl(overrides = {}) {
 function seedFlatStore(elements = []) {
   useFlatStore.setState({
     flatElements: elements,
-    selectedFlatId: null,
+    selectedFlatIds: [],
     editingFlatId: null,
     canvasSize: { w: 1280, h: 800 },
     panelMode: 'docked',
@@ -111,16 +111,16 @@ describe('Cross-selection 해제', () => {
     useFlatStore.getState().setSelectedFlat('el-1')
 
     // 두 선택이 동시에 존재할 수 있음 (컴포넌트 레벨에서 cross-clear)
-    expect(useFlatStore.getState().selectedFlatId).toBe('el-1')
+    expect(useFlatStore.getState().selectedFlatIds).toEqual(['el-1'])
     expect(useEditorStore.getState().selectedId).toBe('html-1')
   })
 
   it('setSelectedFlat(null)로 flat 선택 해제', () => {
     useFlatStore.getState().setSelectedFlat('el-1')
-    expect(useFlatStore.getState().selectedFlatId).toBe('el-1')
+    expect(useFlatStore.getState().selectedFlatIds).toEqual(['el-1'])
 
     useFlatStore.getState().setSelectedFlat(null)
-    expect(useFlatStore.getState().selectedFlatId).toBeNull()
+    expect(useFlatStore.getState().selectedFlatIds).toEqual([])
   })
 
   it('editorStore.setSelected(null)로 HTML 선택 해제', () => {
@@ -139,7 +139,7 @@ describe('Cross-selection 해제', () => {
     useFlatStore.getState().setSelectedFlat('el-1')
     useEditorStore.getState().setSelected(null)
 
-    expect(useFlatStore.getState().selectedFlatId).toBe('el-1')
+    expect(useFlatStore.getState().selectedFlatIds).toEqual(['el-1'])
     expect(useEditorStore.getState().selectedId).toBeNull()
   })
 
@@ -152,6 +152,6 @@ describe('Cross-selection 해제', () => {
     useFlatStore.getState().setSelectedFlat(null)
 
     expect(useEditorStore.getState().selectedId).toBe('html-1')
-    expect(useFlatStore.getState().selectedFlatId).toBeNull()
+    expect(useFlatStore.getState().selectedFlatIds).toEqual([])
   })
 })

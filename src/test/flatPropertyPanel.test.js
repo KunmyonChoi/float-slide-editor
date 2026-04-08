@@ -27,7 +27,7 @@ function makeEl(overrides = {}) {
 function seedStore(elements) {
   useFlatStore.setState({
     flatElements: elements,
-    selectedFlatId: null,
+    selectedFlatIds: [],
     editingFlatId: null,
     canvasSize: { w: 1280, h: 800 },
   })

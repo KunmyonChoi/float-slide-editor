@@ -10,8 +10,8 @@ let _pendingEditCommit = null  // 편집 중 unmount 전 커밋용 콜백
 export const useFlatStore = create((set, get) => ({
   /** FlatElement 배열 */
   flatElements: [],
-  /** 선택된 flat 요소 ID */
-  selectedFlatId: null,
+  /** 선택된 flat 요소 ID 배열 (다중 선택) */
+  selectedFlatIds: [],
   /** 인라인 편집 중인 flat 요소 ID */
   editingFlatId: null,
   /** 뷰 모드: 'html' | 'flat' | 'split' */
@@ -27,6 +27,9 @@ export const useFlatStore = create((set, get) => ({
   canRedo: false,
   /** 복사/붙여넣기용 클립보드 */
   clipboard: null,
+  /** 마키 드래그 직후 배경 click 무시용 플래그 */
+  _skipBgClick: false,
+
   /** 속성 패널 모드: 'docked' | 'floating' */
   panelMode: 'docked',
   /** 플로팅 패널 위치 기억 */
@@ -66,7 +69,7 @@ export const useFlatStore = create((set, get) => ({
       flatElements: cached.elements,
       canvasSize: cached.canvasSize,
       fontImports: cached.fontImports,
-      selectedFlatId: null,
+      selectedFlatIds: [],
       editingFlatId: null,
       canUndo: _history.canUndo,
       canRedo: _history.canRedo,
@@ -93,7 +96,7 @@ export const useFlatStore = create((set, get) => ({
       flatElements: elements,
       canvasSize,
       fontImports: fontImports || [],
-      selectedFlatId: null,
+      selectedFlatIds: [],
       editingFlatId: null,
       _iframeRef: iframeRef,
       canUndo: false,
@@ -121,7 +124,7 @@ export const useFlatStore = create((set, get) => ({
         flatElements: elements,
         canvasSize,
         fontImports: fontImports || [],
-        selectedFlatId: null,
+        selectedFlatIds: [],
         editingFlatId: null,
         canUndo: false,
         canRedo: false,
@@ -134,7 +137,28 @@ export const useFlatStore = create((set, get) => ({
   },
 
   setSelectedFlat(id) {
-    set({ selectedFlatId: id })
+    set({ selectedFlatIds: id ? [id] : [] })
+  },
+
+  /** Shift+클릭용 — 토글 선택 */
+  toggleSelectFlat(id) {
+    const ids = get().selectedFlatIds
+    if (ids.includes(id)) {
+      set({ selectedFlatIds: ids.filter(i => i !== id) })
+    } else {
+      set({ selectedFlatIds: [...ids, id] })
+    }
+  },
+
+  /** 마키 선택 결과 일괄 설정 */
+  setSelectedFlats(ids) {
+    set({ selectedFlatIds: ids })
+  },
+
+  /** 전체 선택 (Ctrl+A) */
+  selectAllFlats() {
+    const ids = get().flatElements.map(e => e.id)
+    set({ selectedFlatIds: ids })
   },
 
   /** 인라인 텍스트 편집 시작/종료 */
@@ -196,40 +220,70 @@ export const useFlatStore = create((set, get) => ({
 
     const updated = els.filter(e => e.id !== id)
     const updates = { flatElements: updated, canUndo: _history.canUndo, canRedo: _history.canRedo }
-    if (get().selectedFlatId === id) updates.selectedFlatId = null
+    const ids = get().selectedFlatIds
+    if (ids.includes(id)) updates.selectedFlatIds = ids.filter(i => i !== id)
+    if (get().editingFlatId === id) updates.editingFlatId = null
     set(updates)
   },
 
-  /** 요소 복사 (클립보드에 저장) */
-  copyElement(id) {
-    const el = get().flatElements.find(e => e.id === id)
-    if (el) set({ clipboard: structuredClone(el) })
+  /** 선택된 요소 전체 삭제 (다중 삭제) */
+  removeSelectedElements() {
+    const { selectedFlatIds, flatElements } = get()
+    if (selectedFlatIds.length === 0) return
+    if (selectedFlatIds.length === 1) {
+      get().removeFlatElement(selectedFlatIds[0])
+      return
+    }
+    const entries = []
+    let updated = [...flatElements]
+    for (const id of selectedFlatIds) {
+      const idx = updated.findIndex(e => e.id === id)
+      if (idx === -1) continue
+      entries.push({ element: { ...updated[idx] }, index: idx })
+      updated = updated.filter(e => e.id !== id)
+    }
+    if (entries.length === 0) return
+    _history.push({ type: 'batch_remove', entries })
+    set({ flatElements: updated, selectedFlatIds: [], canUndo: _history.canUndo, canRedo: _history.canRedo })
   },
 
-  /** 요소 잘라내기 (복사 + 삭제) */
-  cutElement(id) {
-    get().copyElement(id)
-    get().removeFlatElement(id)
+  /** 선택된 요소 복사 (클립보드에 저장) — 다중 지원 */
+  copyElement() {
+    const { selectedFlatIds, flatElements } = get()
+    const copied = flatElements.filter(e => selectedFlatIds.includes(e.id))
+    if (copied.length > 0) set({ clipboard: structuredClone(copied) })
   },
 
-  /** 클립보드에서 붙여넣기 */
+  /** 선택된 요소 잘라내기 (복사 + 삭제) — 다중 지원 */
+  cutElement() {
+    get().copyElement()
+    get().removeSelectedElements()
+  },
+
+  /** 클립보드에서 붙여넣기 — 다중 지원 */
   pasteElement() {
-    const { clipboard } = get()
-    if (!clipboard) return
-    const newEl = {
-      ...structuredClone(clipboard),
+    const { clipboard, flatElements } = get()
+    if (!clipboard || clipboard.length === 0) return
+    const newEls = clipboard.map(e => ({
+      ...structuredClone(e),
       id: nextFlatId(),
       sourceId: null,
-      x: clipboard.x + 20,
-      y: clipboard.y + 20,
+      x: e.x + 20,
+      y: e.y + 20,
+    }))
+    if (newEls.length === 1) {
+      get().addFlatElement(newEls[0])
+    } else {
+      const entries = newEls.map(e => ({ element: structuredClone(e) }))
+      _history.push({ type: 'batch_add', entries })
+      set({ flatElements: [...flatElements, ...newEls], canUndo: _history.canUndo, canRedo: _history.canRedo })
     }
-    get().addFlatElement(newEl)
-    set({ selectedFlatId: newEl.id })
+    set({ selectedFlatIds: newEls.map(e => e.id) })
   },
 
-  /** 요소 복제 (copy + paste) */
-  duplicateElement(id) {
-    get().copyElement(id)
+  /** 선택된 요소 복제 */
+  duplicateElement() {
+    get().copyElement()
     get().pasteElement()
   },
 
@@ -241,6 +295,71 @@ export const useFlatStore = create((set, get) => ({
       flatElements: [...els, element],
       canUndo: _history.canUndo, canRedo: _history.canRedo,
     })
+  },
+
+  /** 여러 요소에 동일 changes 적용 + batch 히스토리 */
+  batchUpdateFlatElements(ids, changes) {
+    const els = get().flatElements
+    const entries = []
+    const updated = [...els]
+    for (const id of ids) {
+      const idx = updated.findIndex(e => e.id === id)
+      if (idx === -1) continue
+      const old = updated[idx]
+      let merged = { ...changes }
+      if (merged.styles && old.styles) {
+        merged = { ...merged, styles: { ...old.styles, ...merged.styles } }
+      }
+      const oldValues = {}
+      for (const key of Object.keys(merged)) oldValues[key] = old[key]
+      entries.push({ id, oldValues, newValues: { ...merged } })
+      updated[idx] = { ...old, ...merged }
+    }
+    if (entries.length === 0) return
+    _history.push({ type: 'batch', entries })
+    set({ flatElements: updated, canUndo: _history.canUndo, canRedo: _history.canRedo })
+  },
+
+  /** 여러 요소 개별 changes 적용 + batch 히스토리 (그룹 리사이즈 등) */
+  batchUpdateFlatElementsIndividual(changesMap) {
+    // changesMap: [{ id, changes }]
+    const els = get().flatElements
+    const entries = []
+    const updated = [...els]
+    for (const { id, changes } of changesMap) {
+      const idx = updated.findIndex(e => e.id === id)
+      if (idx === -1) continue
+      const old = updated[idx]
+      let merged = { ...changes }
+      if (merged.styles && old.styles) {
+        merged = { ...merged, styles: { ...old.styles, ...merged.styles } }
+      }
+      const oldValues = {}
+      for (const key of Object.keys(merged)) oldValues[key] = old[key]
+      entries.push({ id, oldValues, newValues: { ...merged } })
+      updated[idx] = { ...old, ...merged }
+    }
+    if (entries.length === 0) return
+    _history.push({ type: 'batch', entries })
+    set({ flatElements: updated, canUndo: _history.canUndo, canRedo: _history.canRedo })
+  },
+
+  /** 여러 요소 미리보기 (히스토리 없음) — 그룹 드래그용 */
+  batchPreviewFlatElements(changesMap) {
+    // changesMap: [{ id, changes }]
+    const els = get().flatElements
+    const updated = [...els]
+    for (const { id, changes } of changesMap) {
+      const idx = updated.findIndex(e => e.id === id)
+      if (idx === -1) continue
+      const old = updated[idx]
+      let merged = { ...changes }
+      if (merged.styles && old.styles) {
+        merged = { ...merged, styles: { ...old.styles, ...merged.styles } }
+      }
+      updated[idx] = { ...old, ...merged }
+    }
+    set({ flatElements: updated })
   },
 
   /** z-순서: 한 단계 앞으로 */
@@ -339,6 +458,25 @@ export const useFlatStore = create((set, get) => ({
         if (idx !== -1) updated[idx] = { ...updated[idx], zIndex: c.oldZ }
       }
       set({ flatElements: updated })
+    } else if (cmd.type === 'batch') {
+      const updated = [...els]
+      for (const entry of cmd.entries) {
+        const idx = updated.findIndex(e => e.id === entry.id)
+        if (idx !== -1) updated[idx] = { ...updated[idx], ...entry.oldValues }
+      }
+      set({ flatElements: updated })
+    } else if (cmd.type === 'batch_remove') {
+      const updated = [...els]
+      for (const entry of [...cmd.entries].reverse()) {
+        updated.splice(entry.index, 0, entry.element)
+      }
+      set({ flatElements: updated })
+    } else if (cmd.type === 'batch_add') {
+      let updated = els
+      for (const entry of cmd.entries) {
+        updated = updated.filter(e => e.id !== entry.element.id)
+      }
+      set({ flatElements: updated })
     }
 
     set({ canUndo: _history.canUndo, canRedo: _history.canRedo })
@@ -364,6 +502,25 @@ export const useFlatStore = create((set, get) => ({
       for (const c of cmd.changes) {
         const idx = updated.findIndex(e => e.id === c.id)
         if (idx !== -1) updated[idx] = { ...updated[idx], zIndex: c.newZ }
+      }
+      set({ flatElements: updated })
+    } else if (cmd.type === 'batch') {
+      const updated = [...els]
+      for (const entry of cmd.entries) {
+        const idx = updated.findIndex(e => e.id === entry.id)
+        if (idx !== -1) updated[idx] = { ...updated[idx], ...entry.newValues }
+      }
+      set({ flatElements: updated })
+    } else if (cmd.type === 'batch_remove') {
+      let updated = els
+      for (const entry of cmd.entries) {
+        updated = updated.filter(e => e.id !== entry.element.id)
+      }
+      set({ flatElements: updated })
+    } else if (cmd.type === 'batch_add') {
+      const updated = [...els]
+      for (const entry of cmd.entries) {
+        updated.push(entry.element)
       }
       set({ flatElements: updated })
     }

@@ -29,7 +29,7 @@ function seedPage(pageKey, elements) {
     flatElements: elements,
     canvasSize: { w: 1280, h: 800 },
     fontImports: [],
-    selectedFlatId: null,
+    selectedFlatIds: [],
     editingFlatId: null,
   })
   useFlatStore.getState().clearHistory()
@@ -108,7 +108,7 @@ describe('flatStore 페이지 캐시', () => {
       flatElements: [],
       canvasSize: { w: 1280, h: 800 },
       fontImports: [],
-      selectedFlatId: null,
+      selectedFlatIds: [],
       editingFlatId: null,
       _iframeRef: null,
     })
@@ -164,7 +164,7 @@ describe('flatStore 캐시 내부 메서드', () => {
       flatElements: [],
       canvasSize: { w: 1280, h: 800 },
       fontImports: [],
-      selectedFlatId: null,
+      selectedFlatIds: [],
       editingFlatId: null,
     })
     useFlatStore.getState().clearHistory()

@@ -8,14 +8,42 @@ import { useEditorStore } from '../store/editorStore'
  * 클릭으로 선택, 드래그로 이동 (Phase 3에서 추가).
  */
 export default function FlatElementRenderer({ element, isSelected, isEditing, scale }) {
-  const { setSelectedFlat, setEditingFlat, canvasSize } = useFlatStore()
+  const { setSelectedFlat, toggleSelectFlat, setEditingFlat, canvasSize } = useFlatStore()
+
+  const { x, y, width, height, type, content } = element
+
+  // 전체 캔버스를 덮는 배경 shape 판정
+  const isFullCanvasBg = type === 'shape' && !content
+    && Math.abs(width - canvasSize.w) < 2 && Math.abs(height - canvasSize.h) < 2
+    && Math.abs(x) < 2 && Math.abs(y) < 2
 
   const handleMouseDown = useCallback((e) => {
+    if (isFullCanvasBg) {
+      // 배경: stopPropagation 안 함 (마키 공존), 선택은 mouseup에서 처리
+      return
+    }
     e.stopPropagation()
-    setSelectedFlat(element.id)
-    // split 모드: HTML 쪽 선택 해제
+    e.preventDefault() // 브라우저 텍스트 선택 방지
+    if (e.shiftKey) {
+      toggleSelectFlat(element.id)
+    } else {
+      setSelectedFlat(element.id)
+    }
     useEditorStore.getState().setSelected(null)
-  }, [element.id, setSelectedFlat])
+  }, [element.id, isFullCanvasBg, setSelectedFlat, toggleSelectFlat])
+
+  const handleClick = useCallback((e) => {
+    if (!isFullCanvasBg) return
+    // 마키 드래그 직후면 배경 선택 무시
+    if (useFlatStore.getState()._skipBgClick) return
+    // 배경 클릭 (드래그 없이) → 선택
+    if (e.shiftKey) {
+      toggleSelectFlat(element.id)
+    } else {
+      setSelectedFlat(element.id)
+    }
+    useEditorStore.getState().setSelected(null)
+  }, [element.id, isFullCanvasBg, setSelectedFlat, toggleSelectFlat])
 
   const handleDoubleClick = useCallback((e) => {
     if (element.type === 'text') {
@@ -24,12 +52,7 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
     }
   }, [element.id, element.type, setEditingFlat])
 
-  const { x, y, width, height, zIndex, type, content, isRich, merged, styles } = element
-
-  // 전체 캔버스를 덮는 배경 shape → 클릭 통과 (콘텐츠 선택 방해 방지)
-  const isFullCanvasBg = type === 'shape' && !content
-    && Math.abs(width - canvasSize.w) < 2 && Math.abs(height - canvasSize.h) < 2
-    && Math.abs(x) < 2 && Math.abs(y) < 2
+  const { zIndex, isRich, merged, styles } = element
 
   const baseStyle = {
     position: 'absolute',
@@ -39,8 +62,7 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
     height,
     zIndex,
     boxSizing: 'border-box',
-    cursor: isFullCanvasBg ? 'default' : 'default',
-    pointerEvents: isFullCanvasBg ? 'none' : undefined,
+    cursor: 'default',
     outline: isSelected
       ? '2px solid rgba(99,102,241,0.8)'
       : undefined,
@@ -49,7 +71,7 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
 
   if (type === 'image') {
     return (
-      <div style={baseStyle} onMouseDown={handleMouseDown}>
+      <div style={baseStyle} onMouseDown={handleMouseDown} onClick={handleClick}>
         <img
           src={content}
           alt=""
@@ -109,6 +131,7 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
           visibility: isEditing ? 'hidden' : undefined,
         }}
         onMouseDown={handleMouseDown}
+        onClick={handleClick}
         onDoubleClick={handleDoubleClick}
       >
         {isRich
@@ -123,6 +146,7 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
       <div
         style={baseStyle}
         onMouseDown={handleMouseDown}
+        onClick={handleClick}
         dangerouslySetInnerHTML={{ __html: content }}
       />
     )
@@ -142,6 +166,7 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
         opacity: styles.opacity,
       }}
       onMouseDown={handleMouseDown}
+      onClick={handleClick}
     />
   )
 }

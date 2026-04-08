@@ -2,7 +2,7 @@ import { useRef, useEffect, useCallback, useState } from 'react'
 import { useFlatStore } from '../store/flatStore'
 import { useEditorStore } from '../store/editorStore'
 import FlatElementRenderer from './FlatElementRenderer'
-import FlatSelectionOverlay from './FlatSelectionOverlay'
+import FlatSelectionOverlay, { FlatGroupOverlay } from './FlatSelectionOverlay'
 import FlatInlineEditor from './FlatInlineEditor'
 
 /**
@@ -12,11 +12,14 @@ import FlatInlineEditor from './FlatInlineEditor'
  */
 export default function FlatCanvas() {
   const stageRef = useRef(null)
+  const canvasRef = useRef(null)
   const [scale, setScale] = useState(1)
+  const [marquee, setMarquee] = useState(null)
+  const marqueeRef = useRef(null) // 마키 시작 좌표 기억
 
-  const { flatElements, selectedFlatId, editingFlatId, setSelectedFlat, canvasSize,
-          removeFlatElement, updateFlatElement, undo, redo, viewMode, reExtract,
-          fontImports, copyElement, cutElement, pasteElement, duplicateElement,
+  const { flatElements, selectedFlatIds, editingFlatId, setSelectedFlat, setSelectedFlats, canvasSize,
+          removeSelectedElements, updateFlatElement, undo, redo, viewMode, reExtract,
+          fontImports, copyElement, cutElement, pasteElement, duplicateElement, selectAllFlats,
           bringForward, sendBackward, bringToFront, sendToBack } = useFlatStore()
   const { currentPage, revealV } = useEditorStore()
 
@@ -47,9 +50,8 @@ export default function FlatCanvas() {
     return () => { for (const el of injected) el.remove() }
   }, [fontImports])
 
-  const selectedEl = selectedFlatId
-    ? flatElements.find(e => e.id === selectedFlatId)
-    : null
+  const selectedEls = flatElements.filter(e => selectedFlatIds.includes(e.id))
+  const selectedEl = selectedEls.length === 1 ? selectedEls[0] : null
 
   // 페이지 변경 시 flat 뷰 재추출 (flat/split 모드 — iframe은 항상 마운트됨)
   // reveal.js 수직 슬라이드 변경도 감지하기 위해 revealV도 의존성에 포함
@@ -65,26 +67,41 @@ export default function FlatCanvas() {
   // 페이지 네비게이션(PageUp/PageDown)은 PageBar에서 전역 처리
   useEffect(() => {
     const onKeyDown = (e) => {
+      // Escape: 텍스트 편집 중이면 편집 종료, 아니면 선택 해제
+      if (e.key === 'Escape') {
+        const { editingFlatId, selectedFlatIds } = useFlatStore.getState()
+        if (editingFlatId) {
+          e.preventDefault()
+          useFlatStore.getState().setEditingFlat(null)
+        } else if (selectedFlatIds.length > 0) {
+          e.preventDefault()
+          setSelectedFlat(null)
+        }
+        return
+      }
+
       if (useFlatStore.getState().editingFlatId) return  // 텍스트 편집 중
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return
       if (e.target.contentEditable === 'true') return
 
-      const { selectedFlatId } = useFlatStore.getState()
+      const { selectedFlatIds } = useFlatStore.getState()
+      const hasSelection = selectedFlatIds.length > 0
+      const singleId = selectedFlatIds.length === 1 ? selectedFlatIds[0] : null
 
-      // Enter → 텍스트 요소 편집 모드 진입 (더블클릭과 동일)
-      if (e.key === 'Enter' && selectedFlatId) {
+      // Enter → 텍스트 요소 편집 모드 진입 (단일 선택만)
+      if (e.key === 'Enter' && singleId) {
         const els = useFlatStore.getState().flatElements
-        const el = els.find(e => e.id === selectedFlatId)
+        const el = els.find(el => el.id === singleId)
         if (el && el.type === 'text') {
           e.preventDefault()
-          useFlatStore.getState().setEditingFlat(selectedFlatId)
+          useFlatStore.getState().setEditingFlat(singleId)
           return
         }
       }
 
-      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedFlatId) {
+      if ((e.key === 'Delete' || e.key === 'Backspace') && hasSelection) {
         e.preventDefault()
-        removeFlatElement(selectedFlatId)
+        removeSelectedElements()
         return
       }
 
@@ -92,34 +109,42 @@ export default function FlatCanvas() {
         if (e.code === 'KeyZ' && !e.shiftKey) { e.preventDefault(); undo(); return }
         if (e.code === 'KeyZ' && e.shiftKey)  { e.preventDefault(); redo(); return }
         if (e.code === 'KeyY')                { e.preventDefault(); redo(); return }
-        if (e.code === 'KeyC' && selectedFlatId)  { copyElement(selectedFlatId); return }
-        if (e.code === 'KeyX' && selectedFlatId)  { cutElement(selectedFlatId); return }
-        if (e.code === 'KeyV')                    { pasteElement(); return }
-        if (e.code === 'KeyD' && selectedFlatId)  { e.preventDefault(); duplicateElement(selectedFlatId); return }
-        if (e.code === 'BracketRight' && !e.shiftKey && selectedFlatId) { bringForward(selectedFlatId); return }
-        if (e.code === 'BracketLeft' && !e.shiftKey && selectedFlatId)  { sendBackward(selectedFlatId); return }
-        if (e.code === 'BracketRight' && e.shiftKey && selectedFlatId)  { bringToFront(selectedFlatId); return }
-        if (e.code === 'BracketLeft' && e.shiftKey && selectedFlatId)   { sendToBack(selectedFlatId); return }
+        if (e.code === 'KeyA')                { e.preventDefault(); selectAllFlats(); return }
+        if (e.code === 'KeyC' && hasSelection)  { copyElement(); return }
+        if (e.code === 'KeyX' && hasSelection)  { cutElement(); return }
+        if (e.code === 'KeyV')                  { pasteElement(); return }
+        if (e.code === 'KeyD' && hasSelection)  { e.preventDefault(); duplicateElement(); return }
+        // z-순서: 단일 선택만
+        if (e.code === 'BracketRight' && !e.shiftKey && singleId) { bringForward(singleId); return }
+        if (e.code === 'BracketLeft' && !e.shiftKey && singleId)  { sendBackward(singleId); return }
+        if (e.code === 'BracketRight' && e.shiftKey && singleId)  { bringToFront(singleId); return }
+        if (e.code === 'BracketLeft' && e.shiftKey && singleId)   { sendToBack(singleId); return }
       }
 
-      // 요소 미선택 시 화살표 키는 PageBar의 전역 핸들러가 처리 (중복 방지)
-
+      // 화살표 이동 — 다중 선택 지원
       const step = e.shiftKey ? 10 : 1
-      if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key) && selectedFlatId) {
+      if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key) && hasSelection) {
         e.preventDefault()
-        const els = useFlatStore.getState().flatElements
-        const el = els.find(e => e.id === selectedFlatId)
-        if (!el) return
-        const delta = { ArrowUp: { y: -step }, ArrowDown: { y: step }, ArrowLeft: { x: -step }, ArrowRight: { x: step } }[e.key]
-        updateFlatElement(selectedFlatId, {
-          x: el.x + (delta.x || 0),
-          y: el.y + (delta.y || 0),
-        })
+        const delta = { ArrowUp: { x: 0, y: -step }, ArrowDown: { x: 0, y: step }, ArrowLeft: { x: -step, y: 0 }, ArrowRight: { x: step, y: 0 } }[e.key]
+        if (selectedFlatIds.length === 1) {
+          const els = useFlatStore.getState().flatElements
+          const el = els.find(el => el.id === singleId)
+          if (el) updateFlatElement(singleId, { x: el.x + delta.x, y: el.y + delta.y })
+        } else {
+          const els = useFlatStore.getState().flatElements
+          const changesMap = selectedFlatIds.map(id => {
+            const el = els.find(el => el.id === id)
+            return el ? { id, changes: { x: el.x + delta.x, y: el.y + delta.y } } : null
+          }).filter(Boolean)
+          if (changesMap.length > 0) {
+            useFlatStore.getState().batchUpdateFlatElementsIndividual(changesMap)
+          }
+        }
       }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [removeFlatElement, updateFlatElement, undo, redo, copyElement, cutElement, pasteElement, duplicateElement, bringForward, sendBackward, bringToFront, sendToBack])
+  }, [removeSelectedElements, updateFlatElement, undo, redo, copyElement, cutElement, pasteElement, duplicateElement, selectAllFlats, bringForward, sendBackward, bringToFront, sendToBack])
 
   /** scale 재계산 */
   const recalcScale = useCallback(() => {
@@ -142,8 +167,79 @@ export default function FlatCanvas() {
     return () => ro.disconnect()
   }, [recalcScale])
 
-  const handleStageClick = useCallback(() => {
-    if (useFlatStore.getState().editingFlatId) return // blur 이벤트가 커밋 처리
+  // 마키 선택: mousedown → mousemove → mouseup
+  // 배경 요소는 stopPropagation 안 하므로 여기까지 버블링됨
+  // 선택 해제는 mouseup에서 판단 (드래그 없고 배경도 안 눌렸으면 해제)
+  const handleStageMouseDown = useCallback((e) => {
+    if (useFlatStore.getState().editingFlatId) return
+    if (!canvasRef.current) return
+    const rect = canvasRef.current.getBoundingClientRect()
+    const sx = (e.clientX - rect.left) / scale
+    const sy = (e.clientY - rect.top) / scale
+
+    e.preventDefault() // 브라우저 텍스트 선택 방지
+    marqueeRef.current = { startX: sx, startY: sy, rect, shiftKey: e.shiftKey }
+    setMarquee({ startX: sx, startY: sy, endX: sx, endY: sy })
+  }, [scale])
+
+  useEffect(() => {
+    const onMove = (e) => {
+      if (!marqueeRef.current) return
+      const { startX, startY, rect } = marqueeRef.current
+      const endX = (e.clientX - rect.left) / scale
+      const endY = (e.clientY - rect.top) / scale
+      setMarquee({ startX, startY, endX, endY })
+    }
+    const onUp = () => {
+      if (!marqueeRef.current) return
+      const { shiftKey } = marqueeRef.current
+      marqueeRef.current = null
+      // 마키 영역 계산
+      setMarquee(prev => {
+        if (!prev) return null
+        const x1 = Math.min(prev.startX, prev.endX)
+        const y1 = Math.min(prev.startY, prev.endY)
+        const x2 = Math.max(prev.startX, prev.endX)
+        const y2 = Math.max(prev.startY, prev.endY)
+        // 최소 크기 이하면 단순 클릭 (배경 click 이벤트가 처리)
+        if (x2 - x1 < 3 && y2 - y1 < 3) return null
+
+        // 실제 마키 드래그 발생 → 배경 click 무시 플래그 설정
+        useFlatStore.setState({ _skipBgClick: true })
+        requestAnimationFrame(() => useFlatStore.setState({ _skipBgClick: false }))
+
+        // 완전 포함된 요소만 선택 (PPT 방식) + 배경 제외
+        const els = useFlatStore.getState().flatElements
+        const cs = useFlatStore.getState().canvasSize
+        const hits = els.filter(el => {
+          // 전체 캔버스 배경 제외
+          if (el.type === 'shape' && !el.content
+            && Math.abs(el.width - cs.w) < 2 && Math.abs(el.height - cs.h) < 2
+            && Math.abs(el.x) < 2 && Math.abs(el.y) < 2) return false
+          // 요소가 마키 영역 안에 완전히 포함되어야 선택
+          return el.x >= x1 && el.y >= y1 && el.x + el.width <= x2 && el.y + el.height <= y2
+        }).map(el => el.id)
+        if (hits.length > 0) {
+          useFlatStore.getState().setSelectedFlats(hits)
+        } else if (!shiftKey) {
+          useFlatStore.getState().setSelectedFlat(null)
+        }
+        return null
+      })
+    }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+    return () => {
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+    }
+  }, [scale])
+
+  // 캔버스 바깥 (회색 영역) 클릭 시 선택 해제
+  const handleOuterClick = useCallback((e) => {
+    // canvasRef 내부 클릭이면 무시 (마키 핸들러가 처리)
+    if (canvasRef.current && canvasRef.current.contains(e.target)) return
+    if (useFlatStore.getState().editingFlatId) return
     setSelectedFlat(null)
   }, [setSelectedFlat])
 
@@ -156,10 +252,11 @@ export default function FlatCanvas() {
         overflow: 'hidden',
         background: '#0f172a',
       }}
-      onMouseDown={handleStageClick}
+      onMouseDown={handleOuterClick}
     >
       {flatElements.length > 0 && (
         <div
+          ref={canvasRef}
           style={{
             position: 'absolute',
             top: '50%',
@@ -171,24 +268,42 @@ export default function FlatCanvas() {
             boxShadow: '0 20px 80px rgba(0,0,0,0.7)',
             background: '#fff',
           }}
+          onMouseDown={handleStageMouseDown}
         >
           <div style={{ position: 'relative', width: '100%', height: '100%', overflow: 'hidden' }}>
             {flatElements.map(el => (
               <FlatElementRenderer
                 key={el.id}
                 element={el}
-                isSelected={el.id === selectedFlatId}
+                isSelected={selectedFlatIds.includes(el.id)}
                 isEditing={el.id === editingFlatId}
                 scale={scale}
               />
             ))}
-            {selectedEl && (
+            {selectedEls.length === 1 && selectedEl && (
               <FlatSelectionOverlay element={selectedEl} scale={scale} />
+            )}
+            {selectedEls.length > 1 && (
+              <FlatGroupOverlay elements={selectedEls} scale={scale} />
             )}
             {editingFlatId && flatElements.find(e => e.id === editingFlatId) && (
               <FlatInlineEditor
                 element={flatElements.find(e => e.id === editingFlatId)}
               />
+            )}
+            {/* 마키 선택 영역 */}
+            {marquee && (
+              <div style={{
+                position: 'absolute',
+                left: Math.min(marquee.startX, marquee.endX),
+                top: Math.min(marquee.startY, marquee.endY),
+                width: Math.abs(marquee.endX - marquee.startX),
+                height: Math.abs(marquee.endY - marquee.startY),
+                border: '1px dashed rgba(99,102,241,0.6)',
+                background: 'rgba(99,102,241,0.08)',
+                pointerEvents: 'none',
+                zIndex: 9998,
+              }} />
             )}
           </div>
         </div>

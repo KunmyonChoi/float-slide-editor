@@ -42,7 +42,7 @@ function makeTextEl(overrides = {}) {
 function seedStore(elements) {
   useFlatStore.setState({
     flatElements: elements,
-    selectedFlatId: null,
+    selectedFlatIds: [],
     editingFlatId: null,
     canvasSize: { w: 1280, h: 800 },
   })
@@ -245,6 +245,6 @@ describe('편집 중 선택/이동 동작', () => {
     useFlatStore.getState().setSelectedFlat('flat-txt-2')
     // editingFlatId는 blur 이벤트에서만 해제됨 — store에서는 독립 상태
     expect(useFlatStore.getState().editingFlatId).toBe('flat-txt-1')
-    expect(useFlatStore.getState().selectedFlatId).toBe('flat-txt-2')
+    expect(useFlatStore.getState().selectedFlatIds).toEqual(['flat-txt-2'])
   })
 })

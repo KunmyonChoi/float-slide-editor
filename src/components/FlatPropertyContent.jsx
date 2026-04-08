@@ -24,11 +24,14 @@ const labelClass = 'text-xs text-slate-500'
  * PropertyPanel 셸 안에 렌더링된다.
  */
 export default function FlatPropertyContent() {
-  const { selectedFlatId, flatElements, updateFlatElement, previewFlatElement, removeFlatElement } = useFlatStore()
-  const el = flatElements.find(e => e.id === selectedFlatId)
+  const { selectedFlatIds, flatElements, updateFlatElement, previewFlatElement, removeFlatElement,
+          batchUpdateFlatElements, removeSelectedElements } = useFlatStore()
+  const selectedEls = flatElements.filter(e => selectedFlatIds.includes(e.id))
 
-  if (!el) return null
+  if (selectedEls.length === 0) return null
+  if (selectedEls.length > 1) return <MultiElementPanel elements={selectedEls} />
 
+  const el = selectedEls[0]
   const update = (changes) => updateFlatElement(el.id, changes)
   const updateStyle = (key, value) => updateFlatElement(el.id, { styles: { [key]: value } })
   const previewStyle = (key, value) => previewFlatElement(el.id, { styles: { [key]: value } })
@@ -76,6 +79,165 @@ export default function FlatPropertyContent() {
       </div>
     </>
   )
+}
+
+// ── 다중 선택 패널 ──────────────────────────────────
+
+function MultiElementPanel({ elements }) {
+  const { batchUpdateFlatElements, removeSelectedElements, selectedFlatIds } = useFlatStore()
+
+  // 공통 값 계산 헬퍼: 모든 요소에서 동일하면 그 값, 아니면 null
+  const getCommon = (getter) => {
+    const vals = elements.map(getter)
+    return vals.every(v => v === vals[0]) ? vals[0] : null
+  }
+
+  const getCommonStyle = (key) => getCommon(el => el.styles?.[key])
+
+  const updateAllStyle = (key, value) => {
+    batchUpdateFlatElements(selectedFlatIds, { styles: { [key]: value } })
+  }
+
+  // 그룹 바운딩 박스
+  const bbox = getGroupBBox(elements)
+  const allText = elements.every(e => e.type === 'text')
+
+  const commonBg = getCommonStyle('backgroundColor')
+  const commonOpacity = getCommonStyle('opacity')
+  const commonBorderRadius = getCommonStyle('borderRadius')
+
+  return (
+    <>
+      <div className="flex items-center gap-2 px-3 py-2.5 border-b border-white/5">
+        <span className="text-xs font-medium px-2 py-0.5 rounded-md bg-white/10 text-slate-300 border border-white/10">
+          {elements.length}개 선택
+        </span>
+      </div>
+
+      <div className="p-3 space-y-3">
+        {/* 그룹 바운딩 박스 위치/크기 (읽기 전용) */}
+        <div>
+          <SectionTitle>그룹 위치</SectionTitle>
+          <div className="grid grid-cols-2 gap-1.5">
+            <div>
+              <p className={`${labelClass} mb-0.5`}>X</p>
+              <div className={`${inputClass} opacity-60`}>{Math.round(bbox.x)}</div>
+            </div>
+            <div>
+              <p className={`${labelClass} mb-0.5`}>Y</p>
+              <div className={`${inputClass} opacity-60`}>{Math.round(bbox.y)}</div>
+            </div>
+            <div>
+              <p className={`${labelClass} mb-0.5`}>W</p>
+              <div className={`${inputClass} opacity-60`}>{Math.round(bbox.w)}</div>
+            </div>
+            <div>
+              <p className={`${labelClass} mb-0.5`}>H</p>
+              <div className={`${inputClass} opacity-60`}>{Math.round(bbox.h)}</div>
+            </div>
+          </div>
+        </div>
+
+        {/* 텍스트 전용: 전체가 text일 때만 */}
+        {allText && (
+          <div className="pt-1 border-t border-white/5">
+            <SectionTitle>글꼴</SectionTitle>
+            <div>
+              <p className={`${labelClass} mb-0.5`}>글꼴 색</p>
+              <ColorPicker
+                value={getCommonStyle('color') || '#000000'}
+                onChange={v => updateAllStyle('color', v)}
+              />
+            </div>
+            <div className="mt-2">
+              <p className={`${labelClass} mb-0.5`}>맞춤</p>
+              <div className="flex gap-1.5">
+                {[
+                  { value: 'left', label: '왼쪽', icon: <AlignLeftIcon /> },
+                  { value: 'center', label: '가운데', icon: <AlignCenterIcon /> },
+                  { value: 'right', label: '오른쪽', icon: <AlignRightIcon /> },
+                ].map(a => (
+                  <button
+                    key={a.value}
+                    onClick={() => updateAllStyle('textAlign', a.value)}
+                    title={a.label + ' 맞춤'}
+                    className={[
+                      'flex-1 py-1.5 rounded-lg text-xs transition-colors flex items-center justify-center border',
+                      getCommonStyle('textAlign') === a.value
+                        ? 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30'
+                        : 'bg-white/5 text-slate-400 border-white/10 hover:bg-white/10',
+                    ].join(' ')}
+                  >
+                    {a.icon}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 채우기 — 공통 */}
+        <div className="pt-1 border-t border-white/5">
+          <SectionTitle>채우기</SectionTitle>
+          <div>
+            <p className={`${labelClass} mb-0.5`}>배경색 {commonBg === null && <span className="text-slate-600">(혼합)</span>}</p>
+            <ColorPicker
+              value={commonBg || '#ffffff'}
+              onChange={v => updateAllStyle('backgroundColor', v)}
+              showOpacity
+            />
+          </div>
+          <div className="mt-2">
+            <p className={`${labelClass} mb-0.5`}>
+              투명도 <span className="text-slate-600">{commonOpacity ?? '--'}</span>
+            </p>
+            <input
+              type="range"
+              min="0" max="1" step="0.01"
+              value={commonOpacity || '1'}
+              onChange={e => updateAllStyle('opacity', e.target.value)}
+              className="w-full"
+              style={{ accentColor: '#6366f1' }}
+            />
+          </div>
+        </div>
+
+        {/* 모서리 둥글기 */}
+        <div className="pt-1 border-t border-white/5">
+          <SectionTitle>선</SectionTitle>
+          <NumInput
+            label="모서리 둥글기"
+            value={parseFloat(commonBorderRadius) || 0}
+            onChange={v => updateAllStyle('borderRadius', v + 'px')}
+            min={0} unit="px"
+          />
+        </div>
+
+        {/* 삭제 */}
+        <div className="pt-1 border-t border-white/5">
+          <button
+            onClick={removeSelectedElements}
+            className="flex items-center justify-center w-full text-xs text-red-400 bg-red-500/10 hover:bg-red-500/20 rounded-lg px-2.5 py-1.5 border border-red-500/20 transition-colors"
+          >
+            <TrashIcon />
+            <span className="ml-1">{elements.length}개 삭제</span>
+          </button>
+        </div>
+      </div>
+    </>
+  )
+}
+
+/** 그룹 바운딩 박스 계산 */
+function getGroupBBox(elements) {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+  for (const el of elements) {
+    minX = Math.min(minX, el.x)
+    minY = Math.min(minY, el.y)
+    maxX = Math.max(maxX, el.x + el.width)
+    maxY = Math.max(maxY, el.y + el.height)
+  }
+  return { x: minX, y: minY, w: maxX - minX, h: maxY - minY }
 }
 
 // ── 섹션 컴포넌트 ───────────────────────────────────

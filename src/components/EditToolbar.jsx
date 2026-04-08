@@ -17,7 +17,7 @@ const INSERT_ITEMS = [
 export default function EditToolbar() {
   const { slideHtml, mode, canUndo: htmlCanUndo, canRedo: htmlCanRedo,
           selectedId, elements, undo: htmlUndo, redo: htmlRedo, insertElement } = useEditorStore()
-  const { viewMode, selectedFlatId,
+  const { viewMode, selectedFlatIds,
           canUndo: flatCanUndo, canRedo: flatCanRedo,
           undo: flatUndo, redo: flatRedo,
           bringForward, sendBackward, bringToFront, sendToBack } = useFlatStore()
@@ -81,20 +81,20 @@ export default function EditToolbar() {
         }}
       />
 
-      {/* z-순서 버튼 (flat/split 모드 + 요소 선택 시) */}
-      {isFlatMode && selectedFlatId && (
+      {/* z-순서 버튼 (flat/split 모드 + 단일 선택 시) */}
+      {isFlatMode && selectedFlatIds.length === 1 && (
         <>
           <Divider />
-          <ToolBtn onClick={() => sendToBack(selectedFlatId)} title="맨 뒤로 (Ctrl+Shift+[)">
+          <ToolBtn onClick={() => sendToBack(selectedFlatIds[0])} title="맨 뒤로 (Ctrl+Shift+[)">
             <span className="text-xs">⤓</span>
           </ToolBtn>
-          <ToolBtn onClick={() => sendBackward(selectedFlatId)} title="뒤로 (Ctrl+[)">
+          <ToolBtn onClick={() => sendBackward(selectedFlatIds[0])} title="뒤로 (Ctrl+[)">
             <span className="text-xs">↓</span>
           </ToolBtn>
-          <ToolBtn onClick={() => bringForward(selectedFlatId)} title="앞으로 (Ctrl+])">
+          <ToolBtn onClick={() => bringForward(selectedFlatIds[0])} title="앞으로 (Ctrl+])">
             <span className="text-xs">↑</span>
           </ToolBtn>
-          <ToolBtn onClick={() => bringToFront(selectedFlatId)} title="맨 앞으로 (Ctrl+Shift+])">
+          <ToolBtn onClick={() => bringToFront(selectedFlatIds[0])} title="맨 앞으로 (Ctrl+Shift+])">
             <span className="text-xs">⤒</span>
           </ToolBtn>
         </>

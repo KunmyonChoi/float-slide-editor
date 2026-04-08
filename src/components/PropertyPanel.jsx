@@ -18,12 +18,12 @@ export default function PropertyPanel() {
 
   // split 모드: 선택된 쪽의 콘텐츠 표시
   const selectedId = useEditorStore(s => s.selectedId)
-  const selectedFlatId = useFlatStore(s => s.selectedFlatId)
+  const selectedFlatIds = useFlatStore(s => s.selectedFlatIds)
 
   let showHtml
   if (viewMode === 'html') showHtml = true
   else if (viewMode === 'flat') showHtml = false
-  else showHtml = !!selectedId && !selectedFlatId // split: HTML 선택만 있을 때
+  else showHtml = !!selectedId && selectedFlatIds.length === 0 // split: HTML 선택만 있을 때
 
   const content = showHtml ? <HtmlPropertyContent /> : <FlatPropertyContent />
 
@@ -43,8 +43,8 @@ function FloatingShell({ children, showHtml }) {
 
   // 선택 여부로 가시성 결정
   const selectedId = useEditorStore(s => s.selectedId)
-  const selectedFlatId = useFlatStore(s => s.selectedFlatId)
-  const hasSelection = showHtml ? !!selectedId : !!selectedFlatId
+  const selectedFlatIds = useFlatStore(s => s.selectedFlatIds)
+  const hasSelection = showHtml ? !!selectedId : selectedFlatIds.length > 0
 
   useEffect(() => {
     const onMove = (e) => {
@@ -109,8 +109,8 @@ function FloatingShell({ children, showHtml }) {
 
 function DockedShell({ children }) {
   const selectedId = useEditorStore(s => s.selectedId)
-  const selectedFlatId = useFlatStore(s => s.selectedFlatId)
-  const hasSelection = !!selectedId || !!selectedFlatId
+  const selectedFlatIds = useFlatStore(s => s.selectedFlatIds)
+  const hasSelection = !!selectedId || selectedFlatIds.length > 0
 
   return (
     <div
