@@ -63,6 +63,10 @@ export function exportFlatHtml(flatElements, canvasSize, fontImports = []) {
       }
       return `<div style="${flatStyle(el)};${mergedFlex}${textStyle(el.styles)}">${textContent}</div>`
     }
+    if (el.type === 'video') {
+      const br = el.styles.borderRadius && el.styles.borderRadius !== '0px' ? `border-radius:${el.styles.borderRadius};overflow:hidden;` : ''
+      return `<div style="${flatStyle(el)};${br}"><iframe src="${escHtml(el.content)}" style="width:100%;height:100%;border:none;" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe></div>`
+    }
     if (el.type === 'svg') {
       return `<div style="${flatStyle(el)}">${el.content}</div>`
     }

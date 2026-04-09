@@ -161,6 +161,29 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
     )
   }
 
+  if (type === 'video') {
+    return (
+      <div style={baseStyle} onMouseDown={handleMouseDown} onClick={handleClick}>
+        <div style={{
+          width: '100%', height: '100%', position: 'relative',
+          borderRadius: styles.borderRadius,
+          overflow: 'hidden',
+          opacity: styles.opacity,
+        }}>
+          <iframe
+            src={content}
+            style={{
+              width: '100%', height: '100%', border: 'none',
+              pointerEvents: 'none',
+            }}
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+            allowFullScreen
+          />
+        </div>
+      </div>
+    )
+  }
+
   if (type === 'svg') {
     return (
       <div

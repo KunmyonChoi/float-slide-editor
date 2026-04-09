@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useFlatStore } from '../store/flatStore'
 import { nextFlatId } from '../core/FlatExtractor'
 import { computeAlignmentChanges, computeDistributionChanges } from '../core/SnapEngine'
@@ -86,6 +86,8 @@ export default function FlatContextMenu({ x, y, canvasX, canvasY, onClose }) {
     }
   }, [onClose])
 
+  const fileInputRef = useRef(null)
+
   // 요소 생성
   const insertElement = useCallback((preset) => {
     const p = ELEMENT_PRESETS[preset]
@@ -109,6 +111,85 @@ export default function FlatContextMenu({ x, y, canvasX, canvasY, onClose }) {
     setSelectedFlat(el.id)
   }, [canvasX, canvasY, canvasSize, flatElements, addFlatElement, setSelectedFlat])
 
+  // 커스텀 요소 삽입 (이미지/영상)
+  const insertCustomElement = useCallback((elData) => {
+    let ex = canvasX - elData.width / 2
+    let ey = canvasY - elData.height / 2
+    ex = Math.max(0, Math.min(ex, canvasSize.w - elData.width))
+    ey = Math.max(0, Math.min(ey, canvasSize.h - elData.height))
+    const maxZ = flatElements.length > 0
+      ? Math.max(...flatElements.map(e => e.zIndex))
+      : 0
+    const el = {
+      id: nextFlatId(),
+      sourceId: null,
+      ...elData,
+      x: ex, y: ey,
+      zIndex: maxZ + 1,
+    }
+    addFlatElement(el)
+    setSelectedFlat(el.id)
+  }, [canvasX, canvasY, canvasSize, flatElements, addFlatElement, setSelectedFlat])
+
+  // 이미지 파일 선택 처리
+  const handleImageFile = useCallback((e) => {
+    const file = e.target.files?.[0]
+    if (!file) { onClose(); return }
+    const reader = new FileReader()
+    reader.onload = (ev) => {
+      const img = new Image()
+      img.onload = () => {
+        // 이미지를 캔버스에 맞게 축소
+        let w = img.width, h = img.height
+        const maxW = canvasSize.w * 0.6, maxH = canvasSize.h * 0.6
+        if (w > maxW || h > maxH) {
+          const ratio = Math.min(maxW / w, maxH / h)
+          w = Math.round(w * ratio)
+          h = Math.round(h * ratio)
+        }
+        insertCustomElement({
+          type: 'image',
+          width: w, height: h,
+          content: ev.target.result,
+          isRich: false, merged: false,
+          styles: { ...DEFAULT_STYLES, objectFit: 'cover' },
+        })
+        onClose()
+      }
+      img.src = ev.target.result
+    }
+    reader.readAsDataURL(file)
+    e.target.value = '' // 같은 파일 재선택 허용
+  }, [canvasSize, insertCustomElement, onClose])
+
+  // 영상 URL → embed URL 변환
+  const parseVideoUrl = (url) => {
+    // YouTube
+    let m = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([^&?/]+)/)
+    if (m) return { embedUrl: `https://www.youtube.com/embed/${m[1]}`, provider: 'youtube' }
+    // Vimeo
+    m = url.match(/vimeo\.com\/(?:video\/)?(\d+)/)
+    if (m) return { embedUrl: `https://player.vimeo.com/video/${m[1]}`, provider: 'vimeo' }
+    // 기타 URL은 직접 embed 시도
+    return { embedUrl: url, provider: 'other' }
+  }
+
+  // 영상 추가
+  const insertVideo = useCallback(() => {
+    const url = prompt('영상 URL을 입력하세요 (YouTube, Vimeo)')
+    if (!url || !url.trim()) return
+    const { embedUrl } = parseVideoUrl(url.trim())
+    const w = Math.min(560, canvasSize.w * 0.6)
+    const h = Math.round(w * 9 / 16) // 16:9
+    insertCustomElement({
+      type: 'video',
+      width: w, height: h,
+      content: embedUrl,
+      isRich: false, merged: false,
+      styles: { ...DEFAULT_STYLES, borderRadius: '8px' },
+    })
+  }, [canvasSize, insertCustomElement])
+
   // 액션 디스패치
   const handleAction = useCallback((action) => {
     switch (action) {
@@ -125,6 +206,8 @@ export default function FlatContextMenu({ x, y, canvasX, canvasY, onClose }) {
       case 'insertText': insertElement('text'); break
       case 'insertRect': insertElement('rect'); break
       case 'insertCircle': insertElement('circle'); break
+      case 'insertImage': fileInputRef.current?.click(); return // onClose 호출하지 않음
+      case 'insertVideo': insertVideo(); break
       case 'lock': {
         const locked = !allLocked
         if (selectedFlatIds.length === 1) {
@@ -151,7 +234,7 @@ export default function FlatContextMenu({ x, y, canvasX, canvasY, onClose }) {
     onClose()
   }, [singleId, cutElement, copyElement, pasteElement, duplicateElement,
       removeSelectedElements, selectAllFlats, bringForward, sendBackward,
-      bringToFront, sendToBack, insertElement, onClose, allLocked,
+      bringToFront, sendToBack, insertElement, insertVideo, onClose, allLocked,
       flatElements, selectedFlatIds, batchUpdateFlatElementsIndividual,
       updateFlatElement, batchUpdateFlatElements])
 
@@ -207,6 +290,9 @@ export default function FlatContextMenu({ x, y, canvasX, canvasY, onClose }) {
         { id: 'itext', label: '텍스트', action: 'insertText' },
         { id: 'irect', label: '사각형', action: 'insertRect' },
         { id: 'icircle', label: '원', action: 'insertCircle' },
+        { id: 'isep', type: 'separator' },
+        { id: 'iimage', label: '이미지', action: 'insertImage' },
+        { id: 'ivideo', label: '영상', action: 'insertVideo' },
       ],
     },
     { id: 'sep2', type: 'separator' },
@@ -293,6 +379,14 @@ export default function FlatContextMenu({ x, y, canvasX, canvasY, onClose }) {
       <style>{`
         .ctx-item:hover { background: rgba(255,255,255,0.1) }
       `}</style>
+      {/* 이미지 파일 선택용 숨김 input */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        onChange={handleImageFile}
+        style={{ display: 'none' }}
+      />
     </div>
   )
 }
@@ -326,7 +420,11 @@ function Submenu({ items, onAction, parentRef }) {
         padding: '4px',
       }}
     >
-      {items.map(item => (
+      {items.map(item => {
+        if (item.type === 'separator') {
+          return <div key={item.id} style={{ height: 1, margin: '4px 8px', background: 'rgba(255,255,255,0.1)' }} />
+        }
+        return (
         <div
           key={item.id}
           onClick={() => onAction(item.action)}
@@ -344,7 +442,8 @@ function Submenu({ items, onAction, parentRef }) {
             </span>
           )}
         </div>
-      ))}
+        )
+      })}
     </div>
   )
 }

@@ -8,6 +8,7 @@ import FlatSelectionOverlay, { FlatGroupOverlay } from './FlatSelectionOverlay'
 import FlatInlineEditor from './FlatInlineEditor'
 import FlatContextMenu from './FlatContextMenu'
 import ImageCropOverlay from './ImageCropOverlay'
+import { nextFlatId } from '../core/FlatExtractor'
 
 /**
  * FlatCanvas
@@ -26,7 +27,9 @@ export default function FlatCanvas() {
   const { flatElements, selectedFlatIds, editingFlatId, croppingFlatId, setSelectedFlat, setSelectedFlats, canvasSize,
           removeSelectedElements, updateFlatElement, undo, redo, viewMode, reExtract,
           fontImports, copyElement, cutElement, pasteElement, duplicateElement, selectAllFlats,
-          bringForward, sendBackward, bringToFront, sendToBack, setCroppingFlat } = useFlatStore()
+          bringForward, sendBackward, bringToFront, sendToBack, setCroppingFlat,
+          addFlatElement } = useFlatStore()
+  const [dragOver, setDragOver] = useState(false)
   const { currentPage, revealV } = useEditorStore()
 
   // 웹폰트를 부모 문서 <head>에 주입 — iframe 폰트와 동일하게 렌더링
@@ -58,6 +61,94 @@ export default function FlatCanvas() {
 
   const selectedEls = flatElements.filter(e => selectedFlatIds.includes(e.id))
   const selectedEl = selectedEls.length === 1 ? selectedEls[0] : null
+
+  // 이미지 data URL로 요소 생성 + 추가
+  const insertImageFromDataUrl = useCallback((dataUrl, dropX, dropY) => {
+    const img = new Image()
+    img.onload = () => {
+      let w = img.width, h = img.height
+      const maxW = canvasSize.w * 0.6, maxH = canvasSize.h * 0.6
+      if (w > maxW || h > maxH) {
+        const ratio = Math.min(maxW / w, maxH / h)
+        w = Math.round(w * ratio)
+        h = Math.round(h * ratio)
+      }
+      // 드롭 위치가 주어지면 그 위치 중심, 아니면 캔버스 중앙
+      const cx = dropX ?? canvasSize.w / 2
+      const cy = dropY ?? canvasSize.h / 2
+      let ex = cx - w / 2, ey = cy - h / 2
+      ex = Math.max(0, Math.min(ex, canvasSize.w - w))
+      ey = Math.max(0, Math.min(ey, canvasSize.h - h))
+      const maxZ = useFlatStore.getState().flatElements.length > 0
+        ? Math.max(...useFlatStore.getState().flatElements.map(e => e.zIndex)) : 0
+      const el = {
+        id: nextFlatId(), sourceId: null,
+        type: 'image', width: w, height: h,
+        content: dataUrl, isRich: false, merged: false,
+        styles: {
+          backgroundColor: 'rgba(0, 0, 0, 0)', backgroundImage: 'none',
+          borderRadius: '0px', border: '0px none', boxShadow: 'none',
+          opacity: '1', objectFit: 'cover',
+        },
+        x: ex, y: ey, zIndex: maxZ + 1,
+      }
+      addFlatElement(el)
+      useFlatStore.getState().setSelectedFlat(el.id)
+    }
+    img.src = dataUrl
+  }, [canvasSize, addFlatElement])
+
+  // 파일 → data URL 변환 후 삽입
+  const insertImageFromFile = useCallback((file, dropX, dropY) => {
+    if (!file.type.startsWith('image/')) return
+    const reader = new FileReader()
+    reader.onload = (ev) => insertImageFromDataUrl(ev.target.result, dropX, dropY)
+    reader.readAsDataURL(file)
+  }, [insertImageFromDataUrl])
+
+  // 드래그 앤 드롭
+  const handleDragOver = useCallback((e) => {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'copy'
+    setDragOver(true)
+  }, [])
+  const handleDragLeave = useCallback(() => setDragOver(false), [])
+  const handleDrop = useCallback((e) => {
+    e.preventDefault()
+    setDragOver(false)
+    const files = [...e.dataTransfer.files].filter(f => f.type.startsWith('image/'))
+    if (files.length === 0) return
+    // 드롭 위치를 캔버스 좌표로 변환
+    let dropX, dropY
+    if (canvasRef.current) {
+      const rect = canvasRef.current.getBoundingClientRect()
+      dropX = (e.clientX - rect.left) / scale
+      dropY = (e.clientY - rect.top) / scale
+    }
+    for (const file of files) insertImageFromFile(file, dropX, dropY)
+  }, [scale, insertImageFromFile])
+
+  // 클립보드 붙여넣기 (이미지)
+  useEffect(() => {
+    const onPaste = (e) => {
+      // 텍스트 편집 중이면 무시
+      if (useFlatStore.getState().editingFlatId) return
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return
+      if (e.target.contentEditable === 'true') return
+
+      const items = [...(e.clipboardData?.items || [])]
+      const imageItem = items.find(i => i.type.startsWith('image/'))
+      if (imageItem) {
+        e.preventDefault()
+        const file = imageItem.getAsFile()
+        if (file) insertImageFromFile(file)
+        return
+      }
+      // 이미지가 아니면 기존 요소 붙여넣기가 처리
+    }
+    window.addEventListener('paste', onPaste)
+    return () => window.removeEventListener('paste', onPaste)
+  }, [insertImageFromFile])
 
   // 스냅 대상: 비선택 + 비배경 요소들의 rect (회전 시 AABB 사용)
   const otherRects = useMemo(() =>
@@ -297,6 +388,9 @@ export default function FlatCanvas() {
       }}
       onMouseDown={handleOuterClick}
       onContextMenu={handleContextMenu}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
     >
       {flatElements.length > 0 && (
         <div
@@ -373,7 +467,24 @@ export default function FlatCanvas() {
         </div>
       )}
 
-      {/* 페이지 인디케이터 — App.jsx의 공통 PageBar로 이동됨 */}
+      {/* 드래그 앤 드롭 오버레이 */}
+      {dragOver && (
+        <div style={{
+          position: 'absolute', inset: 0,
+          background: 'rgba(99, 102, 241, 0.1)',
+          border: '3px dashed rgba(99, 102, 241, 0.5)',
+          borderRadius: 12,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          zIndex: 9999, pointerEvents: 'none',
+        }}>
+          <div style={{
+            background: 'rgba(15, 23, 42, 0.9)', color: '#a5b4fc',
+            padding: '12px 24px', borderRadius: 8, fontSize: 14,
+          }}>
+            이미지를 여기에 놓으세요
+          </div>
+        </div>
+      )}
 
       {contextMenu && (
         <FlatContextMenu

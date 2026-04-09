@@ -10,12 +10,13 @@ import { computeAlignmentChanges, computeDistributionChanges } from '../core/Sna
 
 const FONT_SIZE_PRESETS = [8, 9, 10, 11, 12, 14, 16, 18, 20, 24, 28, 32, 36, 48, 60, 72, 96]
 
-const FLAT_TYPE_LABEL = { text: '텍스트', image: '이미지', shape: '도형', svg: 'SVG' }
+const FLAT_TYPE_LABEL = { text: '텍스트', image: '이미지', shape: '도형', svg: 'SVG', video: '영상' }
 const FLAT_TYPE_COLOR = {
   text: 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30',
   image: 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30',
   shape: 'bg-violet-500/20 text-violet-300 border border-violet-500/30',
   svg: 'bg-amber-500/20 text-amber-300 border border-amber-500/30',
+  video: 'bg-rose-500/20 text-rose-300 border border-rose-500/30',
 }
 
 // ── 공통 입력 헬퍼 ──────────────────────────────────
