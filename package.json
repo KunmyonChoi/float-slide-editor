@@ -1,6 +1,11 @@
 {
   "name": "float-editor",
-  "private": true,
+  "private": false,
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/KunmyonChoi/float-slide-editor.git"
+  },
   "version": "0.0.0",
   "type": "module",
   "scripts": {
