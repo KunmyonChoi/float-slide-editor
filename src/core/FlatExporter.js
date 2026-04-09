@@ -45,7 +45,9 @@ export function exportFlatHtml(flatElements, canvasSize, fontImports = []) {
     if (el.type === 'image') {
       const objPos = el.styles.objectPosition && el.styles.objectPosition !== 'center center' && el.styles.objectPosition !== '50% 50%'
         ? `object-position:${el.styles.objectPosition};` : ''
-      return `<div style="${flatStyle(el)}"><img src="${escHtml(el.content)}" alt="" style="width:100%;height:100%;object-fit:${el.styles.objectFit || 'cover'};${objPos}display:block;border-radius:${el.styles.borderRadius || '0'};" /></div>`
+      const imgBorder = el.styles.border && !el.styles.border.startsWith('0px') ? `border:${el.styles.border};` : ''
+      const imgOpacity = el.styles.opacity && el.styles.opacity !== '1' ? `opacity:${el.styles.opacity};` : ''
+      return `<div style="${flatStyle(el)}"><img src="${escHtml(el.content)}" alt="" style="width:100%;height:100%;object-fit:${el.styles.objectFit || 'cover'};${objPos}display:block;border-radius:${el.styles.borderRadius || '0'};${imgBorder}${imgOpacity}" /></div>`
     }
     if (el.type === 'text') {
       const textContent = el.isRich ? el.content : escHtml(el.content)
@@ -65,7 +67,8 @@ export function exportFlatHtml(flatElements, canvasSize, fontImports = []) {
     }
     if (el.type === 'video') {
       const br = el.styles.borderRadius && el.styles.borderRadius !== '0px' ? `border-radius:${el.styles.borderRadius};overflow:hidden;` : ''
-      return `<div style="${flatStyle(el)};${br}"><iframe src="${escHtml(el.content)}" style="width:100%;height:100%;border:none;" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe></div>`
+      const vidOpacity = el.styles.opacity && el.styles.opacity !== '1' ? `opacity:${el.styles.opacity};` : ''
+      return `<div style="${flatStyle(el)};${br}${vidOpacity}"><iframe src="${escHtml(el.content)}" style="width:100%;height:100%;border:none;" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe></div>`
     }
     if (el.type === 'svg') {
       return `<div style="${flatStyle(el)}">${el.content}</div>`
@@ -109,6 +112,121 @@ export function exportFlatHtml(flatElements, canvasSize, fontImports = []) {
 ${els.join('\n')}
 </body>
 </html>`
+}
+
+/**
+ * 전체 페이지를 슬라이드 네비게이션 포함 HTML로 내보낸다.
+ * @param {Object} pages - { [pageKey]: { elements, canvasSize, fontImports } }
+ */
+export function exportFlatHtmlAllPages(pages) {
+  const sortedKeys = Object.keys(pages).sort((a, b) => {
+    const [aP, aV] = a.split('-').map(Number)
+    const [bP, bV] = b.split('-').map(Number)
+    return aP - bP || aV - bV
+  })
+  if (sortedKeys.length === 0) return ''
+
+  const firstPage = pages[sortedKeys[0]]
+  const cs = firstPage.canvasSize
+
+  // 모든 페이지의 fontImports 합집합
+  const allFontImports = new Set()
+  for (const key of sortedKeys) {
+    for (const imp of (pages[key].fontImports || [])) allFontImports.add(imp)
+  }
+
+  // 폰트 태그 생성
+  let fontLinks = '', fontStyleBlock = ''
+  if (allFontImports.size > 0) {
+    const links = [], styles = []
+    for (const imp of allFontImports) {
+      const urlMatch = imp.match(/@import\s+url\(['"]?([^'")\s]+)['"]?\)/)
+      if (urlMatch) links.push(`<link rel="stylesheet" href="${urlMatch[1]}">`)
+      else styles.push(imp)
+    }
+    fontLinks = links.length > 0 ? '\n' + links.join('\n') : ''
+    fontStyleBlock = styles.length > 0 ? `\n<style>${styles.join('\n')}</style>` : ''
+  }
+  const preconnect = fontLinks
+    ? '\n<link rel="preconnect" href="https://fonts.googleapis.com">\n<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>'
+    : ''
+
+  // 슬라이드 HTML 생성
+  const slideDivs = sortedKeys.map((key, i) => {
+    const page = pages[key]
+    const pcs = page.canvasSize
+    const elHtmls = page.elements.map(el => renderElement(el)).join('\n')
+    return `<div class="slide${i === 0 ? ' active' : ''}" style="width:${pcs.w}px;height:${pcs.h}px;">\n${elHtmls}\n</div>`
+  }).join('\n\n')
+
+  return `<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>Flat Export — ${sortedKeys.length} slides</title>${preconnect}${fontLinks}
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { width: ${cs.w}px; height: ${cs.h}px; overflow: hidden; position: relative; background: #0f172a; }
+.slide { position: absolute; inset: 0; display: none; overflow: hidden; position: relative; background: #fff; }
+.slide.active { display: block; }
+#nav { position: fixed; bottom: 16px; right: 20px; display: flex; gap: 6px; z-index: 9999; }
+#nav button { width:32px;height:32px;border:1px solid rgba(255,255,255,0.2);border-radius:6px;
+              background:rgba(0,0,0,0.4);color:#fff;font-size:14px;cursor:pointer; }
+#nav button:hover { background:rgba(0,0,0,0.6); }
+#counter { position: fixed; bottom: 20px; left: 20px; font-size: 12px; color: rgba(255,255,255,0.5); z-index: 9999; }
+</style>${fontStyleBlock}
+</head>
+<body>
+${slideDivs}
+${sortedKeys.length > 1 ? `<div id="nav">
+  <button onclick="nav(-1)" title="이전 (←)">‹</button>
+  <button onclick="nav(1)" title="다음 (→)">›</button>
+</div>
+<div id="counter"></div>
+<script>
+var slides=document.querySelectorAll('.slide'),cur=0;
+function show(n){slides[cur].classList.remove('active');cur=Math.max(0,Math.min(slides.length-1,n));slides[cur].classList.add('active');document.getElementById('counter').textContent=(cur+1)+' / '+slides.length;}
+function nav(d){show(cur+d);}
+document.addEventListener('keydown',function(e){if(e.key==='ArrowRight'||e.key==='ArrowDown'){e.preventDefault();nav(1);}else if(e.key==='ArrowLeft'||e.key==='ArrowUp'){e.preventDefault();nav(-1);}});
+show(0);
+</script>` : ''}
+</body>
+</html>`
+}
+
+/** 단일 요소 → HTML 문자열 (exportFlatHtml과 동일 로직) */
+function renderElement(el) {
+  if (el.type === 'image') {
+    const objPos = el.styles.objectPosition && el.styles.objectPosition !== 'center center' && el.styles.objectPosition !== '50% 50%'
+      ? `object-position:${el.styles.objectPosition};` : ''
+    const imgBorder = el.styles.border && !el.styles.border.startsWith('0px') ? `border:${el.styles.border};` : ''
+    const imgOpacity = el.styles.opacity && el.styles.opacity !== '1' ? `opacity:${el.styles.opacity};` : ''
+    return `<div style="${flatStyle(el)}"><img src="${escHtml(el.content)}" alt="" style="width:100%;height:100%;object-fit:${el.styles.objectFit || 'cover'};${objPos}display:block;border-radius:${el.styles.borderRadius || '0'};${imgBorder}${imgOpacity}" /></div>`
+  }
+  if (el.type === 'text') {
+    const textContent = el.isRich ? el.content : escHtml(el.content)
+    const hasBg = el.styles.backgroundColor && el.styles.backgroundColor !== 'rgba(0, 0, 0, 0)' && el.styles.backgroundColor !== 'transparent'
+    const needsFlex = el.merged || hasBg
+    const gapStyle = (el.styles.gap && el.styles.gap !== '0px' && el.styles.gap !== 'normal') ? `gap:${el.styles.gap};` : ''
+    const mergedFlex = needsFlex ? `display:flex;align-items:${el.styles.isFlex ? (el.styles.alignItems || 'center') : 'center'};justify-content:${el.styles.isFlex ? (el.styles.justifyContent || 'center') : (el.styles.textAlign === 'center' ? 'center' : el.styles.textAlign === 'right' ? 'flex-end' : 'flex-start')};${gapStyle}` : ''
+    const isGradientText = el.styles.webkitBackgroundClip === 'text'
+    if (isGradientText) {
+      const dropShadow = el.styles.textShadow && el.styles.textShadow !== 'none'
+        ? `;filter:${textShadowToFilter(el.styles.textShadow)}` : ''
+      const gradSpan = `background-image:${el.styles.backgroundImage || 'none'};-webkit-background-clip:text;-webkit-text-fill-color:${el.styles.webkitTextFillColor || 'transparent'}${dropShadow}`
+      return `<div style="${flatStyle(el)};${mergedFlex}${textStyleNoGradient(el.styles, true)}"><span style="${gradSpan}">${textContent}</span></div>`
+    }
+    return `<div style="${flatStyle(el)};${mergedFlex}${textStyle(el.styles)}">${textContent}</div>`
+  }
+  if (el.type === 'video') {
+    const br = el.styles.borderRadius && el.styles.borderRadius !== '0px' ? `border-radius:${el.styles.borderRadius};overflow:hidden;` : ''
+    const vidOpacity = el.styles.opacity && el.styles.opacity !== '1' ? `opacity:${el.styles.opacity};` : ''
+    return `<div style="${flatStyle(el)};${br}${vidOpacity}"><iframe src="${escHtml(el.content)}" style="width:100%;height:100%;border:none;" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe></div>`
+  }
+  if (el.type === 'svg') {
+    return `<div style="${flatStyle(el)}">${el.content}</div>`
+  }
+  return `<div style="${flatStyle(el)};${shapeStyle(el.styles)}"></div>`
 }
 
 /** 다운로드 트리거 */
@@ -193,17 +311,18 @@ function shapeStyle(s) {
   ].filter(Boolean).join(';')
 }
 
-/** border 단축 속성 또는 개별 border-side 속성 반환 */
+/** border 단축 속성 또는 개별 border-side 속성 반환
+ *  개별 속성이 하나라도 유효하면 개별만 사용 (FlatElementRenderer와 동일) */
 function borderStyles(s) {
-  // 단축 border가 유효하면 그것만 사용
-  if (s.border && !s.border.startsWith('0px')) return [`border:${s.border}`]
-  // 개별 side 체크
   const sides = []
   if (s.borderTop && !s.borderTop.startsWith('0px')) sides.push(`border-top:${s.borderTop}`)
   if (s.borderRight && !s.borderRight.startsWith('0px')) sides.push(`border-right:${s.borderRight}`)
   if (s.borderBottom && !s.borderBottom.startsWith('0px')) sides.push(`border-bottom:${s.borderBottom}`)
   if (s.borderLeft && !s.borderLeft.startsWith('0px')) sides.push(`border-left:${s.borderLeft}`)
-  return sides
+  if (sides.length > 0) return sides
+  // 개별 side가 없으면 단축 속성 사용
+  if (s.border && !s.border.startsWith('0px')) return [`border:${s.border}`]
+  return []
 }
 
 /** text-shadow CSS → filter: drop-shadow() 변환 (그래디언트 텍스트용) */

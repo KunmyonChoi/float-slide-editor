@@ -264,7 +264,9 @@ export default function SlideCanvas() {
   }, [dzm, insertElement])
 
   // ── 스타일 분기 ────────────────────────────────────────────
-  const isPresent = mode === 'present'
+  const viewMode = useFlatStore(s => s.viewMode)
+  // flat/split 모드 발표 시 FlatPresenter가 처리 — SlideCanvas는 일반 모드 유지
+  const isPresent = mode === 'present' && viewMode === 'html'
 
   const stageStyle = isPresent
     ? { position: 'fixed', inset: 0, zIndex: 1000, background: '#000' }

@@ -544,4 +544,134 @@ export const useFlatStore = create((set, get) => ({
     for (const key in _pageCache) delete _pageCache[key]
     _currentPageKey = null
   },
+
+  /** 캔버스 DOM ref (이미지 내보내기용) */
+  _canvasRef: null,
+  setCanvasRef(ref) { set({ _canvasRef: ref }) },
+
+  /** 모든 페이지 데이터 반환 (내보내기용) — history 제외, 캐시에 있는 것만 */
+  getAllPages() {
+    get()._saveCurrentPage()
+    const pages = {}
+    for (const key in _pageCache) {
+      const cached = _pageCache[key]
+      pages[key] = {
+        elements: cached.elements,
+        canvasSize: cached.canvasSize,
+        fontImports: cached.fontImports,
+      }
+    }
+    // 현재 페이지가 캐시에 없는 경우 (단일 페이지)
+    if (_currentPageKey && !pages[_currentPageKey]) {
+      pages[_currentPageKey] = {
+        elements: get().flatElements,
+        canvasSize: get().canvasSize,
+        fontImports: get().fontImports,
+      }
+    }
+    return { pages, currentPageKey: _currentPageKey }
+  },
+
+  /** 전체 페이지 데이터 반환 (미방문 페이지는 iframe 순회하여 추출) */
+  async getAllPagesAsync() {
+    get()._saveCurrentPage()
+
+    const editorStore = (await import('./editorStore')).useEditorStore
+    const { totalPages, currentPage, isReveal, iframeRef } = editorStore.getState()
+    const { extractFlatElements } = await import('../core/FlatExtractor')
+
+    // 캐시에 모든 페이지가 있으면 빠르게 반환
+    const cachedKeys = Object.keys(_pageCache)
+    if (cachedKeys.length >= totalPages) {
+      return get().getAllPages()
+    }
+
+    // iframe이 없으면 캐시만 반환
+    if (!iframeRef?.current) {
+      return get().getAllPages()
+    }
+
+    const origPage = currentPage
+    const pages = {}
+
+    // 현재 캐시 내용 먼저 복사
+    for (const key in _pageCache) {
+      pages[key] = {
+        elements: _pageCache[key].elements,
+        canvasSize: _pageCache[key].canvasSize,
+        fontImports: _pageCache[key].fontImports,
+      }
+    }
+
+    // 미방문 페이지 추출 — 직접 page 번호로 점프 (delta가 아닌 절대 인덱스)
+    for (let i = 0; i < totalPages; i++) {
+      const pageKey = `${i}-0`
+      if (pages[pageKey]) continue
+
+      // 해당 페이지로 직접 이동
+      iframeRef.current.contentWindow.postMessage({ type: 'fe:navigate', page: i }, '*')
+      // 페이지 전환 + DOM 렌더링 대기
+      await new Promise(r => setTimeout(r, 350))
+
+      // 추출
+      try {
+        const result = extractFlatElements(iframeRef)
+        pages[pageKey] = {
+          elements: result.elements,
+          canvasSize: result.canvasSize,
+          fontImports: result.fontImports || [],
+        }
+      } catch (e) {
+        console.warn(`Page ${pageKey} extraction failed:`, e.message)
+      }
+    }
+
+    // 원래 페이지로 복원
+    iframeRef.current.contentWindow.postMessage({ type: 'fe:navigate', page: origPage }, '*')
+    await new Promise(r => setTimeout(r, 350))
+
+    // 현재 페이지가 누락된 경우
+    if (_currentPageKey && !pages[_currentPageKey]) {
+      pages[_currentPageKey] = {
+        elements: get().flatElements,
+        canvasSize: get().canvasSize,
+        fontImports: get().fontImports,
+      }
+    }
+
+    return { pages, currentPageKey: _currentPageKey }
+  },
+
+  /** 모든 페이지 데이터 로드 (프로젝트 열기용) */
+  loadAllPages(pagesData, currentPageKey) {
+    // 캐시 초기화
+    for (const key in _pageCache) delete _pageCache[key]
+    _history.clear()
+
+    // 모든 페이지를 캐시에 저장
+    for (const key in pagesData) {
+      _pageCache[key] = {
+        elements: pagesData[key].elements,
+        canvasSize: pagesData[key].canvasSize,
+        fontImports: pagesData[key].fontImports || [],
+        history: { stack: [], pointer: -1 },
+      }
+    }
+
+    // 현재 페이지 복원
+    const targetKey = currentPageKey && _pageCache[currentPageKey] ? currentPageKey : Object.keys(pagesData)[0]
+    _currentPageKey = targetKey
+    const page = _pageCache[targetKey]
+    if (page) {
+      set({
+        flatElements: page.elements,
+        canvasSize: page.canvasSize,
+        fontImports: page.fontImports,
+        selectedFlatIds: [],
+        editingFlatId: null,
+        canUndo: false,
+        canRedo: false,
+      })
+    }
+  },
 }))

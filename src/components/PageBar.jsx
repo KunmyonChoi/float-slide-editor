@@ -15,6 +15,7 @@ export default function PageBar() {
   // 전역 키보드: PageUp/PageDown + reveal.js 화살표
   useEffect(() => {
     const onKeyDown = (e) => {
+      if (useEditorStore.getState().mode === 'present') return // 발표 모드에서는 각 Presenter가 처리
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return
       if (e.target.tagName === 'IFRAME') return
 
@@ -53,6 +54,8 @@ export default function PageBar() {
   const handleUp = useCallback(() => navigateDirection('up'), [navigateDirection])
   const handleDown = useCallback(() => navigateDirection('down'), [navigateDirection])
 
+  const mode = useEditorStore(s => s.mode)
+  if (mode === 'present') return null
   if (totalPages <= 1 && !isReveal) return null
 
   const btnStyle = (enabled) => ({

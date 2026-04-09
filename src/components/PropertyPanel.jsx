@@ -14,11 +14,11 @@ export default function PropertyPanel() {
   const viewMode = useFlatStore(s => s.viewMode)
   const mode = useEditorStore(s => s.mode)
 
-  if (mode === 'present') return null
-
   // split 모드: 선택된 쪽의 콘텐츠 표시
   const selectedId = useEditorStore(s => s.selectedId)
   const selectedFlatIds = useFlatStore(s => s.selectedFlatIds)
+
+  if (mode === 'present') return null
 
   let showHtml
   if (viewMode === 'html') showHtml = true

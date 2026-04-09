@@ -126,6 +126,7 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
           fontSize: styles.fontSize,
           fontFamily: styles.fontFamily,
           fontWeight: styles.fontWeight,
+          fontStyle: styles.fontStyle,
           lineHeight: styles.lineHeight,
           textAlign: styles.textAlign,
           letterSpacing: styles.letterSpacing,
@@ -138,7 +139,9 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
           textShadow: isGradientText ? undefined : styles.textShadow,
           opacity: styles.opacity,
           padding: styles.padding,
-          overflow: 'visible',
+          overflow: (styles.overflow === 'hidden' || styles.overflow === 'auto' || styles.overflow === 'scroll' ||
+                     styles.overflowX === 'hidden' || styles.overflowX === 'auto' || styles.overflowX === 'scroll')
+            ? 'hidden' : 'visible',
           whiteSpace: 'pre-wrap',
           wordBreak: 'break-word',
           // 배경이 있는 텍스트 또는 병합 요소: flex로 텍스트 중앙 배치

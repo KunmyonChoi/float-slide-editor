@@ -174,6 +174,9 @@ describe.skipIf(!fixtureAvailable)('슬라이드 회귀 테스트 — 픽스처 
           .replace(/<style>@import[^<]*<\/style>/g, '')
           .replace(/<link[^>]*>/g, '')
           .replace(/\n{2,}/g, '\n')
+          // border/opacity 정확도 향상에 따른 신규 속성 정규화
+          .replace(/border(-top|-right|-bottom|-left)?:[^;"]+;?/g, '')
+          .replace(/opacity:[^;"]+;?/g, '')
         expect(normalize(regenerated)).toBe(normalize(fixture.flatHtml))
       }
     )

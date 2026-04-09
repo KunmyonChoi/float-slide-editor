@@ -28,7 +28,7 @@ export default function FlatCanvas() {
           removeSelectedElements, updateFlatElement, undo, redo, viewMode, reExtract,
           fontImports, copyElement, cutElement, pasteElement, duplicateElement, selectAllFlats,
           bringForward, sendBackward, bringToFront, sendToBack, setCroppingFlat,
-          addFlatElement } = useFlatStore()
+          addFlatElement, setCanvasRef } = useFlatStore()
   const [dragOver, setDragOver] = useState(false)
   const { currentPage, revealV } = useEditorStore()
 
@@ -58,6 +58,12 @@ export default function FlatCanvas() {
     }
     return () => { for (const el of injected) el.remove() }
   }, [fontImports])
+
+  // canvasRef를 store에 노출 (이미지 내보내기용)
+  useEffect(() => {
+    setCanvasRef(canvasRef)
+    return () => setCanvasRef(null)
+  }, [setCanvasRef])
 
   const selectedEls = flatElements.filter(e => selectedFlatIds.includes(e.id))
   const selectedEl = selectedEls.length === 1 ? selectedEls[0] : null

@@ -1,8 +1,9 @@
-import { useRef, useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { useEditorStore } from '../store/editorStore'
 import { useFlatStore } from '../store/flatStore'
 import CanvasSizeSelector from './CanvasSizeSelector'
 import QualityDashboard from './QualityDashboard'
+import FileMenu from './ExportMenu'
 
 const FALLBACK_SAMPLE = `<!DOCTYPE html>
 <html lang="ko">
@@ -101,9 +102,8 @@ const FALLBACK_SAMPLE = `<!DOCTYPE html>
  * 발표 모드에서는 완전히 숨겨진다.
  */
 export default function FloatingToolbar() {
-  const fileRef = useRef(null)
-  const { slideHtml, mode, loadHtml, enterPresentation } = useEditorStore()
-  const { viewMode, setViewMode, extractFromIframe, clearPageCache, panelMode, setPanelMode } = useFlatStore()
+  const { slideHtml, mode, enterPresentation } = useEditorStore()
+  const { viewMode, setViewMode, extractFromIframe, panelMode, setPanelMode } = useFlatStore()
   const iframeRef = useEditorStore(s => s.iframeRef)
   const [qualityOpen, setQualityOpen] = useState(false)
 
@@ -118,15 +118,6 @@ export default function FloatingToolbar() {
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [enterPresentation])
-
-  const handleFileChange = (e) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-    const reader = new FileReader()
-    reader.onload = (ev) => { clearPageCache(); loadHtml(ev.target.result) }
-    reader.readAsText(file)
-    e.target.value = ''
-  }
 
   // 발표 모드에서는 완전히 숨김
   if (mode === 'present') return null
@@ -147,12 +138,8 @@ export default function FloatingToolbar() {
 
       <Divider />
 
-      <ToolBtn onClick={() => fileRef.current?.click()} title="HTML 파일 열기">
-        <FolderIcon /><span className="text-xs ml-1">열기</span>
-      </ToolBtn>
-      <ToolBtn onClick={() => { clearPageCache(); loadHtml(FALLBACK_SAMPLE) }} title="샘플 슬라이드 로드">
-        <span className="text-xs">샘플</span>
-      </ToolBtn>
+      {/* 파일 메뉴 */}
+      <FileMenu fallbackSample={FALLBACK_SAMPLE} />
 
       <Divider />
 
@@ -210,9 +197,8 @@ export default function FloatingToolbar() {
 
       <div className="flex-1" />
 
-      <span className="text-xs text-slate-600 px-2 select-none">Phase 6</span>
+      <span className="text-xs text-slate-600 px-2 select-none">Phase 8</span>
 
-      <input ref={fileRef} type="file" accept=".html,.htm" className="hidden" onChange={handleFileChange} />
     </div>
 
     {/* 품질 대시보드 패널 */}
@@ -273,14 +259,6 @@ export function ToolBtn({ children, onClick, disabled, title, highlight }) {
 
 export function Divider() {
   return <div className="w-px h-5 bg-white/10 mx-1 shrink-0" />
-}
-
-function FolderIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
-    </svg>
-  )
 }
 
 export function UndoIcon() {

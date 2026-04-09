@@ -3,16 +3,22 @@ import FloatingToolbar from './components/FloatingToolbar'
 import EditToolbar from './components/EditToolbar'
 import PropertyPanel from './components/PropertyPanel'
 import FlatCanvas from './components/FlatCanvas'
+import FlatPresenter from './components/FlatPresenter'
 import ComparePanel from './components/ComparePanel'
 import PageBar from './components/PageBar'
 import { useFlatStore } from './store/flatStore'
+import { useEditorStore } from './store/editorStore'
 
 export default function App() {
   const viewMode = useFlatStore(s => s.viewMode)
+  const mode = useEditorStore(s => s.mode)
 
   const isSplit = viewMode === 'split'
   const showSlide = viewMode === 'html' || isSplit
   const showFlat  = viewMode === 'flat' || isSplit
+
+  // flat/split 모드에서 발표 → FlatPresenter 사용
+  const useFlatPresenter = mode === 'present' && (viewMode === 'flat' || viewMode === 'split')
 
   return (
     <div className="flex flex-col h-screen overflow-hidden">
@@ -37,6 +43,8 @@ export default function App() {
       <PageBar />
       <ComparePanel />
       <InsertPopup />
+      {/* flat 모드 발표 — fixed 전체화면 오버레이 */}
+      {useFlatPresenter && <FlatPresenter />}
     </div>
   )
 }
