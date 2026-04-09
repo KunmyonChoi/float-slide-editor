@@ -2,10 +2,12 @@ import { useRef, useEffect, useCallback, useState, useMemo } from 'react'
 import { useFlatStore } from '../store/flatStore'
 import { useEditorStore } from '../store/editorStore'
 import { isBackgroundElement } from '../core/SnapEngine'
+import { getRotatedAABB } from '../core/RotationUtils'
 import FlatElementRenderer from './FlatElementRenderer'
 import FlatSelectionOverlay, { FlatGroupOverlay } from './FlatSelectionOverlay'
 import FlatInlineEditor from './FlatInlineEditor'
 import FlatContextMenu from './FlatContextMenu'
+import ImageCropOverlay from './ImageCropOverlay'
 
 /**
  * FlatCanvas
@@ -21,10 +23,10 @@ export default function FlatCanvas() {
   const [contextMenu, setContextMenu] = useState(null)
   const [snapGuides, setSnapGuides] = useState([])
 
-  const { flatElements, selectedFlatIds, editingFlatId, setSelectedFlat, setSelectedFlats, canvasSize,
+  const { flatElements, selectedFlatIds, editingFlatId, croppingFlatId, setSelectedFlat, setSelectedFlats, canvasSize,
           removeSelectedElements, updateFlatElement, undo, redo, viewMode, reExtract,
           fontImports, copyElement, cutElement, pasteElement, duplicateElement, selectAllFlats,
-          bringForward, sendBackward, bringToFront, sendToBack } = useFlatStore()
+          bringForward, sendBackward, bringToFront, sendToBack, setCroppingFlat } = useFlatStore()
   const { currentPage, revealV } = useEditorStore()
 
   // 웹폰트를 부모 문서 <head>에 주입 — iframe 폰트와 동일하게 렌더링
@@ -57,11 +59,12 @@ export default function FlatCanvas() {
   const selectedEls = flatElements.filter(e => selectedFlatIds.includes(e.id))
   const selectedEl = selectedEls.length === 1 ? selectedEls[0] : null
 
-  // 스냅 대상: 비선택 + 비배경 요소들의 rect
+  // 스냅 대상: 비선택 + 비배경 요소들의 rect (회전 시 AABB 사용)
   const otherRects = useMemo(() =>
     flatElements
       .filter(e => !selectedFlatIds.includes(e.id) && !isBackgroundElement(e, canvasSize))
-      .map(e => ({ x: e.x, y: e.y, width: e.width, height: e.height })),
+      .map(e => e.rotation ? getRotatedAABB(e.x, e.y, e.width, e.height, e.rotation)
+                           : { x: e.x, y: e.y, width: e.width, height: e.height }),
     [flatElements, selectedFlatIds, canvasSize]
   )
 
@@ -79,9 +82,13 @@ export default function FlatCanvas() {
   // 페이지 네비게이션(PageUp/PageDown)은 PageBar에서 전역 처리
   useEffect(() => {
     const onKeyDown = (e) => {
-      // Escape: 텍스트 편집 중이면 편집 종료, 아니면 선택 해제
+      // Escape: 크롭 모드 → 편집 종료 → 선택 해제
       if (e.key === 'Escape') {
-        const { editingFlatId, selectedFlatIds } = useFlatStore.getState()
+        const { croppingFlatId, editingFlatId, selectedFlatIds } = useFlatStore.getState()
+        if (croppingFlatId) {
+          // ImageCropOverlay의 keydown 핸들러가 처리 (capture phase)
+          return
+        }
         if (editingFlatId) {
           e.preventDefault()
           useFlatStore.getState().setEditingFlat(null)
@@ -133,7 +140,7 @@ export default function FlatCanvas() {
         if (e.code === 'BracketLeft' && e.shiftKey && singleId)   { sendToBack(singleId); return }
       }
 
-      // 화살표 이동 — 다중 선택 지원
+      // 화살표 이동 — 다중 선택 지원 (잠금 요소 제외)
       const step = e.shiftKey ? 10 : 1
       if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key) && hasSelection) {
         e.preventDefault()
@@ -141,12 +148,12 @@ export default function FlatCanvas() {
         if (selectedFlatIds.length === 1) {
           const els = useFlatStore.getState().flatElements
           const el = els.find(el => el.id === singleId)
-          if (el) updateFlatElement(singleId, { x: el.x + delta.x, y: el.y + delta.y })
+          if (el && !el.locked) updateFlatElement(singleId, { x: el.x + delta.x, y: el.y + delta.y })
         } else {
           const els = useFlatStore.getState().flatElements
           const changesMap = selectedFlatIds.map(id => {
             const el = els.find(el => el.id === id)
-            return el ? { id, changes: { x: el.x + delta.x, y: el.y + delta.y } } : null
+            return el && !el.locked ? { id, changes: { x: el.x + delta.x, y: el.y + delta.y } } : null
           }).filter(Boolean)
           if (changesMap.length > 0) {
             useFlatStore.getState().batchUpdateFlatElementsIndividual(changesMap)
@@ -185,7 +192,7 @@ export default function FlatCanvas() {
   const handleStageMouseDown = useCallback((e) => {
     if (e.button === 2) return // 우클릭은 컨텍스트 메뉴가 처리
     setContextMenu(null) // 좌클릭 시 컨텍스트 메뉴 닫기
-    if (useFlatStore.getState().editingFlatId) return
+    if (useFlatStore.getState().editingFlatId || useFlatStore.getState().croppingFlatId) return
     if (!canvasRef.current) return
     const rect = canvasRef.current.getBoundingClientRect()
     const sx = (e.clientX - rect.left) / scale
@@ -256,8 +263,12 @@ export default function FlatCanvas() {
     // canvasRef 내부 클릭이면 무시 (마키 핸들러가 처리)
     if (canvasRef.current && canvasRef.current.contains(e.target)) return
     if (useFlatStore.getState().editingFlatId) return
+    if (useFlatStore.getState().croppingFlatId) {
+      setCroppingFlat(null)
+      return
+    }
     setSelectedFlat(null)
-  }, [setSelectedFlat])
+  }, [setSelectedFlat, setCroppingFlat])
 
   // 우클릭 컨텍스트 메뉴
   const handleContextMenu = useCallback((e) => {
@@ -303,7 +314,7 @@ export default function FlatCanvas() {
           }}
           onMouseDown={handleStageMouseDown}
         >
-          <div style={{ position: 'relative', width: '100%', height: '100%', overflow: 'hidden' }}>
+          <div data-flat-canvas="true" style={{ position: 'relative', width: '100%', height: '100%', overflow: 'hidden' }}>
             {flatElements.map(el => (
               <FlatElementRenderer
                 key={el.id}
@@ -336,6 +347,12 @@ export default function FlatCanvas() {
             {editingFlatId && flatElements.find(e => e.id === editingFlatId) && (
               <FlatInlineEditor
                 element={flatElements.find(e => e.id === editingFlatId)}
+              />
+            )}
+            {croppingFlatId && flatElements.find(e => e.id === croppingFlatId) && (
+              <ImageCropOverlay
+                element={flatElements.find(e => e.id === croppingFlatId)}
+                scale={scale}
               />
             )}
             {/* 마키 선택 영역 */}

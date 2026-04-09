@@ -30,10 +30,15 @@ export const useFlatStore = create((set, get) => ({
   /** 마키 드래그 직후 배경 click 무시용 플래그 */
   _skipBgClick: false,
 
+  /** 이미지 크롭 모드 중인 flat 요소 ID */
+  croppingFlatId: null,
+
   /** 속성 패널 모드: 'docked' | 'floating' */
   panelMode: 'docked',
   /** 플로팅 패널 위치 기억 */
   floatingPos: { x: null, y: 80 },
+
+  setCroppingFlat(id) { set({ croppingFlatId: id }) },
 
   setPanelMode(mode) { set({ panelMode: mode }) },
   setFloatingPos(pos) { set({ floatingPos: pos }) },

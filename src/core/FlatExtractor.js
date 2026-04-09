@@ -328,8 +328,10 @@ function extractStyles(cs) {
     textTransform: cs.textTransform,
     textDecoration: cs.textDecoration,
     objectFit: cs.objectFit,
+    objectPosition: cs.objectPosition,
     overflow: cs.overflow,
     overflowX: cs.overflowX,
+    textShadow: cs.textShadow,
   }
 }
 
@@ -529,6 +531,19 @@ function buildFlatElement(el, rect, cs, domOrder, forceType, transformScale = 1,
     }
   }
 
+  // transform: rotate() 추출 (컨테이너 스케일과 구분)
+  let rotation = 0
+  const elTransform = cs.transform
+  if (elTransform && elTransform !== 'none') {
+    const m = elTransform.match(/matrix\(([^)]+)\)/)
+    if (m) {
+      const vals = m[1].split(',').map(Number)
+      const angle = Math.round(Math.atan2(vals[1], vals[0]) * 180 / Math.PI)
+      // 스케일만 있는 경우(angle≈0) 무시
+      if (Math.abs(angle) > 0.5) rotation = angle
+    }
+  }
+
   const result = {
     id: nextFlatId(),
     sourceId: el.getAttribute('data-editor-id'),
@@ -537,6 +552,7 @@ function buildFlatElement(el, rect, cs, domOrder, forceType, transformScale = 1,
     y: rect.top,
     width,
     height,
+    rotation,
     zIndex: 0, // 후처리에서 재할당
     _domOrder: domOrder,
     _originalZIndex: effectiveZIndex,

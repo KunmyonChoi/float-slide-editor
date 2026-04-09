@@ -1,6 +1,9 @@
 import { useState, useRef } from 'react'
 import { useFlatStore } from '../store/flatStore'
 import ColorPicker, { parseColor } from './ColorPicker'
+import GradientEditor from './GradientEditor'
+import BoxShadowEditor from './BoxShadowEditor'
+import TextShadowEditor from './TextShadowEditor'
 import { computeAlignmentChanges, computeDistributionChanges } from '../core/SnapEngine'
 
 // ── 글꼴 크기 프리셋 ────────────────────────────────
@@ -35,16 +38,28 @@ export default function FlatPropertyContent() {
   const el = selectedEls[0]
   const update = (changes) => updateFlatElement(el.id, changes)
   const updateStyle = (key, value) => updateFlatElement(el.id, { styles: { [key]: value } })
+  const updateStyles = (styleChanges) => updateFlatElement(el.id, { styles: styleChanges })
   const previewStyle = (key, value) => previewFlatElement(el.id, { styles: { [key]: value } })
 
   return (
     <>
-      {/* 헤더 — 타입 배지 + ID */}
+      {/* 헤더 — 타입 배지 + ID + 잠금 */}
       <div className="flex items-center gap-2 px-3 py-2.5 border-b border-white/5">
         <span className={`text-xs font-medium px-2 py-0.5 rounded-md ${FLAT_TYPE_COLOR[el.type] || FLAT_TYPE_COLOR.shape}`}>
           {FLAT_TYPE_LABEL[el.type] || el.type}
         </span>
-        <code className="text-xs text-slate-500 truncate">{el.id}</code>
+        <code className="text-xs text-slate-500 truncate flex-1">{el.id}</code>
+        <button
+          onClick={() => update({ locked: !el.locked })}
+          className={`text-xs px-1.5 py-0.5 rounded ${
+            el.locked
+              ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+              : 'bg-white/5 text-slate-500 border border-white/10 hover:bg-white/10'
+          }`}
+          title={el.locked ? '잠금 해제' : '잠금'}
+        >
+          {el.locked ? '🔒' : '🔓'}
+        </button>
       </div>
 
       <div className="p-3 space-y-3">
@@ -52,12 +67,18 @@ export default function FlatPropertyContent() {
 
         {el.type === 'text' && (
           <div className="pt-1 border-t border-white/5">
-            <FontSection styles={el.styles} updateStyle={updateStyle} />
+            <FontSection styles={el.styles} updateStyle={updateStyle} isGradientText={el.styles.webkitBackgroundClip === 'text'} />
+          </div>
+        )}
+
+        {el.type === 'image' && (
+          <div className="pt-1 border-t border-white/5">
+            <ImageSection styles={el.styles} updateStyle={updateStyle} elementId={el.id} />
           </div>
         )}
 
         <div className="pt-1 border-t border-white/5">
-          <FillSection styles={el.styles} updateStyle={updateStyle} previewStyle={previewStyle} />
+          <FillSection styles={el.styles} updateStyle={updateStyle} updateStyles={updateStyles} previewStyle={previewStyle} isText={el.type === 'text'} />
         </div>
 
         <div className="pt-1 border-t border-white/5">
@@ -65,7 +86,7 @@ export default function FlatPropertyContent() {
         </div>
 
         <div className="pt-1 border-t border-white/5">
-          <EffectSection styles={el.styles} updateStyle={updateStyle} />
+          <EffectSection styles={el.styles} updateStyle={updateStyle} isText={el.type === 'text'} />
         </div>
 
         <div className="pt-1 border-t border-white/5">
@@ -302,16 +323,19 @@ function PositionSection({ el, update }) {
         <NumInput label="Y" value={el.y} onChange={v => update({ y: v })} />
         <NumInput label="W" value={el.width} onChange={v => update({ width: v })} min={1} />
         <NumInput label="H" value={el.height} onChange={v => update({ height: v })} min={1} />
+        <NumInput label="회전" value={el.rotation || 0} onChange={v => update({ rotation: v })} unit="°" />
       </div>
     </div>
   )
 }
 
-function FontSection({ styles, updateStyle }) {
+function FontSection({ styles, updateStyle, isGradientText }) {
   const parseFontSize = (v) => parseFloat(v) || 16
   const isBold = parseInt(styles.fontWeight) >= 700
   const isItalic = styles.fontStyle === 'italic'
-  const isUnderline = (styles.textDecoration || '').includes('underline')
+  const decoration = styles.textDecoration || ''
+  const isUnderline = decoration.includes('underline')
+  const isStrike = decoration.includes('line-through')
 
   return (
     <div className="space-y-2">
@@ -358,13 +382,24 @@ function FontSection({ styles, updateStyle }) {
         <ToggleBtn active={isItalic} onClick={() => updateStyle('fontStyle', isItalic ? 'normal' : 'italic')} title="기울임 (Italic)">
           <i>I</i>
         </ToggleBtn>
-        <ToggleBtn active={isUnderline} onClick={() => updateStyle('textDecoration', isUnderline ? 'none' : 'underline')} title="밑줄 (Underline)">
+        <ToggleBtn active={isUnderline} onClick={() => {
+          const parts = decoration.split(/\s+/).filter(d => d && d !== 'none')
+          const next = isUnderline ? parts.filter(d => d !== 'underline') : [...parts, 'underline']
+          updateStyle('textDecoration', next.length ? next.join(' ') : 'none')
+        }} title="밑줄 (Underline)">
           <u>U</u>
+        </ToggleBtn>
+        <ToggleBtn active={isStrike} onClick={() => {
+          const parts = decoration.split(/\s+/).filter(d => d && d !== 'none')
+          const next = isStrike ? parts.filter(d => d !== 'line-through') : [...parts, 'line-through']
+          updateStyle('textDecoration', next.length ? next.join(' ') : 'none')
+        }} title="취소선 (Strikethrough)">
+          <s>S</s>
         </ToggleBtn>
       </div>
 
-      <div>
-        <p className={`${labelClass} mb-0.5`}>글꼴 색</p>
+      <div style={isGradientText ? { opacity: 0.4, pointerEvents: 'none' } : undefined}>
+        <p className={`${labelClass} mb-0.5`}>글꼴 색{isGradientText ? ' (그래디언트 사용 중)' : ''}</p>
         <ColorPicker value={styles.color} onChange={v => updateStyle('color', v)} />
       </div>
 
@@ -394,6 +429,30 @@ function FontSection({ styles, updateStyle }) {
       </div>
 
       <div className="grid grid-cols-2 gap-1.5">
+        <SelectInput
+          label="텍스트 변환"
+          value={styles.textTransform || 'none'}
+          onChange={v => updateStyle('textTransform', v)}
+          options={[
+            { value: 'none', label: '없음' },
+            { value: 'uppercase', label: 'ABC 대문자' },
+            { value: 'lowercase', label: 'abc 소문자' },
+            { value: 'capitalize', label: 'Abc 첫글자' },
+          ]}
+        />
+        <SelectInput
+          label="수직 정렬"
+          value={styles.alignItems || 'center'}
+          onChange={v => updateStyle('alignItems', v)}
+          options={[
+            { value: 'flex-start', label: '위' },
+            { value: 'center', label: '중간' },
+            { value: 'flex-end', label: '아래' },
+          ]}
+        />
+      </div>
+
+      <div className="grid grid-cols-2 gap-1.5">
         <NumInput
           label="줄 간격"
           value={parseFloat(styles.lineHeight) || 1.5}
@@ -418,8 +477,31 @@ function FontSection({ styles, updateStyle }) {
   )
 }
 
-function FillSection({ styles, updateStyle, previewStyle }) {
+function FillSection({ styles, updateStyle, updateStyles, previewStyle, isText }) {
   const opacityRef = useRef(null)
+  const hasGradient = styles.backgroundImage && styles.backgroundImage !== 'none'
+    && (styles.backgroundImage.includes('gradient'))
+  const isGradientText = styles.webkitBackgroundClip === 'text'
+  const handleGradientChange = (v) => {
+    if (v === 'none' && isGradientText) {
+      // 그래디언트 제거 시 background-clip:text 관련 속성도 정리
+      updateStyles({
+        backgroundImage: 'none',
+        webkitBackgroundClip: '',
+        webkitTextFillColor: '',
+      })
+    } else {
+      updateStyle('backgroundImage', v)
+    }
+  }
+
+  const toggleGradientText = () => {
+    if (isGradientText) {
+      updateStyles({ webkitBackgroundClip: '', webkitTextFillColor: '' })
+    } else {
+      updateStyles({ webkitBackgroundClip: 'text', webkitTextFillColor: 'transparent' })
+    }
+  }
 
   const handleOpacityChange = (e) => {
     previewStyle('opacity', e.target.value)
@@ -431,12 +513,34 @@ function FillSection({ styles, updateStyle, previewStyle }) {
   return (
     <div className="space-y-2">
       <SectionTitle>채우기</SectionTitle>
-      <div>
-        <p className={`${labelClass} mb-0.5`}>배경색</p>
+      <div style={hasGradient && !isGradientText ? { opacity: 0.4, pointerEvents: 'none' } : undefined}>
+        <p className={`${labelClass} mb-0.5`}>배경색{hasGradient && !isGradientText ? ' (그래디언트 사용 중)' : ''}</p>
         <ColorPicker
           value={styles.backgroundColor}
           onChange={v => updateStyle('backgroundColor', v)}
           showOpacity
+        />
+      </div>
+      <div>
+        <div className="flex items-center justify-between mb-0.5">
+          <p className={labelClass}>그래디언트</p>
+          {isText && hasGradient && (
+            <button
+              onClick={toggleGradientText}
+              className={`text-xs px-1.5 py-0.5 rounded ${
+                isGradientText
+                  ? 'bg-indigo-500/30 text-indigo-300 border border-indigo-500/40'
+                  : 'bg-white/5 text-slate-400 border border-white/10 hover:bg-white/10'
+              }`}
+              title="그래디언트를 텍스트 색상에 적용"
+            >
+              텍스트에 적용
+            </button>
+          )}
+        </div>
+        <GradientEditor
+          value={hasGradient ? styles.backgroundImage : 'none'}
+          onChange={handleGradientChange}
         />
       </div>
       <div>
@@ -519,21 +623,114 @@ function LineSection({ styles, updateStyle }) {
   )
 }
 
-function EffectSection({ styles, updateStyle }) {
+function ImageSection({ styles, updateStyle, elementId }) {
+  const { setCroppingFlat } = useFlatStore()
+  const objFit = styles.objectFit || 'cover'
+  const objPos = styles.objectPosition || 'center center'
+
+  // objectPosition → %값 파싱
+  const parsePos = (pos) => {
+    if (!pos || pos === 'center center') return { px: 50, py: 50 }
+    const parts = pos.trim().split(/\s+/)
+    return { px: parseFloat(parts[0]) || 50, py: parseFloat(parts[1]) || 50 }
+  }
+  const { px, py } = parsePos(objPos)
+
+  return (
+    <div className="space-y-2">
+      <SectionTitle>이미지</SectionTitle>
+      <div>
+        <p className={`${labelClass} mb-0.5`}>맞춤</p>
+        <div className="flex gap-1">
+          {['cover', 'contain', 'fill'].map(fit => (
+            <button key={fit} onClick={() => updateStyle('objectFit', fit)}
+              className={`text-xs px-2 py-0.5 rounded ${
+                objFit === fit
+                  ? 'bg-indigo-500/30 text-indigo-300 border border-indigo-500/40'
+                  : 'bg-white/5 text-slate-400 border border-white/10 hover:bg-white/10'
+              }`}
+            >
+              {fit === 'cover' ? '채우기' : fit === 'contain' ? '맞추기' : '늘리기'}
+            </button>
+          ))}
+        </div>
+      </div>
+      {objFit === 'cover' && (
+        <div>
+          <p className={`${labelClass} mb-0.5`}>위치</p>
+          <div className="flex items-center gap-2">
+            {/* 9 포인트 그리드 */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 2, width: 42 }}>
+              {[
+                { px: 0, py: 0 }, { px: 50, py: 0 }, { px: 100, py: 0 },
+                { px: 0, py: 50 }, { px: 50, py: 50 }, { px: 100, py: 50 },
+                { px: 0, py: 100 }, { px: 50, py: 100 }, { px: 100, py: 100 },
+              ].map((pos, i) => {
+                const isActive = Math.abs(px - pos.px) < 5 && Math.abs(py - pos.py) < 5
+                return (
+                  <button key={i}
+                    onClick={() => updateStyle('objectPosition', `${pos.px}% ${pos.py}%`)}
+                    style={{
+                      width: 12, height: 12, borderRadius: 2,
+                      background: isActive ? 'rgba(99, 102, 241, 0.6)' : 'rgba(255, 255, 255, 0.1)',
+                      border: `1px solid ${isActive ? 'rgba(99, 102, 241, 0.8)' : 'rgba(255, 255, 255, 0.15)'}`,
+                      cursor: 'pointer',
+                    }}
+                  />
+                )
+              })}
+            </div>
+            <div className="flex-1 space-y-1">
+              <div className="flex items-center gap-1">
+                <span className={labelClass} style={{ fontSize: 9, width: 12 }}>X</span>
+                <input type="range" min="0" max="100" step="1" value={Math.round(px)}
+                  onChange={e => updateStyle('objectPosition', `${e.target.value}% ${Math.round(py)}%`)}
+                  className="flex-1" style={{ accentColor: '#6366f1' }}
+                />
+                <span className="text-xs text-slate-400 w-7 text-right">{Math.round(px)}%</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <span className={labelClass} style={{ fontSize: 9, width: 12 }}>Y</span>
+                <input type="range" min="0" max="100" step="1" value={Math.round(py)}
+                  onChange={e => updateStyle('objectPosition', `${Math.round(px)}% ${e.target.value}%`)}
+                  className="flex-1" style={{ accentColor: '#6366f1' }}
+                />
+                <span className="text-xs text-slate-400 w-7 text-right">{Math.round(py)}%</span>
+              </div>
+            </div>
+          </div>
+          <button
+            onClick={() => setCroppingFlat(elementId)}
+            className="mt-1.5 flex items-center justify-center w-full text-xs text-indigo-400 bg-indigo-500/10 hover:bg-indigo-500/20 rounded-lg px-2.5 py-1.5 border border-indigo-500/20 transition-colors"
+          >
+            드래그로 위치 조정
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function EffectSection({ styles, updateStyle, isText }) {
   return (
     <div className="space-y-2">
       <SectionTitle>효과</SectionTitle>
       <div>
         <p className={`${labelClass} mb-0.5`}>그림자</p>
-        <input
-          type="text"
+        <BoxShadowEditor
           value={styles.boxShadow || 'none'}
-          onChange={e => updateStyle('boxShadow', e.target.value)}
-          onKeyDown={e => e.stopPropagation()}
-          className={inputClass}
-          placeholder="0px 4px 8px rgba(0,0,0,0.2)"
+          onChange={v => updateStyle('boxShadow', v)}
         />
       </div>
+      {isText && (
+        <div>
+          <p className={`${labelClass} mb-0.5`}>텍스트 그림자</p>
+          <TextShadowEditor
+            value={styles.textShadow || 'none'}
+            onChange={v => updateStyle('textShadow', v)}
+          />
+        </div>
+      )}
     </div>
   )
 }

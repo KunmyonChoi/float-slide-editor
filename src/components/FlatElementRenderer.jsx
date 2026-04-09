@@ -49,6 +49,9 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
     if (element.type === 'text') {
       e.stopPropagation()
       setEditingFlat(element.id)
+    } else if (element.type === 'image') {
+      e.stopPropagation()
+      useFlatStore.getState().setCroppingFlat(element.id)
     }
   }, [element.id, element.type, setEditingFlat])
 
@@ -64,14 +67,16 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
     boxSizing: 'border-box',
     cursor: 'default',
     outline: isSelected
-      ? '2px solid rgba(99,102,241,0.8)'
+      ? `2px solid ${element.locked ? 'rgba(148,163,184,0.6)' : 'rgba(99,102,241,0.8)'}`
       : undefined,
     outlineOffset: isSelected ? -1 : undefined,
+    transform: element.rotation ? `rotate(${element.rotation}deg)` : undefined,
+    transformOrigin: element.rotation ? 'center center' : undefined,
   }
 
   if (type === 'image') {
     return (
-      <div style={baseStyle} onMouseDown={handleMouseDown} onClick={handleClick}>
+      <div style={baseStyle} onMouseDown={handleMouseDown} onClick={handleClick} onDoubleClick={handleDoubleClick}>
         <img
           src={content}
           alt=""
@@ -80,6 +85,7 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
             width: '100%',
             height: '100%',
             objectFit: styles.objectFit || 'cover',
+            objectPosition: styles.objectPosition || 'center center',
             borderRadius: styles.borderRadius,
             border: styles.border,
             opacity: styles.opacity,
@@ -93,12 +99,29 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
   if (type === 'text') {
     // border 단축 속성과 개별 속성 충돌 방지 (React 경고)
     const borderProps = resolveBorders(styles)
+    const isGradientText = styles.webkitBackgroundClip === 'text'
+
+    // 그래디언트 텍스트: backgroundImage + clip은 내부 span에, backgroundColor는 외부 div에
+    // text-shadow는 투명 fill을 통해 비치므로 drop-shadow filter로 대체
+    const gradientTextStyle = isGradientText ? {
+      backgroundImage: styles.backgroundImage,
+      backgroundClip: 'text',
+      WebkitBackgroundClip: 'text',
+      WebkitTextFillColor: styles.webkitTextFillColor || 'transparent',
+      filter: textShadowToDropShadow(styles.textShadow),
+    } : null
+
+    const textContent = isRich
+      ? <span dangerouslySetInnerHTML={{ __html: content }} />
+      : content
+
     return (
       <div
         style={{
           ...baseStyle,
           backgroundColor: styles.backgroundColor,
-          backgroundImage: styles.backgroundImage,
+          // 그래디언트 텍스트가 아닐 때만 외부 div에 backgroundImage 적용
+          ...(!isGradientText ? { backgroundImage: styles.backgroundImage } : {}),
           color: styles.color,
           fontSize: styles.fontSize,
           fontFamily: styles.fontFamily,
@@ -108,14 +131,11 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
           letterSpacing: styles.letterSpacing,
           textTransform: styles.textTransform,
           textDecoration: styles.textDecoration,
-          ...(styles.webkitBackgroundClip === 'text' ? {
-            backgroundClip: 'text',
-            WebkitBackgroundClip: 'text',
-            WebkitTextFillColor: styles.webkitTextFillColor || 'transparent',
-          } : {}),
           borderRadius: styles.borderRadius,
           ...borderProps,
           boxShadow: styles.boxShadow,
+          // 그래디언트 텍스트: textShadow는 내부 span의 drop-shadow로 처리
+          textShadow: isGradientText ? undefined : styles.textShadow,
           opacity: styles.opacity,
           padding: styles.padding,
           overflow: 'visible',
@@ -134,9 +154,9 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
         onClick={handleClick}
         onDoubleClick={handleDoubleClick}
       >
-        {isRich
-          ? <span dangerouslySetInnerHTML={{ __html: content }} />
-          : content}
+        {isGradientText
+          ? <span style={gradientTextStyle}>{textContent}</span>
+          : textContent}
       </div>
     )
   }
@@ -169,6 +189,29 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
       onClick={handleClick}
     />
   )
+}
+
+/**
+ * CSS text-shadow → CSS filter drop-shadow 변환
+ * 그래디언트 텍스트에서 text-shadow가 투명 fill을 통해 비치는 문제 해결
+ * drop-shadow()는 시각적 렌더링 결과의 그림자를 생성한다.
+ * 주의: drop-shadow는 spread를 지원하지 않으므로 offsetX offsetY blur color만 변환
+ */
+function textShadowToDropShadow(textShadow) {
+  if (!textShadow || textShadow === 'none') return undefined
+  // 다중 그림자: 각각 drop-shadow()로 변환하여 연결
+  // text-shadow: 2px 3px 4px rgba(0,0,0,0.5), ...
+  // → filter: drop-shadow(2px 3px 4px rgba(0,0,0,0.5)) ...
+  const parts = []
+  let depth = 0, current = ''
+  for (const ch of textShadow) {
+    if (ch === '(') depth++
+    if (ch === ')') depth--
+    if (ch === ',' && depth === 0) { parts.push(current.trim()); current = '' }
+    else current += ch
+  }
+  if (current.trim()) parts.push(current.trim())
+  return parts.map(p => `drop-shadow(${p})`).join(' ')
 }
 
 /**

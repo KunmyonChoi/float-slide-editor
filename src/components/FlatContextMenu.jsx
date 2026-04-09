@@ -39,6 +39,7 @@ export default function FlatContextMenu({ x, y, canvasX, canvasY, onClose }) {
     removeSelectedElements, selectAllFlats,
     bringForward, sendBackward, bringToFront, sendToBack,
     addFlatElement, setSelectedFlat, batchUpdateFlatElementsIndividual,
+    updateFlatElement, batchUpdateFlatElements,
   } = useFlatStore()
 
   const menuRef = useRef(null)
@@ -49,6 +50,9 @@ export default function FlatContextMenu({ x, y, canvasX, canvasY, onClose }) {
   const hasSelection = selectedFlatIds.length > 0
   const singleId = selectedFlatIds.length === 1 ? selectedFlatIds[0] : null
   const clipboardEmpty = !clipboard || clipboard.length === 0
+  const selectedEls = flatElements.filter(e => selectedFlatIds.includes(e.id))
+  const allLocked = selectedEls.length > 0 && selectedEls.every(e => e.locked)
+  const anyLocked = selectedEls.some(e => e.locked)
 
   // 위치 보정 (메뉴가 stageRef 밖으로 나가지 않게)
   useEffect(() => {
@@ -121,6 +125,15 @@ export default function FlatContextMenu({ x, y, canvasX, canvasY, onClose }) {
       case 'insertText': insertElement('text'); break
       case 'insertRect': insertElement('rect'); break
       case 'insertCircle': insertElement('circle'); break
+      case 'lock': {
+        const locked = !allLocked
+        if (selectedFlatIds.length === 1) {
+          updateFlatElement(selectedFlatIds[0], { locked })
+        } else {
+          batchUpdateFlatElements(selectedFlatIds, { locked })
+        }
+        break
+      }
       case 'alignLeft': case 'alignCenterH': case 'alignRight':
       case 'alignTop': case 'alignMiddleV': case 'alignBottom': {
         const selectedEls = flatElements.filter(e => selectedFlatIds.includes(e.id))
@@ -138,8 +151,9 @@ export default function FlatContextMenu({ x, y, canvasX, canvasY, onClose }) {
     onClose()
   }, [singleId, cutElement, copyElement, pasteElement, duplicateElement,
       removeSelectedElements, selectAllFlats, bringForward, sendBackward,
-      bringToFront, sendToBack, insertElement, onClose,
-      flatElements, selectedFlatIds, batchUpdateFlatElementsIndividual])
+      bringToFront, sendToBack, insertElement, onClose, allLocked,
+      flatElements, selectedFlatIds, batchUpdateFlatElementsIndividual,
+      updateFlatElement, batchUpdateFlatElements])
 
   // 서브메뉴 hover
   const enterSubmenu = (key) => {
@@ -157,6 +171,7 @@ export default function FlatContextMenu({ x, y, canvasX, canvasY, onClose }) {
     { id: 'paste', label: '붙여넣기', shortcut: 'Ctrl+V', action: 'paste', disabled: clipboardEmpty },
     { id: 'dup', label: '복제', shortcut: 'Ctrl+D', action: 'duplicate' },
     { id: 'del', label: '삭제', shortcut: 'Delete', action: 'delete' },
+    { id: 'lock', label: allLocked ? '잠금 해제' : '잠금', action: 'lock' },
     { id: 'sep1', type: 'separator' },
     { id: 'zorder', label: '순서', submenu: 'zorder', disabled: !singleId,
       children: [

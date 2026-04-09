@@ -1,8 +1,10 @@
 import { useCallback, useRef, useEffect, useMemo } from 'react'
 import { useFlatStore } from '../store/flatStore'
 import { computeSnapGuides, computeResizeSnapGuides } from '../core/SnapEngine'
+import { computeRotationAngle, snapRotation, normalizeAngle, canvasDeltaToLocal } from '../core/RotationUtils'
 
 const HANDLE_SIZE = 8
+const ROTATE_HANDLE_OFFSET = 30
 const MIN_SIZE = 20
 const GROUP_HANDLE_SIZE = 8
 
@@ -37,7 +39,8 @@ export default function FlatSelectionOverlay({ element, scale, otherRects, canva
 
   // 드래그 이동
   const handleMoveStart = useCallback((e) => {
-    if (editingFlatId) return // 편집 중 드래그 비활성화
+    if (editingFlatId) return
+    if (element.locked) return // 잠금 요소 이동 차단
     if (e.target.dataset.resizeHandle) return
     e.stopPropagation()
 
@@ -81,7 +84,7 @@ export default function FlatSelectionOverlay({ element, scale, otherRects, canva
 
   // 리사이즈 시작
   const handleResizeStart = useCallback((e, dir) => {
-    if (editingFlatId) return // 편집 중 리사이즈 비활성화
+    if (editingFlatId || element.locked) return
     e.stopPropagation()
     e.preventDefault()
     dragRef.current = {
@@ -93,14 +96,44 @@ export default function FlatSelectionOverlay({ element, scale, otherRects, canva
       startY: element.y,
       startW: element.width,
       startH: element.height,
+      startRotation: element.rotation || 0,
       otherRects: otherRects || [],
     }
   }, [element, otherRects])
+
+  // 회전 시작
+  const handleRotateStart = useCallback((e) => {
+    if (editingFlatId || element.locked) return
+    e.stopPropagation()
+    e.preventDefault()
+    dragRef.current = {
+      mode: 'rotate',
+      startRotation: element.rotation || 0,
+      cx: element.x + element.width / 2,
+      cy: element.y + element.height / 2,
+    }
+  }, [element, editingFlatId])
 
   useEffect(() => {
     const onMove = (e) => {
       const d = dragRef.current
       if (!d) return
+
+      if (d.mode === 'rotate') {
+        // canvasRef(scale 적용된 부모)의 rect에서 캔버스 좌표 계산
+        const canvasEl = document.querySelector('[data-flat-canvas]')
+        if (!canvasEl) return
+        const parentEl = canvasEl.parentElement // canvasRef div (scale 적용)
+        if (!parentEl) return
+        const rect = parentEl.getBoundingClientRect()
+        const mouseX = (e.clientX - rect.left) / scale
+        const mouseY = (e.clientY - rect.top) / scale
+        let angle = computeRotationAngle(d.cx, d.cy, mouseX, mouseY)
+        angle = normalizeAngle(Math.round(angle))
+        if (e.shiftKey) angle = Math.round(angle / 45) * 45 % 360
+        previewFlatElement(element.id, { rotation: angle })
+        return
+      }
 
       const dx = (e.clientX - d.startMouseX) / scale
       const dy = (e.clientY - d.startMouseY) / scale
@@ -120,16 +153,35 @@ export default function FlatSelectionOverlay({ element, scale, otherRects, canva
         }
         previewFlatElement(element.id, { x: px, y: py })
       } else if (d.mode === 'resize') {
-        let { startX: x, startY: y, startW: w, startH: h } = d
+        let w = d.startW, h = d.startH
         const dir = d.dir
 
-        if (dir.includes('e')) w = Math.max(MIN_SIZE, d.startW + dx)
-        if (dir.includes('w')) { w = Math.max(MIN_SIZE, d.startW - dx); x = d.startX + (d.startW - w) }
-        if (dir.includes('s')) h = Math.max(MIN_SIZE, d.startH + dy)
-        if (dir.includes('n')) { h = Math.max(MIN_SIZE, d.startH - dy); y = d.startY + (d.startH - h) }
+        // 회전된 요소: 마우스 delta를 로컬 좌표로 변환
+        const rot = d.startRotation || 0
+        const { dx: ldx, dy: ldy } = rot ? canvasDeltaToLocal(dx, dy, rot) : { dx, dy }
 
-        // 리사이즈 스냅
-        if (d.otherRects && onSnapGuides) {
+        if (dir.includes('e')) w = Math.max(MIN_SIZE, d.startW + ldx)
+        if (dir.includes('w')) w = Math.max(MIN_SIZE, d.startW - ldx)
+        if (dir.includes('s')) h = Math.max(MIN_SIZE, d.startH + ldy)
+        if (dir.includes('n')) h = Math.max(MIN_SIZE, d.startH - ldy)
+
+        // 앵커 포인트(드래그 반대편) 기준으로 중심점 보정
+        // 비회전 시에도 동일 공식 적용 (cos0=1, sin0=0 → 기존 로직과 동일)
+        let dax = 0, day = 0
+        if (dir.includes('e')) dax = (w - d.startW) / 2
+        if (dir.includes('w')) dax = (d.startW - w) / 2
+        if (dir.includes('s')) day = (h - d.startH) / 2
+        if (dir.includes('n')) day = (d.startH - h) / 2
+
+        const rad = rot * Math.PI / 180
+        const cosR = Math.cos(rad), sinR = Math.sin(rad)
+        const startCX = d.startX + d.startW / 2
+        const startCY = d.startY + d.startH / 2
+        let x = startCX + dax * cosR - day * sinR - w / 2
+        let y = startCY + dax * sinR + day * cosR - h / 2
+
+        // 리사이즈 스냅 (비회전 시만)
+        if (!rot && d.otherRects && onSnapGuides) {
           const snap = computeResizeSnapGuides(
             { x, y, width: w, height: h }, dir, d.otherRects, canvasSize
           )
@@ -147,22 +199,30 @@ export default function FlatSelectionOverlay({ element, scale, otherRects, canva
       dragRef.current = null
       if (onSnapGuides) onSnapGuides([])
 
-      // 현재 위치를 히스토리에 기록
+      // 현재(프리뷰) 값을 저장한 후 원래 값으로 되돌리고 updateFlatElement 호출
+      // → updateFlatElement가 올바른 oldValues를 캡처하여 undo 가능
       const els = useFlatStore.getState().flatElements
       const current = els.find(e => e.id === element.id)
       if (!current) return
 
-      if (d.mode === 'move') {
+      if (d.mode === 'rotate') {
+        const newRotation = current.rotation || 0
+        if (newRotation !== d.startRotation) {
+          previewFlatElement(element.id, { rotation: d.startRotation })
+          updateFlatElement(element.id, { rotation: newRotation })
+        }
+      } else if (d.mode === 'move') {
         if (current.x !== d.startX || current.y !== d.startY) {
-          updateFlatElement(element.id, { x: current.x, y: current.y })
+          const newX = current.x, newY = current.y
+          previewFlatElement(element.id, { x: d.startX, y: d.startY })
+          updateFlatElement(element.id, { x: newX, y: newY })
         }
       } else if (d.mode === 'resize') {
         if (current.x !== d.startX || current.y !== d.startY ||
             current.width !== d.startW || current.height !== d.startH) {
-          updateFlatElement(element.id, {
-            x: current.x, y: current.y,
-            width: current.width, height: current.height,
-          })
+          const newVals = { x: current.x, y: current.y, width: current.width, height: current.height }
+          previewFlatElement(element.id, { x: d.startX, y: d.startY, width: d.startW, height: d.startH })
+          updateFlatElement(element.id, newVals)
         }
       }
     }
@@ -176,6 +236,8 @@ export default function FlatSelectionOverlay({ element, scale, otherRects, canva
   }, [element.id, scale, previewFlatElement, updateFlatElement])
 
   const { x, y, width, height, zIndex } = element
+  const rot = element.rotation || 0
+  const locked = element.locked
 
   return (
     <div
@@ -186,32 +248,76 @@ export default function FlatSelectionOverlay({ element, scale, otherRects, canva
         width,
         height,
         zIndex: 9999,
-        cursor: 'move',
+        cursor: locked ? 'default' : 'move',
         pointerEvents: 'auto',
+        transform: rot ? `rotate(${rot}deg)` : undefined,
+        transformOrigin: rot ? 'center center' : undefined,
       }}
       onMouseDown={handleMoveStart}
       onDoubleClick={handleDoubleClick}
     >
-      {/* 리사이즈 핸들 */}
-      {HANDLES.map(h => (
-        <div
-          key={h.dir}
-          data-resize-handle="true"
-          onMouseDown={(e) => handleResizeStart(e, h.dir)}
-          style={{
+      {!locked && (
+        <>
+          {/* 회전 핸들 */}
+          <div
+            data-resize-handle="true"
+            onMouseDown={handleRotateStart}
+            style={{
+              position: 'absolute',
+              left: width / 2 - 5,
+              top: -ROTATE_HANDLE_OFFSET,
+              width: 10,
+              height: 10,
+              background: '#6366f1',
+              border: '1.5px solid #fff',
+              borderRadius: '50%',
+              cursor: 'grab',
+              zIndex: 10001,
+            }}
+          />
+          {/* 회전 핸들 연결선 */}
+          <div style={{
             position: 'absolute',
-            left: h.x * width - HANDLE_SIZE / 2,
-            top: h.y * height - HANDLE_SIZE / 2,
-            width: HANDLE_SIZE,
-            height: HANDLE_SIZE,
-            background: '#6366f1',
-            border: '1px solid #fff',
-            borderRadius: 2,
-            cursor: h.cursor,
-            zIndex: 10000,
-          }}
-        />
-      ))}
+            left: width / 2,
+            top: -(ROTATE_HANDLE_OFFSET - 10),
+            width: 1,
+            height: ROTATE_HANDLE_OFFSET - 10,
+            background: 'rgba(99,102,241,0.5)',
+            pointerEvents: 'none',
+          }} />
+          {/* 리사이즈 핸들 */}
+          {HANDLES.map(h => (
+            <div
+              key={h.dir}
+              data-resize-handle="true"
+              onMouseDown={(e) => handleResizeStart(e, h.dir)}
+              style={{
+                position: 'absolute',
+                left: h.x * width - HANDLE_SIZE / 2,
+                top: h.y * height - HANDLE_SIZE / 2,
+                width: HANDLE_SIZE,
+                height: HANDLE_SIZE,
+                background: '#6366f1',
+                border: '1px solid #fff',
+                borderRadius: 2,
+                cursor: h.cursor,
+                zIndex: 10000,
+              }}
+            />
+          ))}
+        </>
+      )}
+      {locked && (
+        /* 잠금 아이콘 */
+        <div style={{
+          position: 'absolute',
+          top: -20,
+          left: width / 2 - 8,
+          fontSize: 12,
+          color: '#94a3b8',
+          pointerEvents: 'none',
+        }}>🔒</div>
+      )}
     </div>
   )
 }
@@ -240,22 +346,27 @@ export function FlatGroupOverlay({ elements, scale, otherRects, canvasSize, onSn
     return { x: minX, y: minY, w: maxX - minX, h: maxY - minY }
   }, [elements])
 
+  // 잠금되지 않은 요소만 조작 대상
+  const movableElements = useMemo(() => elements.filter(el => !el.locked), [elements])
+
   // 그룹 이동 시작
   const handleMoveStart = useCallback((e) => {
     if (e.target.dataset.resizeHandle) return
+    if (movableElements.length === 0) return
     e.stopPropagation()
     dragRef.current = {
       mode: 'move',
       startMouseX: e.clientX,
       startMouseY: e.clientY,
-      startPositions: elements.map(el => ({ id: el.id, x: el.x, y: el.y })),
+      startPositions: movableElements.map(el => ({ id: el.id, x: el.x, y: el.y })),
       bbox: { ...bbox },
       otherRects: otherRects || [],
     }
-  }, [elements, bbox, otherRects])
+  }, [movableElements, bbox, otherRects])
 
   // 그룹 리사이즈 시작
   const handleResizeStart = useCallback((e, dir) => {
+    if (movableElements.length === 0) return
     e.stopPropagation()
     e.preventDefault()
     dragRef.current = {
@@ -264,12 +375,12 @@ export function FlatGroupOverlay({ elements, scale, otherRects, canvasSize, onSn
       startMouseX: e.clientX,
       startMouseY: e.clientY,
       bbox: { ...bbox },
-      startPositions: elements.map(el => ({
+      startPositions: movableElements.map(el => ({
         id: el.id, x: el.x, y: el.y, width: el.width, height: el.height,
       })),
       otherRects: otherRects || [],
     }
-  }, [elements, bbox, otherRects])
+  }, [movableElements, bbox, otherRects])
 
   useEffect(() => {
     const onMove = (e) => {
@@ -342,16 +453,22 @@ export function FlatGroupOverlay({ elements, scale, otherRects, canvasSize, onSn
       const els = useFlatStore.getState().flatElements
 
       if (d.mode === 'move') {
-        const changesMap = d.startPositions.map(sp => {
+        // 현재(프리뷰) 값 저장 후 원래 값으로 되돌리고 commit → undo 가능
+        const newChanges = d.startPositions.map(sp => {
           const current = els.find(e => e.id === sp.id)
           if (!current || (current.x === sp.x && current.y === sp.y)) return null
           return { id: sp.id, changes: { x: current.x, y: current.y } }
         }).filter(Boolean)
-        if (changesMap.length > 0) {
-          batchUpdateFlatElementsIndividual(changesMap)
+        if (newChanges.length > 0) {
+          // 원래 위치로 되돌리기
+          const revertMap = d.startPositions.map(sp => ({
+            id: sp.id, changes: { x: sp.x, y: sp.y },
+          }))
+          batchPreviewFlatElements(revertMap)
+          batchUpdateFlatElementsIndividual(newChanges)
         }
       } else if (d.mode === 'resize') {
-        const changesMap = d.startPositions.map(sp => {
+        const newChanges = d.startPositions.map(sp => {
           const current = els.find(e => e.id === sp.id)
           if (!current) return null
           if (current.x === sp.x && current.y === sp.y &&
@@ -361,8 +478,13 @@ export function FlatGroupOverlay({ elements, scale, otherRects, canvasSize, onSn
             changes: { x: current.x, y: current.y, width: current.width, height: current.height },
           }
         }).filter(Boolean)
-        if (changesMap.length > 0) {
-          batchUpdateFlatElementsIndividual(changesMap)
+        if (newChanges.length > 0) {
+          // 원래 크기로 되돌리기
+          const revertMap = d.startPositions.map(sp => ({
+            id: sp.id, changes: { x: sp.x, y: sp.y, width: sp.width, height: sp.height },
+          }))
+          batchPreviewFlatElements(revertMap)
+          batchUpdateFlatElementsIndividual(newChanges)
         }
       }
     }
@@ -384,13 +506,13 @@ export function FlatGroupOverlay({ elements, scale, otherRects, canvasSize, onSn
         width: bbox.w,
         height: bbox.h,
         zIndex: 9999,
-        cursor: 'move',
+        cursor: movableElements.length === 0 ? 'default' : 'move',
         pointerEvents: 'auto',
         border: '2px dashed rgba(99,102,241,0.6)',
       }}
       onMouseDown={handleMoveStart}
     >
-      {GROUP_HANDLES.map(h => (
+      {movableElements.length > 0 && GROUP_HANDLES.map(h => (
         <div
           key={h.dir}
           data-resize-handle="true"

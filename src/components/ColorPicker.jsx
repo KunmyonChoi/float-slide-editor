@@ -77,7 +77,10 @@ export default function ColorPicker({ value, onChange, showOpacity = false }) {
   const handleColorInput = (e) => {
     const newHex = e.target.value
     setLocalHex(newHex)
-    commitColor(newHex, localOpacity)
+    // 색상 선택 시 opacity가 0이면 1로 올림 (투명 → 불투명)
+    const newOpacity = localOpacity === 0 ? 1 : localOpacity
+    if (newOpacity !== localOpacity) setLocalOpacity(newOpacity)
+    commitColor(newHex, newOpacity)
   }
 
   const handleHexChange = (e) => {
@@ -87,12 +90,14 @@ export default function ColorPicker({ value, onChange, showOpacity = false }) {
 
   const handleHexBlur = () => {
     // hex 유효성 검사
+    const newOpacity = localOpacity === 0 ? 1 : localOpacity
+    if (newOpacity !== localOpacity) setLocalOpacity(newOpacity)
     if (/^#[0-9a-fA-F]{6}$/.test(localHex)) {
-      commitColor(localHex.toLowerCase(), localOpacity)
+      commitColor(localHex.toLowerCase(), newOpacity)
     } else if (/^#[0-9a-fA-F]{3}$/.test(localHex)) {
       const expanded = '#' + localHex[1] + localHex[1] + localHex[2] + localHex[2] + localHex[3] + localHex[3]
       setLocalHex(expanded)
-      commitColor(expanded.toLowerCase(), localOpacity)
+      commitColor(expanded.toLowerCase(), newOpacity)
     } else {
       setLocalHex(hex) // 잘못된 입력 → 복원
     }

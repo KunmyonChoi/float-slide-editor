@@ -43,7 +43,9 @@ export function exportOriginalHtml(iframeRef) {
 export function exportFlatHtml(flatElements, canvasSize, fontImports = []) {
   const els = flatElements.map(el => {
     if (el.type === 'image') {
-      return `<div style="${flatStyle(el)}"><img src="${escHtml(el.content)}" alt="" style="width:100%;height:100%;object-fit:${el.styles.objectFit || 'cover'};display:block;border-radius:${el.styles.borderRadius || '0'};" /></div>`
+      const objPos = el.styles.objectPosition && el.styles.objectPosition !== 'center center' && el.styles.objectPosition !== '50% 50%'
+        ? `object-position:${el.styles.objectPosition};` : ''
+      return `<div style="${flatStyle(el)}"><img src="${escHtml(el.content)}" alt="" style="width:100%;height:100%;object-fit:${el.styles.objectFit || 'cover'};${objPos}display:block;border-radius:${el.styles.borderRadius || '0'};" /></div>`
     }
     if (el.type === 'text') {
       const textContent = el.isRich ? el.content : escHtml(el.content)
@@ -51,6 +53,14 @@ export function exportFlatHtml(flatElements, canvasSize, fontImports = []) {
       const needsFlex = el.merged || hasBg
       const gapStyle = (el.styles.gap && el.styles.gap !== '0px' && el.styles.gap !== 'normal') ? `gap:${el.styles.gap};` : ''
       const mergedFlex = needsFlex ? `display:flex;align-items:${el.styles.isFlex ? (el.styles.alignItems || 'center') : 'center'};justify-content:${el.styles.isFlex ? (el.styles.justifyContent || 'center') : (el.styles.textAlign === 'center' ? 'center' : el.styles.textAlign === 'right' ? 'flex-end' : 'flex-start')};${gapStyle}` : ''
+      const isGradientText = el.styles.webkitBackgroundClip === 'text'
+      if (isGradientText) {
+        // 그래디언트 텍스트: 외부 div에 배경색 (textShadow 제외), 내부 span에 gradient+clip+drop-shadow
+        const dropShadow = el.styles.textShadow && el.styles.textShadow !== 'none'
+          ? `;filter:${textShadowToFilter(el.styles.textShadow)}` : ''
+        const gradSpan = `background-image:${el.styles.backgroundImage || 'none'};-webkit-background-clip:text;-webkit-text-fill-color:${el.styles.webkitTextFillColor || 'transparent'}${dropShadow}`
+        return `<div style="${flatStyle(el)};${mergedFlex}${textStyleNoGradient(el.styles, true)}"><span style="${gradSpan}">${textContent}</span></div>`
+      }
       return `<div style="${flatStyle(el)};${mergedFlex}${textStyle(el.styles)}">${textContent}</div>`
     }
     if (el.type === 'svg') {
@@ -133,13 +143,14 @@ function flatStyle(el) {
     `z-index:${el.zIndex}`,
     `box-sizing:border-box`,
     `overflow:${overflow}`,
-  ].join(';')
+    el.rotation ? `transform:rotate(${el.rotation}deg);transform-origin:center center` : '',
+  ].filter(Boolean).join(';')
 }
 
-function textStyle(s) {
+function textStyleBase(s, includeGradient, excludeTextShadow) {
   return [
     s.backgroundColor && s.backgroundColor !== 'rgba(0, 0, 0, 0)' ? `background-color:${s.backgroundColor}` : '',
-    s.backgroundImage && s.backgroundImage !== 'none' ? `background-image:${s.backgroundImage}` : '',
+    includeGradient && s.backgroundImage && s.backgroundImage !== 'none' ? `background-image:${s.backgroundImage}` : '',
     s.color ? `color:${s.color}` : '',
     s.fontSize ? `font-size:${s.fontSize}` : '',
     s.fontFamily ? `font-family:${s.fontFamily.replace(/"/g, "'")}` : '',
@@ -150,17 +161,22 @@ function textStyle(s) {
     s.letterSpacing && s.letterSpacing !== 'normal' ? `letter-spacing:${s.letterSpacing}` : '',
     s.textTransform && s.textTransform !== 'none' ? `text-transform:${s.textTransform}` : '',
     s.textDecoration && s.textDecoration !== 'none' ? `text-decoration:${s.textDecoration}` : '',
-    s.webkitBackgroundClip === 'text' ? `-webkit-background-clip:text` : '',
-    s.webkitBackgroundClip === 'text' ? `-webkit-text-fill-color:${s.webkitTextFillColor || 'transparent'}` : '',
+    includeGradient && s.webkitBackgroundClip === 'text' ? `-webkit-background-clip:text` : '',
+    includeGradient && s.webkitBackgroundClip === 'text' ? `-webkit-text-fill-color:${s.webkitTextFillColor || 'transparent'}` : '',
     s.borderRadius && s.borderRadius !== '0px' ? `border-radius:${s.borderRadius}` : '',
     ...borderStyles(s),
     s.boxShadow && s.boxShadow !== 'none' ? `box-shadow:${s.boxShadow}` : '',
+    // 그래디언트 텍스트: textShadow는 내부 span의 drop-shadow filter로 처리
+    !excludeTextShadow && s.textShadow && s.textShadow !== 'none' ? `text-shadow:${s.textShadow}` : '',
     s.padding && s.padding !== '0px' ? `padding:${s.padding}` : '',
     s.opacity && s.opacity !== '1' ? `opacity:${s.opacity}` : '',
     `white-space:pre-wrap`,
     `word-break:break-word`,
   ].filter(Boolean).join(';')
 }
+
+function textStyle(s) { return textStyleBase(s, true, false) }
+function textStyleNoGradient(s, excludeTextShadow) { return textStyleBase(s, false, excludeTextShadow) }
 
 function shapeStyle(s) {
   return [
@@ -184,6 +200,21 @@ function borderStyles(s) {
   if (s.borderBottom && !s.borderBottom.startsWith('0px')) sides.push(`border-bottom:${s.borderBottom}`)
   if (s.borderLeft && !s.borderLeft.startsWith('0px')) sides.push(`border-left:${s.borderLeft}`)
   return sides
+}
+
+/** text-shadow CSS → filter: drop-shadow() 변환 (그래디언트 텍스트용) */
+function textShadowToFilter(textShadow) {
+  if (!textShadow || textShadow === 'none') return 'none'
+  const parts = []
+  let depth = 0, current = ''
+  for (const ch of textShadow) {
+    if (ch === '(') depth++
+    if (ch === ')') depth--
+    if (ch === ',' && depth === 0) { parts.push(current.trim()); current = '' }
+    else current += ch
+  }
+  if (current.trim()) parts.push(current.trim())
+  return parts.map(p => `drop-shadow(${p})`).join(' ')
 }
 
 function escHtml(str) {
