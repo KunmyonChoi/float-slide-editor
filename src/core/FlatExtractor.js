@@ -1182,6 +1182,15 @@ export function extractFlatElements(iframeRef) {
   // 추출된 요소의 font-family에서 누락된 웹폰트 감지 → Google Fonts 임포트 자동 추가
   addMissingFontImports(result, fontImports)
 
+  // 배경 요소 자동 잠금
+  for (const el of result) {
+    if (el.type === 'shape' && !el.content
+      && Math.abs(el.width - canvasSize.w) < 2 && Math.abs(el.height - canvasSize.h) < 2
+      && Math.abs(el.x) < 2 && Math.abs(el.y) < 2) {
+      el.locked = true
+    }
+  }
+
   return { elements: result, canvasSize, fontImports }
 }
 

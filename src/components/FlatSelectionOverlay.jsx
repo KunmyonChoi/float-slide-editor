@@ -249,7 +249,7 @@ export default function FlatSelectionOverlay({ element, scale, otherRects, canva
         height,
         zIndex: 9999,
         cursor: locked ? 'default' : 'move',
-        pointerEvents: 'auto',
+        pointerEvents: locked ? 'none' : 'auto',
         transform: rot ? `rotate(${rot}deg)` : undefined,
         transformOrigin: rot ? 'center center' : undefined,
       }}

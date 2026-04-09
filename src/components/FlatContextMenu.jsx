@@ -52,6 +52,13 @@ export default function FlatContextMenu({ x, y, canvasX, canvasY, onClose }) {
   const clipboardEmpty = !clipboard || clipboard.length === 0
   const selectedEls = flatElements.filter(e => selectedFlatIds.includes(e.id))
   const allLocked = selectedEls.length > 0 && selectedEls.every(e => e.locked)
+
+  // 배경 요소 찾기
+  const bgElement = useMemo(() => flatElements.find(el =>
+    el.type === 'shape' && !el.content
+    && Math.abs(el.width - canvasSize.w) < 2 && Math.abs(el.height - canvasSize.h) < 2
+    && Math.abs(el.x) < 2 && Math.abs(el.y) < 2
+  ), [flatElements, canvasSize])
   const anyLocked = selectedEls.some(e => e.locked)
 
   // 위치 보정 (메뉴가 stageRef 밖으로 나가지 않게)
@@ -208,6 +215,7 @@ export default function FlatContextMenu({ x, y, canvasX, canvasY, onClose }) {
       case 'insertCircle': insertElement('circle'); break
       case 'insertImage': fileInputRef.current?.click(); return // onClose 호출하지 않음
       case 'insertVideo': insertVideo(); break
+      case 'formatBackground': if (bgElement) setSelectedFlat(bgElement.id); break
       case 'lock': {
         const locked = !allLocked
         if (selectedFlatIds.length === 1) {
@@ -236,7 +244,7 @@ export default function FlatContextMenu({ x, y, canvasX, canvasY, onClose }) {
       removeSelectedElements, selectAllFlats, bringForward, sendBackward,
       bringToFront, sendToBack, insertElement, insertVideo, onClose, allLocked,
       flatElements, selectedFlatIds, batchUpdateFlatElementsIndividual,
-      updateFlatElement, batchUpdateFlatElements])
+      updateFlatElement, batchUpdateFlatElements, bgElement, setSelectedFlat])
 
   // 서브메뉴 hover
   const enterSubmenu = (key) => {
@@ -285,6 +293,7 @@ export default function FlatContextMenu({ x, y, canvasX, canvasY, onClose }) {
   ] : [
     { id: 'paste', label: '붙여넣기', shortcut: 'Ctrl+V', action: 'paste', disabled: clipboardEmpty },
     { id: 'sep1', type: 'separator' },
+    ...(bgElement ? [{ id: 'formatBg', label: '배경 서식', action: 'formatBackground' }] : []),
     { id: 'insert', label: '요소 추가', submenu: 'insert',
       children: [
         { id: 'itext', label: '텍스트', action: 'insertText' },
