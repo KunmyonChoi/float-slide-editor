@@ -1,6 +1,7 @@
-import { useCallback } from 'react'
+import { useCallback, useState, useEffect } from 'react'
 import { useFlatStore } from '../store/flatStore'
 import { useEditorStore } from '../store/editorStore'
+import { BlobStore } from '../core/BlobStore'
 
 /**
  * FlatElementRenderer
@@ -175,15 +176,15 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
           overflow: 'hidden',
           opacity: styles.opacity,
         }}>
-          <iframe
-            src={content}
-            style={{
-              width: '100%', height: '100%', border: 'none',
-              pointerEvents: 'none',
-            }}
-            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-            allowFullScreen
-          />
+          {BlobStore.isIdbRef(content)
+            ? <IdbVideo src={content} />
+            : <iframe
+                src={content}
+                style={{ width: '100%', height: '100%', border: 'none', pointerEvents: 'none' }}
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                allowFullScreen
+              />
+          }
         </div>
       </div>
     )
@@ -268,4 +269,33 @@ function resolveBorders(s) {
   }
   // 테두리 없음을 명시적으로 선언 — dom-to-image 렌더링 아티팩트 방지
   return { border: 'none' }
+}
+
+/**
+ * IndexedDB 참조 비디오 — blob URL로 <video> 렌더링
+ */
+function IdbVideo({ src }) {
+  const [blobUrl, setBlobUrl] = useState(null)
+  useEffect(() => {
+    if (!BlobStore.isIdbRef(src)) return
+    let cancelled = false
+    BlobStore.getUrl(BlobStore.parseRef(src)).then(url => {
+      if (!cancelled) setBlobUrl(url)
+    })
+    return () => { cancelled = true }
+  }, [src])
+
+  if (!blobUrl) {
+    return <div style={{ width: '100%', height: '100%', background: '#1e293b', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <span style={{ color: '#475569', fontSize: 12 }}>로딩...</span>
+    </div>
+  }
+  return (
+    <video
+      src={blobUrl}
+      style={{ width: '100%', height: '100%', objectFit: 'contain', pointerEvents: 'none' }}
+      muted
+      playsInline
+    />
+  )
 }

@@ -61,7 +61,7 @@ export default function FlatPropertyContent() {
           }`}
           title={el.locked ? '잠금 해제' : '잠금'}
         >
-          {el.locked ? '🔒' : '🔓'}
+          {el.locked ? <LockClosedIcon /> : <LockOpenIcon />}
         </button>
       </div>
 
@@ -1169,66 +1169,114 @@ function TextAlignRightIcon() {
 }
 
 
+// ── 잠금 아이콘 ──
+
+function LockClosedIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="11" width="18" height="11" rx="2" />
+      <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+    </svg>
+  )
+}
+
+function LockOpenIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="11" width="18" height="11" rx="2" />
+      <path d="M7 11V7a5 5 0 0 1 9.9-1" />
+    </svg>
+  )
+}
+
+
 // ── 슬라이드 배경 패널 (선택 없을 때 표시) ──
 
 const BG_DEFAULT_STYLES = {
   backgroundColor: 'rgba(0, 0, 0, 0)', backgroundImage: 'none',
-  color: '#000', fontSize: '16px', fontFamily: 'sans-serif',
-  fontWeight: '400', lineHeight: '1.5', textAlign: 'left',
-  letterSpacing: 'normal', textTransform: 'none', textDecoration: 'none',
   borderRadius: '0px', border: '0px none',
   borderTop: '0px none', borderRight: '0px none',
   borderBottom: '0px none', borderLeft: '0px none',
-  boxShadow: 'none', opacity: '1', padding: '0px', objectFit: 'cover',
+  boxShadow: 'none', opacity: '1', padding: '0px',
 }
 
 function SlideBackgroundPanel() {
-  const { flatElements, canvasSize, updateFlatElement, previewFlatElement, addFlatElement } = useFlatStore()
-  const opacityRef = useRef(null)
+  const { flatElements, canvasSize, updateFlatElement, previewFlatElement,
+          addFlatElement, removeFlatElement } = useFlatStore()
+  const [activeLayer, setActiveLayer] = useState(0)
 
-  // 배경 요소 찾기 또는 생성
-  const bgEl = flatElements.find(el => isBackgroundElement(el, canvasSize))
+  // 모든 배경 레이어 찾기 (z-index 순)
+  const bgLayers = flatElements
+    .filter(el => isBackgroundElement(el, canvasSize))
+    .sort((a, b) => a.zIndex - b.zIndex)
 
-  const ensureBgElement = useCallback(() => {
-    if (bgEl) return bgEl.id
-    // 배경 요소가 없으면 자동 생성 (맨 뒤 z-index)
+  // 레이어 추가
+  const addLayer = useCallback(() => {
     const minZ = flatElements.length > 0
-      ? Math.min(...flatElements.map(e => e.zIndex)) - 1
-      : 0
+      ? Math.min(...flatElements.map(e => e.zIndex)) - 1 : 0
+    // 기존 배경 최상위 z보다 위에, 콘텐츠 최하위보다 아래
+    const bgMaxZ = bgLayers.length > 0
+      ? Math.max(...bgLayers.map(e => e.zIndex)) : minZ
     const newEl = {
-      id: nextFlatId(),
-      sourceId: null,
-      type: 'shape',
-      content: '',
-      isRich: false,
-      merged: false,
-      x: 0, y: 0,
-      width: canvasSize.w,
-      height: canvasSize.h,
-      zIndex: minZ,
+      id: nextFlatId(), sourceId: null,
+      type: 'shape', content: '', isRich: false, merged: false,
+      x: 0, y: 0, width: canvasSize.w, height: canvasSize.h,
+      zIndex: bgMaxZ + 1,
       locked: true,
-      styles: { ...BG_DEFAULT_STYLES, backgroundColor: '#ffffff' },
+      styles: { ...BG_DEFAULT_STYLES, backgroundColor: 'rgba(0,0,0,0)' },
     }
     addFlatElement(newEl)
-    return newEl.id
-  }, [bgEl, flatElements, canvasSize, addFlatElement])
+    setActiveLayer(bgLayers.length) // 새 레이어 선택
+  }, [flatElements, bgLayers, canvasSize, addFlatElement])
 
-  const updateBgStyle = useCallback((key, value) => {
-    const id = ensureBgElement()
-    updateFlatElement(id, { styles: { [key]: value } })
-  }, [ensureBgElement, updateFlatElement])
+  // 레이어 삭제 (최소 1개 유지)
+  const removeLayer = useCallback((idx) => {
+    if (bgLayers.length <= 1) return
+    removeFlatElement(bgLayers[idx].id)
+    setActiveLayer(Math.min(idx, bgLayers.length - 2))
+  }, [bgLayers, removeFlatElement])
 
-  const updateBgStyles = useCallback((styleChanges) => {
-    const id = ensureBgElement()
-    updateFlatElement(id, { styles: styleChanges })
-  }, [ensureBgElement, updateFlatElement])
+  // 활성 레이어 범위 보정
+  const safeIdx = Math.min(activeLayer, Math.max(bgLayers.length - 1, 0))
+  const currentBg = bgLayers[safeIdx]
 
-  const previewBgStyle = useCallback((key, value) => {
-    if (!bgEl) return
-    previewFlatElement(bgEl.id, { styles: { [key]: value } })
-  }, [bgEl, previewFlatElement])
+  const updateStyle = useCallback((key, value) => {
+    if (!currentBg) return
+    updateFlatElement(currentBg.id, { styles: { [key]: value } })
+  }, [currentBg, updateFlatElement])
 
-  const styles = bgEl?.styles || BG_DEFAULT_STYLES
+  const updateStyles = useCallback((changes) => {
+    if (!currentBg) return
+    updateFlatElement(currentBg.id, { styles: changes })
+  }, [currentBg, updateFlatElement])
+
+  const previewStyle = useCallback((key, value) => {
+    if (!currentBg) return
+    previewFlatElement(currentBg.id, { styles: { [key]: value } })
+  }, [currentBg, previewFlatElement])
+
+  // 레이어 미리보기 색상 (썸네일용)
+  const layerPreviewStyle = (el) => {
+    const s = el.styles || {}
+    const bg = s.backgroundColor || 'transparent'
+    const bgImg = s.backgroundImage
+    if (bgImg && bgImg !== 'none') {
+      if (bgImg.startsWith('url(')) return { backgroundImage: bgImg, backgroundSize: 'cover' }
+      return { backgroundImage: bgImg }
+    }
+    return { backgroundColor: bg }
+  }
+
+  const layerLabel = (el, idx) => {
+    const s = el.styles || {}
+    if (s.backgroundImage?.startsWith('url(')) return `이미지`
+    if (s.backgroundImage?.includes('gradient')) return `그래디언트`
+    const bg = s.backgroundColor || ''
+    if (bg && bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent') return `단색`
+    return `투명`
+  }
+
+  const styles = currentBg?.styles || BG_DEFAULT_STYLES
   const hasGradient = styles.backgroundImage && styles.backgroundImage !== 'none'
     && styles.backgroundImage.includes('gradient')
 
@@ -1242,84 +1290,131 @@ function SlideBackgroundPanel() {
         <span className="text-xs text-slate-500 flex-1">{canvasSize.w} x {canvasSize.h}</span>
       </div>
 
-      <div className="p-3 space-y-4 overflow-y-auto" style={{ maxHeight: 'calc(100vh - 140px)' }}>
-        {/* 배경색 */}
-        <div className="space-y-2">
-          <SectionTitle>배경색</SectionTitle>
-          <div style={hasGradient ? { opacity: 0.4, pointerEvents: 'none' } : undefined}>
-            <ColorPicker
-              value={styles.backgroundColor || 'rgba(0,0,0,0)'}
-              onChange={v => updateBgStyle('backgroundColor', v)}
-              showOpacity
-            />
+      <div className="p-3 space-y-3 overflow-y-auto" style={{ maxHeight: 'calc(100vh - 140px)' }}>
+
+        {/* ── 레이어 목록 ── */}
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between">
+            <SectionTitle>배경 레이어</SectionTitle>
+            <button
+              onClick={addLayer}
+              className="text-xs text-indigo-400 hover:text-indigo-300 px-1"
+              title="레이어 추가"
+            >+ 추가</button>
           </div>
-        </div>
 
-        {/* 그래디언트 */}
-        <div className="space-y-2">
-          <SectionTitle>그래디언트</SectionTitle>
-          <GradientEditor
-            value={hasGradient ? styles.backgroundImage : 'none'}
-            onChange={v => updateBgStyle('backgroundImage', v)}
-          />
-        </div>
+          <div className="space-y-1">
+            {bgLayers.map((el, idx) => (
+              <div
+                key={el.id}
+                onClick={() => setActiveLayer(idx)}
+                className={`flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer transition-colors ${
+                  idx === safeIdx
+                    ? 'bg-indigo-500/20 border border-indigo-500/30'
+                    : 'bg-white/5 border border-transparent hover:bg-white/10'
+                }`}
+              >
+                {/* 미리보기 썸네일 */}
+                <div style={{
+                  width: 28, height: 18, borderRadius: 3, flexShrink: 0,
+                  border: '1px solid rgba(255,255,255,0.15)',
+                  ...layerPreviewStyle(el),
+                }} />
+                <span className="text-xs text-slate-300 flex-1">
+                  {layerLabel(el, idx)}
+                </span>
+                <span className="text-xs text-slate-600">z{el.zIndex}</span>
+                {bgLayers.length > 1 && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); removeLayer(idx) }}
+                    className="text-xs text-slate-600 hover:text-red-400 px-0.5"
+                    title="레이어 삭제"
+                  >&times;</button>
+                )}
+              </div>
+            ))}
+          </div>
 
-        {/* 투명도 */}
-        <div className="space-y-2">
-          <SectionTitle>
-            투명도 <span className="text-slate-600 font-normal">{styles.opacity || '1'}</span>
-          </SectionTitle>
-          <input
-            ref={opacityRef}
-            type="range"
-            min="0" max="1" step="0.01"
-            value={styles.opacity || '1'}
-            onChange={e => previewBgStyle('opacity', e.target.value)}
-            onMouseUp={() => updateBgStyle('opacity', opacityRef.current?.value || styles.opacity)}
-            onTouchEnd={() => updateBgStyle('opacity', opacityRef.current?.value || styles.opacity)}
-            className="w-full"
-            style={{ accentColor: '#6366f1' }}
-          />
-        </div>
-
-        {/* 배경 이미지 (파일 선택) */}
-        <div className="space-y-2">
-          <SectionTitle>배경 이미지</SectionTitle>
-          {bgEl?.styles?.backgroundImage?.startsWith('url(') && (
-            <div className="mb-2">
-              <div style={{
-                width: '100%', height: 80, borderRadius: 6,
-                backgroundImage: styles.backgroundImage,
-                backgroundSize: 'cover', backgroundPosition: 'center',
-                border: '1px solid rgba(255,255,255,0.1)',
-              }} />
-              <button
-                onClick={() => updateBgStyles({ backgroundImage: 'none' })}
-                className="text-xs text-red-400 mt-1 hover:text-red-300"
-              >이미지 제거</button>
-            </div>
+          {bgLayers.length === 0 && (
+            <button
+              onClick={addLayer}
+              className="w-full py-2 rounded-lg text-xs text-slate-400 border border-dashed border-white/10 hover:border-indigo-500/40 hover:text-indigo-300 transition-colors"
+            >배경 레이어 추가</button>
           )}
-          <label
-            className="flex items-center justify-center gap-1 w-full py-2 rounded-lg text-xs text-slate-400 border border-dashed border-white/10 hover:border-indigo-500/40 hover:text-indigo-300 cursor-pointer transition-colors"
-          >
-            <span>이미지 선택</span>
-            <input
-              type="file"
-              accept="image/*"
-              style={{ display: 'none' }}
-              onChange={e => {
-                const file = e.target.files?.[0]
-                if (!file) return
-                const reader = new FileReader()
-                reader.onload = (ev) => {
-                  updateBgStyle('backgroundImage', `url(${ev.target.result})`)
-                }
-                reader.readAsDataURL(file)
-                e.target.value = ''
-              }}
-            />
-          </label>
         </div>
+
+        {/* ── 선택된 레이어 편집 ── */}
+        {currentBg && (
+          <>
+            <div className="border-t border-white/5 pt-3 space-y-3">
+              {/* 배경색 */}
+              <div className="space-y-1.5">
+                <p className={labelClass}>배경색</p>
+                <div style={hasGradient ? { opacity: 0.4, pointerEvents: 'none' } : undefined}>
+                  <ColorPicker
+                    value={styles.backgroundColor || 'rgba(0,0,0,0)'}
+                    onChange={v => updateStyle('backgroundColor', v)}
+                    showOpacity
+                  />
+                </div>
+              </div>
+
+              {/* 그래디언트 */}
+              <div className="space-y-1.5">
+                <p className={labelClass}>그래디언트</p>
+                <GradientEditor
+                  value={hasGradient ? styles.backgroundImage : 'none'}
+                  onChange={v => updateStyle('backgroundImage', v)}
+                />
+              </div>
+
+              {/* 투명도 */}
+              <div className="space-y-1.5">
+                <p className={labelClass}>
+                  투명도 <span className="text-slate-600">{styles.opacity || '1'}</span>
+                </p>
+                <input
+                  type="range" min="0" max="1" step="0.01"
+                  value={styles.opacity || '1'}
+                  onChange={e => previewStyle('opacity', e.target.value)}
+                  onMouseUp={e => updateStyle('opacity', e.target.value)}
+                  onTouchEnd={e => updateStyle('opacity', e.target.value)}
+                  className="w-full" style={{ accentColor: '#6366f1' }}
+                />
+              </div>
+
+              {/* 배경 이미지 */}
+              <div className="space-y-1.5">
+                <p className={labelClass}>배경 이미지</p>
+                {styles.backgroundImage?.startsWith('url(') && (
+                  <div className="mb-1.5">
+                    <div style={{
+                      width: '100%', height: 60, borderRadius: 4,
+                      backgroundImage: styles.backgroundImage,
+                      backgroundSize: 'cover', backgroundPosition: 'center',
+                      border: '1px solid rgba(255,255,255,0.1)',
+                    }} />
+                    <button
+                      onClick={() => updateStyles({ backgroundImage: 'none' })}
+                      className="text-xs text-red-400 mt-1 hover:text-red-300"
+                    >이미지 제거</button>
+                  </div>
+                )}
+                <label className="flex items-center justify-center gap-1 w-full py-1.5 rounded-lg text-xs text-slate-400 border border-dashed border-white/10 hover:border-indigo-500/40 hover:text-indigo-300 cursor-pointer transition-colors">
+                  <span>이미지 선택</span>
+                  <input type="file" accept="image/*" style={{ display: 'none' }} onChange={e => {
+                    const file = e.target.files?.[0]
+                    if (!file) return
+                    const reader = new FileReader()
+                    reader.onload = (ev) => updateStyle('backgroundImage', `url(${ev.target.result})`)
+                    reader.readAsDataURL(file)
+                    e.target.value = ''
+                  }} />
+                </label>
+              </div>
+            </div>
+          </>
+        )}
       </div>
     </>
   )

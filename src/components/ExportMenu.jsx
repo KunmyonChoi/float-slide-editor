@@ -79,12 +79,12 @@ export default function FileMenu({ fallbackSample }) {
     loadHtml(fallbackSample)
   }, [clearPageCache, loadHtml, fallbackSample])
 
-  // 프로젝트 저장
+  // 프로젝트 저장 (ZIP 패키지)
   const handleSaveProject = useCallback(async () => {
     setOpen(false)
     const { serializeProject, downloadProject } = await import('../core/ProjectSerializer.js')
-    const json = await serializeProject(useFlatStore.getState())
-    downloadProject(json, 'project.flatproj')
+    const blob = await serializeProject(useFlatStore.getState())
+    downloadProject(blob, 'project.flatproj')
   }, [])
 
   // 프로젝트 열기

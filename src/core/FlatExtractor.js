@@ -1586,12 +1586,73 @@ export function extractFlatElements(iframeRef) {
   // 추출된 요소의 font-family에서 누락된 웹폰트 감지 → Google Fonts 임포트 자동 추가
   addMissingFontImports(result, fontImports)
 
-  // 배경 요소 자동 잠금 (추출 시 locked:true 누락된 경우 보완)
-  for (const el of result) {
-    if (!el.locked && el.type === 'shape' && !el.content
-      && Math.abs(el.width - canvasSize.w) < 2 && Math.abs(el.height - canvasSize.h) < 2
-      && Math.abs(el.x) < 2 && Math.abs(el.y) < 2) {
-      el.locked = true
+  // 전체 크기 빈 shape → 배경 레이어로 병합
+  // 배경 추출(sourceId='__bg')과 data-editor-id 순회에서 중복 추출된 전체 크기 shape을
+  // 배경 레이어로 통합하고, 중복은 제거한다.
+  {
+    const isBgLike = (el) => {
+      const isFullSize = Math.abs(el.width - canvasSize.w) < 5
+        && Math.abs(el.height - canvasSize.h) < 5
+        && Math.abs(el.x) < 5 && Math.abs(el.y) < 5
+      if (!isFullSize) return false
+      // 빈 shape (배경색/그래디언트만)
+      if (el.type === 'shape' && !el.content) return true
+      // 전체 크기 이미지 (배경 이미지로 사용된 것)
+      if (el.type === 'image' && el.content) return true
+      return false
+    }
+
+    // 이미 배경으로 추출된 요소 (sourceId === '__bg')
+    const existingBgs = result.filter(el => el.sourceId === '__bg')
+    // data-editor-id에서 추출된 전체 크기 빈 shape 또는 전체 크기 이미지
+    const duplicateBgs = result.filter(el => el.sourceId !== '__bg' && isBgLike(el))
+
+    if (duplicateBgs.length > 0) {
+      // 기존 배경과 동일한 중복은 제거, 다른 스타일/내용이면 배경 레이어로 편입
+      const bgSig = (el) => {
+        if (el.type === 'image') return `img:${(el.content || '').slice(0, 100)}`
+        const s = el.styles || {}
+        return `${s.backgroundColor || ''}|${s.backgroundImage || ''}`
+      }
+      const existingBgSigs = new Set(existingBgs.map(bgSig))
+
+      for (const dup of duplicateBgs) {
+        const sig = bgSig(dup)
+
+        if (existingBgSigs.has(sig)) {
+          // 동일 → 중복 제거
+          const idx = result.indexOf(dup)
+          if (idx !== -1) result.splice(idx, 1)
+        } else {
+          // 다른 내용 → 배경 레이어로 전환
+          if (dup.type === 'image') {
+            // 이미지 → shape으로 변환하여 backgroundImage: url(...) 로 설정
+            const imgUrl = dup.content
+            dup.type = 'shape'
+            dup.content = ''
+            dup.styles = {
+              ...(dup.styles || {}),
+              backgroundImage: `url(${imgUrl})`,
+              backgroundSize: 'cover',
+              backgroundPosition: 'center',
+            }
+          }
+          dup.sourceId = '__bg'
+          dup.locked = true
+          dup.x = 0
+          dup.y = 0
+          dup.width = canvasSize.w
+          dup.height = canvasSize.h
+          existingBgSigs.add(sig)
+        }
+      }
+    }
+
+    // 나머지 배경 요소 잠금 보완
+    for (const el of result) {
+      if (isBgLike(el) && !el.locked) {
+        el.locked = true
+      }
     }
   }
 

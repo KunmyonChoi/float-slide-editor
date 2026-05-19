@@ -2,6 +2,7 @@ import { useRef, useState, useEffect, useCallback } from 'react'
 import { useEditorStore } from '../store/editorStore'
 import { useFlatStore } from '../store/flatStore'
 import { nextFlatId } from '../core/FlatExtractor'
+import { BlobStore } from '../core/BlobStore'
 import { ToolBtn, Divider, UndoIcon, RedoIcon } from './FloatingToolbar'
 
 const HTML_INSERT_ITEMS = [
@@ -55,8 +56,10 @@ export default function EditToolbar() {
           bringForward, sendBackward, bringToFront, sendToBack } = useFlatStore()
   const [insertOpen, setInsertOpen] = useState(false)
   const [shapeOpen, setShapeOpen] = useState(false)
+  const [videoOpen, setVideoOpen] = useState(false)
   const insertRef = useRef(null)
   const shapeRef = useRef(null)
+  const videoRef = useRef(null)
   const imageInputRef = useRef(null)
 
   const isFlatMode = viewMode === 'flat' || viewMode === 'split'
@@ -136,7 +139,10 @@ export default function EditToolbar() {
     e.target.value = ''
   }, [canvasSize, flatElements, addFlatElement, setSelectedFlat])
 
-  const insertVideo = useCallback(() => {
+  const videoInputRef = useRef(null)
+
+  // 영상 URL 입력
+  const insertVideoUrl = useCallback(() => {
     const url = prompt('영상 URL을 입력하세요 (YouTube, Vimeo)')
     if (!url || !url.trim()) return
     const embedUrl = parseVideoUrl(url.trim())
@@ -156,6 +162,44 @@ export default function EditToolbar() {
     }
     addFlatElement(el)
     setSelectedFlat(el.id)
+  }, [canvasSize, flatElements, addFlatElement, setSelectedFlat])
+
+  // 영상 파일 선택
+  const handleVideoFile = useCallback(async (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const sizeMB = file.size / (1024 * 1024)
+    if (sizeMB > 200) {
+      if (!confirm(`파일 크기가 ${sizeMB.toFixed(0)}MB입니다. 계속하시겠습니까?`)) return
+    }
+    const key = await BlobStore.put(file)
+    const blobUrl = await BlobStore.getUrl(key)
+    // 비디오 치수 감지
+    const video = document.createElement('video')
+    video.preload = 'metadata'
+    video.src = blobUrl
+    await new Promise(r => { video.onloadedmetadata = r; video.onerror = r })
+    let w = video.videoWidth || 560
+    let h = video.videoHeight || 315
+    const maxW = canvasSize.w * 0.6, maxH = canvasSize.h * 0.6
+    if (w > maxW || h > maxH) {
+      const ratio = Math.min(maxW / w, maxH / h)
+      w = Math.round(w * ratio); h = Math.round(h * ratio)
+    }
+    const maxZ = flatElements.length > 0 ? Math.max(...flatElements.map(el => el.zIndex)) : 0
+    const el = {
+      id: nextFlatId(), sourceId: null,
+      type: 'video', width: w, height: h,
+      content: BlobStore.toRef(key),
+      isRich: false, merged: false,
+      x: Math.round((canvasSize.w - w) / 2),
+      y: Math.round((canvasSize.h - h) / 2),
+      zIndex: maxZ + 1,
+      styles: { ...DEFAULT_STYLES, borderRadius: '8px' },
+    }
+    addFlatElement(el)
+    setSelectedFlat(el.id)
+    e.target.value = ''
   }, [canvasSize, flatElements, addFlatElement, setSelectedFlat])
 
   if (mode === 'present') return null
@@ -209,9 +253,25 @@ export default function EditToolbar() {
             onChange={handleImageFile}
           />
 
-          <ToolBtn onClick={insertVideo} title="영상 추가">
-            <VideoIcon /><span className="text-xs ml-1">영상</span>
-          </ToolBtn>
+          {/* 영상 드롭다운 (URL / 파일) */}
+          <DropdownBtn
+            innerRef={videoRef}
+            open={videoOpen}
+            setOpen={setVideoOpen}
+            icon={<VideoIcon />}
+            label="영상"
+            items={[
+              { id: 'vurl', icon: <span className="text-xs">🔗</span>, label: 'URL 입력', action: insertVideoUrl },
+              { id: 'vfile', icon: <span className="text-xs">📁</span>, label: '파일 선택', action: () => videoInputRef.current?.click() },
+            ]}
+          />
+          <input
+            ref={videoInputRef}
+            type="file"
+            accept="video/*"
+            style={{ display: 'none' }}
+            onChange={handleVideoFile}
+          />
         </>
       ) : (
         /* ── HTML 모드: 기존 삽입 드롭다운 ── */
