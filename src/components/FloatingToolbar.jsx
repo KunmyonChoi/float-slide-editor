@@ -103,7 +103,7 @@ const FALLBACK_SAMPLE = `<!DOCTYPE html>
  */
 export default function FloatingToolbar() {
   const { slideHtml, mode, enterPresentation } = useEditorStore()
-  const { viewMode, setViewMode, extractFromIframe, panelMode, setPanelMode } = useFlatStore()
+  const { viewMode, setViewMode, extractFromIframe, panelMode, setPanelMode, forceReExtract } = useFlatStore()
   const iframeRef = useEditorStore(s => s.iframeRef)
   const [qualityOpen, setQualityOpen] = useState(false)
 
@@ -168,7 +168,18 @@ export default function FloatingToolbar() {
         }}
       />
 
-      <Divider />
+      {/* Flat 재생성 */}
+      {(viewMode === 'flat' || viewMode === 'split') && (
+        <>
+          <ToolBtn
+            onClick={forceReExtract}
+            title="Flat 요소 강제 재생성 — 현재 페이지를 HTML에서 다시 추출"
+          >
+            <RefreshIcon /><span className="text-xs ml-1">재생성</span>
+          </ToolBtn>
+          <Divider />
+        </>
+      )}
 
       {/* 패널 모드 토글 */}
       <ToolBtn
@@ -300,6 +311,15 @@ function DockIcon() {
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
       <rect x="3" y="3" width="18" height="18" rx="2" />
       <path d="M15 3v18" />
+    </svg>
+  )
+}
+
+function RefreshIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M21 2v6h-6" /><path d="M3 12a9 9 0 0 1 15-6.7L21 8" />
+      <path d="M3 22v-6h6" /><path d="M21 12a9 9 0 0 1-15 6.7L3 16" />
     </svg>
   )
 }

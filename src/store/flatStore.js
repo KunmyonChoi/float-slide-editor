@@ -109,6 +109,32 @@ export const useFlatStore = create((set, get) => ({
     })
   },
 
+  /** 현재 페이지 강제 재추출 (캐시 무시) */
+  forceReExtract() {
+    const ref = get()._iframeRef
+    if (!ref) return
+    if (_currentPageKey) delete _pageCache[_currentPageKey]
+    setTimeout(() => {
+      const { elements, canvasSize, fontImports } = extractFlatElements(ref)
+      _history.clear()
+      set({
+        flatElements: elements,
+        canvasSize,
+        fontImports: fontImports || [],
+        selectedFlatIds: [],
+        editingFlatId: null,
+        canUndo: false,
+        canRedo: false,
+      })
+    }, 150)
+  },
+
+  /** 해상도 변경 시 모든 캐시 초기화 + 강제 재추출 */
+  forceReExtractAll() {
+    for (const key in _pageCache) delete _pageCache[key]
+    get().forceReExtract()
+  },
+
   /** 페이지 변경 시 재추출 (split/flat 모드에서 호출) */
   reExtract(pageKey) {
     const ref = get()._iframeRef

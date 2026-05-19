@@ -241,6 +241,7 @@ export default function FlatSelectionOverlay({ element, scale, otherRects, canva
 
   return (
     <div
+      data-export-ignore="true"
       style={{
         position: 'absolute',
         left: x,
@@ -499,6 +500,7 @@ export function FlatGroupOverlay({ elements, scale, otherRects, canvasSize, onSn
 
   return (
     <div
+      data-export-ignore="true"
       style={{
         position: 'absolute',
         left: bbox.x,

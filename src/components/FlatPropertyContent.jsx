@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react'
 import { useFlatStore } from '../store/flatStore'
 import ColorPicker, { parseColor } from './ColorPicker'
+import FontComboBox from './FontComboBox'
 import GradientEditor from './GradientEditor'
 import BoxShadowEditor from './BoxShadowEditor'
 import TextShadowEditor from './TextShadowEditor'
@@ -83,7 +84,7 @@ export default function FlatPropertyContent() {
         </div>
 
         <div className="pt-1 border-t border-white/5">
-          <LineSection styles={el.styles} updateStyle={updateStyle} />
+          <LineSection styles={el.styles} updateStyle={updateStyle} updateStyles={updateStyles} />
         </div>
 
         <div className="pt-1 border-t border-white/5">
@@ -342,16 +343,10 @@ function FontSection({ styles, updateStyle, isGradientText }) {
     <div className="space-y-2">
       <SectionTitle>글꼴</SectionTitle>
 
-      <div>
-        <p className={`${labelClass} mb-0.5`}>글꼴</p>
-        <input
-          type="text"
-          value={styles.fontFamily || ''}
-          onChange={e => updateStyle('fontFamily', e.target.value)}
-          onKeyDown={e => e.stopPropagation()}
-          className={inputClass}
-        />
-      </div>
+      <FontComboBox
+        value={styles.fontFamily || ''}
+        onChange={v => updateStyle('fontFamily', v)}
+      />
 
       <div className="grid grid-cols-2 gap-1.5">
         <FontSizeInput
@@ -564,9 +559,9 @@ function FillSection({ styles, updateStyle, updateStyles, previewStyle, isText }
   )
 }
 
-function LineSection({ styles, updateStyle }) {
+function LineSection({ styles, updateStyle, updateStyles }) {
   const parseBorder = (border) => {
-    if (!border || border === 'none' || border === '0px none') {
+    if (!border || border === 'none' || border === '0px none' || border.startsWith('0px')) {
       return { width: 0, style: 'none', color: '#000000' }
     }
     const match = border.match(/^([\d.]+)px\s+(\w+)\s+(.+)$/)
@@ -577,6 +572,23 @@ function LineSection({ styles, updateStyle }) {
     return { width: 0, style: 'none', color: '#000000' }
   }
 
+  const SIDES = [
+    { key: 'borderTop', icon: '━', label: '상', rotate: '' },
+    { key: 'borderRight', icon: '┃', label: '우', rotate: '' },
+    { key: 'borderBottom', icon: '━', label: '하', rotate: '' },
+    { key: 'borderLeft', icon: '┃', label: '좌', rotate: '' },
+  ]
+
+  // 개별 면 border가 있는지 감지
+  const hasIndividual = SIDES.some(s => {
+    const v = styles[s.key]
+    return v && !v.startsWith('0px') && v !== 'none'
+  })
+
+  // 현재 모드: 'all' (4면 균일) 또는 'sides' (개별 면)
+  const [mode, setMode] = useState(hasIndividual ? 'sides' : 'all')
+
+  // 균일 border
   const b = parseBorder(styles.border)
 
   const updateBorder = (key, val) => {
@@ -588,32 +600,205 @@ function LineSection({ styles, updateStyle }) {
     }
   }
 
+  // 개별 면 편집
+  const getSideBorder = (sideKey) => {
+    return parseBorder(styles[sideKey])
+  }
+
+  const updateSideBorder = (sideKey, key, val) => {
+    const current = getSideBorder(sideKey)
+    const next = { ...current, [key]: val }
+    if (next.style === 'none' || next.width === 0) {
+      updateStyle(sideKey, '0px none transparent')
+    } else {
+      updateStyle(sideKey, `${next.width}px ${next.style} ${next.color}`)
+    }
+  }
+
+  const toggleSide = (sideKey) => {
+    const current = getSideBorder(sideKey)
+    if (current.width > 0 && current.style !== 'none') {
+      updateStyle(sideKey, '0px none transparent')
+    } else {
+      // 기본값: 1px solid 현재 색
+      const refColor = b.color || '#000000'
+      updateStyle(sideKey, `1px solid ${refColor}`)
+    }
+  }
+
+  // 모드 전환
+  const switchToSides = () => {
+    setMode('sides')
+    // 현재 uniform border를 4면으로 분배
+    if (b.width > 0 && b.style !== 'none') {
+      const val = `${b.width}px ${b.style} ${b.color}`
+      updateStyles({
+        border: '0px none',
+        borderTop: val,
+        borderRight: val,
+        borderBottom: val,
+        borderLeft: val,
+      })
+    }
+  }
+
+  const switchToAll = () => {
+    setMode('all')
+    // 개별 면 중 가장 두꺼운 것을 uniform으로 적용
+    let best = null
+    for (const s of SIDES) {
+      const parsed = getSideBorder(s.key)
+      if (parsed.width > 0 && parsed.style !== 'none') {
+        if (!best || parsed.width > best.width) best = parsed
+      }
+    }
+    const changes = {
+      borderTop: '',
+      borderRight: '',
+      borderBottom: '',
+      borderLeft: '',
+    }
+    if (best) {
+      changes.border = `${best.width}px ${best.style} ${best.color}`
+    } else {
+      changes.border = '0px none'
+    }
+    updateStyles(changes)
+  }
+
+  // 활성 면 수 표시
+  const activeSideCount = SIDES.filter(s => {
+    const v = getSideBorder(s.key)
+    return v.width > 0 && v.style !== 'none'
+  }).length
+
   return (
     <div className="space-y-2">
-      <SectionTitle>선</SectionTitle>
-      <div className="grid grid-cols-2 gap-1.5">
-        <NumInput
-          label="너비"
-          value={b.width}
-          onChange={v => updateBorder('width', v)}
-          min={0} unit="px"
-        />
-        <SelectInput
-          label="종류"
-          value={b.style}
-          onChange={v => updateBorder('style', v)}
-          options={[
-            { value: 'none', label: '없음' },
-            { value: 'solid', label: '실선' },
-            { value: 'dashed', label: '파선' },
-            { value: 'dotted', label: '점선' },
-          ]}
-        />
+      <div className="flex items-center justify-between">
+        <SectionTitle>선</SectionTitle>
+        <div className="flex gap-0.5">
+          <button
+            onClick={mode === 'all' ? switchToSides : switchToAll}
+            className={`text-[10px] px-1.5 py-0.5 rounded transition-colors ${
+              mode === 'sides'
+                ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30'
+                : 'bg-white/5 text-slate-500 border border-white/10 hover:bg-white/10'
+            }`}
+            title={mode === 'all' ? '개별 면 편집' : '전체 면 편집'}
+          >
+            {mode === 'sides' ? `개별 (${activeSideCount}면)` : '전체'}
+          </button>
+        </div>
       </div>
-      <div>
-        <p className={`${labelClass} mb-0.5`}>선 색</p>
-        <ColorPicker value={b.color} onChange={v => updateBorder('color', v)} />
-      </div>
+
+      {mode === 'all' ? (
+        /* ── 전체 모드 ── */
+        <>
+          <div className="grid grid-cols-2 gap-1.5">
+            <NumInput
+              label="너비"
+              value={b.width}
+              onChange={v => updateBorder('width', v)}
+              min={0} unit="px"
+            />
+            <SelectInput
+              label="종류"
+              value={b.style}
+              onChange={v => updateBorder('style', v)}
+              options={[
+                { value: 'none', label: '없음' },
+                { value: 'solid', label: '실선' },
+                { value: 'dashed', label: '파선' },
+                { value: 'dotted', label: '점선' },
+              ]}
+            />
+          </div>
+          <div>
+            <p className={`${labelClass} mb-0.5`}>선 색</p>
+            <ColorPicker value={b.color} onChange={v => updateBorder('color', v)} />
+          </div>
+        </>
+      ) : (
+        /* ── 개별 면 모드 ── */
+        <>
+          {/* 면 토글 다이어그램 */}
+          <div className="flex items-center justify-center gap-1 py-1">
+            <div className="relative w-16 h-12 border border-white/10 rounded">
+              {/* 상 */}
+              <button
+                onClick={() => toggleSide('borderTop')}
+                className={`absolute -top-px left-1 right-1 h-[3px] rounded-full transition-colors ${
+                  getSideBorder('borderTop').width > 0 && getSideBorder('borderTop').style !== 'none'
+                    ? 'bg-indigo-400' : 'bg-white/15 hover:bg-white/30'
+                }`}
+                title="상단 선"
+              />
+              {/* 하 */}
+              <button
+                onClick={() => toggleSide('borderBottom')}
+                className={`absolute -bottom-px left-1 right-1 h-[3px] rounded-full transition-colors ${
+                  getSideBorder('borderBottom').width > 0 && getSideBorder('borderBottom').style !== 'none'
+                    ? 'bg-indigo-400' : 'bg-white/15 hover:bg-white/30'
+                }`}
+                title="하단 선"
+              />
+              {/* 좌 */}
+              <button
+                onClick={() => toggleSide('borderLeft')}
+                className={`absolute top-1 bottom-1 -left-px w-[3px] rounded-full transition-colors ${
+                  getSideBorder('borderLeft').width > 0 && getSideBorder('borderLeft').style !== 'none'
+                    ? 'bg-indigo-400' : 'bg-white/15 hover:bg-white/30'
+                }`}
+                title="좌측 선"
+              />
+              {/* 우 */}
+              <button
+                onClick={() => toggleSide('borderRight')}
+                className={`absolute top-1 bottom-1 -right-px w-[3px] rounded-full transition-colors ${
+                  getSideBorder('borderRight').width > 0 && getSideBorder('borderRight').style !== 'none'
+                    ? 'bg-indigo-400' : 'bg-white/15 hover:bg-white/30'
+                }`}
+                title="우측 선"
+              />
+            </div>
+          </div>
+
+          {/* 활성 면 속성 편집 */}
+          {SIDES.map(side => {
+            const sb = getSideBorder(side.key)
+            if (sb.width === 0 || sb.style === 'none') return null
+            return (
+              <div key={side.key} className="space-y-1 pl-1 border-l-2 border-indigo-500/30 ml-1">
+                <p className="text-[10px] text-indigo-300">{side.label}단</p>
+                <div className="grid grid-cols-2 gap-1">
+                  <NumInput
+                    label="너비"
+                    value={sb.width}
+                    onChange={v => updateSideBorder(side.key, 'width', v)}
+                    min={0} unit="px"
+                  />
+                  <SelectInput
+                    label="종류"
+                    value={sb.style}
+                    onChange={v => updateSideBorder(side.key, 'style', v)}
+                    options={[
+                      { value: 'none', label: '없음' },
+                      { value: 'solid', label: '실선' },
+                      { value: 'dashed', label: '파선' },
+                      { value: 'dotted', label: '점선' },
+                    ]}
+                  />
+                </div>
+                <div>
+                  <p className={`${labelClass} mb-0.5`}>색</p>
+                  <ColorPicker value={sb.color} onChange={v => updateSideBorder(side.key, 'color', v)} />
+                </div>
+              </div>
+            )
+          })}
+        </>
+      )}
+
       <NumInput
         label="모서리 둥글기"
         value={parseFloat(styles.borderRadius) || 0}

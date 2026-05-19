@@ -18,10 +18,30 @@ export async function exportAsImage(canvasNode, { format = 'png', scale = 2, qua
     await document.fonts.ready
   }
 
+  // 텍스트 선택 해제 (contentEditable 하이라이트 제거)
+  window.getSelection()?.removeAllRanges()
+
+  // 선택 UI 숨기기: outline, 커서 등을 캡처에서 제거하는 임시 스타일 주입
+  const exportStyle = document.createElement('style')
+  exportStyle.setAttribute('data-export-style', 'true')
+  exportStyle.textContent = `
+    [data-flat-canvas] * { outline: none !important; caret-color: transparent !important; border-style: none; }
+    [data-flat-canvas] ::selection { background: transparent !important; }
+  `
+  document.head.appendChild(exportStyle)
+
   const domtoimage = (await import('dom-to-image-more')).default
 
   const width = canvasNode.offsetWidth
   const height = canvasNode.offsetHeight
+
+  // data-export-ignore 속성을 가진 노드(선택 오버레이 등)는 캡처에서 제외
+  const filter = (node) => {
+    if (node.nodeType === Node.ELEMENT_NODE && node.dataset?.exportIgnore === 'true') {
+      return false
+    }
+    return true
+  }
 
   const config = {
     width: width * scale,
@@ -30,12 +50,18 @@ export async function exportAsImage(canvasNode, { format = 'png', scale = 2, qua
       transform: `scale(${scale})`,
       transformOrigin: 'top left',
     },
+    filter,
   }
 
-  if (format === 'jpeg') {
-    return domtoimage.toJpeg(canvasNode, { ...config, quality })
+  try {
+    if (format === 'jpeg') {
+      return await domtoimage.toJpeg(canvasNode, { ...config, quality })
+    }
+    return await domtoimage.toPng(canvasNode, config)
+  } finally {
+    // 임시 스타일 제거
+    exportStyle.remove()
   }
-  return domtoimage.toPng(canvasNode, config)
 }
 
 /**

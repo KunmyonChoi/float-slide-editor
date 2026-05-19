@@ -52,8 +52,11 @@ export default function CanvasSizeSelector() {
 
   const applySize = (size) => {
     setCanvasSize(size)
-    // flat 캔버스에도 동기화
     if (size) useFlatStore.setState({ canvasSize: size })
+    const { viewMode, forceReExtractAll } = useFlatStore.getState()
+    if (viewMode === 'flat' || viewMode === 'split') {
+      forceReExtractAll()
+    }
   }
 
   const selectPreset = (preset) => {

@@ -434,7 +434,7 @@ export default function FlatCanvas() {
             )}
             {/* 스냅 가이드 */}
             {snapGuides.map((g, i) => (
-              <div key={i} style={{
+              <div key={i} data-export-ignore="true" style={{
                 position: 'absolute',
                 ...(g.orientation === 'v'
                   ? { left: g.position, top: 0, width: 1, height: '100%' }
@@ -457,7 +457,7 @@ export default function FlatCanvas() {
             )}
             {/* 마키 선택 영역 */}
             {marquee && (
-              <div style={{
+              <div data-export-ignore="true" style={{
                 position: 'absolute',
                 left: Math.min(marquee.startX, marquee.endX),
                 top: Math.min(marquee.startY, marquee.endY),

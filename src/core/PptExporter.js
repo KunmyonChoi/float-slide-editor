@@ -33,14 +33,14 @@ export async function exportToPptx(pages, defaultCanvasSize) {
 
   for (const key of sortedKeys) {
     const page = pages[key]
+    const pageCs = page.canvasSize || cs
     const slide = pptx.addSlide()
     const elements = [...page.elements].sort((a, b) => a.zIndex - b.zIndex)
 
     for (const el of elements) {
       try {
-        await addElementToSlide(slide, el, cs)
+        await addElementToSlide(slide, el, pageCs)
       } catch (e) {
-        // 개별 요소 실패 시 스킵 (graceful degradation)
         console.warn(`PPT export: element ${el.id} skipped:`, e.message)
       }
     }
@@ -53,7 +53,7 @@ export async function exportToPptx(pages, defaultCanvasSize) {
 async function addElementToSlide(slide, el, canvasSize) {
   const x = el.x * PX_TO_INCH
   const y = el.y * PX_TO_INCH
-  const w = el.width * PX_TO_INCH
+  let w = el.width * PX_TO_INCH
   const h = el.height * PX_TO_INCH
   const rotate = el.rotation || 0
 
@@ -67,7 +67,7 @@ async function addElementToSlide(slide, el, canvasSize) {
       await addImage(slide, el, { x, y, w, h, rotate })
       break
     case 'shape':
-      addShape(slide, el, { x, y, w, h, rotate })
+      await addShape(slide, el, { x, y, w, h, rotate })
       break
     case 'svg':
       await addSvg(slide, el, { x, y, w, h, rotate })
@@ -80,12 +80,30 @@ async function addElementToSlide(slide, el, canvasSize) {
 
 function addText(slide, el, pos) {
   const s = el.styles || {}
+
+  // 그라데이션 텍스트 감지: background-clip: text + gradient background
+  const isGradientText = (s.webkitBackgroundClip === 'text' || s.backgroundClip === 'text') &&
+    s.backgroundImage && s.backgroundImage !== 'none'
+
+  // 그라데이션 텍스트의 실제 표시 색상 결정
+  let effectiveColor = s.color
+  if (isGradientText) {
+    const grad = parseGradient(s.backgroundImage)
+    if (grad.stops.length > 0) {
+      effectiveColor = grad.stops[0].color
+    }
+  }
+  // webkitTextFillColor가 transparent면 그라데이션 텍스트
+  if (s.webkitTextFillColor === 'transparent' || s.webkitTextFillColor === 'rgba(0, 0, 0, 0)') {
+    if (!isGradientText) effectiveColor = s.color
+  }
+
   let textRuns
   if (el.isRich && el.content) {
-    textRuns = htmlToTextRuns(el.content, s)
+    textRuns = htmlToTextRuns(el.content, { ...s, color: effectiveColor })
   } else {
     const opts = {}
-    if (s.color) opts.color = cssColorToHex(s.color)
+    if (effectiveColor) opts.color = cssColorToHex(effectiveColor)
     if (s.fontSize) opts.fontSize = Math.round(parseFloat(s.fontSize) * 0.75)
     if (s.fontFamily) opts.fontFace = s.fontFamily.split(',')[0].trim().replace(/['"]/g, '')
     if (s.fontWeight && (s.fontWeight === 'bold' || parseInt(s.fontWeight) >= 700)) opts.bold = true
@@ -109,6 +127,7 @@ function addText(slide, el, pos) {
     valign,
     wrap: true,
     shrinkText: false,
+    margin: [0, 0, 0, 0],
   }
 
   if (pos.rotate) textOpts.rotate = pos.rotate
@@ -118,8 +137,8 @@ function addText(slide, el, pos) {
   else if (s.textAlign === 'right') textOpts.align = 'right'
   else textOpts.align = 'left'
 
-  // 배경색
-  const bgColor = parseFill(s)
+  // 배경색 (pptxgenjs는 solid fill만 지원)
+  const bgColor = parseSolidFill(s)
   if (bgColor) textOpts.fill = bgColor
 
   // 테두리
@@ -192,7 +211,9 @@ async function addImage(slide, el, pos) {
     imgOpts.rounding = true
   }
 
-  if (el.content.startsWith('data:')) {
+  if (el.content.startsWith('data:image/svg')) {
+    imgOpts.data = await svgToPngDataUrl(el.content, el.width, el.height)
+  } else if (el.content.startsWith('data:')) {
     imgOpts.data = el.content
   } else {
     // 외부 URL → fetch로 base64 변환 시도
@@ -215,34 +236,53 @@ async function addImage(slide, el, pos) {
   slide.addImage(imgOpts)
 }
 
-function addShape(slide, el, pos) {
+async function addShape(slide, el, pos) {
   const s = el.styles || {}
+
+  const border = parseBorder(s)
+  const shadow = parseShadow(s.boxShadow)
+  const hasGradient = s.backgroundImage && s.backgroundImage !== 'none' &&
+    parseGradient(s.backgroundImage).type !== 'none'
+  const solidFill = parseSolidFill(s)
+
+  if (!hasGradient && !solidFill && !border && !shadow) return
+
+  // 그라데이션 배경은 pptxgenjs가 지원하지 않으므로 Canvas로 래스터라이즈
+  if (hasGradient) {
+    try {
+      const pngData = await cssGradientToPng(s.backgroundImage, el.width, el.height, s.borderRadius)
+      slide.addImage({
+        data: pngData,
+        x: pos.x, y: pos.y, w: pos.w, h: pos.h,
+        ...(pos.rotate ? { rotate: pos.rotate } : {}),
+      })
+    } catch {
+      // 래스터라이즈 실패 시 첫 번째 색상으로 대체
+      const grad = parseGradient(s.backgroundImage)
+      const fallbackColor = grad.stops.length > 0 ? cssColorToHex(grad.stops[0].color) : null
+      slide.addShape('rect', {
+        x: pos.x, y: pos.y, w: pos.w, h: pos.h,
+        fill: fallbackColor ? { color: fallbackColor } : { type: 'none' },
+        ...(pos.rotate ? { rotate: pos.rotate } : {}),
+      })
+    }
+    return
+  }
+
   const shapeOpts = {
     x: pos.x, y: pos.y, w: pos.w, h: pos.h,
+    fill: solidFill || { type: 'none' },
   }
 
   if (pos.rotate) shapeOpts.rotate = pos.rotate
-
-  // 채우기
-  const fill = parseFill(s)
-  if (fill) shapeOpts.fill = fill
-
-  // 테두리
-  const border = parseBorder(s)
   if (border) shapeOpts.border = border
-
-  // 그림자
-  const shadow = parseShadow(s.boxShadow)
   if (shadow) shapeOpts.shadow = shadow
 
-  // 투명도
   if (s.opacity && s.opacity !== '1') {
     shapeOpts.transparency = Math.round((1 - parseFloat(s.opacity)) * 100)
   }
 
-  // 원형 (borderRadius 50%)
   const isCircle = s.borderRadius && (s.borderRadius === '50%' || s.borderRadius === '9999px')
-
   if (isCircle) {
     shapeOpts.rectRadius = Math.min(pos.w, pos.h) / 2
   } else if (s.borderRadius && s.borderRadius !== '0px') {
@@ -253,20 +293,17 @@ function addShape(slide, el, pos) {
 }
 
 async function addSvg(slide, el, pos) {
-  // SVG → data URL → addImage
   try {
     const blob = new Blob([el.content], { type: 'image/svg+xml' })
     const dataUrl = await blobToDataUrl(blob)
+    const pngData = await svgToPngDataUrl(dataUrl, el.width, el.height)
     slide.addImage({
-      data: dataUrl,
+      data: pngData,
       x: pos.x, y: pos.y, w: pos.w, h: pos.h,
       ...(pos.rotate ? { rotate: pos.rotate } : {}),
     })
   } catch {
-    slide.addText([{ text: '[SVG]', options: { fontSize: 10, color: '666666' } }], {
-      x: pos.x, y: pos.y, w: pos.w, h: pos.h,
-      fill: { color: 'F0F0F0' }, valign: 'middle', align: 'center',
-    })
+    console.warn('SVG rasterization failed, skipping element')
   }
 }
 
@@ -285,25 +322,23 @@ function addVideoPlaceholder(slide, el, pos) {
 
 // ── 헬퍼 ──
 
-function parseFill(s) {
-  // 그래디언트 채우기
-  if (s.backgroundImage && s.backgroundImage !== 'none') {
-    const grad = parseGradient(s.backgroundImage)
-    if (grad.type === 'linear' && grad.stops.length >= 2) {
-      return {
-        type: 'gradient',
-        rotate: grad.angle,
-        stops: grad.stops.map(stop => ({
-          color: cssColorToHex(stop.color) || '000000',
-          position: Math.round(stop.position),
-        })),
-      }
-    }
-  }
-  // 단색 채우기
+function parseSolidFill(s) {
   if (s.backgroundColor && s.backgroundColor !== 'rgba(0, 0, 0, 0)' && s.backgroundColor !== 'transparent') {
     const hex = cssColorToHex(s.backgroundColor)
     if (hex) return { color: hex }
+  }
+  return null
+}
+
+function parseFill(s) {
+  const solid = parseSolidFill(s)
+  if (solid) return solid
+  if (s.backgroundImage && s.backgroundImage !== 'none') {
+    const grad = parseGradient(s.backgroundImage)
+    if (grad.type !== 'none' && grad.stops.length >= 2) {
+      const hex = cssColorToHex(grad.stops[0].color)
+      if (hex) return { color: hex }
+    }
   }
   return null
 }
@@ -356,6 +391,69 @@ function parseShadow(boxShadow) {
     color: color || '000000',
     opacity: 0.4,
   }
+}
+
+function cssGradientToPng(cssGradient, width, height, borderRadius) {
+  return new Promise((resolve, reject) => {
+    const canvas = document.createElement('canvas')
+    const scale = 2
+    canvas.width = Math.round(width * scale)
+    canvas.height = Math.round(height * scale)
+    const ctx = canvas.getContext('2d')
+
+    // borderRadius 클리핑
+    const br = borderRadius ? parseFloat(borderRadius) * scale : 0
+    if (br > 0) {
+      ctx.beginPath()
+      ctx.roundRect(0, 0, canvas.width, canvas.height, br)
+      ctx.clip()
+    }
+
+    const grad = parseGradient(cssGradient)
+    if (grad.type === 'linear' && grad.stops.length >= 2) {
+      const angle = (grad.angle - 90) * Math.PI / 180
+      const cx = canvas.width / 2, cy = canvas.height / 2
+      const len = Math.max(canvas.width, canvas.height)
+      const x0 = cx - Math.cos(angle) * len, y0 = cy - Math.sin(angle) * len
+      const x1 = cx + Math.cos(angle) * len, y1 = cy + Math.sin(angle) * len
+      const lg = ctx.createLinearGradient(x0, y0, x1, y1)
+      for (const stop of grad.stops) {
+        lg.addColorStop(stop.position / 100, stop.color)
+      }
+      ctx.fillStyle = lg
+    } else if (grad.type === 'radial' && grad.stops.length >= 2) {
+      const rg = ctx.createRadialGradient(
+        canvas.width / 2, canvas.height / 2, 0,
+        canvas.width / 2, canvas.height / 2, Math.max(canvas.width, canvas.height) / 2
+      )
+      for (const stop of grad.stops) {
+        rg.addColorStop(stop.position / 100, stop.color)
+      }
+      ctx.fillStyle = rg
+    } else {
+      reject(new Error('Unsupported gradient'))
+      return
+    }
+
+    ctx.fillRect(0, 0, canvas.width, canvas.height)
+    resolve(canvas.toDataURL('image/png'))
+  })
+}
+
+function svgToPngDataUrl(svgDataUrl, width, height) {
+  return new Promise((resolve, reject) => {
+    const img = new Image()
+    img.onload = () => {
+      const canvas = document.createElement('canvas')
+      canvas.width = (width || 200) * 2
+      canvas.height = (height || 200) * 2
+      const ctx = canvas.getContext('2d')
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+      resolve(canvas.toDataURL('image/png'))
+    }
+    img.onerror = () => reject(new Error('SVG rasterization failed'))
+    img.src = svgDataUrl
+  })
 }
 
 function blobToDataUrl(blob) {

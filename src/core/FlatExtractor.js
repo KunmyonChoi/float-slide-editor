@@ -74,6 +74,25 @@ export function isNavigationElement(el, cs) {
 }
 
 /**
+ * 배지/태그 패턴 감지: 라운드 테두리 + 배경/보더 + 단일행 짧은 텍스트.
+ * 이 패턴은 flat 렌더링에서 가운데 정렬 + padding 제거가 편집에 유리하다.
+ * flex 센터링이 시각적 위치를 유지하므로 padding 없이도 외관이 동일하다.
+ */
+export function isBadgeElement(styles, height, text) {
+  if (!styles.borderRadius || styles.borderRadius === '0px') return false
+  const hasBg = styles.backgroundColor &&
+    styles.backgroundColor !== 'rgba(0, 0, 0, 0)' &&
+    styles.backgroundColor !== 'transparent'
+  const hasBorder = (styles.border && !styles.border.startsWith('0px')) ||
+    (styles.borderTop && !styles.borderTop.startsWith('0px'))
+  if (!hasBg && !hasBorder) return false
+  if (height > 60) return false
+  const plain = (text || '').replace(/<[^>]+>/g, '').trim()
+  if (plain.includes('\n') || plain.length > 50) return false
+  return true
+}
+
+/**
  * 독립적인(블록 레벨) 자식 텍스트 요소가 있는지 확인.
  * 인라인 서식 요소(strong, em, span 등)는 부모 텍스트의 일부이므로 제외.
  * 독립 텍스트 자식 = 자체 data-editor-id를 가지면서 별도 블록을 형성하는 요소.
@@ -185,7 +204,25 @@ function getRichTextContent(el) {
         hasHtml = true
         continue
       }
-      // 일반 인라인 서식 또는 editor-id 없는 요소 → textContent 포함
+      // data-editor-id 없는 인라인 요소(예: <span class="c">, <span class="k">)
+      // CSS 클래스로만 스타일된 경우 computed style을 인라인으로 보존
+      if (tag === 'span' && win) {
+        const spanCs = win.getComputedStyle(node)
+        const parentCs = win.getComputedStyle(el)
+        const diffs = []
+        if (spanCs.color !== parentCs.color) diffs.push(`color:${spanCs.color}`)
+        if (spanCs.fontWeight !== parentCs.fontWeight) diffs.push(`font-weight:${spanCs.fontWeight}`)
+        if (spanCs.fontStyle !== parentCs.fontStyle) diffs.push(`font-style:${spanCs.fontStyle}`)
+        if (spanCs.fontSize !== parentCs.fontSize) diffs.push(`font-size:${spanCs.fontSize}`)
+        if (spanCs.fontFamily !== parentCs.fontFamily) diffs.push(`font-family:${spanCs.fontFamily.replace(/"/g, "'")}`)
+        if (diffs.length > 0) {
+          html += `<span style="${diffs.join(';')}">${escapeHtml(node.textContent)}</span>`
+          plain += node.textContent
+          hasHtml = true
+          continue
+        }
+      }
+      // 스타일 차이 없으면 plain text로 포함
       html += escapeHtml(node.textContent)
       plain += node.textContent
     }
@@ -300,15 +337,89 @@ function getSemanticInlineStyle(el) {
   return parts.length > 0 ? parts.join(';') : null
 }
 
+/**
+ * getComputedStyle().fontFamily는 CSS 변수와 유틸리티 클래스가 해석된
+ * 긴 시스템 폰트 스택을 반환할 수 있다.
+ * 예: 'JetBrains Mono', monospace → ui-monospace, SFMono-Regular, Menlo, ...
+ *
+ * 이 함수는 요소의 조상 체인에서 인라인 style이나 CSS 규칙에 명시된
+ * 원본 font-family를 찾아 computed 값보다 우선 사용한다.
+ */
+function _resolveComputedFontFamily(computedFF, el) {
+  if (!el || !computedFF) return computedFF
+
+  // 1. 요소 자체 또는 조상의 인라인 style.fontFamily 확인
+  let node = el
+  while (node && node.nodeType === Node.ELEMENT_NODE) {
+    const inlineFF = node.style?.fontFamily
+    if (inlineFF) return inlineFF
+    node = node.parentElement
+  }
+
+  // 2. computed 값에서 시스템 폰트만 있는 긴 스택 감지
+  //    (4개 이상의 폰트가 나열되고, 첫 폰트가 시스템 폰트이면 확장된 스택)
+  const families = computedFF.split(',').map(f => f.trim().replace(/^['"]|['"]$/g, ''))
+  if (families.length >= 4) {
+    const firstLower = families[0].toLowerCase()
+    if (SYSTEM_FONTS.has(firstLower) || firstLower.startsWith('ui-')) {
+      // CSS 규칙에서 원본 font-family 찾기
+      const origFF = _findOriginalFontFamily(el)
+      if (origFF) return origFF
+    }
+  }
+
+  return computedFF
+}
+
+/**
+ * 요소에 적용된 CSS 규칙에서 원본 font-family 값을 찾는다.
+ * getComputedStyle이 해석한 값 대신 CSS에 선언된 원래 값을 반환.
+ */
+function _findOriginalFontFamily(el) {
+  const win = el.ownerDocument?.defaultView
+  if (!win) return null
+
+  // 요소에 매치된 CSS 규칙에서 font-family 찾기
+  try {
+    const matched = win.getMatchedCSSRules?.(el)
+    if (matched) {
+      for (let i = matched.length - 1; i >= 0; i--) {
+        const ff = matched[i].style?.fontFamily
+        if (ff) return ff
+      }
+    }
+  } catch {}
+
+  // getMatchedCSSRules가 없는 브라우저: CSSOM으로 직접 탐색
+  try {
+    for (const sheet of el.ownerDocument.styleSheets) {
+      try {
+        const rules = sheet.cssRules || sheet.rules
+        if (!rules) continue
+        for (const rule of rules) {
+          if (rule.style?.fontFamily && el.matches?.(rule.selectorText)) {
+            return rule.style.fontFamily
+          }
+        }
+      } catch { /* cross-origin */ }
+    }
+  } catch {}
+
+  return null
+}
+
 /** 요소에서 시각적 스타일을 추출 */
-function extractStyles(cs) {
+function extractStyles(cs, el) {
+  const fontFamily = _resolveComputedFontFamily(cs.fontFamily, el)
   return {
     backgroundColor: cs.backgroundColor,
     color: cs.color,
     fontSize: cs.fontSize,
-    fontFamily: cs.fontFamily,
+    fontFamily,
     fontWeight: cs.fontWeight,
     fontStyle: cs.fontStyle,
+    fontVariationSettings: cs.fontVariationSettings,
+    fontFeatureSettings: cs.fontFeatureSettings,
     lineHeight: cs.lineHeight,
     textAlign: cs.textAlign,
     borderRadius: cs.borderRadius,
@@ -424,7 +535,7 @@ function buildFlatElement(el, rect, cs, domOrder, forceType, transformScale = 1,
   // 원본 CSS z-index 캡처: 자신 또는 조상 중 가장 높은 명시적 z-index 사용
   const effectiveZIndex = getEffectiveZIndex(el)
 
-  const styles = extractStyles(cs)
+  const styles = extractStyles(cs, el)
   // 자신의 border-radius가 없으면 부모 클리핑에서 상속
   if (!styles.borderRadius || styles.borderRadius === '0px') {
     const inherited = getInheritedBorderRadius(el, rect)
@@ -436,6 +547,7 @@ function buildFlatElement(el, rect, cs, domOrder, forceType, transformScale = 1,
   // 단, 텍스트 없는 시각 요소(장식 라인 등)는 원본 높이 유지
   let height = rect.height
   let width = rect.width
+  let xAdjust = 0 // 경계값 너비 보정 시 center/right 정렬의 시각적 중심 유지를 위한 x 보정
   let flexParentX = null // flex 부모 가용 너비 사용 시 x 좌표 오버라이드
   const hasTextContent = type === 'text' && (el.textContent || '').trim().length > 0
   if (hasTextContent) {
@@ -443,6 +555,8 @@ function buildFlatElement(el, rect, cs, domOrder, forceType, transformScale = 1,
     const lineHeight = cs.lineHeight === 'normal' ? fontSize * 1.2 : parseFloat(cs.lineHeight) || 0
     const minHeight = Math.max(fontSize, lineHeight)
     if (height < minHeight) height = Math.ceil(minHeight)
+
+    // (조상 너비 클리핑은 모든 너비 보정 이후에 적용 — 아래 참조)
 
     // flex 부모 가용 너비 보정:
     // flex 부모의 align-items:center/start/end는 cross-axis 방향으로
@@ -491,24 +605,66 @@ function buildFlatElement(el, rect, cs, domOrder, forceType, transformScale = 1,
     const brCount = (el.innerHTML || '').match(/<br\s*\/?>/gi)?.length || 0
     const nlCount = ((el.textContent || '').match(/\n/g) || []).length
     const intendedBreaks = brCount + nlCount
-    // pre/code 계열은 줄바꿈이 의도된 것이므로 스킵
-    const ffamily = (cs.fontFamily || '').toLowerCase()
-    const isCodeBlock = ffamily.includes('monospace') || ffamily.includes('fira code') ||
-                        el.tagName.toLowerCase() === 'pre' || el.closest('pre')
+    // pre/code 블록은 줄바꿈이 의도된 것이므로 스킵
+    // (monospace 폰트 사용 여부가 아닌, 실제 pre 태그 기반으로 판별)
+    const elTag = el.tagName.toLowerCase()
+    const isCodeBlock = elTag === 'pre' || elTag === 'code' || !!el.closest('pre')
     if (!isCodeBlock && intendedBreaks === 0) {
       // 부모 컨테이너가 너비를 제한하는지 확인:
       // 요소 너비가 부모 내부 너비(padding 제외)와 거의 같으면
       // 부모에 의한 의도된 줄바꿈이므로 보정하지 않는다.
+      // 단, 부모 자체가 row-flex의 shrink-wrapped 아이템이면 제약이 아님:
+      // 부모 너비가 콘텐츠에 맞게 축소된 것이므로 nowrap 보정이 필요하다.
       let parentConstrained = false
-      if (parent && parent.tagName !== 'BODY') {
-        const parentRect = unscaleRect(parent.getBoundingClientRect(), transformScale, originRect)
-        const parentCs = el.ownerDocument.defaultView.getComputedStyle(parent)
-        const padL = parseFloat(parentCs.paddingLeft) || 0
-        const padR = parseFloat(parentCs.paddingRight) || 0
-        const parentContentW = parentRect.width - padL - padR
-        // 요소 너비가 부모 내부 너비의 95% 이상이면 부모 제약
-        if (parentContentW > 0 && width >= parentContentW * 0.95) {
-          parentConstrained = true
+      // 독립 추출된 인라인 태그(span, strong 등)는 flat 렌더링에서
+      // 부모 제약 없이 독립 div로 배치되므로 항상 nowrap 보정이 필요
+      const tag = el.tagName.toLowerCase()
+      const isIndependentInline = INLINE_TAGS.has(tag)
+      if (!isIndependentInline) {
+        // 직접 부모 또는 조상 중 overflow:hidden이 있으면 너비가 제한됨
+        const win = el.ownerDocument.defaultView
+        if (win) {
+          let ancestor = el.parentElement
+          while (ancestor && ancestor.tagName !== 'BODY') {
+            const ancCs = win.getComputedStyle(ancestor)
+            const ancRect = unscaleRect(ancestor.getBoundingClientRect(), transformScale, originRect)
+            const ancPadL = parseFloat(ancCs.paddingLeft) || 0
+            const ancPadR = parseFloat(ancCs.paddingRight) || 0
+            const ancContentW = ancRect.width - ancPadL - ancPadR
+            const ancOverflow = ancCs.overflow || ''
+            const ancOverflowX = ancCs.overflowX || ''
+            const isClipped = ancOverflow.includes('hidden') || ancOverflowX === 'hidden'
+            // 요소 너비가 조상 내부 너비의 95% 이상이면 제약 확인
+            if (ancContentW > 0 && width >= ancContentW * 0.95) {
+              if (isClipped) {
+                // overflow:hidden 조상에 의해 확실히 제약됨
+                parentConstrained = true
+                break
+              }
+              // overflow:hidden이 아니어도 직접 부모이면 추가 체크
+              if (ancestor === el.parentElement) {
+                let parentIsShrinkWrapped = false
+                const grandParent = ancestor.parentElement
+                if (grandParent && grandParent.tagName !== 'BODY') {
+                  const gpCs = win.getComputedStyle(grandParent)
+                  const gpIsFlex = gpCs.display === 'flex' || gpCs.display === 'inline-flex'
+                  if (gpIsFlex) {
+                    const gpFlexDir = gpCs.flexDirection || 'row'
+                    const isRowFlex = gpFlexDir === 'row' || gpFlexDir === 'row-reverse'
+                    const parentFlexGrow = parseFloat(win.getComputedStyle(ancestor).flexGrow) || 0
+                    if (isRowFlex && parentFlexGrow === 0) {
+                      parentIsShrinkWrapped = true
+                    }
+                  }
+                }
+                if (!parentIsShrinkWrapped) {
+                  parentConstrained = true
+                  break
+                }
+              }
+            }
+            ancestor = ancestor.parentElement
+          }
         }
       }
       if (!parentConstrained) {
@@ -523,10 +679,106 @@ function buildFlatElement(el, rect, cs, domOrder, forceType, transformScale = 1,
         el.style.wordBreak = origWB
         el.style.width = origW
         if (nowrapRect.width > width + 2) {
-          width = Math.ceil(nowrapRect.width)
-          // 줄바꿈이 해소되었으므로 높이는 1줄분
-          height = Math.ceil(lineHeight) || Math.ceil(nowrapRect.height)
+          // nowrap 너비가 원래보다 넓음 → 줄바꿈이 있었음
+          // 단, 확장된 너비가 가장 가까운 editor 조상 컨테이너의 가용 너비를
+          // 초과하면 원래 레이아웃에서 의도된 줄바꿈이므로 확장하지 않음
+          let ancestorMaxW = Infinity
+          const nWin = el.ownerDocument.defaultView
+          if (nWin) {
+            let nAnc = el.parentElement
+            while (nAnc && nAnc.tagName !== 'BODY') {
+              if (nAnc.hasAttribute('data-editor-id')) {
+                const nAncRect = unscaleRect(nAnc.getBoundingClientRect(), transformScale, originRect)
+                const nAncCs = nWin.getComputedStyle(nAnc)
+                const nPadL = parseFloat(nAncCs.paddingLeft) || 0
+                const nPadR = parseFloat(nAncCs.paddingRight) || 0
+                ancestorMaxW = nAncRect.width - nPadL - nPadR
+                break
+              }
+              nAnc = nAnc.parentElement
+            }
+          }
+          const expandedW = Math.ceil(nowrapRect.width) + 4
+          if (expandedW <= ancestorMaxW + 2) {
+            // 조상 범위 내 → 확장 적용
+            width = expandedW
+            height = Math.ceil(lineHeight) || Math.ceil(nowrapRect.height)
+          }
+          // 조상 범위 초과 → 원래 너비 유지 (의도된 줄바꿈)
+        } else if (nowrapRect.width > 0 && nowrapRect.width >= width - 1) {
+          // 단일행이지만 측정 너비와 nowrap 너비가 거의 동일 (경계값):
+          // 렌더링 컨텍스트 차이로 인한 폰트 메트릭 미세 차이로 줄바꿈이 발생할 수 있음.
+          // 배경 없음 + 그래디언트 텍스트 없음 요소에 +4px 버퍼 적용.
+          // center/right 정렬은 너비 확장 시 시각적 중심이 이동하므로 x도 함께 보정.
+          const hasBg = styles.backgroundColor &&
+                        styles.backgroundColor !== 'rgba(0, 0, 0, 0)' &&
+                        styles.backgroundColor !== 'transparent'
+          const hasGradientText = styles.webkitBackgroundClip === 'text' ||
+                                  (styles.backgroundImage && styles.backgroundImage !== 'none')
+          if (!hasBg && !hasGradientText) {
+            const newWidth = Math.ceil(nowrapRect.width) + 4
+            const extra = newWidth - width
+            const tAlign = styles.textAlign || 'start'
+            if (tAlign === 'center') {
+              // 가운데 정렬: 너비를 양쪽으로 균등 확장 → x를 좌측으로 절반 이동
+              width = newWidth
+              xAdjust -= extra / 2
+            } else if (tAlign === 'right' || tAlign === 'end') {
+              // 우측 정렬: 너비를 왼쪽으로 확장 → x를 왼쪽으로 전체 이동
+              width = newWidth
+              xAdjust -= extra
+            } else {
+              // 좌측 정렬(start/left): 오른쪽으로 확장, x 고정
+              width = newWidth
+            }
+          }
         }
+      }
+    }
+  }
+
+  // 배지 패턴: padding 제거 + 가운데 정렬 (편집 편의 + 줄바꿈 방지)
+  // 비배지: padding이 있으면 서브픽셀 보정 (+2px)
+  if (hasTextContent && styles.padding && styles.padding !== '0px') {
+    if (isBadgeElement(styles, height, content)) {
+      styles.padding = '0px'
+      styles.textAlign = 'center'
+    } else {
+      const padParts = styles.padding.split(' ').map(p => parseFloat(p) || 0)
+      const padH = padParts.length === 4 ? padParts[1] + padParts[3]
+                 : padParts.length >= 2 ? padParts[1] * 2
+                 : padParts[0] * 2
+      if (padH > 0) {
+        width = Math.ceil(width) + 2
+      }
+    }
+  }
+
+  // 최종 너비 클리핑: 조상 중 overflow:hidden 컨테이너가 있으면
+  // 텍스트 너비를 그 조상의 가용 영역으로 제한
+  // (nowrap 보정 등으로 확장된 후에도 적용)
+  // 주의: overflow:visible인 shrink-wrapped 부모는 클리핑하지 않음
+  if (hasTextContent) {
+    const clipWin = el.ownerDocument.defaultView
+    if (clipWin) {
+      let clipAnc = el.parentElement
+      while (clipAnc && clipAnc.tagName !== 'BODY') {
+        const clipAncCs = clipWin.getComputedStyle(clipAnc)
+        const ancOverflow = clipAncCs.overflow || ''
+        const ancOverflowX = clipAncCs.overflowX || ''
+        const isClipped = ancOverflow.includes('hidden') || ancOverflow.includes('clip') ||
+                          ancOverflowX === 'hidden' || ancOverflowX === 'clip'
+        if (isClipped) {
+          const clipAncRect = unscaleRect(clipAnc.getBoundingClientRect(), transformScale, originRect)
+          const padL = parseFloat(clipAncCs.paddingLeft) || 0
+          const padR = parseFloat(clipAncCs.paddingRight) || 0
+          const clipContentW = clipAncRect.width - padL - padR
+          if (clipContentW > 0 && width > clipContentW + 2) {
+            width = clipContentW
+          }
+          break
+        }
+        clipAnc = clipAnc.parentElement
       }
     }
   }
@@ -548,7 +800,7 @@ function buildFlatElement(el, rect, cs, domOrder, forceType, transformScale = 1,
     id: nextFlatId(),
     sourceId: el.getAttribute('data-editor-id'),
     type,
-    x: flexParentX !== null ? flexParentX : rect.left,
+    x: (flexParentX !== null ? flexParentX : rect.left) + xAdjust,
     y: rect.top,
     width,
     height,
@@ -588,7 +840,9 @@ function extractPseudoElement(el, parentRect, pseudo) {
   const w = parseFloat(pcs.width) || 0
   const h = parseFloat(pcs.height) || 0
   const bg = pcs.backgroundColor
-  const hasBg = bg && bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent'
+  const bgImage = pcs.backgroundImage
+  const hasBg = (bg && bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent') ||
+                (bgImage && bgImage !== 'none')
 
   // 텍스트 content ('')이 아닌 실제 텍스트도 있을 수 있음
   const isEmptyContent = content === '""' || content === "''" || content === 'normal' || content === 'none'
@@ -607,6 +861,7 @@ function extractPseudoElement(el, parentRect, pseudo) {
     w,
     h,
     backgroundColor: bg,
+    backgroundImage: bgImage && bgImage !== 'none' ? bgImage : undefined,
     borderRadius: pcs.borderRadius || '0px',
     content: textContent,
   }
@@ -657,6 +912,8 @@ function tryMergeContainerText(containerEl, containerRect, containerCs, win) {
         fontFamily: containerCs.fontFamily,
         fontWeight: containerCs.fontWeight,
         fontStyle: containerCs.fontStyle,
+        fontVariationSettings: containerCs.fontVariationSettings,
+        fontFeatureSettings: containerCs.fontFeatureSettings,
         lineHeight: containerCs.lineHeight,
         textAlign: containerCs.textAlign,
         letterSpacing: containerCs.letterSpacing,
@@ -732,6 +989,8 @@ function tryMergeContainerText(containerEl, containerRect, containerCs, win) {
           fontFamily: containerCs.fontFamily,
           fontWeight: containerCs.fontWeight,
           fontStyle: containerCs.fontStyle,
+          fontVariationSettings: containerCs.fontVariationSettings,
+          fontFeatureSettings: containerCs.fontFeatureSettings,
           lineHeight: containerCs.lineHeight,
           textAlign: containerCs.textAlign,
           letterSpacing: containerCs.letterSpacing,
@@ -785,6 +1044,8 @@ function tryMergeContainerText(containerEl, containerRect, containerCs, win) {
           fontFamily: containerCs.fontFamily,
           fontWeight: containerCs.fontWeight,
           fontStyle: containerCs.fontStyle,
+          fontVariationSettings: containerCs.fontVariationSettings,
+          fontFeatureSettings: containerCs.fontFeatureSettings,
           lineHeight: containerCs.lineHeight,
           textAlign: containerCs.textAlign,
           letterSpacing: containerCs.letterSpacing,
@@ -830,6 +1091,8 @@ function tryMergeContainerText(containerEl, containerRect, containerCs, win) {
         fontFamily: textCs.fontFamily,
         fontWeight: textCs.fontWeight,
         fontStyle: textCs.fontStyle,
+        fontVariationSettings: textCs.fontVariationSettings,
+        fontFeatureSettings: textCs.fontFeatureSettings,
         lineHeight: textCs.lineHeight,
         textAlign: textCs.textAlign,
         letterSpacing: textCs.letterSpacing,
@@ -934,7 +1197,7 @@ export function extractFlatElements(iframeRef) {
       height: canvasH,
       zIndex: zCounter++,
       content: '',
-      styles: extractStyles(bodyCS),
+      styles: extractStyles(bodyCS, doc.body),
     })
   }
 
@@ -1007,14 +1270,51 @@ export function extractFlatElements(iframeRef) {
         }
       }
 
-      // display:flex인 텍스트 요소(예: li): 자식들이 독립 위치를 가지므로
+      // display:flex인 텍스트 요소(예: li, h3 flex): 자식들이 독립 위치를 가지므로
       // 부모 자체는 시각 속성이 있을 때만 shape로 추출하고, 텍스트는 자식에 맡긴다
       const isFlex = cs.display === 'flex' || cs.display === 'inline-flex'
-      if (isFlex && hasChildTextElements(el)) {
-        if (isVisuallyMeaningful(cs)) {
-          result.push(buildFlatElement(el, rect, cs, zCounter++, 'shape', transformScale, originRect))
+      if (isFlex) {
+        const editorChildren = el.querySelectorAll(':scope > [data-editor-id]')
+        if (editorChildren.length > 0) {
+          // 부모 자체의 배경/테두리가 있으면 shape로 추출
+          if (isVisuallyMeaningful(cs)) {
+            result.push(buildFlatElement(el, rect, cs, zCounter++, 'shape', transformScale, originRect))
+          }
+          // flex 부모의 고유 텍스트 노드(자식 요소가 아닌)를 별도 요소로 추출
+          // 예: <h3 flex><span>①</span> Worker</h3> → "Worker"를 h3 스타일로 독립 추출
+          for (const node of el.childNodes) {
+            if (node.nodeType === Node.TEXT_NODE && node.textContent.trim()) {
+              const text = node.textContent.trim()
+              // 텍스트 노드의 위치를 Range로 측정
+              const range = el.ownerDocument.createRange()
+              range.selectNodeContents(node)
+              const rangeRect = unscaleRect(range.getBoundingClientRect(), transformScale, originRect)
+              if (rangeRect.width < 1 || rangeRect.height < 1) continue
+              const styles = extractStyles(cs, el)
+              // flex 부모에서 분리된 단일행 텍스트 → nowrap으로 줄바꿈 방지
+              styles.whiteSpace = 'nowrap'
+              result.push({
+                id: nextFlatId(),
+                sourceId: el.getAttribute('data-editor-id'),
+                type: 'text',
+                x: rangeRect.left,
+                y: rangeRect.top,
+                width: Math.ceil(rangeRect.width),
+                height: rangeRect.height,
+                rotation: 0,
+                zIndex: 0,
+                _domOrder: zCounter++,
+                _originalZIndex: getEffectiveZIndex(el),
+                content: text,
+                isRich: false,
+                styles,
+                originalRect: { x: rangeRect.left, y: rangeRect.top, w: rangeRect.width, h: rangeRect.height },
+              })
+            }
+          }
+          // 자식 요소는 메인 루프에서 독립 추출됨
+          continue
         }
-        continue
       }
 
       // 자식 독립 텍스트 요소가 있으면: 고유 텍스트가 비어있고 시각 속성도 없으면 스킵
@@ -1042,7 +1342,25 @@ export function extractFlatElements(iframeRef) {
             const inherited = getInheritedBorderRadius(el, rect)
             if (inherited) merged.styles.borderRadius = inherited
           }
-          result.push({ ...merged, id: nextFlatId(), zIndex: 0, _domOrder: zCounter++, _originalZIndex: getEffectiveZIndex(el) })
+          // 배지 패턴: padding 제거 + 가운데 정렬 (편집 편의 + 줄바꿈 방지)
+          if (isBadgeElement(merged.styles, merged.height, merged.content)) {
+            merged.styles.padding = '0px'
+            merged.styles.textAlign = 'center'
+            merged.styles.isFlex = true
+            merged.styles.justifyContent = 'center'
+            merged.styles.alignItems = 'center'
+            merged.merged = true
+          } else if (merged.styles.padding && merged.styles.padding !== '0px') {
+            // 비배지 병합 텍스트: 서브픽셀 보정
+            const pp = merged.styles.padding.split(' ').map(p => parseFloat(p) || 0)
+            const padH = pp.length === 4 ? pp[1] + pp[3] : pp.length >= 2 ? pp[1] * 2 : pp[0] * 2
+            if (padH > 0) merged.width = Math.ceil(merged.width) + 2
+          }
+          const mergedEl = { ...merged, id: nextFlatId(), zIndex: 0, _domOrder: zCounter++, _originalZIndex: getEffectiveZIndex(el) }
+          // 병합된 컨테이너에도 ::before 의사 요소 추출
+          const pseudoBefore = extractPseudoElement(el, rect, '::before')
+          if (pseudoBefore) mergedEl._pseudoBefore = pseudoBefore
+          result.push(mergedEl)
         } else {
           result.push(buildFlatElement(el, rect, cs, zCounter++, 'shape', transformScale, originRect))
         }
@@ -1145,6 +1463,7 @@ export function extractFlatElements(iframeRef) {
         isRich: false,
         styles: {
           backgroundColor: pb.backgroundColor,
+          backgroundImage: pb.backgroundImage,
           borderRadius: pb.borderRadius,
         },
         originalRect: { x: pb.x, y: pb.y, w: pb.w, h: pb.h },
@@ -1221,6 +1540,7 @@ function extractFontImports(doc) {
     let rules
     try { rules = sheet.cssRules || sheet.rules } catch { return }
     if (!rules) return
+    const baseUrl = sheet.href || doc.baseURI || ''
     for (const rule of rules) {
       if (rule.type === CSSRule.IMPORT_RULE) {
         // @import → 폰트 관련 URL이면 추가
@@ -1233,7 +1553,9 @@ function extractFontImports(doc) {
           try { extractFromSheet(rule.styleSheet) } catch {}
         }
       } else if (rule.type === CSSRule.FONT_FACE_RULE) {
-        addUnique(rule.cssText)
+        // @font-face의 상대 URL을 절대 URL로 변환
+        const cssText = resolveRelativeUrls(rule.cssText, baseUrl)
+        addUnique(cssText)
       }
     }
   }
@@ -1243,22 +1565,27 @@ function extractFontImports(doc) {
     // 에디터 삽입 스타일 제외
     if (style.id && style.id.startsWith('__fe-')) continue
     const text = style.textContent || ''
+    const styleBaseUrl = doc.baseURI || ''
     const importMatches = text.match(/@import\s+url\([^)]+\)\s*;?/g)
     if (importMatches) {
       for (const m of importMatches) addUnique(m.endsWith(';') ? m : m + ';')
     }
     const fontFaceMatches = text.match(/@font-face\s*\{[^}]+\}/g)
     if (fontFaceMatches) {
-      for (const m of fontFaceMatches) addUnique(m)
+      for (const m of fontFaceMatches) addUnique(resolveRelativeUrls(m, styleBaseUrl))
     }
   }
 
   // 3. <link> 폰트 스타일시트 직접 참조 (CSSOM에서 못 잡은 것 보완)
+  // cross-origin CSS의 경우 cssRules 접근이 차단되므로 href를 @import로 추가
   for (const link of doc.querySelectorAll('link[rel="stylesheet"]')) {
     if (link.id && link.id.startsWith('__fe-')) continue
     const href = link.getAttribute('href') || ''
-    if (isFontUrl(href)) {
-      addUnique(`@import url('${href}');`)
+    if (!href) continue
+    // 절대 URL로 변환
+    const absHref = new URL(href, doc.baseURI).href
+    if (isFontUrl(absHref)) {
+      addUnique(`@import url('${absHref}');`)
     }
   }
 
@@ -1381,25 +1708,56 @@ function unscaleRect(rect, scale, originRect) {
   }
 }
 
+/**
+ * @font-face 등 CSS 내의 상대 url()을 절대 URL로 변환한다.
+ * iframe 내부의 @font-face를 부모 문서에 주입할 때, 기준 URL이 달라져
+ * 상대 경로가 깨지는 문제를 방지한다.
+ */
+function resolveRelativeUrls(cssText, baseUrl) {
+  if (!baseUrl || !cssText) return cssText
+  return cssText.replace(/url\(\s*['"]?([^'")]+)['"]?\s*\)/g, (match, url) => {
+    // 이미 절대 URL이면 그대로
+    if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('data:') || url.startsWith('blob:')) {
+      return match
+    }
+    try {
+      const absUrl = new URL(url, baseUrl).href
+      return `url('${absUrl}')`
+    } catch {
+      return match
+    }
+  })
+}
+
 /** 폰트 관련 URL인지 판별 */
 function isFontUrl(href) {
   if (!href) return false
   const lower = href.toLowerCase()
   return lower.includes('fonts.googleapis.com') ||
          lower.includes('fonts.gstatic.com') ||
-         lower.includes('font') ||
          lower.includes('pretendard') ||
          lower.includes('typekit') ||
-         lower.includes('use.typekit.net')
+         lower.includes('use.typekit.net') ||
+         lower.endsWith('.woff2') ||
+         lower.endsWith('.woff') ||
+         lower.endsWith('.ttf') ||
+         lower.endsWith('.otf') ||
+         // font 전용 서비스 URL (단순 'font' 포함은 false positive 방지를 위해 제거)
+         lower.includes('/fonts/') ||
+         lower.includes('font-face')
 }
 
 /** 시스템/일반 폰트 (Google Fonts 임포트 불필요) */
 const SYSTEM_FONTS = new Set([
-  'sans-serif', 'serif', 'monospace', 'cursive', 'fantasy', 'system-ui', 'ui-sans-serif',
+  'sans-serif', 'serif', 'monospace', 'cursive', 'fantasy', 'system-ui',
+  'ui-sans-serif', 'ui-serif', 'ui-monospace', 'ui-rounded',
   'arial', 'helvetica', 'times new roman', 'times', 'georgia', 'courier', 'courier new',
   'verdana', 'tahoma', 'trebuchet ms', 'impact', 'comic sans ms', 'lucida console',
   'apple sd gothic neo', 'malgun gothic', 'segoe ui', 'sf pro', 'sf pro display',
+  'sfmono-regular', 'menlo', 'monaco', 'consolas', 'liberation mono',
   'microsoft yahei', 'nanum gothic', 'gulim', 'dotum', 'batang',
+  'apple color emoji', 'segoe ui emoji', 'segoe ui symbol', 'noto color emoji',
+  'calibri', 'cambria', 'palatino linotype', 'book antiqua',
 ])
 
 /**

@@ -1,0 +1,414 @@
+[
+  {
+    "slide": 1,
+    "pageKey": "0-0",
+    "source": {
+      "total": 27,
+      "types": {
+        "shape": 16,
+        "text": 11
+      },
+      "gradients": 3,
+      "texts": 11
+    },
+    "pptx": {
+      "shapes": 27,
+      "pics": 0,
+      "gradients": 2
+    },
+    "issues": []
+  },
+  {
+    "slide": 2,
+    "pageKey": "1-0",
+    "source": {
+      "total": 23,
+      "types": {
+        "shape": 6,
+        "text": 17
+      },
+      "gradients": 5,
+      "texts": 17
+    },
+    "pptx": {
+      "shapes": 23,
+      "pics": 0,
+      "gradients": 10
+    },
+    "issues": []
+  },
+  {
+    "slide": 3,
+    "pageKey": "2-0",
+    "source": {
+      "total": 32,
+      "types": {
+        "shape": 8,
+        "text": 24
+      },
+      "gradients": 5,
+      "texts": 24
+    },
+    "pptx": {
+      "shapes": 32,
+      "pics": 0,
+      "gradients": 10
+    },
+    "issues": [
+      "텍스트 누락 의심: 3개"
+    ]
+  },
+  {
+    "slide": 4,
+    "pageKey": "3-0",
+    "source": {
+      "total": 39,
+      "types": {
+        "shape": 8,
+        "text": 31
+      },
+      "gradients": 0,
+      "texts": 31
+    },
+    "pptx": {
+      "shapes": 39,
+      "pics": 0,
+      "gradients": 0
+    },
+    "issues": []
+  },
+  {
+    "slide": 5,
+    "pageKey": "4-0",
+    "source": {
+      "total": 52,
+      "types": {
+        "shape": 14,
+        "text": 38
+      },
+      "gradients": 0,
+      "texts": 38
+    },
+    "pptx": {
+      "shapes": 52,
+      "pics": 0,
+      "gradients": 0
+    },
+    "issues": [
+      "텍스트 누락 의심: 5개"
+    ]
+  },
+  {
+    "slide": 6,
+    "pageKey": "5-0",
+    "source": {
+      "total": 48,
+      "types": {
+        "shape": 11,
+        "text": 37
+      },
+      "gradients": 2,
+      "texts": 37
+    },
+    "pptx": {
+      "shapes": 48,
+      "pics": 0,
+      "gradients": 4
+    },
+    "issues": []
+  },
+  {
+    "slide": 7,
+    "pageKey": "6-0",
+    "source": {
+      "total": 66,
+      "types": {
+        "shape": 17,
+        "text": 48,
+        "svg": 1
+      },
+      "gradients": 2,
+      "texts": 48
+    },
+    "pptx": {
+      "shapes": 65,
+      "pics": 0,
+      "gradients": 4
+    },
+    "issues": [
+      "텍스트 누락 의심: 4개"
+    ]
+  },
+  {
+    "slide": 8,
+    "pageKey": "7-0",
+    "source": {
+      "total": 63,
+      "types": {
+        "shape": 11,
+        "text": 52
+      },
+      "gradients": 5,
+      "texts": 52
+    },
+    "pptx": {
+      "shapes": 63,
+      "pics": 0,
+      "gradients": 10
+    },
+    "issues": [
+      "텍스트 누락 의심: 7개"
+    ]
+  },
+  {
+    "slide": 9,
+    "pageKey": "8-0",
+    "source": {
+      "total": 86,
+      "types": {
+        "shape": 17,
+        "text": 69
+      },
+      "gradients": 3,
+      "texts": 60
+    },
+    "pptx": {
+      "shapes": 86,
+      "pics": 0,
+      "gradients": 6
+    },
+    "issues": [
+      "텍스트 누락 의심: 2개"
+    ]
+  },
+  {
+    "slide": 10,
+    "pageKey": "9-0",
+    "source": {
+      "total": 60,
+      "types": {
+        "shape": 23,
+        "text": 37
+      },
+      "gradients": 1,
+      "texts": 37
+    },
+    "pptx": {
+      "shapes": 60,
+      "pics": 0,
+      "gradients": 2
+    },
+    "issues": [
+      "텍스트 누락 의심: 1개"
+    ]
+  },
+  {
+    "slide": 11,
+    "pageKey": "10-0",
+    "source": {
+      "total": 62,
+      "types": {
+        "shape": 20,
+        "text": 42
+      },
+      "gradients": 1,
+      "texts": 42
+    },
+    "pptx": {
+      "shapes": 62,
+      "pics": 0,
+      "gradients": 2
+    },
+    "issues": []
+  },
+  {
+    "slide": 12,
+    "pageKey": "11-0",
+    "source": {
+      "total": 56,
+      "types": {
+        "shape": 13,
+        "text": 43
+      },
+      "gradients": 2,
+      "texts": 43
+    },
+    "pptx": {
+      "shapes": 56,
+      "pics": 0,
+      "gradients": 4
+    },
+    "issues": [
+      "텍스트 누락 의심: 1개"
+    ]
+  },
+  {
+    "slide": 13,
+    "pageKey": "12-0",
+    "source": {
+      "total": 41,
+      "types": {
+        "shape": 12,
+        "text": 29
+      },
+      "gradients": 5,
+      "texts": 29
+    },
+    "pptx": {
+      "shapes": 41,
+      "pics": 0,
+      "gradients": 10
+    },
+    "issues": [
+      "텍스트 누락 의심: 1개"
+    ]
+  },
+  {
+    "slide": 14,
+    "pageKey": "13-0",
+    "source": {
+      "total": 49,
+      "types": {
+        "shape": 14,
+        "text": 35
+      },
+      "gradients": 6,
+      "texts": 35
+    },
+    "pptx": {
+      "shapes": 49,
+      "pics": 0,
+      "gradients": 12
+    },
+    "issues": [
+      "텍스트 누락 의심: 1개"
+    ]
+  },
+  {
+    "slide": 15,
+    "pageKey": "14-0",
+    "source": {
+      "total": 71,
+      "types": {
+        "shape": 17,
+        "text": 54
+      },
+      "gradients": 4,
+      "texts": 54
+    },
+    "pptx": {
+      "shapes": 71,
+      "pics": 0,
+      "gradients": 8
+    },
+    "issues": []
+  },
+  {
+    "slide": 16,
+    "pageKey": "15-0",
+    "source": {
+      "total": 42,
+      "types": {
+        "shape": 11,
+        "text": 26,
+        "svg": 5
+      },
+      "gradients": 0,
+      "texts": 26
+    },
+    "pptx": {
+      "shapes": 37,
+      "pics": 0,
+      "gradients": 0
+    },
+    "issues": [
+      "텍스트 누락 의심: 3개"
+    ]
+  },
+  {
+    "slide": 17,
+    "pageKey": "16-0",
+    "source": {
+      "total": 52,
+      "types": {
+        "shape": 12,
+        "text": 36,
+        "svg": 4
+      },
+      "gradients": 1,
+      "texts": 36
+    },
+    "pptx": {
+      "shapes": 48,
+      "pics": 0,
+      "gradients": 2
+    },
+    "issues": [
+      "텍스트 누락 의심: 3개"
+    ]
+  },
+  {
+    "slide": 18,
+    "pageKey": "17-0",
+    "source": {
+      "total": 40,
+      "types": {
+        "shape": 15,
+        "text": 23,
+        "svg": 2
+      },
+      "gradients": 1,
+      "texts": 23
+    },
+    "pptx": {
+      "shapes": 38,
+      "pics": 0,
+      "gradients": 2
+    },
+    "issues": [
+      "텍스트 누락 의심: 1개"
+    ]
+  },
+  {
+    "slide": 19,
+    "pageKey": "18-0",
+    "source": {
+      "total": 49,
+      "types": {
+        "shape": 14,
+        "text": 35
+      },
+      "gradients": 4,
+      "texts": 35
+    },
+    "pptx": {
+      "shapes": 49,
+      "pics": 0,
+      "gradients": 8
+    },
+    "issues": [
+      "텍스트 누락 의심: 3개"
+    ]
+  },
+  {
+    "slide": 20,
+    "pageKey": "19-0",
+    "source": {
+      "total": 55,
+      "types": {
+        "shape": 14,
+        "text": 41
+      },
+      "gradients": 3,
+      "texts": 41
+    },
+    "pptx": {
+      "shapes": 55,
+      "pics": 0,
+      "gradients": 6
+    },
+    "issues": [
+      "텍스트 누락 의심: 3개"
+    ]
+  }
+]

@@ -256,12 +256,15 @@ function flatStyle(el) {
       overflow = 'hidden'
     }
   }
+  // Shape 요소: 정수 좌표로 반올림하여 서브픽셀 경계 렌더링 차이 최소화
+  // Text 요소: 소수점 1자리 유지 (반올림 시 텍스트 재흐름 유발)
+  const pos = el.type === 'shape' ? Math.round : r
   return [
     `position:absolute`,
-    `left:${r(el.x)}px`,
-    `top:${r(el.y)}px`,
-    `width:${r(el.width)}px`,
-    `height:${r(el.height)}px`,
+    `left:${pos(el.x)}px`,
+    `top:${pos(el.y)}px`,
+    `width:${pos(el.width)}px`,
+    `height:${pos(el.height)}px`,
     `z-index:${el.zIndex}`,
     `box-sizing:border-box`,
     `overflow:${overflow}`,
@@ -278,6 +281,8 @@ function textStyleBase(s, includeGradient, excludeTextShadow) {
     s.fontFamily ? `font-family:${s.fontFamily.replace(/"/g, "'")}` : '',
     s.fontWeight ? `font-weight:${s.fontWeight}` : '',
     s.fontStyle && s.fontStyle !== 'normal' ? `font-style:${s.fontStyle}` : '',
+    s.fontVariationSettings && s.fontVariationSettings !== 'normal' ? `font-variation-settings:${s.fontVariationSettings.replace(/"/g, "'")}` : '',
+    s.fontFeatureSettings && s.fontFeatureSettings !== 'normal' ? `font-feature-settings:${s.fontFeatureSettings.replace(/"/g, "'")}` : '',
     s.lineHeight ? `line-height:${s.lineHeight}` : '',
     s.textAlign ? `text-align:${s.textAlign}` : '',
     s.letterSpacing && s.letterSpacing !== 'normal' ? `letter-spacing:${s.letterSpacing}` : '',
@@ -292,8 +297,8 @@ function textStyleBase(s, includeGradient, excludeTextShadow) {
     !excludeTextShadow && s.textShadow && s.textShadow !== 'none' ? `text-shadow:${s.textShadow}` : '',
     s.padding && s.padding !== '0px' ? `padding:${s.padding}` : '',
     s.opacity && s.opacity !== '1' ? `opacity:${s.opacity}` : '',
-    `white-space:pre-wrap`,
-    `word-break:break-word`,
+    `white-space:${s.whiteSpace || 'pre-wrap'}`,
+    s.whiteSpace === 'nowrap' ? '' : `word-break:break-word`,
   ].filter(Boolean).join(';')
 }
 
@@ -312,7 +317,9 @@ function shapeStyle(s) {
 }
 
 /** border 단축 속성 또는 개별 border-side 속성 반환
- *  개별 속성이 하나라도 유효하면 개별만 사용 (FlatElementRenderer와 동일) */
+ *  개별 속성이 하나라도 유효하면 개별만 사용 (FlatElementRenderer와 동일)
+ *  실제 테두리가 없으면 `border:none`을 명시하여 Tailwind 프리플라이트
+ *  `border-style:solid`로 인한 의도치 않은 테두리 렌더링을 방지한다. */
 function borderStyles(s) {
   const sides = []
   if (s.borderTop && !s.borderTop.startsWith('0px')) sides.push(`border-top:${s.borderTop}`)
@@ -320,9 +327,10 @@ function borderStyles(s) {
   if (s.borderBottom && !s.borderBottom.startsWith('0px')) sides.push(`border-bottom:${s.borderBottom}`)
   if (s.borderLeft && !s.borderLeft.startsWith('0px')) sides.push(`border-left:${s.borderLeft}`)
   if (sides.length > 0) return sides
-  // 개별 side가 없으면 단축 속성 사용
-  if (s.border && !s.border.startsWith('0px')) return [`border:${s.border}`]
-  return []
+  // 단축 속성에 실제 보이는 테두리 값이 있는 경우만 사용
+  if (s.border && s.border !== '' && !s.border.startsWith('0px')) return [`border:${s.border}`]
+  // 테두리 없음을 명시적으로 선언
+  return ['border:none']
 }
 
 /** text-shadow CSS → filter: drop-shadow() 변환 (그래디언트 텍스트용) */

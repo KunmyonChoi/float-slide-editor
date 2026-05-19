@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useEditorStore } from '../store/editorStore'
+import FontComboBox from './FontComboBox'
 
 export const STYLE_SECTIONS = [
   {
@@ -12,6 +13,7 @@ export const STYLE_SECTIONS = [
   {
     label: '타이포그래피',
     props: [
+      { key: 'fontFamily', label: '글꼴',     type: 'font-combo' },
       { key: 'fontSize',   label: '글자 크기', type: 'text',   placeholder: '16px' },
       { key: 'fontWeight',  label: '굵기',     type: 'select', options: [
         { value: '',        label: '기본' },
@@ -32,7 +34,8 @@ export const STYLE_SECTIONS = [
         { value: 'right',  label: '우측' },
         { value: 'justify',label: '양쪽' },
       ]},
-      { key: 'lineHeight', label: '줄 높이',  type: 'text',   placeholder: '1.5' },
+      { key: 'lineHeight',    label: '줄 높이',  type: 'text',   placeholder: '1.5' },
+      { key: 'letterSpacing', label: '자간',     type: 'text',   placeholder: '0px' },
     ],
   },
   {
@@ -230,6 +233,17 @@ function StyleRow({ prop, value, onChange, onCommit, onReset }) {
     if (e.key === 'Escape') { onReset(); e.target.blur() }
   }
 
+  if (prop.type === 'font-combo') {
+    return (
+      <div className="min-w-0">
+        <FontComboBox
+          value={value}
+          onChange={(v) => { onChange(v); onCommit() }}
+        />
+      </div>
+    )
+  }
+
   return (
     <div className="flex items-center gap-2 min-w-0">
       <span className="text-xs text-slate-400 w-16 shrink-0 truncate" title={prop.label}>
@@ -283,6 +297,7 @@ function StyleRow({ prop, value, onChange, onCommit, onReset }) {
           ))}
         </select>
       )}
+
     </div>
   )
 }

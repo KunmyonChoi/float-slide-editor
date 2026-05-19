@@ -127,6 +127,8 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
           fontFamily: styles.fontFamily,
           fontWeight: styles.fontWeight,
           fontStyle: styles.fontStyle,
+          fontVariationSettings: styles.fontVariationSettings,
+          fontFeatureSettings: styles.fontFeatureSettings,
           lineHeight: styles.lineHeight,
           textAlign: styles.textAlign,
           letterSpacing: styles.letterSpacing,
@@ -142,8 +144,8 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
           overflow: (styles.overflow === 'hidden' || styles.overflow === 'auto' || styles.overflow === 'scroll' ||
                      styles.overflowX === 'hidden' || styles.overflowX === 'auto' || styles.overflowX === 'scroll')
             ? 'hidden' : 'visible',
-          whiteSpace: 'pre-wrap',
-          wordBreak: 'break-word',
+          whiteSpace: styles.whiteSpace || 'pre-wrap',
+          wordBreak: styles.whiteSpace === 'nowrap' ? 'normal' : 'break-word',
           // 배경이 있는 텍스트 또는 병합 요소: flex로 텍스트 중앙 배치
           ...((merged || (styles.backgroundColor && styles.backgroundColor !== 'rgba(0, 0, 0, 0)' && styles.backgroundColor !== 'transparent')) ? {
             display: 'flex',
@@ -243,6 +245,11 @@ function textShadowToDropShadow(textShadow) {
 /**
  * border 단축 속성과 개별 속성이 동시에 존재하면 React 경고가 발생한다.
  * 개별 속성(borderTop 등)이 하나라도 유효하면 단축 속성을 제외하고 개별만 사용한다.
+ *
+ * 시각적 테두리가 없는 경우 `border: 'none'`을 명시적으로 반환한다.
+ * dom-to-image-more 캡처 시 Tailwind 프리플라이트의 `border-style: solid`가
+ * 인라인 스타일에 포함되면서 `border-width` 값이 누락될 경우 기본값(medium=3px)이
+ * 적용되어 예상치 못한 테두리가 나타나는 문제를 방지한다.
  */
 function resolveBorders(s) {
   const hasIndividual = [s.borderTop, s.borderRight, s.borderBottom, s.borderLeft]
@@ -255,5 +262,10 @@ function resolveBorders(s) {
       borderLeft: s.borderLeft,
     }
   }
-  return { border: s.border }
+  // 단축 속성에 실제 보이는 테두리 값이 있는 경우만 사용
+  if (s.border && s.border !== '' && !s.border.startsWith('0px')) {
+    return { border: s.border }
+  }
+  // 테두리 없음을 명시적으로 선언 — dom-to-image 렌더링 아티팩트 방지
+  return { border: 'none' }
 }

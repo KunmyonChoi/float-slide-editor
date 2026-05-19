@@ -106,7 +106,7 @@ export default function ImageCropOverlay({ element, scale }) {
   const rot = element.rotation || 0
 
   return (
-    <>
+    <div data-export-ignore="true" style={{ position: 'absolute', inset: 0, zIndex: 9990, pointerEvents: 'none' }}>
       {/* 반투명 오버레이 (캔버스 전체) — 클릭하면 크롭 종료 */}
       <div
         style={{
@@ -115,6 +115,7 @@ export default function ImageCropOverlay({ element, scale }) {
           background: 'rgba(0, 0, 0, 0.5)',
           zIndex: 9990,
           cursor: 'default',
+          pointerEvents: 'auto',
         }}
         onMouseDown={handleOverlayClick}
       />
@@ -181,6 +182,6 @@ export default function ImageCropOverlay({ element, scale }) {
           {Math.round(posX)}%, {Math.round(posY)}%
         </div>
       </div>
-    </>
+    </div>
   )
 }
