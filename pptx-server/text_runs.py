@@ -134,6 +134,9 @@ def html_to_text_runs(html: str, base_styles: dict) -> list:
         if font_family:
             opts['fontFace'] = _clean_font(font_family)
 
+        # Pass effective weight for font name mapping in exporter
+        opts['_weight'] = effective_weight
+
         letter_spacing = ctx.get('letterSpacing') or base_styles.get('letterSpacing')
         if letter_spacing:
             ls_val = _px_to_pt(letter_spacing)

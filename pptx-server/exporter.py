@@ -16,7 +16,7 @@ PX_TO_INCH = 1 / 96
 PX_TO_EMU = 914400 / 96  # 9525
 
 
-def build_pptx(pages: dict, default_canvas_size: dict) -> bytes:
+def build_pptx(pages: dict, default_canvas_size: dict, fonts: list = None) -> bytes:
     prs = Presentation()
 
     first_page = next(iter(pages.values()), None)
@@ -25,6 +25,18 @@ def build_pptx(pages: dict, default_canvas_size: dict) -> bytes:
     slide_h = cs['h'] * PX_TO_EMU
     prs.slide_width = int(slide_w)
     prs.slide_height = int(slide_h)
+
+    # ── Font resolution (before slide building, so name map is available) ──
+    font_name_map = {}
+    font_records = []
+    if fonts:
+        try:
+            from font_embedder import resolve_fonts, build_font_name_map
+            font_records = resolve_fonts(fonts, pages=pages)
+            font_name_map = build_font_name_map(font_records)
+            print(f'Font embed: resolved {len(font_records)} fonts, {len(font_name_map)} mappings')
+        except Exception as e:
+            print(f'Font embed: resolution failed: {e}')
 
     sorted_keys = sorted(pages.keys(), key=_page_sort_key)
 
@@ -75,7 +87,7 @@ def build_pptx(pages: dict, default_canvas_size: dict) -> bytes:
             for el in info['bg_elements']:
                 if _is_decorative_bg_layer(el):
                     try:
-                        _add_element(slide, el, page_cs)
+                        _add_element(slide, el, page_cs, font_name_map)
                     except Exception:
                         pass
         else:
@@ -83,16 +95,25 @@ def build_pptx(pages: dict, default_canvas_size: dict) -> bytes:
             for el in info['bg_elements']:
                 if _is_decorative_bg_layer(el):
                     try:
-                        _add_element(slide, el, page_cs)
+                        _add_element(slide, el, page_cs, font_name_map)
                     except Exception:
                         pass
 
         # Add content elements
         for el in info['content_elements']:
             try:
-                _add_element(slide, el, page_cs)
+                _add_element(slide, el, page_cs, font_name_map)
             except Exception as e:
                 print(f'PPT export: element {el.get("id")} skipped: {e}')
+
+    # ── Embed fonts into PPTX package ──
+    if font_records:
+        try:
+            from font_embedder import embed_fonts_in_pptx
+            embed_fonts_in_pptx(prs, font_records)
+            print(f'Font embed: embedded {len(font_records)} fonts')
+        except Exception as e:
+            print(f'Font embed: embedding failed: {e}')
 
     buf = io.BytesIO()
     prs.save(buf)
@@ -332,7 +353,7 @@ def _lock_shape(shape):
         pass
 
 
-def _add_element(slide, el: dict, cs: dict):
+def _add_element(slide, el: dict, cs: dict, font_name_map: dict = None):
     x = _px(el.get('x', 0))
     y = _px(el.get('y', 0))
     w = _px(el.get('width', 0))
@@ -346,7 +367,7 @@ def _add_element(slide, el: dict, cs: dict):
     shape_count_before = len(slide.shapes)
 
     if el_type == 'text':
-        _add_text(slide, el, x, y, w, h, rotation)
+        _add_text(slide, el, x, y, w, h, rotation, font_name_map)
     elif el_type == 'image':
         _add_image(slide, el, x, y, w, h, rotation)
     elif el_type == 'shape':
@@ -362,7 +383,7 @@ def _add_element(slide, el: dict, cs: dict):
             _lock_shape(slide.shapes[si])
 
 
-def _add_text(slide, el: dict, x, y, w, h, rotation):
+def _add_text(slide, el: dict, x, y, w, h, rotation, font_name_map: dict = None):
     s = el.get('styles', {})
     content = el.get('content', '')
 
@@ -485,6 +506,7 @@ def _add_text(slide, el: dict, x, y, w, h, rotation):
             opts['bold'] = True
         if s.get('fontStyle') == 'italic':
             opts['italic'] = True
+        opts['_weight'] = effective_weight
         runs_data = [{'text': content, 'opts': opts}]
 
     # text alignment
@@ -507,10 +529,10 @@ def _add_text(slide, el: dict, x, y, w, h, rotation):
         except (ValueError, TypeError):
             pass
 
-    _populate_text_frame(tf, runs_data, align, line_spacing)
+    _populate_text_frame(tf, runs_data, align, line_spacing, font_name_map)
 
 
-def _populate_text_frame(tf, runs_data: list, align, line_spacing):
+def _populate_text_frame(tf, runs_data: list, align, line_spacing, font_name_map: dict = None):
     # split runs by newlines into paragraphs
     paragraphs = [[]]
     for run in runs_data:
@@ -558,6 +580,10 @@ def _populate_text_frame(tf, runs_data: list, align, line_spacing):
                 r.font.size = Pt(font_size)
             font_face = opts.get('fontFace')
             if font_face:
+                # Map (family, weight) to embedded font typeface if available
+                if font_name_map:
+                    weight = opts.get('_weight', 700 if opts.get('bold') else 400)
+                    font_face = font_name_map.get((font_face, weight), font_face)
                 r.font.name = font_face
             # letter-spacing → OOXML spc (in 1/100 pt)
             letter_spacing = opts.get('letterSpacing')

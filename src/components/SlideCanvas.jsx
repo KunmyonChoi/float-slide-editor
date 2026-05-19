@@ -118,15 +118,58 @@ export default function SlideCanvas() {
     }
   }, [selectedId, mode, ipm, frh, rsh, slideHtml])
 
-  // ESC 키 → 발표 모드 종료
+  // HTML 모드 발표: ESC 종료 + 키보드/마우스휠 페이지 네비게이션
+  const viewMode = useFlatStore(s => s.viewMode)
   useEffect(() => {
-    if (mode !== 'present') return
+    if (mode !== 'present' || viewMode !== 'html') return
+
+    const { navigatePage, navigateDirection, isReveal } = useEditorStore.getState()
+
     const onKey = (e) => {
-      if (e.key === 'Escape') exitPresentation()
+      if (e.key === 'Escape') { exitPresentation(); return }
+      if (e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === 'PageDown' || e.key === ' ') {
+        e.preventDefault()
+        if (isReveal && e.key === 'ArrowRight') navigateDirection('right')
+        else if (isReveal && e.key === 'ArrowDown') navigateDirection('down')
+        else navigatePage(1)
+      } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp' || e.key === 'PageUp') {
+        e.preventDefault()
+        if (isReveal && e.key === 'ArrowLeft') navigateDirection('left')
+        else if (isReveal && e.key === 'ArrowUp') navigateDirection('up')
+        else navigatePage(-1)
+      }
     }
+
+    const onWheel = (e) => {
+      e.preventDefault()
+      if (e.deltaY > 0) navigatePage(1)
+      else if (e.deltaY < 0) navigatePage(-1)
+    }
+
+    const onClick = (e) => {
+      const rect = stageRef.current?.getBoundingClientRect()
+      if (!rect) return
+      const x = e.clientX - rect.left
+      if (x < rect.width * 0.25) navigatePage(-1)
+      else navigatePage(1)
+    }
+
     window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [mode, exitPresentation])
+    window.addEventListener('wheel', onWheel, { passive: false })
+    stageRef.current?.addEventListener('click', onClick)
+    const stageEl = stageRef.current
+
+    // iframe 내부에도 키 이벤트 리스닝 (iframe에 포커스가 있을 때)
+    const iframeDoc = iframeRef.current?.contentDocument
+    iframeDoc?.addEventListener('keydown', onKey)
+
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      window.removeEventListener('wheel', onWheel)
+      stageEl?.removeEventListener('click', onClick)
+      iframeDoc?.removeEventListener('keydown', onKey)
+    }
+  }, [mode, viewMode, exitPresentation])
 
   // iframe 로드 후 슬라이드 치수 감지 (overflow:hidden + 명시적 크기인 경우)
   const handleIframeLoad = useCallback(() => {
@@ -144,6 +187,16 @@ export default function SlideCanvas() {
         setDetectedSize({ w, h })
       }
     } catch { /* sandbox 제한 무시 */ }
+
+    // flat 모드 기본: iframe 로드 후 자동 flat 추출 트리거
+    setTimeout(() => {
+      const flatState = useFlatStore.getState()
+      if (flatState.viewMode === 'flat' || flatState.viewMode === 'split') {
+        const edState = useEditorStore.getState()
+        const pageKey = `${edState.currentPage}-0`
+        flatState.extractFromIframe(edState.iframeRef, pageKey)
+      }
+    }, 500)
   }, [])
 
   /** scale 재계산 */
@@ -264,7 +317,6 @@ export default function SlideCanvas() {
   }, [dzm, insertElement])
 
   // ── 스타일 분기 ────────────────────────────────────────────
-  const viewMode = useFlatStore(s => s.viewMode)
   // flat/split 모드 발표 시 FlatPresenter가 처리 — SlideCanvas는 일반 모드 유지
   const isPresent = mode === 'present' && viewMode === 'html'
 

@@ -1,5 +1,6 @@
 import { useCallback, useEffect } from 'react'
 import { useEditorStore } from '../store/editorStore'
+import { useFlatStore } from '../store/flatStore'
 
 /**
  * PageBar
@@ -15,7 +16,8 @@ export default function PageBar() {
   // 전역 키보드: PageUp/PageDown + reveal.js 화살표
   useEffect(() => {
     const onKeyDown = (e) => {
-      if (useEditorStore.getState().mode === 'present') return // 발표 모드에서는 각 Presenter가 처리
+      if (useEditorStore.getState().mode === 'present') return
+      if (useFlatStore.getState()._preloading) return // 프리로드 중 네비게이션 차단
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return
       if (e.target.tagName === 'IFRAME') return
 
@@ -41,15 +43,19 @@ export default function PageBar() {
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [navigatePage, navigateDirection])
 
+  const preloading = useFlatStore(s => s._preloading)
+
   const handleLeft = useCallback(() => {
+    if (preloading) return
     if (isReveal) navigateDirection('left')
     else navigatePage(-1)
-  }, [isReveal, navigateDirection, navigatePage])
+  }, [isReveal, navigateDirection, navigatePage, preloading])
 
   const handleRight = useCallback(() => {
+    if (preloading) return
     if (isReveal) navigateDirection('right')
     else navigatePage(1)
-  }, [isReveal, navigateDirection, navigatePage])
+  }, [isReveal, navigateDirection, navigatePage, preloading])
 
   const handleUp = useCallback(() => navigateDirection('up'), [navigateDirection])
   const handleDown = useCallback(() => navigateDirection('down'), [navigateDirection])

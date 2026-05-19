@@ -15,10 +15,15 @@ export default function FlatPresenter() {
   const [allPages, setAllPages] = useState(null)
   const [loading, setLoading] = useState(true)
 
-  // 미방문 페이지 포함 전체 페이지 비동기 추출
+  // 미방문 페이지 포함 전체 페이지 비동기 추출 (프리로드 완료 대기)
   useEffect(() => {
     let cancelled = false
     ;(async () => {
+      // 프리로드 중이면 완료될 때까지 대기
+      while (useFlatStore.getState()._preloading) {
+        await new Promise(r => setTimeout(r, 200))
+        if (cancelled) return
+      }
       const { pages } = await useFlatStore.getState().getAllPagesAsync()
       if (!cancelled) {
         setAllPages(pages)

@@ -28,7 +28,7 @@ export default function FlatCanvas() {
           removeSelectedElements, updateFlatElement, undo, redo, viewMode, reExtract,
           fontImports, copyElement, cutElement, pasteElement, duplicateElement, selectAllFlats,
           bringForward, sendBackward, bringToFront, sendToBack, setCroppingFlat,
-          addFlatElement, setCanvasRef } = useFlatStore()
+          addFlatElement, setCanvasRef, preloadProgress } = useFlatStore()
   const [dragOver, setDragOver] = useState(false)
   const { currentPage, revealV } = useEditorStore()
 
@@ -174,6 +174,18 @@ export default function FlatCanvas() {
     prevPage.current = key
     if (viewMode === 'split' || viewMode === 'flat') reExtract(key)
   }, [currentPage, revealV, viewMode, reExtract])
+
+  // 첫 추출 완료 후 모든 페이지를 백그라운드 프리로드
+  const preloadDone = useRef(false)
+  useEffect(() => {
+    if (preloadDone.current || flatElements.length === 0) return
+    preloadDone.current = true
+    // 현재 페이지 렌더링 후 약간 지연하여 프리로드 시작
+    const timer = setTimeout(() => {
+      useFlatStore.getState().preloadAllPages()
+    }, 2000)
+    return () => clearTimeout(timer)
+  }, [flatElements.length])
 
   // 키보드 단축키: Delete, 화살표 이동, Ctrl+Z/Y
   // 페이지 네비게이션(PageUp/PageDown)은 PageBar에서 전역 처리
@@ -507,12 +519,50 @@ export default function FlatCanvas() {
           position: 'absolute', inset: 0,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
         }}>
+          <div style={{ textAlign: 'center', color: '#64748b', fontSize: 14 }}>
+            <p style={{ marginBottom: 4 }}>
+              {preloadProgress
+                ? `변환 중... (${preloadProgress.current}/${preloadProgress.total})`
+                : 'HTML 슬라이드를 로드하면 자동으로 변환됩니다'}
+            </p>
+            {preloadProgress && (
+              <div style={{ width: 200, height: 4, background: '#1e293b', borderRadius: 2, margin: '8px auto' }}>
+                <div style={{
+                  width: `${Math.round((preloadProgress.current / preloadProgress.total) * 100)}%`,
+                  height: '100%', background: '#3b82f6', borderRadius: 2,
+                  transition: 'width 0.3s ease',
+                }} />
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* 프리로드 진행 오버레이 — 인터랙션 차단 */}
+      {preloadProgress && (
+        <div style={{
+          position: 'absolute', inset: 0, zIndex: 200,
+          background: 'rgba(15,23,42,0.6)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          backdropFilter: 'blur(2px)',
+        }}>
           <div style={{
-            textAlign: 'center', color: '#64748b', fontSize: 14,
+            background: 'rgba(15,23,42,0.95)', padding: '20px 32px', borderRadius: 10,
+            textAlign: 'center', color: '#e2e8f0',
+            boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
           }}>
-            <p style={{ marginBottom: 4 }}>Flat 뷰에 표시할 요소가 없습니다</p>
-            <p style={{ fontSize: 12, color: '#475569' }}>
-              HTML 뷰에서 슬라이드를 로드한 후 Flat 뷰로 전환하세요
+            <p style={{ fontSize: 14, marginBottom: 8 }}>
+              슬라이드 변환 중... ({preloadProgress.current}/{preloadProgress.total})
+            </p>
+            <div style={{ width: 200, height: 4, background: '#1e293b', borderRadius: 2 }}>
+              <div style={{
+                width: `${Math.round((preloadProgress.current / preloadProgress.total) * 100)}%`,
+                height: '100%', background: '#3b82f6', borderRadius: 2,
+                transition: 'width 0.3s ease',
+              }} />
+            </div>
+            <p style={{ fontSize: 11, color: '#64748b', marginTop: 8 }}>
+              모든 페이지를 변환하고 있습니다
             </p>
           </div>
         </div>

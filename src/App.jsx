@@ -26,9 +26,10 @@ export default function App() {
       <EditToolbar />
       <div className="flex flex-1 overflow-hidden">
         {/* SlideCanvas는 항상 마운트 유지 — iframe 재로드 방지 */}
+        {/* 숨길 때도 원래 크기 유지 (flat 추출 시 정확한 레이아웃 필요) */}
         <div
           className={isSplit ? 'flex flex-col flex-1 border-r border-white/10' : 'flex flex-col flex-1'}
-          style={showSlide ? undefined : { position: 'absolute', left: -9999, width: 1, height: 1, overflow: 'hidden' }}
+          style={showSlide ? undefined : { position: 'fixed', left: -9999, top: 0, width: '100vw', height: '100vh', overflow: 'hidden', pointerEvents: 'none' }}
         >
           <SlideCanvas />
         </div>

@@ -15,13 +15,15 @@ export const useFlatStore = create((set, get) => ({
   /** 인라인 편집 중인 flat 요소 ID */
   editingFlatId: null,
   /** 뷰 모드: 'html' | 'flat' | 'split' */
-  viewMode: 'html',
+  viewMode: 'flat',
   /** 캔버스 크기 */
   canvasSize: { w: 1280, h: 800 },
   /** 폰트 임포트 CSS (원본 문서에서 추출) */
   fontImports: [],
   /** 추출 시 사용한 iframeRef 캐시 (페이지 변경 시 재추출용) */
   _iframeRef: null,
+  /** 프리로드 진행 상태: { current: N, total: N } | null */
+  preloadProgress: null,
 
   canUndo: false,
   canRedo: false,
@@ -165,6 +167,62 @@ export const useFlatStore = create((set, get) => ({
 
   setViewMode(mode) {
     set({ viewMode: mode })
+  },
+
+  /** 모든 페이지를 백그라운드로 미리 flat 변환 (로딩 시 자동 호출) */
+  async preloadAllPages() {
+    if (get()._preloading) return
+    set({ _preloading: true })
+
+    try {
+      const editorStore = (await import('./editorStore')).useEditorStore
+      const { totalPages, currentPage, iframeRef } = editorStore.getState()
+      const { extractFlatElements } = await import('../core/FlatExtractor')
+
+      if (!iframeRef?.current || totalPages <= 1) {
+        set({ _preloading: false, preloadProgress: null })
+        return
+      }
+
+      get()._saveCurrentPage()
+      const origPage = currentPage
+      let done = Object.keys(_pageCache).length
+
+      set({ preloadProgress: { current: done, total: totalPages } })
+
+      for (let i = 0; i < totalPages; i++) {
+        const pageKey = `${i}-0`
+        if (_pageCache[pageKey]) continue
+
+        iframeRef.current.contentWindow.postMessage({ type: 'fe:navigate', page: i }, '*')
+        await new Promise(r => setTimeout(r, 400))
+
+        try {
+          const result = extractFlatElements(iframeRef)
+          _pageCache[pageKey] = {
+            elements: result.elements,
+            canvasSize: result.canvasSize,
+            fontImports: result.fontImports || [],
+            history: { stack: [], pointer: -1 },
+          }
+        } catch (e) {
+          console.warn(`Preload page ${pageKey} failed:`, e.message)
+        }
+
+        done++
+        set({ preloadProgress: { current: done, total: totalPages } })
+      }
+
+      // 원래 페이지로 복원
+      iframeRef.current.contentWindow.postMessage({ type: 'fe:navigate', page: origPage }, '*')
+      await new Promise(r => setTimeout(r, 300))
+
+      console.log(`Preload: ${totalPages} pages cached`)
+    } catch (e) {
+      console.warn('Preload failed:', e.message)
+    } finally {
+      set({ _preloading: false, preloadProgress: null })
+    }
   },
 
   setSelectedFlat(id) {
