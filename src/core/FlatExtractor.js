@@ -1226,37 +1226,70 @@ export function extractFlatElements(iframeRef) {
     return false
   }
 
-  // 배경 추출: 활성 슬라이드가 있으면 슬라이드 영역의 배경을 우선 사용
-  // (body 배경이 프레젠테이션 외곽 장식이고, 슬라이드 자체는 다른 배경일 수 있음)
+  // 배경 추출: 슬라이드 배경 체인 탐색 → 배경 요소로 변환 (잠금, z=0)
+  // 활성 슬라이드 → 부모 체인 순으로 배경색/그래디언트를 찾는다.
+  // 여러 레이어(body 배경 + 슬라이드 배경)가 있으면 각각 별도 요소로 추출한다.
   {
-    let bgStyles = null
-    if (revealPresent) {
-      let bgNode = revealPresent
-      while (bgNode && bgNode !== doc.documentElement) {
-        const bgCs = win.getComputedStyle(bgNode)
-        const bg = bgCs.backgroundColor
-        if (bg && bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent') {
-          bgStyles = extractStyles(bgCs, bgNode)
-          break
-        }
-        bgNode = bgNode.parentElement
+    const bgLayers = []
+
+    // 슬라이드 컨테이너에서 배경 체인 탐색
+    const bgRoot = revealPresent || doc.body
+    let bgNode = bgRoot
+    while (bgNode && bgNode !== doc.documentElement) {
+      const bgCs = win.getComputedStyle(bgNode)
+      const bg = bgCs.backgroundColor
+      const bgImg = bgCs.backgroundImage
+      const hasBg = bg && bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent'
+      const hasBgImg = bgImg && bgImg !== 'none'
+      if (hasBg || hasBgImg) {
+        bgLayers.push(extractStyles(bgCs, bgNode))
       }
+      bgNode = bgNode.parentElement
     }
-    if (!bgStyles && isVisuallyMeaningful(bodyCS)) {
-      bgStyles = extractStyles(bodyCS, doc.body)
+
+    // body 배경 (위에서 못 잡힌 경우)
+    if (bgLayers.length === 0 && isVisuallyMeaningful(bodyCS)) {
+      bgLayers.push(extractStyles(bodyCS, doc.body))
     }
-    if (bgStyles && canvasW > 0) {
+
+    // 배경 레이어를 역순으로 (가장 먼 조상부터) 요소로 추가
+    for (let i = bgLayers.length - 1; i >= 0; i--) {
       result.push({
         id: nextFlatId(),
-        sourceId: '__body',
+        sourceId: '__bg',
         type: 'shape',
-        x: 0,
-        y: 0,
+        x: 0, y: 0,
         width: canvasW,
         height: canvasH,
         zIndex: zCounter++,
         content: '',
-        styles: bgStyles,
+        locked: true,
+        styles: bgLayers[i],
+      })
+    }
+
+    // 배경이 전혀 없으면 흰색 기본 배경 생성
+    if (bgLayers.length === 0 && canvasW > 0) {
+      result.push({
+        id: nextFlatId(),
+        sourceId: '__bg',
+        type: 'shape',
+        x: 0, y: 0,
+        width: canvasW,
+        height: canvasH,
+        zIndex: zCounter++,
+        content: '',
+        locked: true,
+        styles: {
+          backgroundColor: 'rgb(255, 255, 255)',
+          backgroundImage: 'none',
+          borderRadius: '0px',
+          border: '0px none',
+          borderTop: '0px none', borderRight: '0px none',
+          borderBottom: '0px none', borderLeft: '0px none',
+          boxShadow: 'none',
+          opacity: '1',
+        },
       })
     }
   }
@@ -1553,9 +1586,9 @@ export function extractFlatElements(iframeRef) {
   // 추출된 요소의 font-family에서 누락된 웹폰트 감지 → Google Fonts 임포트 자동 추가
   addMissingFontImports(result, fontImports)
 
-  // 배경 요소 자동 잠금
+  // 배경 요소 자동 잠금 (추출 시 locked:true 누락된 경우 보완)
   for (const el of result) {
-    if (el.type === 'shape' && !el.content
+    if (!el.locked && el.type === 'shape' && !el.content
       && Math.abs(el.width - canvasSize.w) < 2 && Math.abs(el.height - canvasSize.h) < 2
       && Math.abs(el.x) < 2 && Math.abs(el.y) < 2) {
       el.locked = true

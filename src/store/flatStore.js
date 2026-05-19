@@ -5,6 +5,15 @@ import { HistoryStack } from '../core/HistoryStack'
 const _history = new HistoryStack()
 const _pageCache = {}   // { [pageKey]: { elements, canvasSize, fontImports, history } }
 let _currentPageKey = null
+
+/** 캐시 키를 페이지 순서로 정렬하여 반환 */
+function _getSortedPageKeys() {
+  return Object.keys(_pageCache).sort((a, b) => {
+    const [aP, aV] = a.split('-').map(Number)
+    const [bP, bV] = b.split('-').map(Number)
+    return aP - bP || aV - bV
+  })
+}
 let _pendingEditCommit = null  // 편집 중 unmount 전 커밋용 콜백
 
 export const useFlatStore = create((set, get) => ({
@@ -24,6 +33,10 @@ export const useFlatStore = create((set, get) => ({
   _iframeRef: null,
   /** 프리로드 진행 상태: { current: N, total: N } | null */
   preloadProgress: null,
+  /** flat 모드 페이지 수 (캐시 기준) */
+  flatPageCount: 0,
+  /** flat 모드 현재 페이지 인덱스 (0-based) */
+  flatCurrentPage: 0,
 
   canUndo: false,
   canRedo: false,
@@ -50,9 +63,15 @@ export const useFlatStore = create((set, get) => ({
     _pendingEditCommit = fn
   },
 
+  /** 페이지 카운트/인덱스 갱신 (내부용) */
+  _syncPageInfo() {
+    const keys = _getSortedPageKeys()
+    const idx = _currentPageKey ? keys.indexOf(_currentPageKey) : 0
+    set({ flatPageCount: keys.length, flatCurrentPage: Math.max(idx, 0) })
+  },
+
   /** 현재 페이지 상태를 캐시에 저장 (내부용) */
   _saveCurrentPage() {
-    // 편집 중이면 먼저 커밋 (DOM 콘텐츠 → store 반영)
     if (_pendingEditCommit) {
       _pendingEditCommit()
       _pendingEditCommit = null
@@ -64,6 +83,7 @@ export const useFlatStore = create((set, get) => ({
       fontImports: get().fontImports,
       history: _history.getState(),
     }
+    get()._syncPageInfo()
   },
 
   /** 캐시에서 페이지 복원 (내부용). 성공 시 true */
@@ -81,6 +101,7 @@ export const useFlatStore = create((set, get) => ({
       canUndo: _history.canUndo,
       canRedo: _history.canRedo,
     })
+    get()._syncPageInfo()
     return true
   },
 
@@ -109,6 +130,7 @@ export const useFlatStore = create((set, get) => ({
       canUndo: false,
       canRedo: false,
     })
+    get()._syncPageInfo()
   },
 
   /** 현재 페이지 강제 재추출 (캐시 무시) */
@@ -218,11 +240,78 @@ export const useFlatStore = create((set, get) => ({
       await new Promise(r => setTimeout(r, 300))
 
       console.log(`Preload: ${totalPages} pages cached`)
+      get()._syncPageInfo()
     } catch (e) {
       console.warn('Preload failed:', e.message)
     } finally {
       set({ _preloading: false, preloadProgress: null })
     }
+  },
+
+  // ── Flat 모드 페이지 관리 ──
+
+  /** 현재 페이지 뒤에 빈 페이지 추가 */
+  addPage() {
+    get()._saveCurrentPage()
+    const keys = _getSortedPageKeys()
+    // 새 페이지 번호 = 마지막 + 1
+    const lastIdx = keys.length > 0
+      ? Math.max(...keys.map(k => parseInt(k.split('-')[0])))
+      : -1
+    const newKey = `${lastIdx + 1}-0`
+    const cs = get().canvasSize
+    _pageCache[newKey] = {
+      elements: [],
+      canvasSize: { ...cs },
+      fontImports: [],
+      history: { stack: [], pointer: -1 },
+    }
+    // 새 페이지로 이동
+    get()._restoreFromCache(newKey)
+    // iframe도 동기 (editorStore 페이지 수 갱신)
+    get()._syncPageInfo()
+  },
+
+  /** 현재 페이지 삭제 (최소 1페이지 유지) */
+  deletePage() {
+    const keys = _getSortedPageKeys()
+    if (keys.length <= 1) return // 마지막 페이지는 삭제 불가
+
+    const idx = keys.indexOf(_currentPageKey)
+    delete _pageCache[_currentPageKey]
+
+    // 삭제 후 키 재정렬 (0-0, 1-0, 2-0, ...)
+    const remaining = _getSortedPageKeys()
+    const reindexed = {}
+    remaining.forEach((oldKey, i) => {
+      const newKey = `${i}-0`
+      reindexed[newKey] = _pageCache[oldKey]
+      delete _pageCache[oldKey]
+    })
+    for (const k in reindexed) _pageCache[k] = reindexed[k]
+
+    // 인접 페이지로 이동
+    const newKeys = _getSortedPageKeys()
+    const targetKey = newKeys[Math.min(idx, newKeys.length - 1)]
+    get()._restoreFromCache(targetKey)
+    get()._syncPageInfo()
+  },
+
+  /** flat 모드 내 페이지 이동 (iframe 불필요) */
+  goToFlatPage(pageIndex) {
+    get()._saveCurrentPage()
+    const keys = _getSortedPageKeys()
+    if (pageIndex < 0 || pageIndex >= keys.length) return
+    get()._restoreFromCache(keys[pageIndex])
+  },
+
+  /** flat 모드 페이지 delta 이동 */
+  navigateFlatPage(delta) {
+    const keys = _getSortedPageKeys()
+    const idx = keys.indexOf(_currentPageKey)
+    const newIdx = idx + delta
+    if (newIdx < 0 || newIdx >= keys.length) return
+    get().goToFlatPage(newIdx)
   },
 
   setSelectedFlat(id) {

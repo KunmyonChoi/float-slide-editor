@@ -196,7 +196,7 @@ export default function SlideCanvas() {
         const pageKey = `${edState.currentPage}-0`
         flatState.extractFromIframe(edState.iframeRef, pageKey)
       }
-    }, 500)
+    }, 100)
   }, [])
 
   /** scale 재계산 */

@@ -41,10 +41,12 @@ function FloatingShell({ children, showHtml }) {
   const floatingPos = useFlatStore(s => s.floatingPos)
   const setFloatingPos = useFlatStore(s => s.setFloatingPos)
 
-  // 선택 여부로 가시성 결정
+  // 선택 여부로 가시성 결정 (flat 모드: 선택 없어도 배경 패널 표시)
   const selectedId = useEditorStore(s => s.selectedId)
   const selectedFlatIds = useFlatStore(s => s.selectedFlatIds)
-  const hasSelection = showHtml ? !!selectedId : selectedFlatIds.length > 0
+  const viewMode = useFlatStore(s => s.viewMode)
+  const isFlatMode = viewMode === 'flat' || viewMode === 'split'
+  const hasSelection = isFlatMode || (showHtml ? !!selectedId : selectedFlatIds.length > 0)
 
   useEffect(() => {
     const onMove = (e) => {
@@ -110,7 +112,10 @@ function FloatingShell({ children, showHtml }) {
 function DockedShell({ children }) {
   const selectedId = useEditorStore(s => s.selectedId)
   const selectedFlatIds = useFlatStore(s => s.selectedFlatIds)
-  const hasSelection = !!selectedId || selectedFlatIds.length > 0
+  const viewMode = useFlatStore(s => s.viewMode)
+  const isFlatMode = viewMode === 'flat' || viewMode === 'split'
+  // Flat 모드: 선택 없어도 슬라이드 배경 패널 표시
+  const showContent = isFlatMode || !!selectedId || selectedFlatIds.length > 0
 
   return (
     <div
@@ -122,7 +127,7 @@ function DockedShell({ children }) {
         borderLeft: '1px solid rgba(255,255,255,0.08)',
       }}
     >
-      {hasSelection ? children : (
+      {showContent ? children : (
         <div className="flex items-center justify-center h-full">
           <span className="text-xs text-slate-600">요소를 선택하세요</span>
         </div>

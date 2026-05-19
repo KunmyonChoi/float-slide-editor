@@ -112,7 +112,16 @@ export default function FlatPresenter() {
       }
     }
     window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
+
+    // iframe에 포커스가 남아있을 수 있으므로 iframe 내부에도 리스닝
+    const iframe = useEditorStore.getState().iframeRef?.current
+    const iframeDoc = iframe?.contentDocument
+    iframeDoc?.addEventListener('keydown', onKeyDown)
+
+    return () => {
+      window.removeEventListener('keydown', onKeyDown)
+      iframeDoc?.removeEventListener('keydown', onKeyDown)
+    }
   }, [exitPresentation, goNext, goPrev])
 
   // 클릭: 좌측 1/4 → 이전, 우측 3/4 → 다음

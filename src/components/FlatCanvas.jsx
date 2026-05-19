@@ -180,10 +180,10 @@ export default function FlatCanvas() {
   useEffect(() => {
     if (preloadDone.current || flatElements.length === 0) return
     preloadDone.current = true
-    // 현재 페이지 렌더링 후 약간 지연하여 프리로드 시작
+    // 현재 페이지 렌더링 후 프리로드 시작
     const timer = setTimeout(() => {
       useFlatStore.getState().preloadAllPages()
-    }, 2000)
+    }, 300)
     return () => clearTimeout(timer)
   }, [flatElements.length])
 
@@ -233,6 +233,13 @@ export default function FlatCanvas() {
         return
       }
 
+      // F5 → 발표 모드
+      if (e.key === 'F5') {
+        e.preventDefault()
+        useEditorStore.getState().enterPresentation()
+        return
+      }
+
       if ((e.ctrlKey || e.metaKey) && !e.altKey) {
         if (e.code === 'KeyZ' && !e.shiftKey) { e.preventDefault(); undo(); return }
         if (e.code === 'KeyZ' && e.shiftKey)  { e.preventDefault(); redo(); return }
@@ -247,6 +254,62 @@ export default function FlatCanvas() {
         if (e.code === 'BracketLeft' && !e.shiftKey && singleId)  { sendBackward(singleId); return }
         if (e.code === 'BracketRight' && e.shiftKey && singleId)  { bringToFront(singleId); return }
         if (e.code === 'BracketLeft' && e.shiftKey && singleId)   { sendToBack(singleId); return }
+
+        // ── 텍스트 서식 단축키 (선택된 text 요소에 적용) ──
+        if (hasSelection) {
+          const els = useFlatStore.getState().flatElements
+          const textEls = selectedFlatIds
+            .map(id => els.find(el => el.id === id))
+            .filter(el => el && el.type === 'text')
+
+          if (textEls.length > 0) {
+            // Ctrl+B — 굵게 토글
+            if (e.code === 'KeyB') {
+              e.preventDefault()
+              for (const el of textEls) {
+                const isBold = parseInt(el.styles?.fontWeight || '400') >= 700
+                updateFlatElement(el.id, { styles: { fontWeight: isBold ? '400' : '700' } })
+              }
+              return
+            }
+            // Ctrl+I — 이탈릭 토글
+            if (e.code === 'KeyI') {
+              e.preventDefault()
+              for (const el of textEls) {
+                const isItalic = el.styles?.fontStyle === 'italic'
+                updateFlatElement(el.id, { styles: { fontStyle: isItalic ? 'normal' : 'italic' } })
+              }
+              return
+            }
+            // Ctrl+U — 밑줄 토글
+            if (e.code === 'KeyU') {
+              e.preventDefault()
+              for (const el of textEls) {
+                const hasUnderline = (el.styles?.textDecoration || '').includes('underline')
+                updateFlatElement(el.id, { styles: { textDecoration: hasUnderline ? 'none' : 'underline' } })
+              }
+              return
+            }
+            // Ctrl+Shift+> (.) — 폰트 크기 +2px
+            if (e.shiftKey && (e.code === 'Period')) {
+              e.preventDefault()
+              for (const el of textEls) {
+                const cur = parseFloat(el.styles?.fontSize || '16')
+                updateFlatElement(el.id, { styles: { fontSize: `${cur + 2}px` } })
+              }
+              return
+            }
+            // Ctrl+Shift+< (,) — 폰트 크기 -2px (최소 8px)
+            if (e.shiftKey && (e.code === 'Comma')) {
+              e.preventDefault()
+              for (const el of textEls) {
+                const cur = parseFloat(el.styles?.fontSize || '16')
+                updateFlatElement(el.id, { styles: { fontSize: `${Math.max(8, cur - 2)}px` } })
+              }
+              return
+            }
+          }
+        }
       }
 
       // 화살표 이동 — 다중 선택 지원 (잠금 요소 제외)
