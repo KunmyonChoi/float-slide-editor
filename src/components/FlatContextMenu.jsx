@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useFlatStore } from '../store/flatStore'
 import { nextFlatId } from '../core/FlatExtractor'
+import { BlobStore } from '../core/BlobStore'
 import { computeAlignmentChanges, computeDistributionChanges } from '../core/SnapEngine'
 
 const DEFAULT_STYLES = {
@@ -29,6 +30,11 @@ const ELEMENT_PRESETS = {
     type: 'shape', width: 100, height: 100,
     content: '', isRich: false, merged: false,
     styles: { ...DEFAULT_STYLES, backgroundColor: '#e2e8f0', borderRadius: '50%' },
+  },
+  lineH: {
+    type: 'shape', width: 200, height: 2,
+    content: '', isRich: false, merged: false,
+    styles: { ...DEFAULT_STYLES, backgroundColor: '#94a3b8' },
   },
 }
 
@@ -213,9 +219,47 @@ export default function FlatContextMenu({ x, y, canvasX, canvasY, onClose }) {
       case 'insertText': insertElement('text'); break
       case 'insertRect': insertElement('rect'); break
       case 'insertCircle': insertElement('circle'); break
+      case 'insertLine': insertElement('lineH'); break
       case 'insertImage': fileInputRef.current?.click(); return // onClose 호출하지 않음
       case 'insertVideo': insertVideo(); break
       case 'formatBackground': if (bgElement) setSelectedFlat(bgElement.id); break
+      case 'convertToBg': {
+        // 선택된 요소를 배경 레이어로 변환
+        for (const el of selectedEls) {
+          if (el.type === 'text') continue // 텍스트는 변환 불가
+          const minZ = Math.min(...flatElements.map(e => e.zIndex)) - 1
+          const changes = {
+            x: 0, y: 0,
+            width: canvasSize.w, height: canvasSize.h,
+            zIndex: minZ,
+            locked: true,
+            sourceId: '__bg',
+          }
+          if (el.type === 'image') {
+            // 이미지 → shape(backgroundImage)로 변환
+            const imgSrc = el.content
+            changes.type = 'shape'
+            changes.content = ''
+            changes.styles = {
+              ...(el.styles || {}),
+              backgroundImage: `url(${imgSrc})`,
+              backgroundSize: 'cover',
+              backgroundPosition: 'center',
+              borderRadius: '0px',
+              border: '0px none',
+            }
+          } else {
+            // shape → 배경으로 (크기/위치/잠금만 변경)
+            changes.styles = {
+              ...(el.styles || {}),
+              borderRadius: '0px',
+              border: '0px none',
+            }
+          }
+          updateFlatElement(el.id, changes)
+        }
+        break
+      }
       case 'lock': {
         const locked = !allLocked
         if (selectedFlatIds.length === 1) {
@@ -263,6 +307,8 @@ export default function FlatContextMenu({ x, y, canvasX, canvasY, onClose }) {
     { id: 'dup', label: '복제', shortcut: 'Ctrl+D', action: 'duplicate' },
     { id: 'del', label: '삭제', shortcut: 'Delete', action: 'delete' },
     { id: 'lock', label: allLocked ? '잠금 해제' : '잠금', action: 'lock' },
+    { id: 'toBg', label: '배경으로 변환', action: 'convertToBg',
+      disabled: selectedEls.every(e => e.type === 'text') },
     { id: 'sep1', type: 'separator' },
     { id: 'zorder', label: '순서', submenu: 'zorder', disabled: !singleId,
       children: [
@@ -299,6 +345,7 @@ export default function FlatContextMenu({ x, y, canvasX, canvasY, onClose }) {
         { id: 'itext', label: '텍스트', action: 'insertText' },
         { id: 'irect', label: '사각형', action: 'insertRect' },
         { id: 'icircle', label: '원', action: 'insertCircle' },
+        { id: 'iline', label: '선', action: 'insertLine' },
         { id: 'isep', type: 'separator' },
         { id: 'iimage', label: '이미지', action: 'insertImage' },
         { id: 'ivideo', label: '영상', action: 'insertVideo' },

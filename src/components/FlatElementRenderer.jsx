@@ -168,6 +168,38 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
   }
 
   if (type === 'video') {
+    const isPresent = useEditorStore.getState().mode === 'present'
+    const autoplay = element.autoplay ?? false
+    const loop = element.loop ?? false
+    const muted = element.muted ?? true
+    const hideControls = element.hideControls ?? false
+
+    // YouTube/Vimeo embed URL에 파라미터 추가
+    let embedSrc = content
+    if (!BlobStore.isIdbRef(content)) {
+      const params = []
+      if (isPresent && autoplay) params.push('autoplay=1')
+      if (muted) params.push('mute=1')
+      if (loop) {
+        params.push('loop=1')
+        // YouTube loop에는 playlist 파라미터 필요
+        const ytMatch = content.match(/youtube\.com\/embed\/([^?&]+)/)
+        if (ytMatch) params.push(`playlist=${ytMatch[1]}`)
+      }
+      if (hideControls) {
+        params.push('controls=0')
+        params.push('showinfo=0')      // 제목 숨기기
+        params.push('rel=0')           // 관련 영상 숨기기
+        params.push('modestbranding=1') // YouTube 로고 최소화
+        params.push('iv_load_policy=3') // 주석(annotations) 숨기기
+        params.push('disablekb=1')      // 키보드 단축키 비활성화
+      }
+      if (params.length > 0) {
+        const sep = content.includes('?') ? '&' : '?'
+        embedSrc = `${content}${sep}${params.join('&')}`
+      }
+    }
+
     return (
       <div style={baseStyle} onMouseDown={handleMouseDown} onClick={handleClick}>
         <div style={{
@@ -177,13 +209,16 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
           opacity: styles.opacity,
         }}>
           {BlobStore.isIdbRef(content)
-            ? <IdbVideo src={content} />
-            : <iframe
-                src={content}
-                style={{ width: '100%', height: '100%', border: 'none', pointerEvents: 'none' }}
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                allowFullScreen
-              />
+            ? <IdbVideo src={content} controls={isPresent && !hideControls} autoplay={isPresent && autoplay} loop={loop} muted={muted} />
+            : <>
+                <iframe
+                  src={isPresent ? embedSrc : content}
+                  style={{ width: '100%', height: '100%', border: 'none', pointerEvents: (isPresent && !hideControls) ? 'auto' : 'none' }}
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                  allowFullScreen
+                />
+                {hideControls && <div style={{ position: 'absolute', inset: 0, zIndex: 1 }} />}
+              </>
           }
         </div>
       </div>
@@ -201,22 +236,66 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
     )
   }
 
-  // shape (시각적 컨테이너)
+  // shape (시각적 컨테이너 — 텍스트 내용 가능)
   const shapeBorderProps = resolveBorders(styles)
+  const bgImage = styles.backgroundImage
+  const hasIdbBg = bgImage && bgImage.includes('idb://')
+
+  const shapeContentStyle = content ? {
+    color: styles.color || '#000',
+    fontSize: styles.fontSize || '16px',
+    fontFamily: styles.fontFamily || 'sans-serif',
+    fontWeight: styles.fontWeight || '400',
+    fontStyle: styles.fontStyle || 'normal',
+    lineHeight: styles.lineHeight || '1.5',
+    textAlign: styles.textAlign || 'center',
+    letterSpacing: styles.letterSpacing,
+    padding: styles.padding || '8px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: styles.textAlign === 'left' ? 'flex-start'
+      : styles.textAlign === 'right' ? 'flex-end' : 'center',
+    width: '100%', height: '100%',
+    overflow: 'hidden',
+    wordBreak: 'break-word',
+  } : undefined
+
+  const shapeStyle = {
+    ...baseStyle,
+    backgroundColor: styles.backgroundColor,
+    backgroundImage: hasIdbBg ? undefined : bgImage,
+    backgroundSize: styles.backgroundSize,
+    backgroundPosition: styles.backgroundPosition,
+    borderRadius: styles.borderRadius,
+    ...shapeBorderProps,
+    boxShadow: styles.boxShadow,
+    opacity: styles.opacity,
+  }
+
+  if (hasIdbBg) {
+    return (
+      <IdbBgShape
+        baseStyle={baseStyle}
+        styles={styles}
+        shapeBorderProps={shapeBorderProps}
+        bgImageStr={bgImage}
+        onMouseDown={handleMouseDown}
+        onClick={handleClick}
+        content={content}
+        contentStyle={shapeContentStyle}
+        isRich={element.isRich}
+      />
+    )
+  }
+
   return (
-    <div
-      style={{
-        ...baseStyle,
-        backgroundColor: styles.backgroundColor,
-        backgroundImage: styles.backgroundImage,
-        borderRadius: styles.borderRadius,
-        ...shapeBorderProps,
-        boxShadow: styles.boxShadow,
-        opacity: styles.opacity,
-      }}
-      onMouseDown={handleMouseDown}
-      onClick={handleClick}
-    />
+    <div style={shapeStyle} onMouseDown={handleMouseDown} onClick={handleClick}>
+      {content && (
+        element.isRich
+          ? <div style={shapeContentStyle} dangerouslySetInnerHTML={{ __html: content }} />
+          : <div style={shapeContentStyle}>{content}</div>
+      )}
+    </div>
   )
 }
 
@@ -274,7 +353,7 @@ function resolveBorders(s) {
 /**
  * IndexedDB 참조 비디오 — blob URL로 <video> 렌더링
  */
-function IdbVideo({ src }) {
+function IdbVideo({ src, controls, autoplay, loop, muted }) {
   const [blobUrl, setBlobUrl] = useState(null)
   useEffect(() => {
     if (!BlobStore.isIdbRef(src)) return
@@ -293,9 +372,57 @@ function IdbVideo({ src }) {
   return (
     <video
       src={blobUrl}
-      style={{ width: '100%', height: '100%', objectFit: 'contain', pointerEvents: 'none' }}
-      muted
+      style={{ width: '100%', height: '100%', objectFit: 'contain', pointerEvents: controls ? 'auto' : 'none' }}
+      controls={controls}
+      autoPlay={autoplay}
+      loop={loop}
+      muted={muted}
       playsInline
     />
+  )
+}
+
+/**
+ * IndexedDB 참조 배경 이미지를 가진 shape — blob URL로 변환하여 렌더링
+ */
+function IdbBgShape({ baseStyle, styles, shapeBorderProps, bgImageStr, onMouseDown, onClick, content, contentStyle, isRich }) {
+  const [resolvedBg, setResolvedBg] = useState(bgImageStr)
+
+  useEffect(() => {
+    if (!bgImageStr) return
+    const m = bgImageStr.match(/url\(\s*['"]?(idb:\/\/[^'")\s]+)['"]?\s*\)/)
+    if (!m) { setResolvedBg(bgImageStr); return }
+    const ref = m[1]
+    let cancelled = false
+    BlobStore.getUrl(BlobStore.parseRef(ref)).then(blobUrl => {
+      if (!cancelled && blobUrl) {
+        setResolvedBg(bgImageStr.replace(ref, blobUrl))
+      }
+    })
+    return () => { cancelled = true }
+  }, [bgImageStr])
+
+  return (
+    <div
+      style={{
+        ...baseStyle,
+        backgroundColor: styles.backgroundColor,
+        backgroundImage: resolvedBg,
+        backgroundSize: styles.backgroundSize || 'cover',
+        backgroundPosition: styles.backgroundPosition || 'center',
+        borderRadius: styles.borderRadius,
+        ...shapeBorderProps,
+        boxShadow: styles.boxShadow,
+        opacity: styles.opacity,
+      }}
+      onMouseDown={onMouseDown}
+      onClick={onClick}
+    >
+      {content && (
+        isRich
+          ? <div style={contentStyle} dangerouslySetInnerHTML={{ __html: content }} />
+          : <div style={contentStyle}>{content}</div>
+      )}
+    </div>
   )
 }

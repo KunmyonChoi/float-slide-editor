@@ -125,7 +125,11 @@ export default function FlatPresenter() {
   }, [exitPresentation, goNext, goPrev])
 
   // 클릭: 좌측 1/4 → 이전, 우측 3/4 → 다음
+  // iframe/video/a 등 인터랙티브 요소 위의 클릭은 무시
   const handleClick = useCallback((e) => {
+    const tag = e.target.tagName
+    if (tag === 'IFRAME' || tag === 'VIDEO' || tag === 'A' || tag === 'BUTTON') return
+    if (e.target.closest('iframe, video, a, button')) return
     const rect = stageRef.current?.getBoundingClientRect()
     if (!rect) return
     const x = e.clientX - rect.left

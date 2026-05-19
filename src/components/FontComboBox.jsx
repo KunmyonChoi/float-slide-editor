@@ -1,4 +1,5 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
+import { useFlatStore } from '../store/flatStore'
 
 /**
  * 시스템 폰트 목록 — PPT 호환성을 위해 Windows/Mac 기본 설치 폰트 위주
@@ -74,9 +75,23 @@ export default function FontComboBox({ value, onChange }) {
   const [query, setQuery] = useState('')
   const containerRef = useRef(null)
   const inputRef = useRef(null)
+  const flatElements = useFlatStore(s => s.flatElements)
 
   // 현재 폰트명에서 첫 번째 폰트만 추출 (fallback 제거)
   const displayValue = (value || '').split(',')[0].trim().replace(/^['"]|['"]$/g, '')
+
+  // 현재 문서에서 사용 중인 폰트 수집 (카탈로그에 없는 것만)
+  const catalogNames = useMemo(() => new Set(ALL_FONTS.map(f => f.name)), [])
+  const docFonts = useMemo(() => {
+    const found = new Set()
+    for (const el of flatElements) {
+      const ff = el.styles?.fontFamily
+      if (!ff) continue
+      const primary = ff.split(',')[0].trim().replace(/^['"]|['"]$/g, '')
+      if (primary && !catalogNames.has(primary)) found.add(primary)
+    }
+    return [...found].sort()
+  }, [flatElements, catalogNames])
 
   // 외부 클릭 시 닫기
   useEffect(() => {
@@ -125,17 +140,23 @@ export default function FontComboBox({ value, onChange }) {
     }
   }, [query, displayValue, onChange])
 
+  // 문서 사용 폰트 카테고리 (카탈로그에 없는 것만)
+  const docFontCategory = docFonts.length > 0
+    ? { category: '현재 문서', fonts: docFonts.map(name => ({ name, label: name })) }
+    : null
+
   // 필터링
   const lowerQuery = query.toLowerCase()
+  const allCategories = docFontCategory ? [docFontCategory, ...FONT_CATALOG] : FONT_CATALOG
   const filtered = lowerQuery
-    ? FONT_CATALOG.map(cat => ({
+    ? allCategories.map(cat => ({
         ...cat,
         fonts: cat.fonts.filter(f =>
           f.name.toLowerCase().includes(lowerQuery) ||
           f.label.toLowerCase().includes(lowerQuery)
         ),
       })).filter(cat => cat.fonts.length > 0)
-    : FONT_CATALOG
+    : allCategories
 
   return (
     <div ref={containerRef} className="relative">

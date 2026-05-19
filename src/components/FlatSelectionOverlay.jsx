@@ -29,9 +29,9 @@ export default function FlatSelectionOverlay({ element, scale, otherRects, canva
           setSelectedFlat, toggleSelectFlat, flatElements } = useFlatStore()
   const dragRef = useRef(null)
 
-  // 더블클릭 → 텍스트 편집 모드 진입
+  // 더블클릭 → 텍스트 편집 모드 진입 (text + shape)
   const handleDoubleClick = useCallback((e) => {
-    if (element.type === 'text') {
+    if (element.type === 'text' || element.type === 'shape') {
       e.stopPropagation()
       setEditingFlat(element.id)
     }

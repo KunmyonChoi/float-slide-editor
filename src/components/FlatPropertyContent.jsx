@@ -7,6 +7,7 @@ import BoxShadowEditor from './BoxShadowEditor'
 import TextShadowEditor from './TextShadowEditor'
 import { computeAlignmentChanges, computeDistributionChanges, isBackgroundElement } from '../core/SnapEngine'
 import { nextFlatId } from '../core/FlatExtractor'
+import { BlobStore } from '../core/BlobStore'
 
 // ── 글꼴 크기 프리셋 ────────────────────────────────
 
@@ -24,6 +25,8 @@ const FLAT_TYPE_COLOR = {
 // ── 공통 입력 헬퍼 ──────────────────────────────────
 
 const inputClass = 'w-full text-xs text-slate-200 bg-white/5 rounded-lg px-2.5 py-1.5 border border-white/10 outline-none focus:border-indigo-500/50 transition-colors'
+const selectClass = 'w-full text-xs text-slate-200 rounded-lg px-2.5 py-1.5 border border-white/10 outline-none focus:border-indigo-500/50 transition-colors appearance-none cursor-pointer'
+const selectStyle = { backgroundColor: '#1e293b' }  // 불투명 배경 — 드롭다운 옵션 가독성
 const labelClass = 'text-xs text-slate-500'
 
 /**
@@ -68,7 +71,7 @@ export default function FlatPropertyContent() {
       <div className="p-3 space-y-3">
         <PositionSection el={el} update={update} />
 
-        {el.type === 'text' && (
+        {(el.type === 'text' || (el.type === 'shape' && el.content)) && (
           <div className="pt-1 border-t border-white/5">
             <FontSection styles={el.styles} updateStyle={updateStyle} isGradientText={el.styles.webkitBackgroundClip === 'text'} />
           </div>
@@ -77,6 +80,19 @@ export default function FlatPropertyContent() {
         {el.type === 'image' && (
           <div className="pt-1 border-t border-white/5">
             <ImageSection styles={el.styles} updateStyle={updateStyle} elementId={el.id} />
+          </div>
+        )}
+
+        {el.type === 'video' && (
+          <div className="pt-1 border-t border-white/5">
+            <VideoSection el={el} update={update} />
+          </div>
+        )}
+
+        {/* 선 전용 편집 (가로/세로 얇은 shape) */}
+        {el.type === 'shape' && (el.width <= 4 || el.height <= 4) && (
+          <div className="pt-1 border-t border-white/5">
+            <ShapeLineSection el={el} update={update} updateStyle={updateStyle} />
           </div>
         )}
 
@@ -994,8 +1010,8 @@ function FontSizeInput({ value, onChange }) {
         <select
           value={FONT_SIZE_PRESETS.includes(Math.round(value)) ? Math.round(value) : ''}
           onChange={e => { if (e.target.value) onChange(Number(e.target.value)) }}
-          className="text-xs text-slate-300 bg-white/5 rounded-lg px-1 py-1.5 border border-white/10 appearance-none cursor-pointer outline-none focus:border-indigo-500/50 transition-colors"
-          style={{ width: 28 }}
+          className={selectClass}
+          style={{ ...selectStyle, width: 28, padding: '6px 2px' }}
           title="글꼴 크기 프리셋"
         >
           <option value="">▾</option>
@@ -1019,7 +1035,8 @@ function SelectInput({ label, value, options, onChange }) {
       <select
         value={value}
         onChange={e => onChange(e.target.value)}
-        className={`${inputClass} appearance-none cursor-pointer`}
+        className={selectClass}
+        style={selectStyle}
       >
         {options.map(o => (
           <option key={o.value} value={o.value}>{o.label}</option>
@@ -1168,6 +1185,175 @@ function TextAlignRightIcon() {
   )
 }
 
+
+// ── 선 전용 섹션 (shape 중 width 또는 height가 4px 이하) ──
+
+function ShapeLineSection({ el, update, updateStyle }) {
+  const isHorizontal = el.height <= 4
+  const thickness = isHorizontal ? el.height : el.width
+  const length = isHorizontal ? el.width : el.height
+  const color = el.styles?.backgroundColor || '#94a3b8'
+
+  const setThickness = (v) => {
+    const val = Math.max(1, Math.min(20, Number(v) || 1))
+    if (isHorizontal) update({ height: val })
+    else update({ width: val })
+  }
+
+  const setLength = (v) => {
+    const val = Math.max(10, Number(v) || 100)
+    if (isHorizontal) update({ width: val })
+    else update({ height: val })
+  }
+
+  const setDash = (v) => {
+    if (v === 'solid') {
+      updateStyle('borderTop', '')
+      updateStyle('backgroundImage', 'none')
+    } else {
+      // 점선 효과: 배경 repeating-linear-gradient로 구현
+      const gap = v === 'dashed' ? 10 : 4
+      const dir = isHorizontal ? '90deg' : '0deg'
+      updateStyle('backgroundColor', 'transparent')
+      updateStyle('backgroundImage',
+        `repeating-linear-gradient(${dir}, ${color} 0px, ${color} ${gap}px, transparent ${gap}px, transparent ${gap * 2}px)`)
+    }
+  }
+
+  // 현재 점선 상태 감지
+  const bgImg = el.styles?.backgroundImage || ''
+  const isDashed = bgImg.includes('repeating-linear-gradient')
+  const currentDash = isDashed
+    ? (bgImg.includes('4px') ? 'dotted' : 'dashed')
+    : 'solid'
+
+  return (
+    <div className="space-y-2">
+      <SectionTitle>선</SectionTitle>
+      <div className="grid grid-cols-2 gap-2">
+        <div>
+          <p className={`${labelClass} mb-0.5`}>두께</p>
+          <input
+            type="number"
+            value={thickness}
+            onChange={e => setThickness(e.target.value)}
+            onKeyDown={e => e.stopPropagation()}
+            min="1" max="20" step="1"
+            className={inputClass}
+            style={{ width: '100%' }}
+          />
+        </div>
+        <div>
+          <p className={`${labelClass} mb-0.5`}>길이</p>
+          <input
+            type="number"
+            value={Math.round(length)}
+            onChange={e => setLength(e.target.value)}
+            onKeyDown={e => e.stopPropagation()}
+            min="10"
+            className={inputClass}
+            style={{ width: '100%' }}
+          />
+        </div>
+      </div>
+      <div>
+        <p className={`${labelClass} mb-0.5`}>색상</p>
+        <ColorPicker
+          value={color}
+          onChange={v => updateStyle('backgroundColor', v)}
+          showOpacity
+        />
+      </div>
+      <div>
+        <p className={`${labelClass} mb-0.5`}>스타일</p>
+        <div className="flex gap-1">
+          {[
+            { id: 'solid', label: '───' },
+            { id: 'dashed', label: '- - -' },
+            { id: 'dotted', label: '· · ·' },
+          ].map(s => (
+            <button
+              key={s.id}
+              onClick={() => setDash(s.id)}
+              className={`flex-1 text-xs py-1 rounded-md border transition-colors ${
+                currentDash === s.id
+                  ? 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30'
+                  : 'bg-white/5 text-slate-400 border-white/10 hover:bg-white/10'
+              }`}
+            >{s.label}</button>
+          ))}
+        </div>
+      </div>
+      <div>
+        <p className={`${labelClass} mb-0.5`}>
+          회전 <span className="text-slate-600">{el.rotation || 0}°</span>
+        </p>
+        <input
+          type="range"
+          min="0" max="360" step="1"
+          value={el.rotation || 0}
+          onChange={e => update({ rotation: Number(e.target.value) })}
+          className="w-full"
+          style={{ accentColor: '#6366f1' }}
+        />
+      </div>
+    </div>
+  )
+}
+
+// ── 영상 섹션 ──
+
+function VideoSection({ el, update }) {
+  const autoplay = el.autoplay ?? false
+  const loop = el.loop ?? false
+  const muted = el.muted ?? true
+  const hideControls = el.hideControls ?? false
+  const isEmbed = el.content && !BlobStore.isIdbRef(el.content)
+
+  return (
+    <div className="space-y-2">
+      <SectionTitle>영상 옵션</SectionTitle>
+      <label className="flex items-center gap-2 cursor-pointer">
+        <input
+          type="checkbox"
+          checked={autoplay}
+          onChange={e => update({ autoplay: e.target.checked })}
+          className="accent-indigo-500"
+        />
+        <span className={labelClass}>자동 재생</span>
+      </label>
+      <label className="flex items-center gap-2 cursor-pointer">
+        <input
+          type="checkbox"
+          checked={loop}
+          onChange={e => update({ loop: e.target.checked })}
+          className="accent-indigo-500"
+        />
+        <span className={labelClass}>반복 재생</span>
+      </label>
+      <label className="flex items-center gap-2 cursor-pointer">
+        <input
+          type="checkbox"
+          checked={muted}
+          onChange={e => update({ muted: e.target.checked })}
+          className="accent-indigo-500"
+        />
+        <span className={labelClass}>음소거</span>
+      </label>
+      {isEmbed && (
+        <label className="flex items-center gap-2 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={hideControls}
+            onChange={e => update({ hideControls: e.target.checked })}
+            className="accent-indigo-500"
+          />
+          <span className={labelClass}>컨트롤 숨기기</span>
+        </label>
+      )}
+    </div>
+  )
+}
 
 // ── 잠금 아이콘 ──
 

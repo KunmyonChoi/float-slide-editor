@@ -70,11 +70,12 @@ export default function FlatInlineEditor({ element }) {
     e.stopPropagation()
   }, [commit])
 
-  // 배경이 있는 텍스트 / merged 요소의 flex 레이아웃 재현
+  // shape 또는 배경 있는 텍스트 → flex 레이아웃으로 중앙 정렬
+  const isShape = element.type === 'shape'
   const hasBg = styles.backgroundColor
     && styles.backgroundColor !== 'rgba(0, 0, 0, 0)'
     && styles.backgroundColor !== 'transparent'
-  const needsFlex = merged || hasBg
+  const needsFlex = merged || hasBg || isShape
 
   const editorStyle = {
     position: 'absolute',
@@ -94,13 +95,15 @@ export default function FlatInlineEditor({ element }) {
     letterSpacing: styles.letterSpacing,
     textTransform: styles.textTransform,
     textDecoration: styles.textDecoration,
-    padding: styles.padding,
+    padding: (isShape && (!styles.padding || styles.padding === '0px')) ? '8px' : styles.padding,
     whiteSpace: 'pre-wrap',
     wordBreak: 'break-word',
-    // 배경
+    // 배경 + 테두리
     backgroundColor: styles.backgroundColor || 'transparent',
     backgroundImage: styles.backgroundImage,
     borderRadius: styles.borderRadius,
+    border: styles.border,
+    boxShadow: styles.boxShadow,
     opacity: styles.opacity,
     // flex 레이아웃 (merged/배경 있는 텍스트)
     ...(needsFlex ? {
@@ -115,6 +118,7 @@ export default function FlatInlineEditor({ element }) {
     outline: '2px solid rgba(99, 102, 241, 0.8)',
     outlineOffset: -1,
     cursor: 'text',
+    userSelect: 'text',
     overflow: 'auto',
   }
 

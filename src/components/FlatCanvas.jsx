@@ -216,11 +216,11 @@ export default function FlatCanvas() {
       const hasSelection = selectedFlatIds.length > 0
       const singleId = selectedFlatIds.length === 1 ? selectedFlatIds[0] : null
 
-      // Enter → 텍스트 요소 편집 모드 진입 (단일 선택만)
+      // Enter → 텍스트/도형 편집 모드 진입 (단일 선택만)
       if (e.key === 'Enter' && singleId) {
         const els = useFlatStore.getState().flatElements
         const el = els.find(el => el.id === singleId)
-        if (el && el.type === 'text') {
+        if (el && (el.type === 'text' || el.type === 'shape')) {
           e.preventDefault()
           useFlatStore.getState().setEditingFlat(singleId)
           return
@@ -260,7 +260,7 @@ export default function FlatCanvas() {
           const els = useFlatStore.getState().flatElements
           const textEls = selectedFlatIds
             .map(id => els.find(el => el.id === id))
-            .filter(el => el && el.type === 'text')
+            .filter(el => el && (el.type === 'text' || (el.type === 'shape' && el.content)))
 
           if (textEls.length > 0) {
             // Ctrl+B — 굵게 토글
@@ -489,7 +489,7 @@ export default function FlatCanvas() {
           }}
           onMouseDown={handleStageMouseDown}
         >
-          <div data-flat-canvas="true" style={{ position: 'relative', width: '100%', height: '100%', overflow: 'hidden' }}>
+          <div data-flat-canvas="true" style={{ position: 'relative', width: '100%', height: '100%', overflow: 'hidden', userSelect: 'none' }}>
             {flatElements.map(el => (
               <FlatElementRenderer
                 key={el.id}

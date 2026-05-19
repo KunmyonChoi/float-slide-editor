@@ -38,6 +38,16 @@ const FLAT_PRESETS = {
     content: '', isRich: false, merged: false,
     styles: { ...DEFAULT_STYLES, backgroundColor: '#e2e8f0', borderRadius: '50%' },
   },
+  lineH: {
+    type: 'shape', width: 200, height: 2,
+    content: '', isRich: false, merged: false,
+    styles: { ...DEFAULT_STYLES, backgroundColor: '#94a3b8' },
+  },
+  lineV: {
+    type: 'shape', width: 2, height: 200,
+    content: '', isRich: false, merged: false,
+    styles: { ...DEFAULT_STYLES, backgroundColor: '#94a3b8' },
+  },
 }
 
 /**
@@ -239,6 +249,8 @@ export default function EditToolbar() {
             items={[
               { id: 'rect', icon: <RectIcon />, label: '사각형', action: () => insertFlatPreset('rect') },
               { id: 'circle', icon: <CircleIcon />, label: '원', action: () => insertFlatPreset('circle') },
+              { id: 'lineH', icon: <LineHIcon />, label: '가로 선', action: () => insertFlatPreset('lineH') },
+              { id: 'lineV', icon: <LineVIcon />, label: '세로 선', action: () => insertFlatPreset('lineV') },
             ]}
           />
 
@@ -453,6 +465,22 @@ function VideoIcon() {
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
       <polygon points="23 7 16 12 23 17 23 7" />
       <rect x="1" y="5" width="15" height="14" rx="2" />
+    </svg>
+  )
+}
+
+function LineHIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M3 12h18" />
+    </svg>
+  )
+}
+
+function LineVIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M12 3v18" />
     </svg>
   )
 }
