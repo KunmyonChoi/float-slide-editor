@@ -29,3 +29,4 @@ dist-ssr
 # Python pptx server
 pptx-server/.venv/
 pptx-server/__pycache__/
+pptx-server/pptx-server/.venv/
