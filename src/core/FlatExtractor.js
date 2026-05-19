@@ -1180,36 +1180,85 @@ export function extractFlatElements(iframeRef) {
   //   3. 모든 요소 좌표를 원점 기준 상대값으로 변환 후 scale로 나눔
   const { transformScale, originRect } = detectTransformContext(doc)
 
-  // body 배경 추출 (특수 shape)
+  // canvasSize 계산
   const bodyCS = win.getComputedStyle(doc.body)
   const bodyRectRaw = doc.body.getBoundingClientRect()
-  // canvasSize는 원점 컨테이너 기준 CSS 크기 사용
   const canvasW = originRect ? originRect.cssWidth : bodyRectRaw.width
   const canvasH = originRect ? originRect.cssHeight : bodyRectRaw.height
-  if (isVisuallyMeaningful(bodyCS) && bodyRectRaw.width > 0) {
-    result.push({
-      id: nextFlatId(),
-      sourceId: '__body',
-      type: 'shape',
-      x: 0,
-      y: 0,
-      width: canvasW,
-      height: canvasH,
-      zIndex: zCounter++,
-      content: '',
-      styles: extractStyles(bodyCS, doc.body),
-    })
-  }
 
-  // reveal.js: 현재 활성 섹션만 추출 (.present 클래스)
-  // reveal.js는 모든 section을 DOM에 유지하므로 비활성 슬라이드 요소를 필터링해야 한다.
-  // 수직 슬라이드가 있으면 현재 수직 섹션(.present > .present)을 우선 사용
-  let revealPresent = doc.querySelector('.reveal .slides > section.present > section.present')
+  // 슬라이드 프레임워크 감지: 현재 활성 슬라이드만 추출
+  // 여러 슬라이드가 같은 위치에 겹쳐져 있고 표시/숨김으로 전환하는 패턴을 감지한다.
+  // - reveal.js: .present 클래스
+  // - opacity 기반: .active 클래스 + opacity:0/1
+  // - display 기반: display:none/flex
+  let revealPresent = null
+
+  // 1. reveal.js 패턴
+  revealPresent = doc.querySelector('.reveal .slides > section.present > section.present')
   if (!revealPresent) revealPresent = doc.querySelector('.reveal .slides > section.present')
-  // reveal.js 초기화 전이면 첫 번째 섹션 사용
   if (!revealPresent) {
     const firstSection = doc.querySelector('.reveal .slides > section')
     if (firstSection) revealPresent = firstSection
+  }
+
+  // 2. 일반 슬라이드 패턴: .slide.active 또는 .active가 있는 같은 위치 겹침 슬라이드
+  if (!revealPresent) {
+    const activeSlide = doc.querySelector('.slide.active')
+    if (activeSlide) {
+      // 형제 .slide 요소가 있고 같은 위치에 겹쳐져 있는지 확인
+      const siblings = activeSlide.parentElement?.querySelectorAll(':scope > .slide')
+      if (siblings && siblings.length > 1) {
+        revealPresent = activeSlide
+      }
+    }
+  }
+
+  // 3. opacity:0 또는 visibility:hidden으로 숨겨진 슬라이드 감지를 위한 추가 필터
+  // (revealPresent가 없어도 개별 요소 단위로 체크)
+  const isHiddenByAncestor = (el) => {
+    let node = el.parentElement
+    while (node && node !== doc.body) {
+      const nodeCs = win.getComputedStyle(node)
+      if (nodeCs.opacity === '0' || nodeCs.visibility === 'hidden') return true
+      // display:none은 이미 querySelectorAll에서 제외됨
+      node = node.parentElement
+    }
+    return false
+  }
+
+  // 배경 추출: 활성 슬라이드가 있으면 슬라이드 영역의 배경을 우선 사용
+  // (body 배경이 프레젠테이션 외곽 장식이고, 슬라이드 자체는 다른 배경일 수 있음)
+  {
+    let bgStyles = null
+    if (revealPresent) {
+      let bgNode = revealPresent
+      while (bgNode && bgNode !== doc.documentElement) {
+        const bgCs = win.getComputedStyle(bgNode)
+        const bg = bgCs.backgroundColor
+        if (bg && bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent') {
+          bgStyles = extractStyles(bgCs, bgNode)
+          break
+        }
+        bgNode = bgNode.parentElement
+      }
+    }
+    if (!bgStyles && isVisuallyMeaningful(bodyCS)) {
+      bgStyles = extractStyles(bodyCS, doc.body)
+    }
+    if (bgStyles && canvasW > 0) {
+      result.push({
+        id: nextFlatId(),
+        sourceId: '__body',
+        type: 'shape',
+        x: 0,
+        y: 0,
+        width: canvasW,
+        height: canvasH,
+        zIndex: zCounter++,
+        content: '',
+        styles: bgStyles,
+      })
+    }
   }
 
   // data-editor-id 가진 모든 요소 수집
@@ -1217,8 +1266,11 @@ export function extractFlatElements(iframeRef) {
   const mergedContainerIds = new Set() // 병합된 컨테이너의 ID (자식 스킵용)
 
   for (const el of allEls) {
-    // reveal.js: 활성 섹션 밖의 요소 스킵
+    // 활성 슬라이드 밖의 요소 스킵
     if (revealPresent && !revealPresent.contains(el)) continue
+
+    // opacity:0 또는 visibility:hidden인 조상 아래의 요소 스킵 (비활성 슬라이드)
+    if (isHiddenByAncestor(el)) continue
 
     // 병합된 컨테이너의 자식이면 스킵
     if (mergedContainerIds.size > 0) {
@@ -1577,15 +1629,50 @@ function extractFontImports(doc) {
   }
 
   // 3. <link> 폰트 스타일시트 직접 참조 (CSSOM에서 못 잡은 것 보완)
-  // cross-origin CSS의 경우 cssRules 접근이 차단되므로 href를 @import로 추가
   for (const link of doc.querySelectorAll('link[rel="stylesheet"]')) {
     if (link.id && link.id.startsWith('__fe-')) continue
     const href = link.getAttribute('href') || ''
     if (!href) continue
-    // 절대 URL로 변환
-    const absHref = new URL(href, doc.baseURI).href
-    if (isFontUrl(absHref)) {
-      addUnique(`@import url('${absHref}');`)
+    try {
+      const absHref = new URL(href, doc.baseURI).href
+      if (isFontUrl(absHref)) {
+        addUnique(`@import url('${absHref}');`)
+      }
+    } catch { /* about:srcdoc 등에서 상대 URL 해석 실패 시 무시 */ }
+  }
+
+  // 3-1. HTML 소스에서 Google Fonts URL 직접 탐색
+  // "웹페이지 완전 저장" 시 <link>가 로컬 경로로 변환되어 CSS 미로드 →
+  // HTML 주석이나 원본 URL에서 Google Fonts 주소를 복구
+  {
+    const htmlSource = doc.documentElement?.outerHTML || ''
+    const gfMatches = htmlSource.match(/https:\/\/fonts\.googleapis\.com\/css2\?[^"'\s<>)]+/g)
+    if (gfMatches) {
+      for (const url of gfMatches) {
+        const cleanUrl = url.replace(/&amp;/g, '&')
+        addUnique(`@import url('${cleanUrl}');`)
+      }
+    }
+  }
+
+  // 3-2. <style> 태그에서 선언된 font-family 이름을 수집하여
+  // CSSOM 실패 시 addMissingFontImports의 폴백으로 사용
+  for (const style of doc.querySelectorAll('style')) {
+    if (style.id && style.id.startsWith('__fe-')) continue
+    const text = style.textContent || ''
+    // font-family: 'FontName' 패턴에서 폰트명 추출
+    const ffMatches = text.matchAll(/font-family:\s*'([^']+)'/g)
+    for (const m of ffMatches) {
+      const fontName = m[1]
+      // 시스템 폰트가 아닌 웹폰트만
+      if (!SYSTEM_FONTS.has(fontName.toLowerCase())) {
+        // 이미 import에 포함되어 있는지 확인
+        const importText = imports.join(' ').toLowerCase()
+        const encoded = fontName.toLowerCase().replace(/\s+/g, '+')
+        if (!importText.includes(encoded)) {
+          addUnique(`@import url('https://fonts.googleapis.com/css2?family=${fontName.replace(/\s+/g, '+')}:wght@300;400;500;600;700&display=swap');`)
+        }
+      }
     }
   }
 

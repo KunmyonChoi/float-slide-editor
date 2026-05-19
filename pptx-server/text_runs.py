@@ -112,7 +112,8 @@ def html_to_text_runs(html: str, base_styles: dict) -> list:
         opts = {}
         ctx = run['opts']
 
-        if ctx.get('bold') or base_styles.get('fontWeight') in ('bold', '700', '800', '900'):
+        effective_weight = base_styles.get('_effectiveWeight', 400)
+        if ctx.get('bold') or effective_weight >= 700:
             opts['bold'] = True
         if ctx.get('italic') or base_styles.get('fontStyle') == 'italic':
             opts['italic'] = True

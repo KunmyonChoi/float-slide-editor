@@ -5,7 +5,10 @@
  * 2. flat JSON → Python 백엔드 → PPTX → LibreOffice → PPTX PNG
  * 3. 레퍼런스 PNG vs PPTX PNG 픽셀 비교 → diff + 점수
  *
- * Usage: node scripts/auto-compare.mjs [--slide N]
+ * Usage: node scripts/auto-compare.mjs [html파일경로] [--slide N]
+ *   예: node scripts/auto-compare.mjs /path/to/slides.html
+ *       node scripts/auto-compare.mjs /path/to/slides.html --slide 3
+ *       node scripts/auto-compare.mjs --slide 3  (기본 HTML 사용)
  */
 import puppeteer from 'puppeteer'
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs'
@@ -13,7 +16,10 @@ import { execSync } from 'child_process'
 import { PNG } from 'pngjs'
 import pixelmatch from 'pixelmatch'
 
-const SOURCE_HTML = '/home/kunmyon/Slide-editor/slides/AI DC Study Book_slides.html'
+// HTML 파일 경로: 첫 번째 인자 또는 기본값
+const args = process.argv.slice(2)
+const htmlArg = args.find(a => !a.startsWith('--'))
+const SOURCE_HTML = htmlArg || '/home/kunmyon/Slide-editor/slides/AI DC Study Book_slides.html'
 const OUT_DIR = 'scripts/pptx-compare'
 const REF_DIR = `${OUT_DIR}/reference`
 const PPTX_DIR = `${OUT_DIR}/pptx-png`
@@ -35,7 +41,7 @@ async function main() {
   const browser = await puppeteer.launch({ headless: true, args: ['--no-sandbox'] })
   const page = await browser.newPage()
   await page.setViewport({ width: 1280, height: 800 })
-  await page.goto('http://localhost:5177/', { waitUntil: 'networkidle2', timeout: 15000 })
+  await page.goto('http://localhost:5173/', { waitUntil: 'networkidle2', timeout: 15000 })
 
   // Load HTML
   const htmlContent = readFileSync(SOURCE_HTML, 'utf-8')
