@@ -54,11 +54,6 @@ export default function FlatPropertyContent() {
         <span className={`text-xs font-medium px-2 py-0.5 rounded-md ${FLAT_TYPE_COLOR[el.type] || FLAT_TYPE_COLOR.shape}`}>
           {FLAT_TYPE_LABEL[el.type] || el.type}
         </span>
-        {el.isCode && (
-          <span className="text-xs font-medium px-1.5 py-0.5 rounded-md bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-            CODE
-          </span>
-        )}
         <code className="text-xs text-slate-500 truncate flex-1">{el.id}</code>
         <button
           onClick={() => update({ locked: !el.locked })}
@@ -78,18 +73,6 @@ export default function FlatPropertyContent() {
 
         {(el.type === 'text' || (el.type === 'shape' && el.content)) && (
           <div className="pt-1 border-t border-white/5">
-            {/* 코드 모드 토글 */}
-            <div className="flex items-center justify-between mb-2">
-              <span className={labelClass}>코드 블록</span>
-              <button
-                onClick={() => update({ isCode: !el.isCode })}
-                className={`text-xs px-2 py-0.5 rounded border transition-colors ${
-                  el.isCode
-                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
-                    : 'bg-white/5 text-slate-400 border-white/10 hover:bg-white/10'
-                }`}
-              >{el.isCode ? 'ON' : 'OFF'}</button>
-            </div>
             <FontSection styles={el.styles} updateStyle={updateStyle} isGradientText={el.styles.webkitBackgroundClip === 'text'} />
           </div>
         )}

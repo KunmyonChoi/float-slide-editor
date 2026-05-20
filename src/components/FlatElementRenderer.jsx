@@ -116,11 +116,9 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
       filter: textShadowToDropShadow(styles.textShadow),
     } : null
 
-    const textContent = element.isCode
-      ? <code style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', display: 'block' }}>{content}</code>
-      : isRich
-        ? <span dangerouslySetInnerHTML={{ __html: content }} />
-        : content
+    const textContent = isRich
+      ? <span dangerouslySetInnerHTML={{ __html: content }} />
+      : content
 
     return (
       <div

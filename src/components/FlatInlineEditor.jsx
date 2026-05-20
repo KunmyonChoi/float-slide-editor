@@ -17,12 +17,7 @@ export default function FlatInlineEditor({ element }) {
   // 마운트 시 innerHTML 설정 + 포커스 + 커밋 콜백 등록
   useEffect(() => {
     if (!ref.current) return
-    if (element.isCode) {
-      // 코드 모드: HTML을 텍스트 그대로 표시 (태그가 리터럴로 보임)
-      ref.current.textContent = content || ''
-      ref.current.style.whiteSpace = 'pre-wrap'
-      ref.current.style.fontFamily = 'monospace'
-    } else if (element.isRich) {
+    if (element.isRich) {
       ref.current.innerHTML = content || ''
     } else {
       // plain text: escape 후 줄바꿈 변환
@@ -42,14 +37,9 @@ export default function FlatInlineEditor({ element }) {
     const flushCommit = () => {
       if (committedRef.current || !ref.current) return
       committedRef.current = true
-      if (element.isCode) {
-        const text = ref.current?.textContent || ''
-        commitTextEdit(element.id, text, false)
-      } else {
-        const html = (ref.current?.innerHTML || '').trim()
-        const hasHtmlTags = /<[a-z][\s\S]*>/i.test(html)
-        commitTextEdit(element.id, html, hasHtmlTags)
-      }
+      const html = (ref.current?.innerHTML || '').trim()
+      const hasHtmlTags = /<[a-z][\s\S]*>/i.test(html)
+      commitTextEdit(element.id, html, hasHtmlTags)
     }
     useFlatStore.getState()._setPendingEditCommit(flushCommit)
 
@@ -63,16 +53,10 @@ export default function FlatInlineEditor({ element }) {
   const commit = useCallback(() => {
     if (committedRef.current) return
     committedRef.current = true
-    if (element.isCode) {
-      // 코드 모드: textContent 그대로 저장 (HTML 태그를 리터럴로 보존)
-      const text = ref.current?.textContent || ''
-      commitTextEdit(element.id, text, false)
-    } else {
-      const html = (ref.current?.innerHTML || '').trim()
-      const hasHtmlTags = /<[a-z][\s\S]*>/i.test(html)
-      commitTextEdit(element.id, html, hasHtmlTags)
-    }
-  }, [element.id, element.isCode, commitTextEdit])
+    const html = (ref.current?.innerHTML || '').trim()
+    const hasHtmlTags = /<[a-z][\s\S]*>/i.test(html)
+    commitTextEdit(element.id, html, hasHtmlTags)
+  }, [element.id, commitTextEdit])
 
   const handleBlur = useCallback(() => {
     commit()

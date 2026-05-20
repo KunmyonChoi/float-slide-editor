@@ -613,7 +613,7 @@ function buildFlatElement(el, rect, cs, domOrder, forceType, transformScale = 1,
     // (monospace 폰트 사용 여부가 아닌, 실제 pre 태그 기반으로 판별)
     const elTag = el.tagName.toLowerCase()
     const isCodeBlock = elTag === 'pre' || elTag === 'code' || !!el.closest('pre')
-    // isCode 플래그는 result 생성 후 설정 (아래 참조)
+    // pre/code 블록 감지 (nowrap 보정 스킵용)
     if (!isCodeBlock && intendedBreaks === 0) {
       // 부모 컨테이너가 너비를 제한하는지 확인:
       // 요소 너비가 부모 내부 너비(padding 제외)와 거의 같으면
@@ -818,12 +818,6 @@ function buildFlatElement(el, rect, cs, domOrder, forceType, transformScale = 1,
     styles,
     // 원본 레이아웃 (너비 보정 전 getBoundingClientRect 결과)
     originalRect: { x: rect.left, y: rect.top, w: rect.width, h: rect.height },
-  }
-
-  // 코드 블록 감지
-  const elTagLower = el.tagName.toLowerCase()
-  if (elTagLower === 'pre' || elTagLower === 'code' || !!el.closest('pre')) {
-    result.isCode = true
   }
 
   // ::before 의사 요소 추출 — CSS로 렌더링되는 불릿, 장식 등
