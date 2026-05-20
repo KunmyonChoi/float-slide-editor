@@ -37,6 +37,13 @@ export default function PageBar() {
         if (e.key === 'PageDown') { e.preventDefault(); useFlatStore.getState().movePageOrder(1); return }
       }
 
+      // Flat 모드에서 Arrow는: 요소 선택 시 이동용, Shift+Arrow도 10px 이동용 → 페이지 이동 스킵
+      const isArrow = ['ArrowRight','ArrowLeft','ArrowUp','ArrowDown'].includes(e.key)
+      if (isArrow && isFM) {
+        const { selectedFlatIds, editingFlatId } = useFlatStore.getState()
+        if (selectedFlatIds.length > 0 || editingFlatId) return
+      }
+
       if (e.key === 'PageDown' || e.key === 'ArrowRight') {
         e.preventDefault()
         if (isFM) { useFlatStore.getState().navigateFlatPage(1) }

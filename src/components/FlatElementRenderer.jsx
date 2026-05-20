@@ -20,6 +20,8 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
     && Math.abs(x) < 2 && Math.abs(y) < 2
 
   const handleMouseDown = useCallback((e) => {
+    // 그리기 모드 중에는 요소 선택 차단
+    if (useFlatStore.getState().drawMode) return
     if (isFullCanvasBg) {
       // 배경: stopPropagation 안 함 (마키 공존), 선택은 mouseup에서 처리
       return
@@ -35,6 +37,7 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
   }, [element.id, isFullCanvasBg, setSelectedFlat, toggleSelectFlat])
 
   const handleClick = useCallback((e) => {
+    if (useFlatStore.getState().drawMode) return
     if (!isFullCanvasBg) return
     // 마키 드래그 직후면 배경 선택 무시
     if (useFlatStore.getState()._skipBgClick) return
@@ -113,9 +116,11 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
       filter: textShadowToDropShadow(styles.textShadow),
     } : null
 
-    const textContent = isRich
-      ? <span dangerouslySetInnerHTML={{ __html: content }} />
-      : content
+    const textContent = element.isCode
+      ? <code style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', display: 'block' }}>{content}</code>
+      : isRich
+        ? <span dangerouslySetInnerHTML={{ __html: content }} />
+        : content
 
     return (
       <div
@@ -241,6 +246,10 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
   if (element.shapeType && element.points && element.points.length >= 2) {
     const d = pointsToSvgPath(element.points, element.closed)
     const sw = parseFloat(styles.strokeWidth || '2')
+    const strokeColor = styles.stroke || '#1e293b'
+    const startArrow = element.startArrow || 'none'
+    const endArrow = element.endArrow || 'none'
+    const markerId = element.id
     return (
       <div style={{ ...baseStyle, overflow: 'visible' }} onMouseDown={handleMouseDown} onClick={handleClick}>
         <svg
@@ -248,18 +257,38 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
           viewBox={`0 0 ${width} ${height}`}
           style={{ position: 'absolute', top: 0, left: 0, overflow: 'visible' }}
         >
-          {/* 투명 넓은 히트 영역 */}
+          <defs>
+            {startArrow !== 'none' && (
+              <marker id={`ms-${markerId}`} markerWidth="12" markerHeight="12" refX="10" refY="6"
+                      orient="auto-start-reverse" markerUnits="userSpaceOnUse">
+                {startArrow === 'arrow' && <path d="M 0 1 L 10 6 L 0 11" fill="none" stroke={strokeColor} strokeWidth="1.5" />}
+                {startArrow === 'triangle' && <path d="M 0 1 L 10 6 L 0 11 Z" fill={strokeColor} />}
+                {startArrow === 'circle' && <circle cx="6" cy="6" r="4" fill={strokeColor} />}
+                {startArrow === 'diamond' && <path d="M 6 0 L 12 6 L 6 12 L 0 6 Z" fill={strokeColor} />}
+              </marker>
+            )}
+            {endArrow !== 'none' && (
+              <marker id={`me-${markerId}`} markerWidth="12" markerHeight="12" refX="10" refY="6"
+                      orient="auto" markerUnits="userSpaceOnUse">
+                {endArrow === 'arrow' && <path d="M 0 1 L 10 6 L 0 11" fill="none" stroke={strokeColor} strokeWidth="1.5" />}
+                {endArrow === 'triangle' && <path d="M 0 1 L 10 6 L 0 11 Z" fill={strokeColor} />}
+                {endArrow === 'circle' && <circle cx="6" cy="6" r="4" fill={strokeColor} />}
+                {endArrow === 'diamond' && <path d="M 6 0 L 12 6 L 6 12 L 0 6 Z" fill={strokeColor} />}
+              </marker>
+            )}
+          </defs>
           <path d={d} stroke="transparent" strokeWidth={Math.max(sw, 10)} fill="none" />
-          {/* 실제 선 */}
           <path
             d={d}
-            stroke={styles.stroke || '#1e293b'}
+            stroke={strokeColor}
             strokeWidth={sw}
             strokeDasharray={styles.strokeDasharray || ''}
             fill={element.closed ? (styles.fill || 'none') : 'none'}
             strokeLinecap="round"
             strokeLinejoin="round"
             opacity={styles.opacity || 1}
+            markerStart={startArrow !== 'none' ? `url(#ms-${markerId})` : undefined}
+            markerEnd={endArrow !== 'none' ? `url(#me-${markerId})` : undefined}
           />
         </svg>
       </div>

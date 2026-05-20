@@ -54,6 +54,11 @@ export default function FlatPropertyContent() {
         <span className={`text-xs font-medium px-2 py-0.5 rounded-md ${FLAT_TYPE_COLOR[el.type] || FLAT_TYPE_COLOR.shape}`}>
           {FLAT_TYPE_LABEL[el.type] || el.type}
         </span>
+        {el.isCode && (
+          <span className="text-xs font-medium px-1.5 py-0.5 rounded-md bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+            CODE
+          </span>
+        )}
         <code className="text-xs text-slate-500 truncate flex-1">{el.id}</code>
         <button
           onClick={() => update({ locked: !el.locked })}
@@ -73,6 +78,18 @@ export default function FlatPropertyContent() {
 
         {(el.type === 'text' || (el.type === 'shape' && el.content)) && (
           <div className="pt-1 border-t border-white/5">
+            {/* 코드 모드 토글 */}
+            <div className="flex items-center justify-between mb-2">
+              <span className={labelClass}>코드 블록</span>
+              <button
+                onClick={() => update({ isCode: !el.isCode })}
+                className={`text-xs px-2 py-0.5 rounded border transition-colors ${
+                  el.isCode
+                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+                    : 'bg-white/5 text-slate-400 border-white/10 hover:bg-white/10'
+                }`}
+              >{el.isCode ? 'ON' : 'OFF'}</button>
+            </div>
             <FontSection styles={el.styles} updateStyle={updateStyle} isGradientText={el.styles.webkitBackgroundClip === 'text'} />
           </div>
         )}
@@ -90,6 +107,7 @@ export default function FlatPropertyContent() {
         )}
 
         {/* 포인트 기반 shape (선/폴리라인/폴리곤) */}
+        {/* 포인트 기반 shape (선/폴리라인/폴리곤) — 전용 섹션만 표시 */}
         {el.shapeType && el.points && (
           <div className="pt-1 border-t border-white/5">
             <PolyShapeSection el={el} update={update} updateStyle={updateStyle} />
@@ -103,17 +121,33 @@ export default function FlatPropertyContent() {
           </div>
         )}
 
-        <div className="pt-1 border-t border-white/5">
-          <FillSection styles={el.styles} updateStyle={updateStyle} updateStyles={updateStyles} previewStyle={previewStyle} isText={el.type === 'text'} />
-        </div>
+        {/* 채우기 — text, normal shape, image만 (poly shape는 PolyShapeSection에서 처리) */}
+        {!el.shapeType && (el.type === 'text' || el.type === 'shape' || el.type === 'image') && (
+          <div className="pt-1 border-t border-white/5">
+            <FillSection styles={el.styles} updateStyle={updateStyle} updateStyles={updateStyles} previewStyle={previewStyle} isText={el.type === 'text'} />
+          </div>
+        )}
 
-        <div className="pt-1 border-t border-white/5">
-          <LineSection styles={el.styles} updateStyle={updateStyle} updateStyles={updateStyles} />
-        </div>
+        {/* 테두리 — text, normal shape, image만 (poly shape는 stroke로 처리) */}
+        {!el.shapeType && (el.type === 'text' || el.type === 'shape' || el.type === 'image') && (
+          <div className="pt-1 border-t border-white/5">
+            <LineSection styles={el.styles} updateStyle={updateStyle} updateStyles={updateStyles} />
+          </div>
+        )}
 
-        <div className="pt-1 border-t border-white/5">
-          <EffectSection styles={el.styles} updateStyle={updateStyle} isText={el.type === 'text'} />
-        </div>
+        {/* 효과 — text, normal shape만 (boxShadow는 CSS box model에만 적용) */}
+        {!el.shapeType && (el.type === 'text' || el.type === 'shape') && (
+          <div className="pt-1 border-t border-white/5">
+            <EffectSection styles={el.styles} updateStyle={updateStyle} isText={el.type === 'text'} />
+          </div>
+        )}
+
+        {/* 투명도 전용 — video, svg만 (poly shape는 PolyShapeSection 내 투명도 사용) */}
+        {!el.shapeType && (el.type === 'video' || el.type === 'svg') && (
+          <div className="pt-1 border-t border-white/5">
+            <OpacityOnlySection styles={el.styles} updateStyle={updateStyle} previewStyle={previewStyle} />
+          </div>
+        )}
 
         <div className="pt-1 border-t border-white/5">
           <button
@@ -1275,6 +1309,26 @@ function TextAlignRightIcon() {
 }
 
 
+// ── 투명도 전용 섹션 (video, svg, poly shape 등) ──
+
+function OpacityOnlySection({ styles, updateStyle, previewStyle }) {
+  return (
+    <div className="space-y-2">
+      <SectionTitle>
+        투명도 <span className="text-slate-600 font-normal">{styles.opacity || '1'}</span>
+      </SectionTitle>
+      <input
+        type="range" min="0" max="1" step="0.01"
+        value={styles.opacity || '1'}
+        onChange={e => previewStyle('opacity', e.target.value)}
+        onMouseUp={e => updateStyle('opacity', e.target.value)}
+        onTouchEnd={e => updateStyle('opacity', e.target.value)}
+        className="w-full" style={{ accentColor: '#6366f1' }}
+      />
+    </div>
+  )
+}
+
 // ── 포인트 기반 shape 섹션 (line, polyline, polygon) ──
 
 function PolyShapeSection({ el, update, updateStyle }) {
@@ -1331,6 +1385,17 @@ function PolyShapeSection({ el, update, updateStyle }) {
         </div>
       </div>
 
+      {/* 화살표 (닫힌 도형이 아닐 때) */}
+      {!el.closed && (
+        <div className="space-y-1.5">
+          <p className={labelClass}>끝 모양</p>
+          <div className="grid grid-cols-2 gap-2">
+            <ArrowSelect label="시작" value={el.startArrow || 'none'} onChange={v => update({ startArrow: v })} />
+            <ArrowSelect label="끝" value={el.endArrow || 'none'} onChange={v => update({ endArrow: v })} />
+          </div>
+        </div>
+      )}
+
       {/* 채우기 (폴리곤만) */}
       <div>
         <div className="flex items-center justify-between mb-0.5">
@@ -1345,7 +1410,7 @@ function PolyShapeSection({ el, update, updateStyle }) {
           >{el.closed ? 'ON' : 'OFF'}</button>
         </div>
         {el.closed && (
-          <div className="mt-1">
+          <div className="mt-1 space-y-2">
             <p className={`${labelClass} mb-0.5`}>채우기</p>
             <ColorPicker
               value={el.styles?.fill || 'none'}
@@ -1355,6 +1420,45 @@ function PolyShapeSection({ el, update, updateStyle }) {
           </div>
         )}
       </div>
+
+      {/* 투명도 */}
+      <div>
+        <p className={`${labelClass} mb-0.5`}>
+          투명도 <span className="text-slate-600">{el.styles?.opacity || '1'}</span>
+        </p>
+        <input
+          type="range" min="0" max="1" step="0.01"
+          value={el.styles?.opacity || '1'}
+          onChange={e => updateStyle('opacity', e.target.value)}
+          className="w-full" style={{ accentColor: '#6366f1' }}
+        />
+      </div>
+    </div>
+  )
+}
+
+const ARROW_OPTIONS = [
+  { id: 'none', label: '없음', icon: '─' },
+  { id: 'arrow', label: '화살표', icon: '→' },
+  { id: 'triangle', label: '삼각형', icon: '▶' },
+  { id: 'circle', label: '원', icon: '●' },
+  { id: 'diamond', label: '다이아', icon: '◆' },
+]
+
+function ArrowSelect({ label, value, onChange }) {
+  return (
+    <div>
+      <p className={`${labelClass} mb-0.5`}>{label}</p>
+      <select
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        className={selectClass}
+        style={selectStyle}
+      >
+        {ARROW_OPTIONS.map(o => (
+          <option key={o.id} value={o.id}>{o.icon} {o.label}</option>
+        ))}
+      </select>
     </div>
   )
 }

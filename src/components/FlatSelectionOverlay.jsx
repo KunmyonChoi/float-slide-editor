@@ -40,8 +40,9 @@ export default function FlatSelectionOverlay({ element, scale, otherRects, canva
 
   // 드래그 이동
   const handleMoveStart = useCallback((e) => {
+    if (useFlatStore.getState().drawMode) return // 그리기 모드 중 이동 차단
     if (editingFlatId) return
-    if (element.locked) return // 잠금 요소 이동 차단
+    if (element.locked) return
     if (e.target.dataset.resizeHandle) return
     e.stopPropagation()
 

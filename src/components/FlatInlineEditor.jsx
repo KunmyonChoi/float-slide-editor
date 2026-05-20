@@ -17,7 +17,18 @@ export default function FlatInlineEditor({ element }) {
   // 마운트 시 innerHTML 설정 + 포커스 + 커밋 콜백 등록
   useEffect(() => {
     if (!ref.current) return
-    ref.current.innerHTML = content || ''
+    if (element.isCode) {
+      // 코드 모드: HTML을 텍스트 그대로 표시 (태그가 리터럴로 보임)
+      ref.current.textContent = content || ''
+      ref.current.style.whiteSpace = 'pre-wrap'
+      ref.current.style.fontFamily = 'monospace'
+    } else if (element.isRich) {
+      ref.current.innerHTML = content || ''
+    } else {
+      // plain text: escape 후 줄바꿈 변환
+      const displayContent = (content || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>')
+      ref.current.innerHTML = displayContent
+    }
     ref.current.focus()
     // 전체 선택
     const sel = window.getSelection()
@@ -31,10 +42,14 @@ export default function FlatInlineEditor({ element }) {
     const flushCommit = () => {
       if (committedRef.current || !ref.current) return
       committedRef.current = true
-      const html = (ref.current?.innerHTML || '').trim()
-      const stripped = html.replace(/<br\s*\/?>/gi, '')
-      const hasHtmlTags = /<[a-z][\s\S]*>/i.test(stripped)
-      commitTextEdit(element.id, html, hasHtmlTags)
+      if (element.isCode) {
+        const text = ref.current?.textContent || ''
+        commitTextEdit(element.id, text, false)
+      } else {
+        const html = (ref.current?.innerHTML || '').trim()
+        const hasHtmlTags = /<[a-z][\s\S]*>/i.test(html)
+        commitTextEdit(element.id, html, hasHtmlTags)
+      }
     }
     useFlatStore.getState()._setPendingEditCommit(flushCommit)
 
@@ -48,12 +63,16 @@ export default function FlatInlineEditor({ element }) {
   const commit = useCallback(() => {
     if (committedRef.current) return
     committedRef.current = true
-    const html = (ref.current?.innerHTML || '').trim()
-    // <br> 외에 HTML 태그가 있으면 isRich
-    const stripped = html.replace(/<br\s*\/?>/gi, '')
-    const hasHtmlTags = /<[a-z][\s\S]*>/i.test(stripped)
-    commitTextEdit(element.id, html, hasHtmlTags)
-  }, [element.id, commitTextEdit])
+    if (element.isCode) {
+      // 코드 모드: textContent 그대로 저장 (HTML 태그를 리터럴로 보존)
+      const text = ref.current?.textContent || ''
+      commitTextEdit(element.id, text, false)
+    } else {
+      const html = (ref.current?.innerHTML || '').trim()
+      const hasHtmlTags = /<[a-z][\s\S]*>/i.test(html)
+      commitTextEdit(element.id, html, hasHtmlTags)
+    }
+  }, [element.id, element.isCode, commitTextEdit])
 
   const handleBlur = useCallback(() => {
     commit()
