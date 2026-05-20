@@ -346,12 +346,17 @@ export const useFlatStore = create((set, get) => ({
     get()._syncPageInfo()
   },
 
-  /** flat 모드 내 페이지 이동 (iframe 불필요) */
+  /** flat 모드 내 페이지 이동 + split 모드에서 iframe 동기화 */
   goToFlatPage(pageIndex) {
     get()._saveCurrentPage()
     const keys = _getSortedPageKeys()
     if (pageIndex < 0 || pageIndex >= keys.length) return
     get()._restoreFromCache(keys[pageIndex])
+    // split 모드: iframe도 같은 페이지로 이동
+    if (get().viewMode === 'split') {
+      const ref = get()._iframeRef
+      ref?.current?.contentWindow?.postMessage({ type: 'fe:navigate', page: pageIndex }, '*')
+    }
   },
 
   /** flat 모드 페이지 delta 이동 */
