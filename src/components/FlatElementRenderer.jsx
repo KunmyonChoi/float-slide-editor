@@ -153,13 +153,18 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
             ? 'hidden' : 'visible',
           whiteSpace: styles.whiteSpace || 'pre-wrap',
           wordBreak: styles.whiteSpace === 'nowrap' ? 'normal' : 'break-word',
-          // 배경이 있는 텍스트 또는 병합 요소: flex로 텍스트 중앙 배치
-          ...((merged || (styles.backgroundColor && styles.backgroundColor !== 'rgba(0, 0, 0, 0)' && styles.backgroundColor !== 'transparent')) ? {
-            display: 'flex',
-            alignItems: styles.isFlex ? (styles.alignItems || 'center') : 'center',
-            justifyContent: styles.isFlex ? (styles.justifyContent || 'center') : (styles.textAlign === 'center' ? 'center' : styles.textAlign === 'right' ? 'flex-end' : 'flex-start'),
-            ...(styles.gap && styles.gap !== '0px' && styles.gap !== 'normal' ? { gap: styles.gap } : {}),
-          } : {}),
+          // flex 정렬: 요소 자체가 flex이거나, 배경 있는 텍스트/병합 요소
+          ...(() => {
+            const isSelfFlex = styles.display === 'flex' || styles.display === 'inline-flex'
+            const hasBg = styles.backgroundColor && styles.backgroundColor !== 'rgba(0, 0, 0, 0)' && styles.backgroundColor !== 'transparent'
+            if (!isSelfFlex && !merged && !hasBg) return {}
+            return {
+              display: 'flex',
+              alignItems: isSelfFlex ? (styles.alignItems || 'center') : styles.isFlex ? (styles.alignItems || 'center') : 'center',
+              justifyContent: isSelfFlex ? (styles.justifyContent || 'center') : styles.isFlex ? (styles.justifyContent || 'center') : (styles.textAlign === 'center' ? 'center' : styles.textAlign === 'right' ? 'flex-end' : 'flex-start'),
+              ...(styles.gap && styles.gap !== '0px' && styles.gap !== 'normal' ? { gap: styles.gap } : {}),
+            }
+          })(),
           visibility: isEditing ? 'hidden' : undefined,
         }}
         onMouseDown={handleMouseDown}

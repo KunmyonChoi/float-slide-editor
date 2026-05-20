@@ -52,9 +52,12 @@ export function exportFlatHtml(flatElements, canvasSize, fontImports = []) {
     if (el.type === 'text') {
       const textContent = el.isRich ? el.content : escHtml(el.content)
       const hasBg = el.styles.backgroundColor && el.styles.backgroundColor !== 'rgba(0, 0, 0, 0)' && el.styles.backgroundColor !== 'transparent'
-      const needsFlex = el.merged || hasBg
+      const isSelfFlex = el.styles.display === 'flex' || el.styles.display === 'inline-flex'
+      const needsFlex = el.merged || hasBg || isSelfFlex
       const gapStyle = (el.styles.gap && el.styles.gap !== '0px' && el.styles.gap !== 'normal') ? `gap:${el.styles.gap};` : ''
-      const mergedFlex = needsFlex ? `display:flex;align-items:${el.styles.isFlex ? (el.styles.alignItems || 'center') : 'center'};justify-content:${el.styles.isFlex ? (el.styles.justifyContent || 'center') : (el.styles.textAlign === 'center' ? 'center' : el.styles.textAlign === 'right' ? 'flex-end' : 'flex-start')};${gapStyle}` : ''
+      const flexAlign = isSelfFlex ? (el.styles.alignItems || 'center') : el.styles.isFlex ? (el.styles.alignItems || 'center') : 'center'
+      const flexJustify = isSelfFlex ? (el.styles.justifyContent || 'center') : el.styles.isFlex ? (el.styles.justifyContent || 'center') : (el.styles.textAlign === 'center' ? 'center' : el.styles.textAlign === 'right' ? 'flex-end' : 'flex-start')
+      const mergedFlex = needsFlex ? `display:flex;align-items:${flexAlign};justify-content:${flexJustify};${gapStyle}` : ''
       const isGradientText = el.styles.webkitBackgroundClip === 'text'
       if (isGradientText) {
         // 그래디언트 텍스트: 외부 div에 배경색 (textShadow 제외), 내부 span에 gradient+clip+drop-shadow
@@ -206,9 +209,12 @@ function renderElement(el) {
   if (el.type === 'text') {
     const textContent = el.isRich ? el.content : escHtml(el.content)
     const hasBg = el.styles.backgroundColor && el.styles.backgroundColor !== 'rgba(0, 0, 0, 0)' && el.styles.backgroundColor !== 'transparent'
-    const needsFlex = el.merged || hasBg
+    const isSelfFlex = el.styles.display === 'flex' || el.styles.display === 'inline-flex'
+    const needsFlex = el.merged || hasBg || isSelfFlex
     const gapStyle = (el.styles.gap && el.styles.gap !== '0px' && el.styles.gap !== 'normal') ? `gap:${el.styles.gap};` : ''
-    const mergedFlex = needsFlex ? `display:flex;align-items:${el.styles.isFlex ? (el.styles.alignItems || 'center') : 'center'};justify-content:${el.styles.isFlex ? (el.styles.justifyContent || 'center') : (el.styles.textAlign === 'center' ? 'center' : el.styles.textAlign === 'right' ? 'flex-end' : 'flex-start')};${gapStyle}` : ''
+    const flexAlign = isSelfFlex ? (el.styles.alignItems || 'center') : el.styles.isFlex ? (el.styles.alignItems || 'center') : 'center'
+    const flexJustify = isSelfFlex ? (el.styles.justifyContent || 'center') : el.styles.isFlex ? (el.styles.justifyContent || 'center') : (el.styles.textAlign === 'center' ? 'center' : el.styles.textAlign === 'right' ? 'flex-end' : 'flex-start')
+    const mergedFlex = needsFlex ? `display:flex;align-items:${flexAlign};justify-content:${flexJustify};${gapStyle}` : ''
     const isGradientText = el.styles.webkitBackgroundClip === 'text'
     if (isGradientText) {
       const dropShadow = el.styles.textShadow && el.styles.textShadow !== 'none'

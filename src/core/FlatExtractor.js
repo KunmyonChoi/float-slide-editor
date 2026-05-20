@@ -443,6 +443,10 @@ function extractStyles(cs, el) {
     overflow: cs.overflow,
     overflowX: cs.overflowX,
     textShadow: cs.textShadow,
+    // flex 정렬 (inline-flex/flex 요소의 내부 정렬)
+    display: cs.display,
+    alignItems: cs.alignItems,
+    justifyContent: cs.justifyContent,
   }
 }
 
