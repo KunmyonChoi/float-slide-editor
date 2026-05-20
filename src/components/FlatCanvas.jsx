@@ -112,6 +112,39 @@ export default function FlatCanvas() {
     reader.readAsDataURL(file)
   }, [insertImageFromDataUrl])
 
+  // 비디오 파일 → IndexedDB + 요소 삽입
+  const insertVideoFromFile = useCallback(async (file, dropX, dropY) => {
+    if (!file.type.startsWith('video/')) return
+    const { BlobStore } = await import('../core/BlobStore')
+    const key = await BlobStore.put(file)
+    const blobUrl = await BlobStore.getUrl(key)
+    const video = document.createElement('video')
+    video.preload = 'metadata'
+    video.src = blobUrl
+    await new Promise(r => { video.onloadedmetadata = r; video.onerror = r })
+    let w = video.videoWidth || 560
+    let h = video.videoHeight || 315
+    const maxW = canvasSize.w * 0.6, maxH = canvasSize.h * 0.6
+    if (w > maxW || h > maxH) {
+      const ratio = Math.min(maxW / w, maxH / h)
+      w = Math.round(w * ratio); h = Math.round(h * ratio)
+    }
+    const maxZ = flatElements.length > 0 ? Math.max(...flatElements.map(el => el.zIndex)) : 0
+    const x = dropX != null ? Math.max(0, Math.min(dropX - w / 2, canvasSize.w - w)) : (canvasSize.w - w) / 2
+    const y = dropY != null ? Math.max(0, Math.min(dropY - h / 2, canvasSize.h - h)) : (canvasSize.h - h) / 2
+    const el = {
+      id: nextFlatId(), sourceId: null,
+      type: 'video', width: w, height: h,
+      content: BlobStore.toRef(key),
+      isRich: false, merged: false,
+      x: Math.round(x), y: Math.round(y),
+      zIndex: maxZ + 1,
+      styles: { backgroundColor: 'rgba(0,0,0,0)', borderRadius: '8px', opacity: '1' },
+    }
+    addFlatElement(el)
+    setSelectedFlat(el.id)
+  }, [canvasSize, flatElements, addFlatElement, setSelectedFlat])
+
   // 드래그 앤 드롭
   const handleDragOver = useCallback((e) => {
     e.preventDefault()
@@ -122,8 +155,10 @@ export default function FlatCanvas() {
   const handleDrop = useCallback((e) => {
     e.preventDefault()
     setDragOver(false)
-    const files = [...e.dataTransfer.files].filter(f => f.type.startsWith('image/'))
-    if (files.length === 0) return
+    const allFiles = [...e.dataTransfer.files]
+    const images = allFiles.filter(f => f.type.startsWith('image/'))
+    const videos = allFiles.filter(f => f.type.startsWith('video/'))
+    if (images.length === 0 && videos.length === 0) return
     // 드롭 위치를 캔버스 좌표로 변환
     let dropX, dropY
     if (canvasRef.current) {
@@ -131,8 +166,9 @@ export default function FlatCanvas() {
       dropX = (e.clientX - rect.left) / scale
       dropY = (e.clientY - rect.top) / scale
     }
-    for (const file of files) insertImageFromFile(file, dropX, dropY)
-  }, [scale, insertImageFromFile])
+    for (const file of images) insertImageFromFile(file, dropX, dropY)
+    for (const file of videos) insertVideoFromFile(file, dropX, dropY)
+  }, [scale, insertImageFromFile, insertVideoFromFile])
 
   // 클립보드 붙여넣기 (이미지)
   useEffect(() => {
@@ -562,7 +598,7 @@ export default function FlatCanvas() {
             background: 'rgba(15, 23, 42, 0.9)', color: '#a5b4fc',
             padding: '12px 24px', borderRadius: 8, fontSize: 14,
           }}>
-            이미지를 여기에 놓으세요
+            이미지/영상을 여기에 놓으세요
           </div>
         </div>
       )}
