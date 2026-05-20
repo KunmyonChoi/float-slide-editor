@@ -336,6 +336,12 @@ export default function FlatCanvas() {
 
   // 첫 추출 완료 후 모든 페이지를 백그라운드 프리로드
   const preloadDone = useRef(false)
+  // flatElements가 비워졌다가 다시 채워지면 프리로드 재트리거
+  const prevElCount = useRef(flatElements.length)
+  useEffect(() => {
+    if (prevElCount.current > 0 && flatElements.length === 0) preloadDone.current = false
+    prevElCount.current = flatElements.length
+  }, [flatElements.length])
   useEffect(() => {
     if (preloadDone.current || flatElements.length === 0) return
     preloadDone.current = true

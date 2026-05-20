@@ -781,6 +781,19 @@ export const useFlatStore = create((set, get) => ({
   clearPageCache() {
     for (const key in _pageCache) delete _pageCache[key]
     _currentPageKey = null
+    _history.clear()
+    set({
+      flatElements: [],
+      selectedFlatIds: [],
+      editingFlatId: null,
+      flatPageCount: 0,
+      flatCurrentPage: 0,
+      preloadProgress: null,
+      _preloading: false,
+      _iframeRef: null,
+      canUndo: false,
+      canRedo: false,
+    })
   },
 
   /** 캔버스 DOM ref (이미지 내보내기용) */
