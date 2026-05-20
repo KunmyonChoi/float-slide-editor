@@ -47,7 +47,7 @@ export function exportFlatHtml(flatElements, canvasSize, fontImports = []) {
         ? `object-position:${el.styles.objectPosition};` : ''
       const imgBorder = el.styles.border && !el.styles.border.startsWith('0px') ? `border:${el.styles.border};` : ''
       const imgOpacity = el.styles.opacity && el.styles.opacity !== '1' ? `opacity:${el.styles.opacity};` : ''
-      return `<div style="${flatStyle(el)}"><img src="${escHtml(el.content)}" alt="" style="width:100%;height:100%;object-fit:${el.styles.objectFit || 'cover'};${objPos}display:block;border-radius:${el.styles.borderRadius || '0'};${imgBorder}${imgOpacity}" /></div>`
+      return `<div style="${flatStyle(el)}"><img src="${escHtml(el.content)}" alt="" style="width:100%;height:100%;object-fit:${el.styles.objectFit || 'contain'};${objPos}display:block;border-radius:${el.styles.borderRadius || '0'};${imgBorder}${imgOpacity}" /></div>`
     }
     if (el.type === 'text') {
       const textContent = el.isRich ? el.content : escHtml(el.content)
@@ -201,7 +201,7 @@ function renderElement(el) {
       ? `object-position:${el.styles.objectPosition};` : ''
     const imgBorder = el.styles.border && !el.styles.border.startsWith('0px') ? `border:${el.styles.border};` : ''
     const imgOpacity = el.styles.opacity && el.styles.opacity !== '1' ? `opacity:${el.styles.opacity};` : ''
-    return `<div style="${flatStyle(el)}"><img src="${escHtml(el.content)}" alt="" style="width:100%;height:100%;object-fit:${el.styles.objectFit || 'cover'};${objPos}display:block;border-radius:${el.styles.borderRadius || '0'};${imgBorder}${imgOpacity}" /></div>`
+    return `<div style="${flatStyle(el)}"><img src="${escHtml(el.content)}" alt="" style="width:100%;height:100%;object-fit:${el.styles.objectFit || 'contain'};${objPos}display:block;border-radius:${el.styles.borderRadius || '0'};${imgBorder}${imgOpacity}" /></div>`
   }
   if (el.type === 'text') {
     const textContent = el.isRich ? el.content : escHtml(el.content)

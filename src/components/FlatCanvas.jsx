@@ -9,6 +9,7 @@ import FlatInlineEditor from './FlatInlineEditor'
 import FlatContextMenu from './FlatContextMenu'
 import ImageCropOverlay from './ImageCropOverlay'
 import { nextFlatId } from '../core/FlatExtractor'
+import { pointsToBBox, absoluteToRelativePoints, pointsToSvgPath } from '../core/PolyShapeUtils'
 
 /**
  * FlatCanvas
@@ -28,8 +29,10 @@ export default function FlatCanvas() {
           removeSelectedElements, updateFlatElement, undo, redo, viewMode, reExtract,
           fontImports, copyElement, cutElement, pasteElement, duplicateElement, selectAllFlats,
           bringForward, sendBackward, bringToFront, sendToBack, setCroppingFlat,
-          addFlatElement, setCanvasRef, preloadProgress } = useFlatStore()
+          addFlatElement, setCanvasRef, preloadProgress, drawMode, setDrawMode } = useFlatStore()
   const [dragOver, setDragOver] = useState(false)
+  const [drawPoints, setDrawPoints] = useState([])     // 그리기 중 확정된 점들
+  const [drawPreview, setDrawPreview] = useState(null)  // 마우스 위치 (프리뷰용)
   const { currentPage, revealV } = useEditorStore()
 
   // 웹폰트를 부모 문서 <head>에 주입 — iframe 폰트와 동일하게 렌더링
@@ -94,7 +97,7 @@ export default function FlatCanvas() {
         styles: {
           backgroundColor: 'rgba(0, 0, 0, 0)', backgroundImage: 'none',
           borderRadius: '0px', border: '0px none', boxShadow: 'none',
-          opacity: '1', objectFit: 'cover',
+          opacity: '1', objectFit: 'contain',
         },
         x: ex, y: ey, zIndex: maxZ + 1,
       }
@@ -170,15 +173,100 @@ export default function FlatCanvas() {
     for (const file of videos) insertVideoFromFile(file, dropX, dropY)
   }, [scale, insertImageFromFile, insertVideoFromFile])
 
-  // 클립보드 붙여넣기 (이미지)
+  // ── 그리기 모드 ──
+  const finalizeDraw = useCallback((allPoints) => {
+    if (allPoints.length < 2) { setDrawPoints([]); setDrawPreview(null); setDrawMode(null); return }
+    const dm = useFlatStore.getState().drawMode
+    const bbox = pointsToBBox(allPoints)
+    // padding for stroke visibility
+    const pad = 4
+    const adjBbox = { x: bbox.x - pad, y: bbox.y - pad, width: bbox.width + pad * 2, height: bbox.height + pad * 2 }
+    const relPoints = allPoints.map(p => ({ x: p.x - adjBbox.x, y: p.y - adjBbox.y }))
+    const closed = dm === 'polygon'
+    const maxZ = flatElements.length > 0 ? Math.max(...flatElements.map(e => e.zIndex)) : 0
+    const el = {
+      id: nextFlatId(), sourceId: null,
+      type: 'shape', shapeType: dm === 'line' ? 'line' : dm,
+      x: adjBbox.x, y: adjBbox.y,
+      width: adjBbox.width, height: adjBbox.height,
+      zIndex: maxZ + 1,
+      content: '', isRich: false, merged: false,
+      points: relPoints,
+      closed,
+      styles: {
+        stroke: '#1e293b', strokeWidth: '2', strokeDasharray: '',
+        fill: closed ? 'rgba(99,102,241,0.15)' : 'none',
+        backgroundColor: 'rgba(0,0,0,0)', opacity: '1',
+      },
+    }
+    addFlatElement(el)
+    setSelectedFlat(el.id)
+    setDrawPoints([]); setDrawPreview(null); setDrawMode(null)
+  }, [flatElements, addFlatElement, setSelectedFlat, setDrawMode])
+
+  const handleDrawClick = useCallback((e) => {
+    if (!drawMode) return
+    const rect = canvasRef.current?.getBoundingClientRect()
+    if (!rect) return
+    const cx = (e.clientX - rect.left) / scale
+    const cy = (e.clientY - rect.top) / scale
+
+    if (drawMode === 'line') {
+      if (drawPoints.length === 0) {
+        setDrawPoints([{ x: cx, y: cy }])
+      } else {
+        finalizeDraw([...drawPoints, { x: cx, y: cy }])
+      }
+    } else {
+      // polyline / polygon: 클릭마다 점 추가
+      setDrawPoints(prev => [...prev, { x: cx, y: cy }])
+    }
+  }, [drawMode, drawPoints, scale, finalizeDraw])
+
+  const handleDrawDoubleClick = useCallback((e) => {
+    if (!drawMode || drawMode === 'line') return
+    if (drawPoints.length >= 2) {
+      e.preventDefault()
+      e.stopPropagation()
+      finalizeDraw(drawPoints)
+    }
+  }, [drawMode, drawPoints, finalizeDraw])
+
+  const handleDrawMouseMove = useCallback((e) => {
+    if (!drawMode || drawPoints.length === 0) return
+    const rect = canvasRef.current?.getBoundingClientRect()
+    if (!rect) return
+    setDrawPreview({ x: (e.clientX - rect.left) / scale, y: (e.clientY - rect.top) / scale })
+  }, [drawMode, drawPoints.length, scale])
+
+  // ESC로 그리기 취소/확정
+  useEffect(() => {
+    if (!drawMode) return
+    const onKey = (e) => {
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        if (drawPoints.length >= 2 && drawMode !== 'line') {
+          finalizeDraw(drawPoints) // 확정
+        } else {
+          setDrawPoints([]); setDrawPreview(null); setDrawMode(null) // 취소
+        }
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [drawMode, drawPoints, finalizeDraw, setDrawMode])
+
+  // 클립보드 붙여넣기 (이미지 / 텍스트)
   useEffect(() => {
     const onPaste = (e) => {
-      // 텍스트 편집 중이면 무시
+      // 텍스트 편집 중이면 브라우저 기본 동작 (contentEditable에 붙여넣기)
       if (useFlatStore.getState().editingFlatId) return
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return
       if (e.target.contentEditable === 'true') return
 
       const items = [...(e.clipboardData?.items || [])]
+
+      // 1순위: 이미지
       const imageItem = items.find(i => i.type.startsWith('image/'))
       if (imageItem) {
         e.preventDefault()
@@ -186,7 +274,42 @@ export default function FlatCanvas() {
         if (file) insertImageFromFile(file)
         return
       }
-      // 이미지가 아니면 기존 요소 붙여넣기가 처리
+
+      // 2순위: 내부 요소 클립보드가 있으면 요소 붙여넣기 (keydown에서 처리)
+      const { clipboard } = useFlatStore.getState()
+      if (clipboard && clipboard.length > 0) return
+
+      // 3순위: 텍스트 → 새 텍스트 요소 생성
+      const text = e.clipboardData?.getData('text/plain')
+      if (text && text.trim()) {
+        e.preventDefault()
+        const { canvasSize: cs, flatElements: els, addFlatElement, setSelectedFlat } = useFlatStore.getState()
+        const maxZ = els.length > 0 ? Math.max(...els.map(el => el.zIndex)) : 0
+        // 텍스트 크기 추정
+        const lines = text.trim().split('\n')
+        const estWidth = Math.min(Math.max(200, Math.max(...lines.map(l => l.length)) * 10), cs.w * 0.8)
+        const estHeight = Math.max(40, lines.length * 24)
+        const el = {
+          id: nextFlatId(), sourceId: null,
+          type: 'text',
+          content: text.trim().replace(/\n/g, '<br>'),
+          isRich: text.includes('\n'),
+          merged: false,
+          x: Math.round((cs.w - estWidth) / 2),
+          y: Math.round((cs.h - estHeight) / 2),
+          width: Math.round(estWidth),
+          height: Math.round(estHeight),
+          zIndex: maxZ + 1,
+          styles: {
+            backgroundColor: 'rgba(0,0,0,0)', color: '#1e293b',
+            fontSize: '16px', fontFamily: 'sans-serif', fontWeight: '400',
+            lineHeight: '1.5', textAlign: 'left', padding: '4px 8px',
+            borderRadius: '0px', border: '0px none', boxShadow: 'none', opacity: '1',
+          },
+        }
+        addFlatElement(el)
+        setSelectedFlat(el.id)
+      }
     }
     window.addEventListener('paste', onPaste)
     return () => window.removeEventListener('paste', onPaste)
@@ -281,6 +404,9 @@ export default function FlatCanvas() {
         if (e.code === 'KeyZ' && e.shiftKey)  { e.preventDefault(); redo(); return }
         if (e.code === 'KeyY')                { e.preventDefault(); redo(); return }
         if (e.code === 'KeyA')                { e.preventDefault(); selectAllFlats(); return }
+        // Ctrl+Shift+C/V: 스타일 복사/붙여넣기 (Ctrl+C/V보다 먼저 체크)
+        if (e.code === 'KeyC' && e.shiftKey && hasSelection) { e.preventDefault(); useFlatStore.getState().copyStyle(); return }
+        if (e.code === 'KeyV' && e.shiftKey && hasSelection) { e.preventDefault(); useFlatStore.getState().pasteStyle(); return }
         if (e.code === 'KeyC' && hasSelection)  { copyElement(); return }
         if (e.code === 'KeyX' && hasSelection)  { cutElement(); return }
         if (e.code === 'KeyV')                  { pasteElement(); return }
@@ -291,7 +417,7 @@ export default function FlatCanvas() {
         if (e.code === 'BracketRight' && e.shiftKey && singleId)  { bringToFront(singleId); return }
         if (e.code === 'BracketLeft' && e.shiftKey && singleId)   { sendToBack(singleId); return }
 
-        // ── 텍스트 서식 단축키 (선택된 text 요소에 적용) ──
+        // ── 텍스트 서식 단축키 (선택된 text 요소에 적용, 다중 선택 batch) ──
         if (hasSelection) {
           const els = useFlatStore.getState().flatElements
           const textEls = selectedFlatIds
@@ -299,49 +425,50 @@ export default function FlatCanvas() {
             .filter(el => el && (el.type === 'text' || (el.type === 'shape' && el.content)))
 
           if (textEls.length > 0) {
+            const batch = useFlatStore.getState().batchUpdateFlatElementsIndividual
             // Ctrl+B — 굵게 토글
             if (e.code === 'KeyB') {
               e.preventDefault()
-              for (const el of textEls) {
-                const isBold = parseInt(el.styles?.fontWeight || '400') >= 700
-                updateFlatElement(el.id, { styles: { fontWeight: isBold ? '400' : '700' } })
-              }
+              batch(textEls.map(el => ({
+                id: el.id,
+                changes: { styles: { fontWeight: parseInt(el.styles?.fontWeight || '400') >= 700 ? '400' : '700' } }
+              })))
               return
             }
             // Ctrl+I — 이탈릭 토글
             if (e.code === 'KeyI') {
               e.preventDefault()
-              for (const el of textEls) {
-                const isItalic = el.styles?.fontStyle === 'italic'
-                updateFlatElement(el.id, { styles: { fontStyle: isItalic ? 'normal' : 'italic' } })
-              }
+              batch(textEls.map(el => ({
+                id: el.id,
+                changes: { styles: { fontStyle: el.styles?.fontStyle === 'italic' ? 'normal' : 'italic' } }
+              })))
               return
             }
             // Ctrl+U — 밑줄 토글
             if (e.code === 'KeyU') {
               e.preventDefault()
-              for (const el of textEls) {
-                const hasUnderline = (el.styles?.textDecoration || '').includes('underline')
-                updateFlatElement(el.id, { styles: { textDecoration: hasUnderline ? 'none' : 'underline' } })
-              }
+              batch(textEls.map(el => ({
+                id: el.id,
+                changes: { styles: { textDecoration: (el.styles?.textDecoration || '').includes('underline') ? 'none' : 'underline' } }
+              })))
               return
             }
             // Ctrl+Shift+> (.) — 폰트 크기 +2px
             if (e.shiftKey && (e.code === 'Period')) {
               e.preventDefault()
-              for (const el of textEls) {
-                const cur = parseFloat(el.styles?.fontSize || '16')
-                updateFlatElement(el.id, { styles: { fontSize: `${cur + 2}px` } })
-              }
+              batch(textEls.map(el => ({
+                id: el.id,
+                changes: { styles: { fontSize: `${parseFloat(el.styles?.fontSize || '16') + 2}px` } }
+              })))
               return
             }
             // Ctrl+Shift+< (,) — 폰트 크기 -2px (최소 8px)
             if (e.shiftKey && (e.code === 'Comma')) {
               e.preventDefault()
-              for (const el of textEls) {
-                const cur = parseFloat(el.styles?.fontSize || '16')
-                updateFlatElement(el.id, { styles: { fontSize: `${Math.max(8, cur - 2)}px` } })
-              }
+              batch(textEls.map(el => ({
+                id: el.id,
+                changes: { styles: { fontSize: `${Math.max(8, parseFloat(el.styles?.fontSize || '16') - 2)}px` } }
+              })))
               return
             }
           }
@@ -525,7 +652,16 @@ export default function FlatCanvas() {
           }}
           onMouseDown={handleStageMouseDown}
         >
-          <div data-flat-canvas="true" style={{ position: 'relative', width: '100%', height: '100%', overflow: 'hidden', userSelect: 'none' }}>
+          <div
+            data-flat-canvas="true"
+            style={{
+              position: 'relative', width: '100%', height: '100%', overflow: 'hidden', userSelect: 'none',
+              cursor: drawMode ? 'crosshair' : undefined,
+            }}
+            onClick={drawMode ? handleDrawClick : undefined}
+            onDoubleClick={drawMode ? handleDrawDoubleClick : undefined}
+            onMouseMove={drawMode ? handleDrawMouseMove : undefined}
+          >
             {flatElements.map(el => (
               <FlatElementRenderer
                 key={el.id}
@@ -544,17 +680,99 @@ export default function FlatCanvas() {
                 otherRects={otherRects} canvasSize={canvasSize} onSnapGuides={setSnapGuides} />
             )}
             {/* 스냅 가이드 */}
-            {snapGuides.map((g, i) => (
-              <div key={i} data-export-ignore="true" style={{
-                position: 'absolute',
-                ...(g.orientation === 'v'
-                  ? { left: g.position, top: 0, width: 1, height: '100%' }
-                  : { top: g.position, left: 0, height: 1, width: '100%' }),
-                background: '#ff2d55',
-                pointerEvents: 'none',
-                zIndex: 9997,
-              }} />
-            ))}
+            {snapGuides.map((g, i) => {
+              // 간격 표시 (양방향 화살표 + 거리)
+              if (g.type === 'gap') {
+                const isH = g.orientation === 'h' // 수평 간격 (좌우)
+                return (
+                  <div key={i} data-export-ignore="true" style={{
+                    position: 'absolute', pointerEvents: 'none', zIndex: 9998,
+                    ...(isH
+                      ? { left: g.from, top: g.position - 0.5, width: g.to - g.from, height: 1 }
+                      : { left: g.position - 0.5, top: g.from, width: 1, height: g.to - g.from }),
+                    background: '#ff6b9d',
+                  }}>
+                    <span style={{
+                      position: 'absolute',
+                      ...(isH
+                        ? { top: -14, left: '50%', transform: 'translateX(-50%)' }
+                        : { left: 6, top: '50%', transform: 'translateY(-50%)' }),
+                      fontSize: 10, color: '#ff6b9d', fontWeight: 600,
+                      background: 'rgba(0,0,0,0.7)', padding: '1px 4px', borderRadius: 3,
+                      whiteSpace: 'nowrap',
+                    }}>{g.distance}px</span>
+                  </div>
+                )
+              }
+              // 균등 간격 스냅 (분홍 점선)
+              if (g.type === 'spacing') {
+                return (
+                  <div key={i} data-export-ignore="true" style={{
+                    position: 'absolute', pointerEvents: 'none', zIndex: 9997,
+                    ...(g.orientation === 'v'
+                      ? { left: g.position, top: 0, width: 0, height: '100%', borderLeft: '1px dashed #c084fc' }
+                      : { top: g.position, left: 0, height: 0, width: '100%', borderTop: '1px dashed #c084fc' }),
+                  }} />
+                )
+              }
+              // 크기 매칭 (파란 점선 + 치수)
+              if (g.type === 'size') {
+                return (
+                  <div key={i} data-export-ignore="true" style={{
+                    position: 'absolute', pointerEvents: 'none', zIndex: 9997,
+                    ...(g.orientation === 'v'
+                      ? { left: g.position, top: g.from, width: 0, height: g.to - g.from, borderLeft: '1px dashed #38bdf8' }
+                      : { top: g.position, left: g.from, height: 0, width: g.to - g.from, borderTop: '1px dashed #38bdf8' }),
+                  }}>
+                    <span style={{
+                      position: 'absolute',
+                      ...(g.orientation === 'v'
+                        ? { left: 4, top: '50%', transform: 'translateY(-50%)' }
+                        : { top: 4, left: '50%', transform: 'translateX(-50%)' }),
+                      fontSize: 10, color: '#38bdf8', fontWeight: 600,
+                      background: 'rgba(0,0,0,0.7)', padding: '1px 4px', borderRadius: 3,
+                      whiteSpace: 'nowrap',
+                    }}>{g.targetSize}px</span>
+                  </div>
+                )
+              }
+              // 기본 정렬 가이드 (빨간 실선)
+              return (
+                <div key={i} data-export-ignore="true" style={{
+                  position: 'absolute',
+                  ...(g.orientation === 'v'
+                    ? { left: g.position, top: 0, width: 1, height: '100%' }
+                    : { top: g.position, left: 0, height: 1, width: '100%' }),
+                  background: '#ff2d55',
+                  pointerEvents: 'none',
+                  zIndex: 9997,
+                }} />
+              )
+            })}
+            {/* 그리기 프리뷰 */}
+            {drawMode && drawPoints.length > 0 && (
+              <svg
+                data-export-ignore="true"
+                style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 9999, overflow: 'visible' }}
+              >
+                {(() => {
+                  const allPts = drawPreview ? [...drawPoints, drawPreview] : drawPoints
+                  if (allPts.length < 2) return null
+                  const d = pointsToSvgPath(allPts, drawMode === 'polygon' && !drawPreview)
+                  return (
+                    <>
+                      <path d={d} stroke="#6366f1" strokeWidth="2" fill={drawMode === 'polygon' ? 'rgba(99,102,241,0.1)' : 'none'}
+                            strokeDasharray="6,3" strokeLinecap="round" strokeLinejoin="round" />
+                      {allPts.map((p, i) => (
+                        <circle key={i} cx={p.x} cy={p.y} r={4}
+                                fill={i < drawPoints.length ? '#6366f1' : '#a5b4fc'}
+                                stroke="#fff" strokeWidth="1.5" />
+                      ))}
+                    </>
+                  )
+                })()}
+              </svg>
+            )}
             {editingFlatId && flatElements.find(e => e.id === editingFlatId) && (
               <FlatInlineEditor
                 element={flatElements.find(e => e.id === editingFlatId)}

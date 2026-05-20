@@ -145,7 +145,7 @@ export default function ImageCropOverlay({ element, scale }) {
           style={{
             width: '100%',
             height: '100%',
-            objectFit: element.styles.objectFit || 'cover',
+            objectFit: element.styles.objectFit || 'contain',
             objectPosition: `${posX.toFixed(1)}% ${posY.toFixed(1)}%`,
             display: 'block',
             pointerEvents: 'none',

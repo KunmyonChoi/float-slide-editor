@@ -42,6 +42,10 @@ export const useFlatStore = create((set, get) => ({
   canRedo: false,
   /** 복사/붙여넣기용 클립보드 */
   clipboard: null,
+  /** 스타일 복사용 클립보드 */
+  styleClipboard: null,
+  /** 그리기 모드: null | 'line' | 'polyline' | 'polygon' */
+  drawMode: null,
   /** 마키 드래그 직후 배경 click 무시용 플래그 */
   _skipBgClick: false,
 
@@ -133,24 +137,29 @@ export const useFlatStore = create((set, get) => ({
     get()._syncPageInfo()
   },
 
-  /** 현재 페이지 강제 재추출 (캐시 무시) */
-  forceReExtract() {
+  /** 현재 페이지 강제 재추출 (캐시 무시, iframe 페이지 동기화) */
+  async forceReExtract() {
     const ref = get()._iframeRef
-    if (!ref) return
+    if (!ref?.current) return
+
+    // flat 모드에서는 iframe 페이지가 동기화 안 되어 있을 수 있으므로, 현재 페이지로 이동
+    const pageIdx = _currentPageKey ? parseInt(_currentPageKey.split('-')[0]) : 0
+    ref.current.contentWindow?.postMessage({ type: 'fe:navigate', page: pageIdx }, '*')
+    await new Promise(r => setTimeout(r, 400))
+
     if (_currentPageKey) delete _pageCache[_currentPageKey]
-    setTimeout(() => {
-      const { elements, canvasSize, fontImports } = extractFlatElements(ref)
-      _history.clear()
-      set({
-        flatElements: elements,
-        canvasSize,
-        fontImports: fontImports || [],
-        selectedFlatIds: [],
-        editingFlatId: null,
-        canUndo: false,
-        canRedo: false,
-      })
-    }, 150)
+    const { elements, canvasSize, fontImports } = extractFlatElements(ref)
+    _history.clear()
+    set({
+      flatElements: elements,
+      canvasSize,
+      fontImports: fontImports || [],
+      selectedFlatIds: [],
+      editingFlatId: null,
+      canUndo: false,
+      canRedo: false,
+    })
+    get()._syncPageInfo()
   },
 
   /** 해상도 변경 시 모든 캐시 초기화 + 강제 재추출 */
@@ -189,6 +198,10 @@ export const useFlatStore = create((set, get) => ({
 
   setViewMode(mode) {
     set({ viewMode: mode })
+  },
+
+  setDrawMode(mode) {
+    set({ drawMode: mode, selectedFlatIds: [], editingFlatId: null })
   },
 
   /** 모든 페이지를 백그라운드로 미리 flat 변환 (로딩 시 자동 호출) */
@@ -254,11 +267,21 @@ export const useFlatStore = create((set, get) => ({
   addPage() {
     get()._saveCurrentPage()
     const keys = _getSortedPageKeys()
-    // 새 페이지 번호 = 마지막 + 1
-    const lastIdx = keys.length > 0
-      ? Math.max(...keys.map(k => parseInt(k.split('-')[0])))
-      : -1
-    const newKey = `${lastIdx + 1}-0`
+    const currentIdx = _currentPageKey ? keys.indexOf(_currentPageKey) : keys.length - 1
+    const insertAt = currentIdx + 1 // 현재 페이지 바로 뒤
+
+    // 삽입 위치 이후의 페이지 키를 뒤로 밀기
+    const reindexed = {}
+    for (let i = 0; i < keys.length; i++) {
+      const newIdx = i < insertAt ? i : i + 1
+      reindexed[`${newIdx}-0`] = _pageCache[keys[i]]
+    }
+    // 기존 캐시 교체
+    for (const key in _pageCache) delete _pageCache[key]
+    for (const key in reindexed) _pageCache[key] = reindexed[key]
+
+    // 새 페이지 생성
+    const newKey = `${insertAt}-0`
     const cs = get().canvasSize
     _pageCache[newKey] = {
       elements: [],
@@ -266,9 +289,10 @@ export const useFlatStore = create((set, get) => ({
       fontImports: [],
       history: { stack: [], pointer: -1 },
     }
+
     // 새 페이지로 이동
+    _currentPageKey = newKey
     get()._restoreFromCache(newKey)
-    // iframe도 동기 (editorStore 페이지 수 갱신)
     get()._syncPageInfo()
   },
 
@@ -294,6 +318,31 @@ export const useFlatStore = create((set, get) => ({
     const newKeys = _getSortedPageKeys()
     const targetKey = newKeys[Math.min(idx, newKeys.length - 1)]
     get()._restoreFromCache(targetKey)
+    get()._syncPageInfo()
+  },
+
+  /** 현재 페이지 순서 이동 (delta: -1=앞으로, +1=뒤로) */
+  movePageOrder(delta) {
+    get()._saveCurrentPage()
+    const keys = _getSortedPageKeys()
+    const idx = _currentPageKey ? keys.indexOf(_currentPageKey) : -1
+    if (idx < 0) return
+    const newIdx = idx + delta
+    if (newIdx < 0 || newIdx >= keys.length) return
+
+    // 인접 페이지와 swap
+    const entries = keys.map(k => _pageCache[k])
+    const tmp = entries[idx]
+    entries[idx] = entries[newIdx]
+    entries[newIdx] = tmp
+
+    // 캐시 재구성
+    for (const k in _pageCache) delete _pageCache[k]
+    entries.forEach((entry, i) => { _pageCache[`${i}-0`] = entry })
+
+    // 이동된 위치로 전환
+    _currentPageKey = `${newIdx}-0`
+    get()._restoreFromCache(_currentPageKey)
     get()._syncPageInfo()
   },
 
@@ -436,6 +485,22 @@ export const useFlatStore = create((set, get) => ({
   cutElement() {
     get().copyElement()
     get().removeSelectedElements()
+  },
+
+  /** 선택된 요소의 스타일 복사 (Ctrl+Shift+C) */
+  copyStyle() {
+    const { selectedFlatIds, flatElements } = get()
+    if (selectedFlatIds.length !== 1) return
+    const el = flatElements.find(e => e.id === selectedFlatIds[0])
+    if (!el) return
+    set({ styleClipboard: structuredClone(el.styles) })
+  },
+
+  /** 선택된 요소에 스타일 붙여넣기 (Ctrl+Shift+V) */
+  pasteStyle() {
+    const { styleClipboard, selectedFlatIds } = get()
+    if (!styleClipboard || selectedFlatIds.length === 0) return
+    get().batchUpdateFlatElements(selectedFlatIds, { styles: { ...styleClipboard } })
   },
 
   /** 클립보드에서 붙여넣기 — 다중 지원 */

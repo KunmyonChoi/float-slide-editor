@@ -12,7 +12,7 @@ const DEFAULT_STYLES = {
   borderRadius: '0px', border: '0px none',
   borderTop: '0px none', borderRight: '0px none',
   borderBottom: '0px none', borderLeft: '0px none',
-  boxShadow: 'none', opacity: '1', padding: '0px', objectFit: 'cover',
+  boxShadow: 'none', opacity: '1', padding: '0px', objectFit: 'contain',
 }
 
 const ELEMENT_PRESETS = {
@@ -165,7 +165,7 @@ export default function FlatContextMenu({ x, y, canvasX, canvasY, onClose }) {
           width: w, height: h,
           content: ev.target.result,
           isRich: false, merged: false,
-          styles: { ...DEFAULT_STYLES, objectFit: 'cover' },
+          styles: { ...DEFAULT_STYLES, objectFit: 'contain' },
         })
         onClose()
       }
@@ -216,6 +216,8 @@ export default function FlatContextMenu({ x, y, canvasX, canvasY, onClose }) {
       case 'bringForward': if (singleId) bringForward(singleId); break
       case 'sendBackward': if (singleId) sendBackward(singleId); break
       case 'sendToBack': if (singleId) sendToBack(singleId); break
+      case 'copyStyle': useFlatStore.getState().copyStyle(); break
+      case 'pasteStyle': useFlatStore.getState().pasteStyle(); break
       case 'insertText': insertElement('text'); break
       case 'insertRect': insertElement('rect'); break
       case 'insertCircle': insertElement('circle'); break
@@ -304,6 +306,9 @@ export default function FlatContextMenu({ x, y, canvasX, canvasY, onClose }) {
     { id: 'cut', label: '잘라내기', shortcut: 'Ctrl+X', action: 'cut' },
     { id: 'copy', label: '복사', shortcut: 'Ctrl+C', action: 'copy' },
     { id: 'paste', label: '붙여넣기', shortcut: 'Ctrl+V', action: 'paste', disabled: clipboardEmpty },
+    { id: 'copyStyle', label: '서식 복사', shortcut: 'Ctrl+Shift+C', action: 'copyStyle', disabled: !singleId },
+    { id: 'pasteStyle', label: '서식 붙여넣기', shortcut: 'Ctrl+Shift+V', action: 'pasteStyle',
+      disabled: !useFlatStore.getState().styleClipboard },
     { id: 'dup', label: '복제', shortcut: 'Ctrl+D', action: 'duplicate' },
     { id: 'del', label: '삭제', shortcut: 'Delete', action: 'delete' },
     { id: 'lock', label: allLocked ? '잠금 해제' : '잠금', action: 'lock' },

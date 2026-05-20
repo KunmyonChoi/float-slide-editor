@@ -31,6 +31,12 @@ export default function PageBar() {
       const vm = useFlatStore.getState().viewMode
       const isFM = vm === 'flat' || vm === 'split'
 
+      // Ctrl+Shift+PageUp/Down: 페이지 순서 이동
+      if (isFM && (e.ctrlKey || e.metaKey) && e.shiftKey) {
+        if (e.key === 'PageUp') { e.preventDefault(); useFlatStore.getState().movePageOrder(-1); return }
+        if (e.key === 'PageDown') { e.preventDefault(); useFlatStore.getState().movePageOrder(1); return }
+      }
+
       if (e.key === 'PageDown' || e.key === 'ArrowRight') {
         e.preventDefault()
         if (isFM) { useFlatStore.getState().navigateFlatPage(1) }
@@ -111,6 +117,19 @@ export default function PageBar() {
           style={{ ...btnStyle(flatPageCount > 1), fontSize: 14, width: 24, height: 24 }}
           title="페이지 삭제"
         >&minus;</button>
+        <span style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.1)', margin: '0 4px' }} />
+        <button
+          onClick={() => useFlatStore.getState().movePageOrder(-1)}
+          disabled={flatCurrentPage <= 0}
+          style={{ ...btnStyle(flatCurrentPage > 0), fontSize: 11, width: 24, height: 24 }}
+          title="페이지 앞으로 이동 (Ctrl+Shift+PageUp)"
+        >&#9664;</button>
+        <button
+          onClick={() => useFlatStore.getState().movePageOrder(1)}
+          disabled={flatCurrentPage >= flatPageCount - 1}
+          style={{ ...btnStyle(flatCurrentPage < flatPageCount - 1), fontSize: 11, width: 24, height: 24 }}
+          title="페이지 뒤로 이동 (Ctrl+Shift+PageDown)"
+        >&#9654;</button>
       </div>
     )
   }

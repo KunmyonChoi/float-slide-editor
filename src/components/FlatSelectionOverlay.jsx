@@ -2,6 +2,7 @@ import { useCallback, useRef, useEffect, useMemo } from 'react'
 import { useFlatStore } from '../store/flatStore'
 import { computeSnapGuides, computeResizeSnapGuides } from '../core/SnapEngine'
 import { computeRotationAngle, snapRotation, normalizeAngle, canvasDeltaToLocal } from '../core/RotationUtils'
+import { pointsToBBox, closestPointOnSegments } from '../core/PolyShapeUtils'
 
 const HANDLE_SIZE = 8
 const ROTATE_HANDLE_OFFSET = 30
@@ -286,26 +287,81 @@ export default function FlatSelectionOverlay({ element, scale, otherRects, canva
             background: 'rgba(99,102,241,0.5)',
             pointerEvents: 'none',
           }} />
-          {/* 리사이즈 핸들 */}
-          {HANDLES.map(h => (
-            <div
-              key={h.dir}
-              data-resize-handle="true"
-              onMouseDown={(e) => handleResizeStart(e, h.dir)}
-              style={{
-                position: 'absolute',
-                left: h.x * width - HANDLE_SIZE / 2,
-                top: h.y * height - HANDLE_SIZE / 2,
-                width: HANDLE_SIZE,
-                height: HANDLE_SIZE,
-                background: '#6366f1',
-                border: '1px solid #fff',
-                borderRadius: 2,
-                cursor: h.cursor,
-                zIndex: 10000,
-              }}
-            />
-          ))}
+          {/* 리사이즈 핸들 또는 포인트 핸들 */}
+          {element.shapeType && element.points ? (
+            /* 포인트 기반 shape: 각 꼭지점에 원형 핸들 */
+            element.points.map((pt, idx) => (
+              <div
+                key={`pt-${idx}`}
+                data-resize-handle="true"
+                onMouseDown={(e) => {
+                  if (e.shiftKey && element.points.length > 2) {
+                    // Shift+클릭: 포인트 삭제
+                    e.stopPropagation()
+                    const newPts = element.points.filter((_, i) => i !== idx)
+                    const bbox = pointsToBBox(newPts.map(p => ({ x: p.x + element.x, y: p.y + element.y })))
+                    const relPts = newPts.map(p => ({ x: p.x + element.x - bbox.x, y: p.y + element.y - bbox.y }))
+                    updateFlatElement(element.id, { points: relPts, x: bbox.x, y: bbox.y, width: bbox.width, height: bbox.height })
+                    return
+                  }
+                  // 포인트 드래그 시작
+                  e.stopPropagation()
+                  const startX = e.clientX, startY = e.clientY
+                  const startPt = { ...pt }
+                  const onMove = (me) => {
+                    const dx = (me.clientX - startX) / scale
+                    const dy = (me.clientY - startY) / scale
+                    const newPts = element.points.map((p, i) =>
+                      i === idx ? { x: startPt.x + dx, y: startPt.y + dy } : p
+                    )
+                    const absPts = newPts.map(p => ({ x: p.x + element.x, y: p.y + element.y }))
+                    const bbox = pointsToBBox(absPts)
+                    const relPts = absPts.map(p => ({ x: p.x - bbox.x, y: p.y - bbox.y }))
+                    previewFlatElement(element.id, { points: relPts, x: bbox.x, y: bbox.y, width: bbox.width, height: bbox.height })
+                  }
+                  const onUp = () => {
+                    window.removeEventListener('mousemove', onMove)
+                    window.removeEventListener('mouseup', onUp)
+                    const el = useFlatStore.getState().flatElements.find(e => e.id === element.id)
+                    if (el) updateFlatElement(element.id, { points: el.points, x: el.x, y: el.y, width: el.width, height: el.height })
+                  }
+                  window.addEventListener('mousemove', onMove)
+                  window.addEventListener('mouseup', onUp)
+                }}
+                style={{
+                  position: 'absolute',
+                  left: pt.x - 5,
+                  top: pt.y - 5,
+                  width: 10, height: 10,
+                  background: '#6366f1',
+                  border: '2px solid #fff',
+                  borderRadius: '50%',
+                  cursor: 'move',
+                  zIndex: 10000,
+                }}
+              />
+            ))
+          ) : (
+            HANDLES.map(h => (
+              <div
+                key={h.dir}
+                data-resize-handle="true"
+                onMouseDown={(e) => handleResizeStart(e, h.dir)}
+                style={{
+                  position: 'absolute',
+                  left: h.x * width - HANDLE_SIZE / 2,
+                  top: h.y * height - HANDLE_SIZE / 2,
+                  width: HANDLE_SIZE,
+                  height: HANDLE_SIZE,
+                  background: '#6366f1',
+                  border: '1px solid #fff',
+                  borderRadius: 2,
+                  cursor: h.cursor,
+                  zIndex: 10000,
+                }}
+              />
+            ))
+          )}
         </>
       )}
       {locked && (
@@ -331,9 +387,13 @@ export default function FlatSelectionOverlay({ element, scale, otherRects, canva
 
 const GROUP_HANDLES = [
   { dir: 'nw', cursor: 'nwse-resize', x: 0, y: 0 },
+  { dir: 'n',  cursor: 'ns-resize',   x: 0.5, y: 0 },
   { dir: 'ne', cursor: 'nesw-resize', x: 1, y: 0 },
+  { dir: 'e',  cursor: 'ew-resize',   x: 1, y: 0.5 },
   { dir: 'se', cursor: 'nwse-resize', x: 1, y: 1 },
+  { dir: 's',  cursor: 'ns-resize',   x: 0.5, y: 1 },
   { dir: 'sw', cursor: 'nesw-resize', x: 0, y: 1 },
+  { dir: 'w',  cursor: 'ew-resize',   x: 0, y: 0.5 },
 ]
 
 export function FlatGroupOverlay({ elements, scale, otherRects, canvasSize, onSnapGuides }) {

@@ -2,6 +2,7 @@ import { useCallback, useState, useEffect } from 'react'
 import { useFlatStore } from '../store/flatStore'
 import { useEditorStore } from '../store/editorStore'
 import { BlobStore } from '../core/BlobStore'
+import { pointsToSvgPath } from '../core/PolyShapeUtils'
 
 /**
  * FlatElementRenderer
@@ -85,7 +86,7 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
           style={{
             width: '100%',
             height: '100%',
-            objectFit: styles.objectFit || 'cover',
+            objectFit: styles.objectFit || 'contain',
             objectPosition: styles.objectPosition || 'center center',
             borderRadius: styles.borderRadius,
             border: styles.border,
@@ -233,6 +234,35 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
         onClick={handleClick}
         dangerouslySetInnerHTML={{ __html: content }}
       />
+    )
+  }
+
+  // 포인트 기반 shape (선, 폴리라인, 폴리곤)
+  if (element.shapeType && element.points && element.points.length >= 2) {
+    const d = pointsToSvgPath(element.points, element.closed)
+    const sw = parseFloat(styles.strokeWidth || '2')
+    return (
+      <div style={{ ...baseStyle, overflow: 'visible' }} onMouseDown={handleMouseDown} onClick={handleClick}>
+        <svg
+          width={width} height={height}
+          viewBox={`0 0 ${width} ${height}`}
+          style={{ position: 'absolute', top: 0, left: 0, overflow: 'visible' }}
+        >
+          {/* 투명 넓은 히트 영역 */}
+          <path d={d} stroke="transparent" strokeWidth={Math.max(sw, 10)} fill="none" />
+          {/* 실제 선 */}
+          <path
+            d={d}
+            stroke={styles.stroke || '#1e293b'}
+            strokeWidth={sw}
+            strokeDasharray={styles.strokeDasharray || ''}
+            fill={element.closed ? (styles.fill || 'none') : 'none'}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            opacity={styles.opacity || 1}
+          />
+        </svg>
+      </div>
     )
   }
 

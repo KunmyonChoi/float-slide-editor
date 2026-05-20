@@ -19,7 +19,7 @@ const DEFAULT_STYLES = {
   borderRadius: '0px', border: '0px none',
   borderTop: '0px none', borderRight: '0px none',
   borderBottom: '0px none', borderLeft: '0px none',
-  boxShadow: 'none', opacity: '1', padding: '0px', objectFit: 'cover',
+  boxShadow: 'none', opacity: '1', padding: '0px', objectFit: 'contain',
 }
 
 const FLAT_PRESETS = {
@@ -138,7 +138,7 @@ export default function EditToolbar() {
           x: Math.round((canvasSize.w - w) / 2),
           y: Math.round((canvasSize.h - h) / 2),
           zIndex: maxZ + 1,
-          styles: { ...DEFAULT_STYLES, objectFit: 'cover' },
+          styles: { ...DEFAULT_STYLES, objectFit: 'contain' },
         }
         addFlatElement(el)
         setSelectedFlat(el.id)
@@ -251,6 +251,9 @@ export default function EditToolbar() {
               { id: 'circle', icon: <CircleIcon />, label: '원', action: () => insertFlatPreset('circle') },
               { id: 'lineH', icon: <LineHIcon />, label: '가로 선', action: () => insertFlatPreset('lineH') },
               { id: 'lineV', icon: <LineVIcon />, label: '세로 선', action: () => insertFlatPreset('lineV') },
+              { id: 'drawLine', icon: <DrawLineIcon />, label: '선 그리기', action: () => useFlatStore.getState().setDrawMode('line') },
+              { id: 'drawPolyline', icon: <PolylineIcon />, label: '폴리라인', action: () => useFlatStore.getState().setDrawMode('polyline') },
+              { id: 'drawPolygon', icon: <PolygonIcon />, label: '폴리곤', action: () => useFlatStore.getState().setDrawMode('polygon') },
             ]}
           />
 
@@ -299,6 +302,20 @@ export default function EditToolbar() {
             setInsertOpen(false)
           }}
         />
+      )}
+
+      {/* 그리기 모드 표시 */}
+      {useFlatStore.getState().drawMode && (
+        <>
+          <Divider />
+          <span className="text-xs text-indigo-300 px-2">
+            {useFlatStore.getState().drawMode === 'line' ? '선 그리기' : useFlatStore.getState().drawMode === 'polyline' ? '폴리라인' : '폴리곤'}
+            <span className="text-slate-500 ml-1">(ESC 취소)</span>
+          </span>
+          <ToolBtn onClick={() => useFlatStore.getState().setDrawMode(null)} title="그리기 취소">
+            <span className="text-xs text-red-400">취소</span>
+          </ToolBtn>
+        </>
       )}
 
       {/* z-순서 버튼 (flat/split 모드 + 단일 선택 시) */}
@@ -465,6 +482,32 @@ function VideoIcon() {
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
       <polygon points="23 7 16 12 23 17 23 7" />
       <rect x="1" y="5" width="15" height="14" rx="2" />
+    </svg>
+  )
+}
+
+function DrawLineIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M4 20L20 4" />
+      <circle cx="4" cy="20" r="2" fill="currentColor" />
+      <circle cx="20" cy="4" r="2" fill="currentColor" />
+    </svg>
+  )
+}
+
+function PolylineIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M3 20L9 8L15 16L21 4" />
+    </svg>
+  )
+}
+
+function PolygonIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M12 3L21 10L18 21H6L3 10Z" />
     </svg>
   )
 }

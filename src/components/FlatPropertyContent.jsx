@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
 import { useFlatStore } from '../store/flatStore'
 import ColorPicker, { parseColor } from './ColorPicker'
 import FontComboBox from './FontComboBox'
@@ -89,8 +89,15 @@ export default function FlatPropertyContent() {
           </div>
         )}
 
-        {/* 선 전용 편집 (가로/세로 얇은 shape) */}
-        {el.type === 'shape' && (el.width <= 4 || el.height <= 4) && (
+        {/* 포인트 기반 shape (선/폴리라인/폴리곤) */}
+        {el.shapeType && el.points && (
+          <div className="pt-1 border-t border-white/5">
+            <PolyShapeSection el={el} update={update} updateStyle={updateStyle} />
+          </div>
+        )}
+
+        {/* 선 전용 편집 (가로/세로 얇은 shape — 구 방식) */}
+        {!el.shapeType && el.type === 'shape' && (el.width <= 4 || el.height <= 4) && (
           <div className="pt-1 border-t border-white/5">
             <ShapeLineSection el={el} update={update} updateStyle={updateStyle} />
           </div>
@@ -139,9 +146,22 @@ function MultiElementPanel({ elements }) {
     batchUpdateFlatElements(selectedFlatIds, { styles: { [key]: value } })
   }
 
+  // 텍스트 속성이 있는 요소 (text + content 있는 shape)
+  const textEls = elements.filter(e => e.type === 'text' || (e.type === 'shape' && e.content))
+  const hasTextEls = textEls.length > 0
+  const textIds = textEls.map(e => e.id)
+
+  const getTextCommon = (key) => {
+    const vals = textEls.map(e => e.styles?.[key])
+    return vals.every(v => v === vals[0]) ? vals[0] : null
+  }
+
+  const updateTextStyle = (key, value) => {
+    batchUpdateFlatElements(textIds, { styles: { [key]: value } })
+  }
+
   // 그룹 바운딩 박스
   const bbox = getGroupBBox(elements)
-  const allText = elements.every(e => e.type === 'text')
 
   const commonBg = getCommonStyle('backgroundColor')
   const commonOpacity = getCommonStyle('opacity')
@@ -229,17 +249,75 @@ function MultiElementPanel({ elements }) {
           )}
         </div>
 
-        {/* 텍스트 전용: 전체가 text일 때만 */}
-        {allText && (
+        {/* 텍스트 속성 — text 또는 content 있는 shape 포함 시 */}
+        {hasTextEls && (
           <div className="pt-1 border-t border-white/5">
             <SectionTitle>글꼴</SectionTitle>
-            <div>
+            {/* 글꼴 */}
+            <FontComboBox
+              value={getTextCommon('fontFamily') || ''}
+              onChange={v => updateTextStyle('fontFamily', v)}
+            />
+            {/* 크기 + 굵기/이탈릭/밑줄 */}
+            <div className="flex items-end gap-1.5 mt-2">
+              <div className="flex-1">
+                <p className={`${labelClass} mb-0.5`}>크기</p>
+                <input
+                  type="number"
+                  value={parseFloat(getTextCommon('fontSize') || '16')}
+                  onChange={e => updateTextStyle('fontSize', `${e.target.value}px`)}
+                  onKeyDown={e => e.stopPropagation()}
+                  min="8" step="1"
+                  className={inputClass}
+                  style={{ width: '100%' }}
+                />
+              </div>
+              <button
+                onClick={() => {
+                  const isBold = parseInt(getTextCommon('fontWeight') || '400') >= 700
+                  updateTextStyle('fontWeight', isBold ? '400' : '700')
+                }}
+                title="굵게 (Ctrl+B)"
+                className={`px-2 py-1.5 rounded-lg text-xs border transition-colors ${
+                  parseInt(getTextCommon('fontWeight') || '400') >= 700
+                    ? 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30 font-bold'
+                    : 'bg-white/5 text-slate-400 border-white/10 hover:bg-white/10 font-bold'
+                }`}
+              >B</button>
+              <button
+                onClick={() => {
+                  const isItalic = getTextCommon('fontStyle') === 'italic'
+                  updateTextStyle('fontStyle', isItalic ? 'normal' : 'italic')
+                }}
+                title="이탈릭 (Ctrl+I)"
+                className={`px-2 py-1.5 rounded-lg text-xs border transition-colors italic ${
+                  getTextCommon('fontStyle') === 'italic'
+                    ? 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30'
+                    : 'bg-white/5 text-slate-400 border-white/10 hover:bg-white/10'
+                }`}
+              >I</button>
+              <button
+                onClick={() => {
+                  const hasU = (getTextCommon('textDecoration') || '').includes('underline')
+                  updateTextStyle('textDecoration', hasU ? 'none' : 'underline')
+                }}
+                title="밑줄 (Ctrl+U)"
+                className={`px-2 py-1.5 rounded-lg text-xs border transition-colors underline ${
+                  (getTextCommon('textDecoration') || '').includes('underline')
+                    ? 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30'
+                    : 'bg-white/5 text-slate-400 border-white/10 hover:bg-white/10'
+                }`}
+              >U</button>
+            </div>
+            {/* 색상 */}
+            <div className="mt-2">
               <p className={`${labelClass} mb-0.5`}>글꼴 색</p>
               <ColorPicker
-                value={getCommonStyle('color') || '#000000'}
-                onChange={v => updateAllStyle('color', v)}
+                value={getTextCommon('color') || '#000000'}
+                onChange={v => updateTextStyle('color', v)}
               />
             </div>
+            {/* 정렬 */}
             <div className="mt-2">
               <p className={`${labelClass} mb-0.5`}>맞춤</p>
               <div className="flex gap-1.5">
@@ -250,11 +328,11 @@ function MultiElementPanel({ elements }) {
                 ].map(a => (
                   <button
                     key={a.value}
-                    onClick={() => updateAllStyle('textAlign', a.value)}
+                    onClick={() => updateTextStyle('textAlign', a.value)}
                     title={a.label + ' 맞춤'}
                     className={[
                       'flex-1 py-1.5 rounded-lg text-xs transition-colors flex items-center justify-center border',
-                      getCommonStyle('textAlign') === a.value
+                      getTextCommon('textAlign') === a.value
                         ? 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30'
                         : 'bg-white/5 text-slate-400 border-white/10 hover:bg-white/10',
                     ].join(' ')}
@@ -602,11 +680,22 @@ function LineSection({ styles, updateStyle, updateStyles }) {
     return v && !v.startsWith('0px') && v !== 'none'
   })
 
-  // 현재 모드: 'all' (4면 균일) 또는 'sides' (개별 면)
-  const [mode, setMode] = useState(hasIndividual ? 'sides' : 'all')
+  // 4면이 모두 동일한지 확인
+  const allSame = hasIndividual && (() => {
+    const vals = SIDES.map(s => styles[s.key] || '0px none')
+    return vals.every(v => v === vals[0])
+  })()
 
-  // 균일 border
-  const b = parseBorder(styles.border)
+  // 현재 모드 — styles가 바뀔 때 (다른 요소 선택 등) 자동 갱신
+  const detectedMode = hasIndividual && !allSame ? 'sides' : 'all'
+  const [mode, setMode] = useState(detectedMode)
+  // 요소 변경 시 mode 재감지
+  useEffect(() => { setMode(detectedMode) }, [detectedMode])
+
+  // 균일 border: 개별이 모두 같으면 그 값 사용, 아니면 shorthand
+  const b = allSame
+    ? parseBorder(styles[SIDES[0].key])
+    : parseBorder(styles.border)
 
   const updateBorder = (key, val) => {
     const next = { ...b, [key]: val }
@@ -828,7 +917,7 @@ function LineSection({ styles, updateStyle, updateStyles }) {
 
 function ImageSection({ styles, updateStyle, elementId }) {
   const { setCroppingFlat } = useFlatStore()
-  const objFit = styles.objectFit || 'cover'
+  const objFit = styles.objectFit || 'contain'
   const objPos = styles.objectPosition || 'center center'
 
   // objectPosition → %값 파싱
@@ -1185,6 +1274,90 @@ function TextAlignRightIcon() {
   )
 }
 
+
+// ── 포인트 기반 shape 섹션 (line, polyline, polygon) ──
+
+function PolyShapeSection({ el, update, updateStyle }) {
+  const isPolygon = el.closed || el.shapeType === 'polygon'
+  const pointCount = el.points?.length || 0
+
+  return (
+    <div className="space-y-2">
+      <SectionTitle>
+        {el.shapeType === 'line' ? '선' : el.shapeType === 'polygon' || isPolygon ? '폴리곤' : '폴리라인'}
+        <span className="text-slate-600 font-normal ml-1">({pointCount}개 점)</span>
+      </SectionTitle>
+
+      <div className="grid grid-cols-2 gap-2">
+        <div>
+          <p className={`${labelClass} mb-0.5`}>선 색상</p>
+          <ColorPicker
+            value={el.styles?.stroke || '#1e293b'}
+            onChange={v => updateStyle('stroke', v)}
+          />
+        </div>
+        <div>
+          <p className={`${labelClass} mb-0.5`}>선 굵기</p>
+          <input
+            type="number"
+            value={parseFloat(el.styles?.strokeWidth || '2')}
+            onChange={e => updateStyle('strokeWidth', `${e.target.value}`)}
+            onKeyDown={e => e.stopPropagation()}
+            min="1" max="20" step="1"
+            className={inputClass}
+          />
+        </div>
+      </div>
+
+      {/* 선 스타일 */}
+      <div>
+        <p className={`${labelClass} mb-0.5`}>스타일</p>
+        <div className="flex gap-1">
+          {[
+            { id: '', label: '───' },
+            { id: '8,4', label: '- - -' },
+            { id: '2,4', label: '· · ·' },
+          ].map(s => (
+            <button
+              key={s.id}
+              onClick={() => updateStyle('strokeDasharray', s.id)}
+              className={`flex-1 text-xs py-1 rounded-md border transition-colors ${
+                (el.styles?.strokeDasharray || '') === s.id
+                  ? 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30'
+                  : 'bg-white/5 text-slate-400 border-white/10 hover:bg-white/10'
+              }`}
+            >{s.label}</button>
+          ))}
+        </div>
+      </div>
+
+      {/* 채우기 (폴리곤만) */}
+      <div>
+        <div className="flex items-center justify-between mb-0.5">
+          <p className={labelClass}>닫힌 도형</p>
+          <button
+            onClick={() => update({ closed: !el.closed, shapeType: !el.closed ? 'polygon' : 'polyline' })}
+            className={`text-xs px-2 py-0.5 rounded border transition-colors ${
+              el.closed
+                ? 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30'
+                : 'bg-white/5 text-slate-400 border-white/10 hover:bg-white/10'
+            }`}
+          >{el.closed ? 'ON' : 'OFF'}</button>
+        </div>
+        {el.closed && (
+          <div className="mt-1">
+            <p className={`${labelClass} mb-0.5`}>채우기</p>
+            <ColorPicker
+              value={el.styles?.fill || 'none'}
+              onChange={v => updateStyle('fill', v)}
+              showOpacity
+            />
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
 
 // ── 선 전용 섹션 (shape 중 width 또는 height가 4px 이하) ──
 
