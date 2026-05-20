@@ -30,3 +30,16 @@ dist-ssr
 pptx-server/.venv/
 pptx-server/__pycache__/
 pptx-server/pptx-server/.venv/
+
+# Comparison pipeline outputs
+scripts/pptx-compare/reference/
+scripts/pptx-compare/pptx-png/
+scripts/pptx-compare/diff/
+scripts/pptx-compare/export.pptx
+scripts/pptx-compare/source-data.json
+scripts/pptx-compare/pixel-report.json
+scripts/pptx-compare/_tmp_page.html
+
+# Temp scripts
+check-elements.mjs
+test-ppt-download.mjs
