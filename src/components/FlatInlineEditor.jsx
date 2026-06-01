@@ -378,6 +378,7 @@ export default function FlatInlineEditor({ element }) {
       {editorRect && createPortal(
         <EditAccessory
           rect={editorRect}
+          sel={sel}
           open={emojiOpen}
           accessoryRef={accessoryRef}
           listFmt={listFmt}
@@ -394,14 +395,38 @@ export default function FlatInlineEditor({ element }) {
   )
 }
 
+// ── 선택 바 위치 계산 (충돌 회피 공유) ──────────────────
+const SEL_TOOLBAR_H = 38
+const SEL_TOOLBAR_HALF_W = 200
+function computeSelToolbarPos(sel) {
+  let top = sel.top - SEL_TOOLBAR_H - 8
+  let below = false
+  if (top < 8) { top = sel.bottom + 8; below = true } // 위 공간 부족 시 아래로
+  const left = Math.max(SEL_TOOLBAR_HALF_W + 8, Math.min(window.innerWidth - SEL_TOOLBAR_HALF_W - 8, sel.left))
+  return { left, top, below, halfW: SEL_TOOLBAR_HALF_W, height: SEL_TOOLBAR_H }
+}
+const rectsOverlap = (a, b) => a.x0 < b.x1 && a.x1 > b.x0 && a.y0 < b.y1 && a.y1 > b.y0
+
 // ── 편집 도구 묶음: 글머리/번호 리스트 + 이모지 (편집 중 항상 노출) ──
 
-function EditAccessory({ rect, open, accessoryRef, listFmt, onToggleList, onToggleEmoji, onPick }) {
+function EditAccessory({ rect, sel, open, accessoryRef, listFmt, onToggleList, onToggleEmoji, onPick }) {
   const BTN = 28
   const CLUSTER_W = BTN * 3 + 4 * 2 + 8 // 버튼 3 + gap + padding
-  let top = rect.top - BTN - 10
+  const CLUSTER_H = BTN + 4 * 2
+  let top = rect.top - CLUSTER_H - 6
   if (top < 8) top = rect.bottom + 4
   const left = Math.min(window.innerWidth - CLUSTER_W - 8, Math.max(8, rect.right - CLUSTER_W))
+
+  // 선택 바가 동시에 보이고 겹치면 세로로 비켜서기 (선택 바가 우선, 도구 묶음이 양보)
+  if (sel) {
+    const st = computeSelToolbarPos(sel)
+    const selBox = { x0: st.left - st.halfW, x1: st.left + st.halfW, y0: st.top, y1: st.top + st.height }
+    const accBox = { x0: left, x1: left + CLUSTER_W, y0: top, y1: top + CLUSTER_H }
+    if (rectsOverlap(accBox, selBox)) {
+      const above = st.top - CLUSTER_H - 6
+      top = above >= 8 ? above : st.top + st.height + 6 // 위에 자리 없으면 선택 바 아래로
+    }
+  }
 
   const toolBtn = (active) => ({
     width: BTN, height: BTN, borderRadius: 6, cursor: 'pointer', fontSize: 14, lineHeight: 1,
@@ -441,11 +466,7 @@ function EditAccessory({ rect, open, accessoryRef, listFmt, onToggleList, onTogg
 // ── 선택 영역 부분 서식 툴바 ──────────────────────────
 
 function SelectionToolbar({ sel, fmt, onCmd, onFontSize, onLink }) {
-  const TOOLBAR_H = 38
-  const HALF_W = 200
-  let top = sel.top - TOOLBAR_H - 8
-  if (top < 8) top = sel.bottom + 8 // 위 공간 부족 시 아래로
-  const left = Math.max(HALF_W + 8, Math.min(window.innerWidth - HALF_W - 8, sel.left))
+  const { top, left } = computeSelToolbarPos(sel)
 
   // 툴바 영역 mousedown은 기본동작 차단 → 에디터 포커스/선택 유지 (blur 커밋 방지)
   const keepSelection = (e) => e.preventDefault()
