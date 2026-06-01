@@ -8,6 +8,7 @@ const HANDLE_SIZE = 8
 const ROTATE_HANDLE_OFFSET = 30
 const MIN_SIZE = 20
 const GROUP_HANDLE_SIZE = 8
+const RADIUS_HANDLE_MIN_INSET = 14 // 둥글기 0일 때도 잡을 수 있도록 핸들 최소 안쪽 거리
 
 const HANDLES = [
   { dir: 'nw', cursor: 'nwse-resize', x: 0, y: 0 },
@@ -116,6 +117,21 @@ export default function FlatSelectionOverlay({ element, scale, otherRects, canva
     }
   }, [element, editingFlatId])
 
+  // 모서리 둥글기(border-radius) 조절 시작
+  const handleRadiusStart = useCallback((e) => {
+    if (editingFlatId || element.locked) return
+    e.stopPropagation()
+    e.preventDefault()
+    dragRef.current = {
+      mode: 'radius',
+      startMouseX: e.clientX,
+      startMouseY: e.clientY,
+      startRadius: parseFloat(element.styles?.borderRadius) || 0,
+      maxR: Math.min(element.width, element.height) / 2,
+      rot: element.rotation || 0,
+    }
+  }, [element, editingFlatId])
+
   useEffect(() => {
     const onMove = (e) => {
       const d = dragRef.current
@@ -192,6 +208,11 @@ export default function FlatSelectionOverlay({ element, scale, otherRects, canva
         }
 
         previewFlatElement(element.id, { x, y, width: w, height: h })
+      } else if (d.mode === 'radius') {
+        // 회전된 요소: 마우스 delta를 로컬 좌표로 변환 후 대각선 방향으로 투영
+        const { dx: ldx, dy: ldy } = d.rot ? canvasDeltaToLocal(dx, dy, d.rot) : { dx, dy }
+        const r = Math.max(0, Math.min(d.maxR, d.startRadius + (ldx + ldy) / 2))
+        previewFlatElement(element.id, { styles: { borderRadius: Math.round(r) + 'px' } })
       }
     }
 
@@ -226,6 +247,12 @@ export default function FlatSelectionOverlay({ element, scale, otherRects, canva
           previewFlatElement(element.id, { x: d.startX, y: d.startY, width: d.startW, height: d.startH })
           updateFlatElement(element.id, newVals)
         }
+      } else if (d.mode === 'radius') {
+        const newRadius = parseFloat(current.styles?.borderRadius) || 0
+        if (newRadius !== d.startRadius) {
+          previewFlatElement(element.id, { styles: { borderRadius: d.startRadius + 'px' } })
+          updateFlatElement(element.id, { styles: { borderRadius: newRadius + 'px' } })
+        }
       }
     }
 
@@ -240,6 +267,15 @@ export default function FlatSelectionOverlay({ element, scale, otherRects, canva
   const { x, y, width, height, zIndex } = element
   const rot = element.rotation || 0
   const locked = element.locked
+
+  // 모서리 둥글기 핸들: 사각형 요소(포인트 기반 다각형·배경 제외)에만 노출
+  const isBackground = element.type === 'shape' && !element.content
+    && Math.abs(width - canvasSize.w) < 2 && Math.abs(height - canvasSize.h) < 2
+    && Math.abs(x) < 2 && Math.abs(y) < 2
+  const showRadiusHandle = !locked && !element.points && !isBackground
+  const maxR = Math.min(width, height) / 2
+  const curR = parseFloat(element.styles?.borderRadius) || 0
+  const radiusInset = Math.min(Math.max(curR, RADIUS_HANDLE_MIN_INSET), maxR)
 
   return (
     <div
@@ -288,6 +324,26 @@ export default function FlatSelectionOverlay({ element, scale, otherRects, canva
             background: 'rgba(99,102,241,0.5)',
             pointerEvents: 'none',
           }} />
+          {/* 모서리 둥글기 핸들 (좌상단 안쪽 다이아몬드) */}
+          {showRadiusHandle && (
+            <div
+              data-resize-handle="true"
+              title="드래그하여 모서리 둥글기 조절"
+              onMouseDown={handleRadiusStart}
+              style={{
+                position: 'absolute',
+                left: radiusInset - 5,
+                top: radiusInset - 5,
+                width: 10,
+                height: 10,
+                background: '#f59e0b',
+                border: '1.5px solid #fff',
+                transform: 'rotate(45deg)',
+                cursor: 'nwse-resize',
+                zIndex: 10001,
+              }}
+            />
+          )}
           {/* 리사이즈 핸들 또는 포인트 핸들 */}
           {element.shapeType && element.points ? (
             /* 포인트 기반 shape: 각 꼭지점에 원형 핸들 */
