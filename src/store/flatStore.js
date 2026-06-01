@@ -168,6 +168,21 @@ export const useFlatStore = create((set, get) => ({
     get().forceReExtract()
   },
 
+  /**
+   * 재생성 버튼 — HTML 슬라이드 전체를 처음부터 끝까지 다시 flat 변환.
+   * (최초 로딩 시와 동일: 캐시 초기화 → 현재 페이지 재추출 → 나머지 페이지 프리로드)
+   */
+  async regenerateAllPages() {
+    // 1) 모든 캐시 제거
+    for (const key in _pageCache) delete _pageCache[key]
+    // 2) 현재 페이지를 iframe에서 즉시 재추출 (사용자에게 바로 결과 표시)
+    await get().forceReExtract()
+    // 3) 나머지 페이지를 iframe 순회로 프리로드.
+    //    preloadAllPages 는 _saveCurrentPage() 로 현재 페이지를 캐시에 저장한 뒤
+    //    각 페이지로 navigate → 추출하므로, 클리어된 캐시에 모두 새로 채워진다.
+    await get().preloadAllPages()
+  },
+
   /** 페이지 변경 시 재추출 (split/flat 모드에서 호출) */
   reExtract(pageKey) {
     const ref = get()._iframeRef

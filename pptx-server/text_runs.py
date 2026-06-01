@@ -51,6 +51,10 @@ class _RunCollector(HTMLParser):
             ls = _extract_style(style, 'letter-spacing')
             if ls:
                 ctx['letterSpacing'] = ls
+            # 인라인 background → PPT 텍스트 하이라이트 (코드 박스/배지 등 보존).
+            bg = _extract_style(style, 'background-color') or _extract_style(style, 'background')
+            if bg:
+                ctx['highlight'] = bg
 
         if tag == 'br':
             self.runs.append({'text': '\n', 'opts': self._ctx()})
@@ -142,6 +146,11 @@ def html_to_text_runs(html: str, base_styles: dict) -> list:
             ls_val = _px_to_pt(letter_spacing)
             if ls_val is not None:
                 opts['letterSpacing'] = ls_val
+
+        highlight = ctx.get('highlight')
+        if highlight:
+            # 원본 컬러 문자열을 그대로 전달 — exporter가 슬라이드 배경에 알파 블렌딩 후 opaque hex 적용
+            opts['highlight'] = highlight
 
         result.append({'text': run['text'], 'opts': opts})
 

@@ -173,6 +173,10 @@ float-editor/
 - **CairoSVG** — SVG→PNG conversion
 - **requests** — Google Fonts download
 
+## Roadmap
+
+See [**ROADMAP.md**](ROADMAP.md) — multi-phase plan toward a PowerPoint-free presentation tool (speaker notes, presenter view, transitions, builds, content widgets, collaboration).
+
 ## Contributing
 
 1. Fork the repository

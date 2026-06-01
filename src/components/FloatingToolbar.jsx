@@ -4,6 +4,7 @@ import { useFlatStore } from '../store/flatStore'
 import CanvasSizeSelector from './CanvasSizeSelector'
 import QualityDashboard from './QualityDashboard'
 import FileMenu from './ExportMenu'
+import PptExportButton from './PptExportButton'
 
 const FALLBACK_SAMPLE = `<!DOCTYPE html>
 <html lang="ko">
@@ -103,7 +104,7 @@ const FALLBACK_SAMPLE = `<!DOCTYPE html>
  */
 export default function FloatingToolbar() {
   const { slideHtml, mode, enterPresentation } = useEditorStore()
-  const { viewMode, setViewMode, extractFromIframe, panelMode, setPanelMode, forceReExtract } = useFlatStore()
+  const { viewMode, setViewMode, extractFromIframe, panelMode, setPanelMode, regenerateAllPages } = useFlatStore()
   const iframeRef = useEditorStore(s => s.iframeRef)
   const [qualityOpen, setQualityOpen] = useState(false)
 
@@ -141,6 +142,9 @@ export default function FloatingToolbar() {
       {/* 파일 메뉴 */}
       <FileMenu fallbackSample={FALLBACK_SAMPLE} />
 
+      {/* PPT 내보내기 — 자주 쓰는 액션이라 최상단 노출 */}
+      <PptExportButton />
+
       <Divider />
 
       {/* 발표 모드 진입 */}
@@ -172,8 +176,8 @@ export default function FloatingToolbar() {
       {(viewMode === 'flat' || viewMode === 'split') && (
         <>
           <ToolBtn
-            onClick={forceReExtract}
-            title="Flat 요소 강제 재생성 — 현재 페이지를 HTML에서 다시 추출"
+            onClick={regenerateAllPages}
+            title="Flat 전체 재생성 — HTML 슬라이드 모든 페이지를 처음부터 끝까지 다시 변환"
           >
             <RefreshIcon /><span className="text-xs ml-1">재생성</span>
           </ToolBtn>

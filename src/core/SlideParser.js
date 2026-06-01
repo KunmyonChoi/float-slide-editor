@@ -18,10 +18,16 @@ export function parseSlideDeck(deckHtml) {
 
   // 글로벌 <style> 블록 수집
   const styleTags = doc.querySelectorAll('style')
-  const globalStyles = Array.from(styleTags)
+  const inlineStyles = Array.from(styleTags)
     .map(s => s.textContent)
     .filter(t => !t.includes('.nav-injected')) // 네비게이션 스타일 제외
     .join('\n')
+  // 외부 stylesheet <link> 보존 — Font Awesome 등 CDN CSS는 글리프 폰트 로딩에 필요.
+  // wrapSlideAsDocument가 <style> 블록 하나만 주입하므로 @import로 inline에 합친다.
+  const linkImports = Array.from(doc.querySelectorAll('link[rel~="stylesheet"][href]'))
+    .map(l => `@import url("${l.getAttribute('href')}");`)
+    .join('\n')
+  const globalStyles = linkImports ? `${linkImports}\n${inlineStyles}` : inlineStyles
 
   // .slide 요소 수집
   const slideEls = doc.querySelectorAll('.slide')
