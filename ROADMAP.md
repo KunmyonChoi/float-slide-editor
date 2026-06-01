@@ -11,8 +11,9 @@
 | 페이지 관리 | ✅ 충분 | 썸네일 sorter view만 추가하면 완성 |
 | 입출력(PPT/HTML/PNG/JSON) | ✅ 견고 | 다른 도구 대비 강점 |
 | 발표 모드(Present) | ⚠️ **취약** | "슬라이드 넘김"만 됨 — 실제 강의에 부족 |
-| 콘텐츠 표현력(표/차트/링크) | ❌ 빈 곳 | 강의자료 핵심 도구 미흡 |
+| 콘텐츠 표현력(표/차트/링크) | ❌ 빈 곳 | 텍스트 리스트(10.1)만 부분 진입, 표·차트·링크 미흡 |
 | 협업/공유 | ❌ 없음 | 본 골드 목표 외 |
+| 코어 재사용성(패키징) | 📋 설계 | Phase 14 설계 문서화 완료, 구현 대기 |
 
 → 가장 큰 부족: **발표 경험**(Phase 9) + **콘텐츠 다양성**(Phase 10)
 
@@ -241,20 +242,24 @@ present: {
 
 > 강의자료를 본격적으로 작성 가능하도록.
 
-### 10.1 텍스트 리스트 인라인 편집
+### 10.1 텍스트 리스트 인라인 편집 — 🔨 부분 완료 / 리뷰 필요
 
-**현재** flat 추출은 `<li>` 마커를 텍스트 prefix로 보존(F1). 그러나 **인라인 에디터에서 새 리스트 작성·편집 안 됨**.
+> `feat/text-lists` 머지됨 (`0fa67f4`·`5c4bdde`·`e095809`·`ca4784a`·`5dc6931`). 핵심 동작은 들어왔으나 **검증·export 매핑 미완**.
 
-**데이터 모델** content가 rich HTML이면 `<ul>/<ol><li>` 그대로 보존 (이미 가능).
+**완료된 것** ✅
+- 인라인 에디터 리스트/순서 리스트 토글 (`toggleList`) — collapsed caret 불안정 해소(전체 Range 확장 후 명령, 끝으로 collapse).
+- 속성 패널 `ListToggle`(없음/•/1.) — 단일 텍스트 박스 + 다중 박스 선택 모두 변환(`TextListTransform.js` `detectListType`/`applyListType`).
+- 리스트 마커 CSS를 `index.css`로 이동(Tailwind preflight 우회, `.flat-text`/`.flat-text-edit` 스코프).
+- 선택 바·편집 도구 묶음 동시 노출 시 충돌 회피.
+- `Tab`/`Shift+Tab` 리스트 내 들여쓰기/내어쓰기, `Ctrl+Shift+8`/`7` 단축키.
 
-**UI 스케치**
-- `FlatInlineEditor`에 `Tab`/`Enter`/`Shift+Tab` 처리:
-  - Enter: 같은 레벨 새 `<li>`.
-  - Tab: 한 단계 들여쓰기 (nested `<ul>` 생성).
-  - Shift+Tab: 한 단계 내어쓰기.
-- 속성 패널 텍스트 섹션에 "리스트 토글" 버튼 추가 (`• ` / `1.` / 없음 순환).
+**리뷰/미완** ⚠️
+- **PPT export 매핑 미구현** — `HtmlToTextRuns.js`/`text_runs.py`에서 `<ul>/<ol>`은 아직 줄바꿈만, pptxgenjs/python-pptx `bullet`/`indentLevel` 매핑 필요. (2차 작업)
+- **줄 분해 정확도 검증 필요** — `contentToLines`의 `<br>`·블록 경계·중첩 li 평탄화가 다양한 입력에서 정확한지 사용자 확인 대기.
+- **마커 크기 조절** 미정 — 현재 마커는 글자 크기를 따라감(`::marker` 상속). 독립 조절(`::marker { font-size }` + CSS 변수)은 논의 보류.
+- 중첩 리스트(Tab) 생성·복원의 견고성(execCommand `indent` 의존) 추가 확인.
 
-**의존성** 없음.
+**데이터 모델** content가 rich HTML이면 `<ul>/<ol><li>` 그대로 보존.
 
 **단축키** `Ctrl+Shift+8` — bullet, `Ctrl+Shift+7` — numbered
 
@@ -543,10 +548,13 @@ Phase 8 (완료) ──┐
                  ├─→ Phase 9 (발표 코어)──┬─→ Phase 10 (콘텐츠)──┐
 Recent fixes ────┘                        │                      ├─→ Phase 11 (UX) ──→ Phase 12 (출력) ──→ Phase 13 (협업)
                                           └──────────────────────┘
+
+Phase 14 (재사용 코어) ── 독립, 어느 시점에나 진입 가능 (구현 시 flat-extractor 시그니처 변경 선행)
 ```
 
 - Phase 9, 10은 병렬 가능 (서로 다른 표면).
 - Phase 11은 Phase 9·10의 새 데이터 타입을 sorter/그룹화 대상에 포함해야 하므로 후행.
+- Phase 14는 다른 Phase와 독립이나, 새 FlatElement 필드(링크·빌드·트랜지션)가 schema 계약에 반영되어야 하므로 가급적 Phase 9·10 데이터 모델이 안정된 뒤 코어를 떼는 편이 재작업이 적다.
 
 ## 단축키 신규 추가 표 (Phase 9~11)
 
