@@ -260,7 +260,8 @@ export default function EmojiPicker({ onPick, style }) {
       {/* 그리드 */}
       <div style={{
         display: 'grid', gridTemplateColumns: 'repeat(8, 1fr)', gap: 1,
-        maxHeight: 168, overflowY: 'auto',
+        maxHeight: 168, overflowY: 'auto', overflowX: 'hidden',
+        scrollbarGutter: 'stable',
       }}>
         {items.map((it, i) => (
           <button
@@ -270,6 +271,7 @@ export default function EmojiPicker({ onPick, style }) {
             style={{
               padding: 4, borderRadius: 5, border: 'none', cursor: 'pointer',
               fontSize: 19, lineHeight: 1, background: 'transparent', color: '#e2e8f0',
+              minWidth: 0, boxSizing: 'border-box', overflow: 'hidden',
             }}
             onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.1)' }}
             onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
