@@ -8,6 +8,7 @@ import TextShadowEditor from './TextShadowEditor'
 import { computeAlignmentChanges, computeDistributionChanges, isBackgroundElement } from '../core/SnapEngine'
 import { nextFlatId } from '../core/FlatExtractor'
 import { BlobStore } from '../core/BlobStore'
+import { detectListType, applyListType } from '../core/TextListTransform'
 
 // ── 글꼴 크기 프리셋 ────────────────────────────────
 
@@ -35,7 +36,7 @@ const labelClass = 'text-xs text-slate-500'
  */
 export default function FlatPropertyContent() {
   const { selectedFlatIds, flatElements, updateFlatElement, previewFlatElement, removeFlatElement,
-          batchUpdateFlatElements, removeSelectedElements } = useFlatStore()
+          batchUpdateFlatElements, removeSelectedElements, editingFlatId } = useFlatStore()
   const selectedEls = flatElements.filter(e => selectedFlatIds.includes(e.id))
 
   if (selectedEls.length === 0) return <SlideBackgroundPanel />
@@ -73,7 +74,12 @@ export default function FlatPropertyContent() {
 
         {(el.type === 'text' || (el.type === 'shape' && el.content)) && (
           <div className="pt-1 border-t border-white/5">
-            <FontSection el={el} styles={el.styles} updateStyle={updateStyle} isGradientText={el.styles.webkitBackgroundClip === 'text'} />
+            <FontSection
+              el={el} styles={el.styles} updateStyle={updateStyle}
+              isGradientText={el.styles.webkitBackgroundClip === 'text'}
+              listType={detectListType(el.content, el.isRich)}
+              onSetListType={editingFlatId === el.id ? undefined : (target) => update(applyListType(el.content, el.isRich, target))}
+            />
           </div>
         )}
 
@@ -176,6 +182,13 @@ function MultiElementPanel({ elements }) {
   const updateTextStyle = (key, value) => {
     batchUpdateFlatElements(textIds, { styles: { [key]: value } })
   }
+
+  // 선택된 텍스트 요소들의 공통 리스트 상태 (다르면 'none')
+  const listTypes = textEls.map(e => detectListType(e.content, e.isRich))
+  const commonListType = listTypes.every(t => t === listTypes[0]) ? (listTypes[0] || 'none') : 'none'
+  const setListTypeAll = (target) => batchUpdateFlatElementsIndividual(
+    textEls.map(e => ({ id: e.id, changes: applyListType(e.content, e.isRich, target) }))
+  )
 
   // 그룹 바운딩 박스
   const bbox = getGroupBBox(elements)
@@ -359,6 +372,10 @@ function MultiElementPanel({ elements }) {
                 ))}
               </div>
             </div>
+            {/* 리스트 (선택된 모든 텍스트 박스에 적용) */}
+            <div className="mt-2">
+              <ListToggle value={commonListType} onChange={setListTypeAll} />
+            </div>
           </div>
         )}
 
@@ -496,7 +513,7 @@ function detectTextMixed(el) {
   return { bold: mixed(seen.bold), italic: mixed(seen.italic), underline: mixed(seen.underline), strike: mixed(seen.strike) }
 }
 
-function FontSection({ el, styles, updateStyle, isGradientText }) {
+function FontSection({ el, styles, updateStyle, isGradientText, listType, onSetListType }) {
   const parseFontSize = (v) => parseFloat(v) || 16
   const isBold = parseInt(styles.fontWeight) >= 700
   const isItalic = styles.fontStyle === 'italic'
@@ -589,6 +606,8 @@ function FontSection({ el, styles, updateStyle, isGradientText }) {
           ))}
         </div>
       </div>
+
+      {onSetListType && <ListToggle value={listType} onChange={onSetListType} />}
 
       <div className="grid grid-cols-2 gap-1.5">
         <SelectInput
@@ -1207,6 +1226,37 @@ function SelectInput({ label, value, options, onChange }) {
 }
 
 // ── B/I/U 토글 버튼 ─────────────────────────────────
+
+/** 리스트 3-상태 토글 (없음 / 글머리 / 번호) — 요소·문단 레벨 */
+function ListToggle({ value, onChange }) {
+  const opts = [
+    { v: 'none', glyph: '없음', title: '리스트 없음' },
+    { v: 'ul', glyph: '•', title: '글머리 기호' },
+    { v: 'ol', glyph: '1.', title: '번호 매기기' },
+  ]
+  return (
+    <div>
+      <p className={`${labelClass} mb-0.5`}>리스트</p>
+      <div className="flex gap-1.5">
+        {opts.map(o => (
+          <button
+            key={o.v}
+            onClick={() => onChange(o.v)}
+            title={o.title}
+            className={[
+              'flex-1 py-1.5 rounded-lg text-xs transition-colors flex items-center justify-center border',
+              value === o.v
+                ? 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30'
+                : 'bg-white/5 text-slate-400 border-white/10 hover:bg-white/10',
+            ].join(' ')}
+          >
+            {o.glyph}
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
 
 function ToggleBtn({ active, mixed, onClick, title, children }) {
   return (
