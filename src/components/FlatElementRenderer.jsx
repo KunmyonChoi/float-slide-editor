@@ -122,6 +122,7 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
 
     return (
       <div
+        className="flat-text"
         style={{
           ...baseStyle,
           backgroundColor: styles.backgroundColor,

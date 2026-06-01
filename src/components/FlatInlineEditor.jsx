@@ -48,7 +48,8 @@ export default function FlatInlineEditor({ element }) {
   const accessoryRef = useRef(null)       // 이모지 버튼+픽커 컨테이너
   const [sel, setSel] = useState(null) // { left, top, bottom } 뷰포트 좌표 또는 null
   const [fmt, setFmt] = useState({ bold: false, italic: false, underline: false })
-  const [editorRect, setEditorRect] = useState(null) // 이모지 버튼 앵커용
+  const [listFmt, setListFmt] = useState({ ul: false, ol: false }) // 리스트 활성 상태
+  const [editorRect, setEditorRect] = useState(null) // 편집 도구 묶음 앵커용
   const [emojiOpen, setEmojiOpen] = useState(false)
 
   const { x, y, width, height, content, styles, merged } = element
@@ -61,6 +62,13 @@ export default function FlatInlineEditor({ element }) {
     const range = s.getRangeAt(0)
     if (!el.contains(range.commonAncestorContainer)) { setSel(null); return }
     lastRangeRef.current = range.cloneRange() // caret/선택 보존 (collapsed 포함)
+    // 리스트 활성 상태 — caret만 있어도 갱신
+    try {
+      setListFmt({
+        ul: document.queryCommandState('insertUnorderedList'),
+        ol: document.queryCommandState('insertOrderedList'),
+      })
+    } catch { /* noop */ }
     if (s.isCollapsed) { setSel(null); return }
     const rect = range.getBoundingClientRect()
     if (!rect || (rect.width === 0 && rect.height === 0)) { setSel(null); return }
@@ -182,6 +190,30 @@ export default function FlatInlineEditor({ element }) {
     if (s.rangeCount) lastRangeRef.current = s.getRangeAt(0).cloneRange()
   }, [])
 
+  // 글머리/번호 리스트 토글 (네이티브 contentEditable 명령)
+  const toggleList = useCallback((ordered) => {
+    const el = ref.current
+    if (!el) return
+    el.focus()
+    try {
+      document.execCommand(ordered ? 'insertOrderedList' : 'insertUnorderedList')
+    } catch { /* noop */ }
+    refreshSelection()
+  }, [refreshSelection])
+
+  // caret이 리스트(li/ul/ol) 안에 있는지
+  const isCaretInList = useCallback(() => {
+    const s = window.getSelection()
+    const el = ref.current
+    if (!s || s.rangeCount === 0 || !el) return false
+    let n = s.anchorNode
+    while (n && n !== el) {
+      if (n.nodeType === 1 && (n.tagName === 'LI' || n.tagName === 'UL' || n.tagName === 'OL')) return true
+      n = n.parentNode
+    }
+    return false
+  }, [])
+
   const commit = useCallback(() => {
     if (committedRef.current) return
     committedRef.current = true
@@ -222,9 +254,26 @@ export default function FlatInlineEditor({ element }) {
       applyLink()
       return
     }
+    // Ctrl/Cmd+Shift+8 → 글머리, +7 → 번호 (Shift로 key가 '*'/'&'가 되므로 code 사용)
+    if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.code === 'Digit8' || e.code === 'Digit7')) {
+      e.preventDefault()
+      e.stopPropagation()
+      toggleList(e.code === 'Digit7')
+      return
+    }
+    // Tab → 리스트 안에서 들여쓰기/내어쓰기, 밖에서는 포커스 이탈만 차단
+    if (e.key === 'Tab') {
+      e.preventDefault()
+      e.stopPropagation()
+      if (isCaretInList()) {
+        try { document.execCommand(e.shiftKey ? 'outdent' : 'indent') } catch { /* noop */ }
+        refreshSelection()
+      }
+      return
+    }
     // 모든 키 이벤트를 캔버스로 전파하지 않음
     e.stopPropagation()
-  }, [commit, applyLink])
+  }, [commit, applyLink, toggleList, isCaretInList, refreshSelection])
 
   // shape 또는 배경 있는 텍스트 → flex 레이아웃으로 중앙 정렬
   const isShape = element.type === 'shape'
@@ -282,6 +331,7 @@ export default function FlatInlineEditor({ element }) {
     <>
       <div
         ref={ref}
+        className="flat-text-edit"
         contentEditable
         suppressContentEditableWarning
         style={editorStyle}
@@ -294,11 +344,13 @@ export default function FlatInlineEditor({ element }) {
         document.body
       )}
       {editorRect && createPortal(
-        <EmojiAccessory
+        <EditAccessory
           rect={editorRect}
           open={emojiOpen}
           accessoryRef={accessoryRef}
-          onToggle={() => {
+          listFmt={listFmt}
+          onToggleList={toggleList}
+          onToggleEmoji={() => {
             if (ref.current) setEditorRect(ref.current.getBoundingClientRect())
             setEmojiOpen(o => !o)
           }}
@@ -310,34 +362,43 @@ export default function FlatInlineEditor({ element }) {
   )
 }
 
-// ── 이모지 버튼 + 픽커 (편집 중 항상 노출) ──────────────
+// ── 편집 도구 묶음: 글머리/번호 리스트 + 이모지 (편집 중 항상 노출) ──
 
-function EmojiAccessory({ rect, open, accessoryRef, onToggle, onPick }) {
+function EditAccessory({ rect, open, accessoryRef, listFmt, onToggleList, onToggleEmoji, onPick }) {
   const BTN = 28
-  let top = rect.top - BTN - 4
+  const CLUSTER_W = BTN * 3 + 4 * 2 + 8 // 버튼 3 + gap + padding
+  let top = rect.top - BTN - 10
   if (top < 8) top = rect.bottom + 4
-  const left = Math.min(window.innerWidth - BTN - 8, Math.max(8, rect.right - BTN))
+  const left = Math.min(window.innerWidth - CLUSTER_W - 8, Math.max(8, rect.right - CLUSTER_W))
+
+  const toolBtn = (active) => ({
+    width: BTN, height: BTN, borderRadius: 6, cursor: 'pointer', fontSize: 14, lineHeight: 1,
+    color: '#e2e8f0', border: '1px solid rgba(255,255,255,0.12)',
+    background: active ? 'rgba(99,102,241,0.55)' : 'rgba(255,255,255,0.06)',
+  })
 
   return (
     <div
       ref={accessoryRef}
       data-edit-accessory="true"
-      style={{ position: 'fixed', top, left, zIndex: 10050 }}
+      style={{
+        position: 'fixed', top, left, zIndex: 10050,
+        display: 'flex', gap: 4, padding: 4, borderRadius: 9,
+        background: 'rgba(15,23,42,0.95)', border: '1px solid rgba(255,255,255,0.12)',
+        boxShadow: '0 2px 10px rgba(0,0,0,0.4)',
+      }}
     >
-      <button
-        type="button"
-        title="이모지 삽입"
-        onMouseDown={(e) => { e.preventDefault(); onToggle() }}
-        style={{
-          width: BTN, height: BTN, borderRadius: 7, cursor: 'pointer', fontSize: 16, lineHeight: 1,
-          background: open ? 'rgba(99,102,241,0.55)' : 'rgba(15,23,42,0.95)',
-          border: '1px solid rgba(255,255,255,0.15)', boxShadow: '0 2px 8px rgba(0,0,0,0.35)',
-        }}
-      >
-        😊
-      </button>
+      <button type="button" title="글머리 기호 (Ctrl+Shift+8)"
+        onMouseDown={(e) => { e.preventDefault(); onToggleList(false) }}
+        style={toolBtn(listFmt.ul)}>•</button>
+      <button type="button" title="번호 매기기 (Ctrl+Shift+7)"
+        onMouseDown={(e) => { e.preventDefault(); onToggleList(true) }}
+        style={{ ...toolBtn(listFmt.ol), fontSize: 11 }}>1.</button>
+      <button type="button" title="이모지·기호 삽입"
+        onMouseDown={(e) => { e.preventDefault(); onToggleEmoji() }}
+        style={{ ...toolBtn(open), fontSize: 16 }}>😊</button>
       {open && (
-        <div style={{ position: 'absolute', top: BTN + 4, right: 0 }}>
+        <div style={{ position: 'absolute', top: BTN + 8, right: 0 }}>
           <EmojiPicker onPick={onPick} />
         </div>
       )}
