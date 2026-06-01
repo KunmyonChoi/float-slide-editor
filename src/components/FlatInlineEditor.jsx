@@ -191,13 +191,45 @@ export default function FlatInlineEditor({ element }) {
   }, [])
 
   // 글머리/번호 리스트 토글 (네이티브 contentEditable 명령)
+  // collapsed caret에선 네이티브 토글의 리스트-조상 판정이 불안정하므로,
+  // 전체 선택일 때와 동일하게 콘텐츠 전체 Range로 확장한 뒤 명령을 건다.
   const toggleList = useCallback((ordered) => {
     const el = ref.current
     if (!el) return
-    el.focus()
+    // 포커스가 떠 있을 때만 복귀 (focus()가 caret을 맨 앞으로 되돌리는 부작용 방지)
+    if (document.activeElement !== el) el.focus()
+
+    const sel = window.getSelection()
+    let hasSelInEditor = sel.rangeCount > 0 && el.contains(sel.anchorNode)
+    if (!hasSelInEditor && lastRangeRef.current && el.contains(lastRangeRef.current.commonAncestorContainer)) {
+      sel.removeAllRanges()
+      sel.addRange(lastRangeRef.current)
+      hasSelInEditor = true
+    }
+
+    // 선택이 없거나 collapsed → 전체 콘텐츠로 확장 (안정 경로)
+    const collapsed = !hasSelInEditor || sel.getRangeAt(0).collapsed
+    if (collapsed) {
+      const r = document.createRange()
+      r.selectNodeContents(el)
+      sel.removeAllRanges()
+      sel.addRange(r)
+    }
+
     try {
       document.execCommand(ordered ? 'insertOrderedList' : 'insertUnorderedList')
     } catch { /* noop */ }
+
+    // 확장했던 경우 caret을 끝으로 모아 다음 토글도 같은 경로를 타게 함
+    if (collapsed) {
+      const s = window.getSelection()
+      if (s.rangeCount) {
+        const r = s.getRangeAt(0)
+        r.collapse(false)
+        s.removeAllRanges()
+        s.addRange(r)
+      }
+    }
     refreshSelection()
   }, [refreshSelection])
 
