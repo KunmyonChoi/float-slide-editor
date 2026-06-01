@@ -5,6 +5,31 @@ import { useFlatStore } from '../store/flatStore'
 // 선택 툴바 팔레트
 const TEXT_COLORS = ['#0f172a', '#ffffff', '#ef4444', '#f59e0b', '#10b981', '#3b82f6', '#8b5cf6', '#ec4899']
 const HL_COLORS = ['#fde68a', '#bbf7d0', '#bfdbfe', '#fbcfe8', '#e9d5ff']
+const FONT_STEP = 2
+const FONT_MIN = 8
+const FONT_MAX = 200
+
+/** 현재 선택 영역을 style 한 속성으로 감싼다 (execCommand가 px를 못 주는 fontSize 등에 사용) */
+function wrapSelection(prop, value) {
+  const sel = window.getSelection()
+  if (!sel || sel.rangeCount === 0) return
+  const range = sel.getRangeAt(0)
+  if (range.collapsed) return
+  const span = document.createElement('span')
+  span.style[prop] = value
+  try {
+    range.surroundContents(span)
+  } catch {
+    // 노드 경계를 가로지르는 선택: 추출 후 래핑
+    const frag = range.extractContents()
+    span.appendChild(frag)
+    range.insertNode(span)
+  }
+  const nr = document.createRange()
+  nr.selectNodeContents(span)
+  sel.removeAllRanges()
+  sel.addRange(nr)
+}
 
 /**
  * FlatInlineEditor
@@ -17,6 +42,7 @@ export default function FlatInlineEditor({ element }) {
   const ref = useRef(null)
   const { commitTextEdit } = useFlatStore()
   const committedRef = useRef(false)
+  const suppressCommitRef = useRef(false) // prompt 등 일시적 포커스 이탈 시 blur 커밋 차단
   const [sel, setSel] = useState(null) // { left, top, bottom } 뷰포트 좌표 또는 null
   const [fmt, setFmt] = useState({ bold: false, italic: false, underline: false })
 
@@ -93,6 +119,38 @@ export default function FlatInlineEditor({ element }) {
     refreshSelection()
   }, [refreshSelection])
 
+  // 선택 영역 글자크기 증감 (앵커의 계산된 크기 기준 ±step)
+  const changeFontSize = useCallback((delta) => {
+    const el = ref.current
+    const sel = window.getSelection()
+    if (!el || !sel || sel.rangeCount === 0 || sel.isCollapsed) return
+    el.focus()
+    const anchor = sel.anchorNode
+    const probe = anchor && anchor.nodeType === 3 ? anchor.parentElement : anchor
+    const cur = probe ? (parseFloat(getComputedStyle(probe).fontSize) || 16) : 16
+    const next = Math.max(FONT_MIN, Math.min(FONT_MAX, Math.round(cur) + delta))
+    wrapSelection('fontSize', next + 'px')
+    refreshSelection()
+  }, [refreshSelection])
+
+  // 선택 영역에 하이퍼링크 적용 (Ctrl+K / 툴바)
+  const applyLink = useCallback(() => {
+    const el = ref.current
+    const sel = window.getSelection()
+    if (!el || !sel || sel.rangeCount === 0 || sel.isCollapsed) return
+    const saved = sel.getRangeAt(0).cloneRange()
+    suppressCommitRef.current = true // prompt가 포커스를 가져가도 커밋 금지
+    const url = window.prompt('링크 URL을 입력하세요', 'https://')
+    suppressCommitRef.current = false
+    el.focus()
+    sel.removeAllRanges()
+    sel.addRange(saved)
+    if (url) {
+      try { document.execCommand('createLink', false, url) } catch { /* noop */ }
+    }
+    refreshSelection()
+  }, [refreshSelection])
+
   const commit = useCallback(() => {
     if (committedRef.current) return
     committedRef.current = true
@@ -102,6 +160,7 @@ export default function FlatInlineEditor({ element }) {
   }, [element.id, commitTextEdit])
 
   const handleBlur = useCallback(() => {
+    if (suppressCommitRef.current) return
     commit()
   }, [commit])
 
@@ -112,9 +171,16 @@ export default function FlatInlineEditor({ element }) {
       commit()
       return
     }
+    // Ctrl/Cmd+K → 하이퍼링크
+    if ((e.ctrlKey || e.metaKey) && (e.key === 'k' || e.key === 'K')) {
+      e.preventDefault()
+      e.stopPropagation()
+      applyLink()
+      return
+    }
     // 모든 키 이벤트를 캔버스로 전파하지 않음
     e.stopPropagation()
-  }, [commit])
+  }, [commit, applyLink])
 
   // shape 또는 배경 있는 텍스트 → flex 레이아웃으로 중앙 정렬
   const isShape = element.type === 'shape'
@@ -180,7 +246,7 @@ export default function FlatInlineEditor({ element }) {
         onMouseDown={(e) => e.stopPropagation()}
       />
       {sel && createPortal(
-        <SelectionToolbar sel={sel} fmt={fmt} onCmd={applyCmd} />,
+        <SelectionToolbar sel={sel} fmt={fmt} onCmd={applyCmd} onFontSize={changeFontSize} onLink={applyLink} />,
         document.body
       )}
     </>
@@ -189,9 +255,9 @@ export default function FlatInlineEditor({ element }) {
 
 // ── 선택 영역 부분 서식 툴바 ──────────────────────────
 
-function SelectionToolbar({ sel, fmt, onCmd }) {
+function SelectionToolbar({ sel, fmt, onCmd, onFontSize, onLink }) {
   const TOOLBAR_H = 38
-  const HALF_W = 170
+  const HALF_W = 200
   let top = sel.top - TOOLBAR_H - 8
   if (top < 8) top = sel.bottom + 8 // 위 공간 부족 시 아래로
   const left = Math.max(HALF_W + 8, Math.min(window.innerWidth - HALF_W - 8, sel.left))
@@ -224,6 +290,10 @@ function SelectionToolbar({ sel, fmt, onCmd }) {
       <FmtBtn active={fmt.bold} onMouseDown={cmd('bold')} title="굵게 (Ctrl+B)" style={{ fontWeight: 700 }}>B</FmtBtn>
       <FmtBtn active={fmt.italic} onMouseDown={cmd('italic')} title="기울임 (Ctrl+I)" style={{ fontStyle: 'italic' }}>I</FmtBtn>
       <FmtBtn active={fmt.underline} onMouseDown={cmd('underline')} title="밑줄 (Ctrl+U)" style={{ textDecoration: 'underline' }}>U</FmtBtn>
+      <Sep />
+      <FmtBtn onMouseDown={(e) => { e.preventDefault(); onFontSize(-FONT_STEP) }} title="글자 작게" style={{ fontSize: 11 }}>A−</FmtBtn>
+      <FmtBtn onMouseDown={(e) => { e.preventDefault(); onFontSize(FONT_STEP) }} title="글자 크게" style={{ fontSize: 14 }}>A+</FmtBtn>
+      <FmtBtn onMouseDown={(e) => { e.preventDefault(); onLink() }} title="링크 (Ctrl+K)">🔗</FmtBtn>
       <Sep />
       <span style={{ fontSize: 10, color: '#94a3b8', marginRight: 1 }}>가</span>
       {TEXT_COLORS.map(c => (

@@ -73,7 +73,7 @@ export default function FlatPropertyContent() {
 
         {(el.type === 'text' || (el.type === 'shape' && el.content)) && (
           <div className="pt-1 border-t border-white/5">
-            <FontSection styles={el.styles} updateStyle={updateStyle} isGradientText={el.styles.webkitBackgroundClip === 'text'} />
+            <FontSection el={el} styles={el.styles} updateStyle={updateStyle} isGradientText={el.styles.webkitBackgroundClip === 'text'} />
           </div>
         )}
 
@@ -443,13 +443,67 @@ function PositionSection({ el, update }) {
   )
 }
 
-function FontSection({ styles, updateStyle, isGradientText }) {
+/**
+ * 리치 텍스트 요소의 부분 서식이 섞여 있는지 감지.
+ * 요소 기본 스타일을 시작 컨텍스트로 두고 자식 span/태그의 override를 추적,
+ * 텍스트 노드별로 본 값이 2종 이상이면 'mixed'. (패널 토글의 혼합 상태 표시용)
+ */
+function detectTextMixed(el) {
+  const none = { bold: false, italic: false, underline: false, strike: false }
+  if (!el || !el.isRich || !el.content) return none
+  let doc
+  try { doc = new DOMParser().parseFromString(`<body>${el.content}</body>`, 'text/html') }
+  catch { return none }
+
+  const s = el.styles || {}
+  const base = {
+    bold: parseInt(s.fontWeight) >= 700,
+    italic: s.fontStyle === 'italic',
+    underline: (s.textDecoration || '').includes('underline'),
+    strike: (s.textDecoration || '').includes('line-through'),
+  }
+  const seen = { bold: new Set(), italic: new Set(), underline: new Set(), strike: new Set() }
+  const pick = (style, prop) => {
+    const m = new RegExp(`(?:^|;)\\s*${prop}\\s*:\\s*([^;]+)`, 'i').exec(style)
+    return m ? m[1].trim().toLowerCase() : null
+  }
+  const walk = (node, ctx) => {
+    for (const child of node.childNodes) {
+      if (child.nodeType === 3) {
+        if (!child.textContent || !child.textContent.trim()) continue
+        seen.bold.add(ctx.bold); seen.italic.add(ctx.italic)
+        seen.underline.add(ctx.underline); seen.strike.add(ctx.strike)
+      } else if (child.nodeType === 1) {
+        const tag = child.tagName.toLowerCase()
+        const style = child.getAttribute('style') || ''
+        const c = { ...ctx }
+        if (tag === 'b' || tag === 'strong') c.bold = true
+        if (tag === 'i' || tag === 'em') c.italic = true
+        if (tag === 'u') c.underline = true
+        if (tag === 's' || tag === 'del' || tag === 'strike') c.strike = true
+        const fw = pick(style, 'font-weight')
+        if (fw) c.bold = (fw === 'bold' || parseInt(fw) >= 700)
+        const fst = pick(style, 'font-style')
+        if (fst) c.italic = (fst === 'italic')
+        const td = pick(style, 'text-decoration') || pick(style, 'text-decoration-line')
+        if (td) { c.underline = td.includes('underline'); c.strike = td.includes('line-through') }
+        walk(child, c)
+      }
+    }
+  }
+  walk(doc.body, base)
+  const mixed = (set) => set.size > 1
+  return { bold: mixed(seen.bold), italic: mixed(seen.italic), underline: mixed(seen.underline), strike: mixed(seen.strike) }
+}
+
+function FontSection({ el, styles, updateStyle, isGradientText }) {
   const parseFontSize = (v) => parseFloat(v) || 16
   const isBold = parseInt(styles.fontWeight) >= 700
   const isItalic = styles.fontStyle === 'italic'
   const decoration = styles.textDecoration || ''
   const isUnderline = decoration.includes('underline')
   const isStrike = decoration.includes('line-through')
+  const mixed = detectTextMixed(el)
 
   return (
     <div className="space-y-2">
@@ -484,20 +538,20 @@ function FontSection({ styles, updateStyle, isGradientText }) {
       </div>
 
       <div className="flex gap-1.5">
-        <ToggleBtn active={isBold} onClick={() => updateStyle('fontWeight', isBold ? '400' : '700')} title="굵게 (Bold)">
+        <ToggleBtn active={isBold} mixed={mixed.bold} onClick={() => updateStyle('fontWeight', isBold ? '400' : '700')} title="굵게 (Bold)">
           <b>B</b>
         </ToggleBtn>
-        <ToggleBtn active={isItalic} onClick={() => updateStyle('fontStyle', isItalic ? 'normal' : 'italic')} title="기울임 (Italic)">
+        <ToggleBtn active={isItalic} mixed={mixed.italic} onClick={() => updateStyle('fontStyle', isItalic ? 'normal' : 'italic')} title="기울임 (Italic)">
           <i>I</i>
         </ToggleBtn>
-        <ToggleBtn active={isUnderline} onClick={() => {
+        <ToggleBtn active={isUnderline} mixed={mixed.underline} onClick={() => {
           const parts = decoration.split(/\s+/).filter(d => d && d !== 'none')
           const next = isUnderline ? parts.filter(d => d !== 'underline') : [...parts, 'underline']
           updateStyle('textDecoration', next.length ? next.join(' ') : 'none')
         }} title="밑줄 (Underline)">
           <u>U</u>
         </ToggleBtn>
-        <ToggleBtn active={isStrike} onClick={() => {
+        <ToggleBtn active={isStrike} mixed={mixed.strike} onClick={() => {
           const parts = decoration.split(/\s+/).filter(d => d && d !== 'none')
           const next = isStrike ? parts.filter(d => d !== 'line-through') : [...parts, 'line-through']
           updateStyle('textDecoration', next.length ? next.join(' ') : 'none')
@@ -1154,19 +1208,27 @@ function SelectInput({ label, value, options, onChange }) {
 
 // ── B/I/U 토글 버튼 ─────────────────────────────────
 
-function ToggleBtn({ active, onClick, title, children }) {
+function ToggleBtn({ active, mixed, onClick, title, children }) {
   return (
     <button
       onClick={onClick}
-      title={title}
+      title={mixed ? `${title || ''} — 혼합 (부분마다 다름)`.trim() : title}
       className={[
-        'w-8 h-8 rounded-lg text-xs font-semibold transition-colors flex items-center justify-center border',
-        active
-          ? 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30'
-          : 'bg-white/5 text-slate-400 border-white/10 hover:bg-white/10',
+        'relative w-8 h-8 rounded-lg text-xs font-semibold transition-colors flex items-center justify-center border',
+        mixed
+          ? 'bg-amber-500/15 text-amber-300 border-amber-500/40 border-dashed'
+          : active
+            ? 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30'
+            : 'bg-white/5 text-slate-400 border-white/10 hover:bg-white/10',
       ].join(' ')}
     >
       {children}
+      {mixed && (
+        <span
+          className="absolute bottom-0.5 right-0.5 w-1.5 h-1.5 rounded-full bg-amber-400"
+          aria-hidden="true"
+        />
+      )}
     </button>
   )
 }
