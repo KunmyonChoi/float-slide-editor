@@ -90,16 +90,88 @@ const CATEGORIES = [
   },
 ]
 
-const ALL = CATEGORIES.flatMap(c => c.items)
+// 기호 — 이모지와 달리 텍스트 색/굵기/크기를 "상속"하는 일반 유니코드 문자
+const SYMBOL_CATEGORIES = [
+  {
+    label: '화살표', icon: '→',
+    items: [
+      { e: '→', k: 'arrow right 오른쪽 화살표' }, { e: '←', k: 'arrow left 왼쪽' },
+      { e: '↑', k: 'arrow up 위' }, { e: '↓', k: 'arrow down 아래' },
+      { e: '↔', k: 'arrow leftright 좌우' }, { e: '↕', k: 'arrow updown 상하' },
+      { e: '⇒', k: 'double arrow right 이중' }, { e: '⇐', k: 'double left' },
+      { e: '⇔', k: 'double leftright 동치' }, { e: '➜', k: 'arrow heavy 굵은 화살표' },
+      { e: '▶', k: 'play triangle right 재생' }, { e: '◀', k: 'triangle left' },
+      { e: '▲', k: 'triangle up 위 삼각' }, { e: '▼', k: 'triangle down 아래 삼각' },
+      { e: '↩', k: 'return back 되돌림' }, { e: '↪', k: 'forward 앞으로' },
+    ],
+  },
+  {
+    label: '원/번호', icon: '①',
+    items: [
+      { e: '①', k: 'circle 1 원 번호 일' }, { e: '②', k: 'circle 2 이' },
+      { e: '③', k: 'circle 3 삼' }, { e: '④', k: 'circle 4 사' },
+      { e: '⑤', k: 'circle 5 오' }, { e: '⑥', k: 'circle 6 육' },
+      { e: '⑦', k: 'circle 7 칠' }, { e: '⑧', k: 'circle 8 팔' },
+      { e: '⑨', k: 'circle 9 구' }, { e: '⑩', k: 'circle 10 십' },
+      { e: '❶', k: 'filled circle 1 검정 원' }, { e: '❷', k: 'filled 2' },
+      { e: '❸', k: 'filled 3' }, { e: 'ⓐ', k: 'circle a 원 에이' },
+      { e: 'ⓑ', k: 'circle b' }, { e: 'ⓒ', k: 'circle c' },
+      { e: 'Ⓐ', k: 'circle A 대문자' }, { e: 'Ⓑ', k: 'circle B' },
+    ],
+  },
+  {
+    label: '수학', icon: '×',
+    items: [
+      { e: '×', k: 'times multiply 곱하기' }, { e: '÷', k: 'divide 나누기' },
+      { e: '±', k: 'plusminus 플러스마이너스' }, { e: '∓', k: 'minusplus' },
+      { e: '≤', k: 'less equal 이하' }, { e: '≥', k: 'greater equal 이상' },
+      { e: '≠', k: 'not equal 다름' }, { e: '≈', k: 'approx 근사' },
+      { e: '∞', k: 'infinity 무한' }, { e: '√', k: 'sqrt root 루트' },
+      { e: '∑', k: 'sum sigma 합' }, { e: '∏', k: 'product 곱' },
+      { e: '∫', k: 'integral 적분' }, { e: 'π', k: 'pi 파이' },
+      { e: '°', k: 'degree 도 각도' }, { e: '₩', k: 'won 원화' },
+      { e: '$', k: 'dollar 달러' }, { e: '€', k: 'euro 유로' },
+      { e: '£', k: 'pound 파운드' }, { e: '¥', k: 'yen 엔' },
+      { e: '%', k: 'percent 퍼센트' }, { e: '‰', k: 'permil 퍼밀' },
+    ],
+  },
+  {
+    label: '기타', icon: '★',
+    items: [
+      { e: '★', k: 'star filled 별 채움' }, { e: '☆', k: 'star empty 빈 별' },
+      { e: '✓', k: 'check 체크' }, { e: '✔', k: 'check heavy 굵은 체크' },
+      { e: '✗', k: 'x cross 엑스' }, { e: '✘', k: 'x heavy' },
+      { e: '•', k: 'bullet dot 점 불릿' }, { e: '▪', k: 'square small 작은 사각' },
+      { e: '▫', k: 'square small empty' }, { e: '◆', k: 'diamond 다이아' },
+      { e: '◇', k: 'diamond empty' }, { e: '■', k: 'square 사각' },
+      { e: '□', k: 'square empty 빈 사각' }, { e: '§', k: 'section 섹션' },
+      { e: '※', k: 'reference 참고 표' }, { e: '™', k: 'trademark 상표' },
+      { e: '©', k: 'copyright 저작권' }, { e: '®', k: 'registered 등록' },
+      { e: '…', k: 'ellipsis 줄임표' }, { e: '·', k: 'middle dot 가운뎃점' },
+      { e: '「', k: 'bracket 낫표' }, { e: '」', k: 'bracket close' },
+      { e: '『', k: 'bracket double 겹낫표' }, { e: '』', k: 'bracket double close' },
+    ],
+  },
+]
+
+const SEGMENTS = [
+  { key: 'emoji', label: '이모지', categories: CATEGORIES },
+  { key: 'symbol', label: '기호', categories: SYMBOL_CATEGORIES },
+]
 
 export default function EmojiPicker({ onPick, style }) {
+  const [seg, setSeg] = useState(0)
   const [cat, setCat] = useState(0)
   const [query, setQuery] = useState('')
 
+  const categories = SEGMENTS[seg].categories
+  const segItems = categories.flatMap(c => c.items)
   const q = query.trim().toLowerCase()
   const items = q
-    ? ALL.filter(it => it.e === q || it.k.toLowerCase().includes(q))
-    : CATEGORIES[cat].items
+    ? segItems.filter(it => it.e === q || it.k.toLowerCase().includes(q))
+    : categories[cat].items
+
+  const switchSeg = (i) => { setSeg(i); setCat(0) }
 
   // 이모지 버튼: mousedown preventDefault로 에디터 포커스/선택 유지
   const pick = (e) => (ev) => { ev.preventDefault(); onPick(e) }
@@ -118,12 +190,30 @@ export default function EmojiPicker({ onPick, style }) {
         ...style,
       }}
     >
+      {/* 세그먼트: 이모지 | 기호 */}
+      <div style={{ display: 'flex', gap: 3, marginBottom: 6 }}>
+        {SEGMENTS.map((sg, i) => (
+          <button
+            key={sg.key}
+            onMouseDown={(e) => { e.preventDefault(); switchSeg(i) }}
+            style={{
+              flex: 1, padding: '4px 0', borderRadius: 6, border: 'none', cursor: 'pointer',
+              fontSize: 12, fontWeight: 600,
+              color: i === seg ? '#fff' : '#94a3b8',
+              background: i === seg ? 'rgba(99,102,241,0.5)' : 'rgba(255,255,255,0.06)',
+            }}
+          >
+            {sg.label}
+          </button>
+        ))}
+      </div>
+
       {/* 검색 */}
       <input
         type="text"
         value={query}
         onChange={(e) => setQuery(e.target.value)}
-        placeholder="이모지 검색 (예: 하트, fire)"
+        placeholder={seg === 0 ? '이모지 검색 (예: 하트, fire)' : '기호 검색 (예: 화살표, 원)'}
         autoFocus
         style={{
           width: '100%', boxSizing: 'border-box', marginBottom: 6,
@@ -136,14 +226,14 @@ export default function EmojiPicker({ onPick, style }) {
       {/* 카테고리 탭 (검색 중엔 숨김) */}
       {!q && (
         <div style={{ display: 'flex', gap: 2, marginBottom: 6 }}>
-          {CATEGORIES.map((c, i) => (
+          {categories.map((c, i) => (
             <button
               key={c.label}
               title={c.label}
               onMouseDown={(e) => { e.preventDefault(); setCat(i) }}
               style={{
                 flex: 1, padding: '3px 0', borderRadius: 5, border: 'none', cursor: 'pointer',
-                fontSize: 15, lineHeight: 1,
+                fontSize: 15, lineHeight: 1, color: '#e2e8f0',
                 background: i === cat ? 'rgba(99,102,241,0.45)' : 'transparent',
               }}
             >
@@ -165,7 +255,7 @@ export default function EmojiPicker({ onPick, style }) {
             onMouseDown={pick(it.e)}
             style={{
               padding: 4, borderRadius: 5, border: 'none', cursor: 'pointer',
-              fontSize: 19, lineHeight: 1, background: 'transparent',
+              fontSize: 19, lineHeight: 1, background: 'transparent', color: '#e2e8f0',
             }}
             onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.1)' }}
             onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
