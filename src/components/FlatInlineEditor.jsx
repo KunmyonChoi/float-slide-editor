@@ -1,6 +1,7 @@
 import { useRef, useEffect, useCallback, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useFlatStore } from '../store/flatStore'
+import EmojiPicker from './EmojiPicker'
 
 // 선택 툴바 팔레트
 const TEXT_COLORS = ['#0f172a', '#ffffff', '#ef4444', '#f59e0b', '#10b981', '#3b82f6', '#8b5cf6', '#ec4899']
@@ -43,18 +44,24 @@ export default function FlatInlineEditor({ element }) {
   const { commitTextEdit } = useFlatStore()
   const committedRef = useRef(false)
   const suppressCommitRef = useRef(false) // prompt 등 일시적 포커스 이탈 시 blur 커밋 차단
+  const lastRangeRef = useRef(null)       // 마지막 caret/선택 (이모지 삽입 시 복원용)
+  const accessoryRef = useRef(null)       // 이모지 버튼+픽커 컨테이너
   const [sel, setSel] = useState(null) // { left, top, bottom } 뷰포트 좌표 또는 null
   const [fmt, setFmt] = useState({ bold: false, italic: false, underline: false })
+  const [editorRect, setEditorRect] = useState(null) // 이모지 버튼 앵커용
+  const [emojiOpen, setEmojiOpen] = useState(false)
 
   const { x, y, width, height, content, styles, merged } = element
 
-  // 현재 선택 상태 → 툴바 위치/활성 서식 갱신
+  // 현재 선택 상태 → 툴바 위치/활성 서식 갱신 + caret 보존
   const refreshSelection = useCallback(() => {
     const el = ref.current
     const s = window.getSelection()
-    if (!el || !s || s.rangeCount === 0 || s.isCollapsed) { setSel(null); return }
+    if (!el || !s || s.rangeCount === 0) { setSel(null); return }
     const range = s.getRangeAt(0)
     if (!el.contains(range.commonAncestorContainer)) { setSel(null); return }
+    lastRangeRef.current = range.cloneRange() // caret/선택 보존 (collapsed 포함)
+    if (s.isCollapsed) { setSel(null); return }
     const rect = range.getBoundingClientRect()
     if (!rect || (rect.width === 0 && rect.height === 0)) { setSel(null); return }
     setSel({ left: rect.left + rect.width / 2, top: rect.top, bottom: rect.bottom })
@@ -85,6 +92,7 @@ export default function FlatInlineEditor({ element }) {
     sel.removeAllRanges()
     sel.addRange(range)
     committedRef.current = false
+    setEditorRect(ref.current.getBoundingClientRect()) // 이모지 버튼 앵커
     // 인라인 서식이 <span style>로 생성되도록 (export 파서가 인라인 스타일을 읽음)
     try { document.execCommand('styleWithCSS', false, true) } catch { /* noop */ }
     document.addEventListener('selectionchange', refreshSelection)
@@ -151,6 +159,29 @@ export default function FlatInlineEditor({ element }) {
     refreshSelection()
   }, [refreshSelection])
 
+  // 저장된 caret 위치에 이모지 삽입 (선택이 있으면 대체)
+  const insertEmoji = useCallback((emoji) => {
+    const el = ref.current
+    if (!el) return
+    el.focus()
+    const s = window.getSelection()
+    if (lastRangeRef.current) {
+      s.removeAllRanges()
+      s.addRange(lastRangeRef.current)
+    }
+    try {
+      document.execCommand('insertText', false, emoji)
+    } catch {
+      if (s.rangeCount) {
+        const r = s.getRangeAt(0)
+        r.deleteContents()
+        r.insertNode(document.createTextNode(emoji))
+        r.collapse(false)
+      }
+    }
+    if (s.rangeCount) lastRangeRef.current = s.getRangeAt(0).cloneRange()
+  }, [])
+
   const commit = useCallback(() => {
     if (committedRef.current) return
     committedRef.current = true
@@ -159,10 +190,23 @@ export default function FlatInlineEditor({ element }) {
     commitTextEdit(element.id, html, hasHtmlTags)
   }, [element.id, commitTextEdit])
 
-  const handleBlur = useCallback(() => {
+  const handleBlur = useCallback((e) => {
     if (suppressCommitRef.current) return
+    // 포커스가 이모지 버튼/픽커 등 부속 UI로 이동하면 커밋 보류 (편집 유지)
+    const rt = e?.relatedTarget
+    if (rt && rt.closest && rt.closest('[data-edit-accessory]')) return
     commit()
   }, [commit])
+
+  // 이모지 픽커 열려 있을 때 바깥 클릭 → 닫기
+  useEffect(() => {
+    if (!emojiOpen) return
+    const onDown = (e) => {
+      if (accessoryRef.current && !accessoryRef.current.contains(e.target)) setEmojiOpen(false)
+    }
+    document.addEventListener('mousedown', onDown, true)
+    return () => document.removeEventListener('mousedown', onDown, true)
+  }, [emojiOpen])
 
   const handleKeyDown = useCallback((e) => {
     if (e.key === 'Escape') {
@@ -249,7 +293,55 @@ export default function FlatInlineEditor({ element }) {
         <SelectionToolbar sel={sel} fmt={fmt} onCmd={applyCmd} onFontSize={changeFontSize} onLink={applyLink} />,
         document.body
       )}
+      {editorRect && createPortal(
+        <EmojiAccessory
+          rect={editorRect}
+          open={emojiOpen}
+          accessoryRef={accessoryRef}
+          onToggle={() => {
+            if (ref.current) setEditorRect(ref.current.getBoundingClientRect())
+            setEmojiOpen(o => !o)
+          }}
+          onPick={insertEmoji}
+        />,
+        document.body
+      )}
     </>
+  )
+}
+
+// ── 이모지 버튼 + 픽커 (편집 중 항상 노출) ──────────────
+
+function EmojiAccessory({ rect, open, accessoryRef, onToggle, onPick }) {
+  const BTN = 28
+  let top = rect.top - BTN - 4
+  if (top < 8) top = rect.bottom + 4
+  const left = Math.min(window.innerWidth - BTN - 8, Math.max(8, rect.right - BTN))
+
+  return (
+    <div
+      ref={accessoryRef}
+      data-edit-accessory="true"
+      style={{ position: 'fixed', top, left, zIndex: 10050 }}
+    >
+      <button
+        type="button"
+        title="이모지 삽입"
+        onMouseDown={(e) => { e.preventDefault(); onToggle() }}
+        style={{
+          width: BTN, height: BTN, borderRadius: 7, cursor: 'pointer', fontSize: 16, lineHeight: 1,
+          background: open ? 'rgba(99,102,241,0.55)' : 'rgba(15,23,42,0.95)',
+          border: '1px solid rgba(255,255,255,0.15)', boxShadow: '0 2px 8px rgba(0,0,0,0.35)',
+        }}
+      >
+        😊
+      </button>
+      {open && (
+        <div style={{ position: 'absolute', top: BTN + 4, right: 0 }}>
+          <EmojiPicker onPick={onPick} />
+        </div>
+      )}
+    </div>
   )
 }
 
