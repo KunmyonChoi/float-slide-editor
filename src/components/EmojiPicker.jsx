@@ -223,9 +223,12 @@ export default function EmojiPicker({ onPick, style }) {
         }}
       />
 
-      {/* 카테고리 탭 (검색 중엔 숨김) */}
+      {/* 카테고리 탭 (검색 중엔 숨김) — 채워진 바로 묶어 제어영역임을 표시 */}
       {!q && (
-        <div style={{ display: 'flex', gap: 2, marginBottom: 6 }}>
+        <div style={{
+          display: 'flex', gap: 2, padding: 3, marginBottom: 6,
+          background: 'rgba(255,255,255,0.05)', borderRadius: 7,
+        }}>
           {categories.map((c, i) => (
             <button
               key={c.label}
@@ -234,7 +237,7 @@ export default function EmojiPicker({ onPick, style }) {
               style={{
                 flex: 1, padding: '3px 0', borderRadius: 5, border: 'none', cursor: 'pointer',
                 fontSize: 15, lineHeight: 1, color: '#e2e8f0',
-                background: i === cat ? 'rgba(99,102,241,0.45)' : 'transparent',
+                background: i === cat ? 'rgba(99,102,241,0.55)' : 'transparent',
               }}
             >
               {c.icon}
@@ -242,6 +245,17 @@ export default function EmojiPicker({ onPick, style }) {
           ))}
         </div>
       )}
+
+      {/* 구분선 + 현재 섹션 라벨 (탭바와 그리드 경계 명확화) */}
+      <div style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        borderTop: '1px solid rgba(255,255,255,0.1)', padding: '5px 2px 4px', marginBottom: 2,
+      }}>
+        <span style={{ fontSize: 11, fontWeight: 600, color: '#94a3b8' }}>
+          {q ? '검색 결과' : categories[cat].label}
+        </span>
+        <span style={{ fontSize: 10, color: '#64748b' }}>{items.length}</span>
+      </div>
 
       {/* 그리드 */}
       <div style={{
