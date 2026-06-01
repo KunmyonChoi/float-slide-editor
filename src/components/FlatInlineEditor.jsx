@@ -1,18 +1,45 @@
-import { useRef, useEffect, useCallback } from 'react'
+import { useRef, useEffect, useCallback, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useFlatStore } from '../store/flatStore'
+
+// 선택 툴바 팔레트
+const TEXT_COLORS = ['#0f172a', '#ffffff', '#ef4444', '#f59e0b', '#10b981', '#3b82f6', '#8b5cf6', '#ec4899']
+const HL_COLORS = ['#fde68a', '#bbf7d0', '#bfdbfe', '#fbcfe8', '#e9d5ff']
 
 /**
  * FlatInlineEditor
  * 선택된 텍스트 요소 위에 contentEditable div를 겹쳐 인라인 편집.
  * 요소의 폰트/색상/정렬 스타일을 그대로 적용.
  * blur 또는 Escape로 커밋.
+ * 텍스트 일부를 선택하면 선택 위에 부분 서식 툴바(B/I/U/색상/형광펜)가 뜬다.
  */
 export default function FlatInlineEditor({ element }) {
   const ref = useRef(null)
   const { commitTextEdit } = useFlatStore()
   const committedRef = useRef(false)
+  const [sel, setSel] = useState(null) // { left, top, bottom } 뷰포트 좌표 또는 null
+  const [fmt, setFmt] = useState({ bold: false, italic: false, underline: false })
 
   const { x, y, width, height, content, styles, merged } = element
+
+  // 현재 선택 상태 → 툴바 위치/활성 서식 갱신
+  const refreshSelection = useCallback(() => {
+    const el = ref.current
+    const s = window.getSelection()
+    if (!el || !s || s.rangeCount === 0 || s.isCollapsed) { setSel(null); return }
+    const range = s.getRangeAt(0)
+    if (!el.contains(range.commonAncestorContainer)) { setSel(null); return }
+    const rect = range.getBoundingClientRect()
+    if (!rect || (rect.width === 0 && rect.height === 0)) { setSel(null); return }
+    setSel({ left: rect.left + rect.width / 2, top: rect.top, bottom: rect.bottom })
+    try {
+      setFmt({
+        bold: document.queryCommandState('bold'),
+        italic: document.queryCommandState('italic'),
+        underline: document.queryCommandState('underline'),
+      })
+    } catch { /* queryCommandState 미지원 무시 */ }
+  }, [])
 
   // 마운트 시 innerHTML 설정 + 포커스 + 커밋 콜백 등록
   useEffect(() => {
@@ -32,6 +59,9 @@ export default function FlatInlineEditor({ element }) {
     sel.removeAllRanges()
     sel.addRange(range)
     committedRef.current = false
+    // 인라인 서식이 <span style>로 생성되도록 (export 파서가 인라인 스타일을 읽음)
+    try { document.execCommand('styleWithCSS', false, true) } catch { /* noop */ }
+    document.addEventListener('selectionchange', refreshSelection)
 
     // 페이지 이동/모드 전환 시 _saveCurrentPage가 이 콜백을 호출하여 커밋
     const flushCommit = () => {
@@ -44,11 +74,24 @@ export default function FlatInlineEditor({ element }) {
     useFlatStore.getState()._setPendingEditCommit(flushCommit)
 
     return () => {
+      document.removeEventListener('selectionchange', refreshSelection)
       // unmount 시 미커밋 상태면 커밋 시도
       flushCommit()
       useFlatStore.getState()._setPendingEditCommit(null)
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 선택 영역에 서식 적용 (포커스/선택 유지 → blur 커밋 방지는 툴바 mousedown preventDefault가 담당)
+  const applyCmd = useCallback((cmd, value) => {
+    const el = ref.current
+    if (!el) return
+    el.focus()
+    try {
+      document.execCommand('styleWithCSS', false, true)
+      document.execCommand(cmd, false, value)
+    } catch { /* execCommand 미지원 무시 */ }
+    refreshSelection()
+  }, [refreshSelection])
 
   const commit = useCallback(() => {
     if (committedRef.current) return
@@ -126,14 +169,119 @@ export default function FlatInlineEditor({ element }) {
   }
 
   return (
+    <>
+      <div
+        ref={ref}
+        contentEditable
+        suppressContentEditableWarning
+        style={editorStyle}
+        onBlur={handleBlur}
+        onKeyDown={handleKeyDown}
+        onMouseDown={(e) => e.stopPropagation()}
+      />
+      {sel && createPortal(
+        <SelectionToolbar sel={sel} fmt={fmt} onCmd={applyCmd} />,
+        document.body
+      )}
+    </>
+  )
+}
+
+// ── 선택 영역 부분 서식 툴바 ──────────────────────────
+
+function SelectionToolbar({ sel, fmt, onCmd }) {
+  const TOOLBAR_H = 38
+  const HALF_W = 170
+  let top = sel.top - TOOLBAR_H - 8
+  if (top < 8) top = sel.bottom + 8 // 위 공간 부족 시 아래로
+  const left = Math.max(HALF_W + 8, Math.min(window.innerWidth - HALF_W - 8, sel.left))
+
+  // 툴바 영역 mousedown은 기본동작 차단 → 에디터 포커스/선택 유지 (blur 커밋 방지)
+  const keepSelection = (e) => e.preventDefault()
+  const cmd = (c, v) => (e) => { e.preventDefault(); onCmd(c, v) }
+
+  return (
     <div
-      ref={ref}
-      contentEditable
-      suppressContentEditableWarning
-      style={editorStyle}
-      onBlur={handleBlur}
-      onKeyDown={handleKeyDown}
-      onMouseDown={(e) => e.stopPropagation()}
+      onMouseDown={keepSelection}
+      style={{
+        position: 'fixed',
+        top,
+        left,
+        transform: 'translateX(-50%)',
+        zIndex: 10050,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 5,
+        padding: '5px 8px',
+        background: 'rgba(15,23,42,0.97)',
+        border: '1px solid rgba(255,255,255,0.12)',
+        borderRadius: 8,
+        boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
+        backdropFilter: 'blur(8px)',
+        fontFamily: 'system-ui, sans-serif',
+      }}
+    >
+      <FmtBtn active={fmt.bold} onMouseDown={cmd('bold')} title="굵게 (Ctrl+B)" style={{ fontWeight: 700 }}>B</FmtBtn>
+      <FmtBtn active={fmt.italic} onMouseDown={cmd('italic')} title="기울임 (Ctrl+I)" style={{ fontStyle: 'italic' }}>I</FmtBtn>
+      <FmtBtn active={fmt.underline} onMouseDown={cmd('underline')} title="밑줄 (Ctrl+U)" style={{ textDecoration: 'underline' }}>U</FmtBtn>
+      <Sep />
+      <span style={{ fontSize: 10, color: '#94a3b8', marginRight: 1 }}>가</span>
+      {TEXT_COLORS.map(c => (
+        <Swatch key={c} color={c} round onMouseDown={cmd('foreColor', c)} title={`글자색 ${c}`} />
+      ))}
+      <Sep />
+      {HL_COLORS.map(c => (
+        <Swatch key={c} color={c} onMouseDown={cmd('hiliteColor', c)} title={`형광펜 ${c}`} />
+      ))}
+      <FmtBtn onMouseDown={cmd('hiliteColor', 'transparent')} title="형광펜 지우기" style={{ fontSize: 11 }}>✕</FmtBtn>
+    </div>
+  )
+}
+
+function FmtBtn({ children, active, onMouseDown, title, style }) {
+  return (
+    <button
+      type="button"
+      onMouseDown={onMouseDown}
+      title={title}
+      style={{
+        minWidth: 24,
+        height: 24,
+        padding: '0 5px',
+        borderRadius: 5,
+        border: 'none',
+        cursor: 'pointer',
+        fontSize: 13,
+        lineHeight: 1,
+        color: '#e2e8f0',
+        background: active ? 'rgba(99,102,241,0.6)' : 'rgba(255,255,255,0.08)',
+        ...style,
+      }}
+    >
+      {children}
+    </button>
+  )
+}
+
+function Swatch({ color, round, onMouseDown, title }) {
+  return (
+    <button
+      type="button"
+      onMouseDown={onMouseDown}
+      title={title}
+      style={{
+        width: 16,
+        height: 16,
+        padding: 0,
+        borderRadius: round ? '50%' : 3,
+        border: '1px solid rgba(255,255,255,0.25)',
+        background: color,
+        cursor: 'pointer',
+      }}
     />
   )
+}
+
+function Sep() {
+  return <div style={{ width: 1, height: 18, background: 'rgba(255,255,255,0.12)', margin: '0 2px' }} />
 }
