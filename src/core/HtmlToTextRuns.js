@@ -66,6 +66,9 @@ function walkNode(node, inherited, runs, baseStyles) {
         const textDecoration = extractStyle(style, 'text-decoration')
         if (textDecoration?.includes('underline')) ctx.underline = true
         if (textDecoration?.includes('line-through')) ctx.strike = true
+        // 인라인 background → PPT highlight (코드 박스/배지 등). background-color 우선, 없으면 background.
+        const bg = extractStyle(style, 'background-color') || extractStyle(style, 'background')
+        if (bg) ctx.highlight = bg
       }
 
       // <br> → 줄바꿈
@@ -112,7 +115,43 @@ function buildOptions(ctx, baseStyles) {
   const fontFace = ctx.fontFace || baseStyles.fontFamily
   if (fontFace) opts.fontFace = cleanFontFamily(fontFace)
 
+  // 텍스트 런 배경(highlight) — 인라인 <code>, .tag 류 배지의 background-color를 보존.
+  // PPT highlight는 opaque만 지원하므로 알파가 있으면 다크 슬레이트 배경에 블렌딩.
+  if (ctx.highlight) {
+    const hex = blendToOpaqueHex(ctx.highlight)
+    if (hex) opts.highlight = hex
+  }
+
   return opts
+}
+
+/** rgba(...)/hex → 다크 슬레이트(#0F172A) 배경 알파 블렌딩 후 opaque hex 반환. */
+function blendToOpaqueHex(color) {
+  if (!color) return undefined
+  // 기본 다크 배경(슬레이트 900) — 대부분의 코드 박스 슬라이드가 다크 톤
+  const BG = { r: 0x0F, g: 0x17, b: 0x2A }
+  let r, g, b, a = 1
+  if (color.startsWith('#')) {
+    const h = color.slice(1)
+    if (h.length === 3) {
+      r = parseInt(h[0] + h[0], 16); g = parseInt(h[1] + h[1], 16); b = parseInt(h[2] + h[2], 16)
+    } else if (h.length === 6) {
+      r = parseInt(h.slice(0, 2), 16); g = parseInt(h.slice(2, 4), 16); b = parseInt(h.slice(4, 6), 16)
+    } else if (h.length === 8) {
+      r = parseInt(h.slice(0, 2), 16); g = parseInt(h.slice(2, 4), 16); b = parseInt(h.slice(4, 6), 16); a = parseInt(h.slice(6, 8), 16) / 255
+    } else return undefined
+  } else {
+    const m = color.match(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)(?:\s*,\s*([\d.]+))?/)
+    if (!m) return undefined
+    r = +m[1]; g = +m[2]; b = +m[3]; a = m[4] !== undefined ? parseFloat(m[4]) : 1
+  }
+  if (a >= 0.999) {
+    return [r, g, b].map(n => n.toString(16).padStart(2, '0')).join('')
+  }
+  const blend = (fg, bg) => Math.round(fg * a + bg * (1 - a))
+  return [blend(r, BG.r), blend(g, BG.g), blend(b, BG.b)]
+    .map(n => Math.max(0, Math.min(255, n)).toString(16).padStart(2, '0'))
+    .join('')
 }
 
 /** CSS color → 6자리 hex (# 없이) */

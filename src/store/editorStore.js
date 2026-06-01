@@ -5,6 +5,39 @@ import { resolveAlignment, readCurrentAlignment } from '../core/AlignmentResolve
 
 const _history = new HistoryStack()
 
+/**
+ * 로드된 덱 HTML에서 <link rel="stylesheet"> 를 추출해
+ * 현재 document.head 에 (href 기준 중복 제거 후) 주입한다.
+ * flat presenter가 외부 폰트/아이콘 CSS를 활용할 수 있도록 한다.
+ */
+function _injectDeckStylesheets(fullHtml) {
+  if (typeof document === 'undefined' || !fullHtml) return
+  try {
+    const doc = new DOMParser().parseFromString(fullHtml, 'text/html')
+    const links = doc.querySelectorAll('link[rel~="stylesheet"][href]')
+    for (const l of links) {
+      const href = l.getAttribute('href')
+      if (!href) continue
+      const existing = document.head.querySelector(`link[data-fe-deck-css="${cssEscape(href)}"]`)
+      if (existing) continue
+      const el = document.createElement('link')
+      el.rel = 'stylesheet'
+      el.href = href
+      el.setAttribute('data-fe-deck-css', href)
+      const cross = l.getAttribute('crossorigin')
+      if (cross) el.crossOrigin = cross
+      document.head.appendChild(el)
+    }
+  } catch {
+    /* 주입 실패는 무시 — 아이콘만 영향 */
+  }
+}
+
+function cssEscape(s) {
+  // 간단한 attribute selector 이스케이프 (따옴표/백슬래시만 처리)
+  return String(s).replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+}
+
 export const useEditorStore = create((set, get) => ({
   /** iframe에 주입할 완성된 HTML (srcdoc) */
   slideHtml: '',
@@ -48,9 +81,14 @@ export const useEditorStore = create((set, get) => ({
 
   loadHtml(fullHtml) {
     const { html, elements } = prepareHtmlForEditor(fullHtml)
+    // 덱이 의존하는 외부 stylesheet(<link rel="stylesheet">)를 메인 문서에도 주입.
+    // flat presenter는 iframe이 아닌 메인 React 트리에 렌더되므로
+    // Font Awesome 등 CDN 폰트가 동일하게 로드되어야 글리프가 그려진다.
+    _injectDeckStylesheets(fullHtml)
     _history.clear()
-    // 새 파일 로드 시 캔버스 크기 오버라이드 해제 → 자동 감지
-    set({ slideHtml: html, elements, selectedId: null, canvasSize: null, canUndo: false, canRedo: false })
+    // 사용자가 로드 전에 선택해둔 캔버스 크기는 그대로 유지한다.
+    // 자동 감지로 되돌리려면 캔버스 선택기에서 "자동 감지"를 직접 선택.
+    set({ slideHtml: html, elements, selectedId: null, canUndo: false, canRedo: false })
   },
 
   /** @param {{ w: number, h: number } | null} size */

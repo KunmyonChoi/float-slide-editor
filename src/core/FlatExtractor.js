@@ -129,6 +129,29 @@ export function hasDistinctStyle(el) {
 }
 
 /**
+ * 인라인 요소가 시각적 박스(배경/테두리/radius/padding) 스타일을 computed로 가지는지 판별.
+ * CSS 클래스로만 적용되어 inline `style=""`에 없는 케이스도 포함 (예: `.tag .tag-blue`).
+ * 이 경우 해당 요소는 텍스트 흐름의 일부가 아니라 독립적인 시각 배지로 취급되어야 한다.
+ */
+export function hasVisualBoxStyle(el) {
+  if (!el || !el.ownerDocument) return false
+  const win = el.ownerDocument.defaultView
+  if (!win) return false
+  const cs = win.getComputedStyle(el)
+  const bg = cs.backgroundColor
+  if (bg && bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent') return true
+  if (cs.backgroundImage && cs.backgroundImage !== 'none') return true
+  const bw = (parseFloat(cs.borderTopWidth) || 0) + (parseFloat(cs.borderRightWidth) || 0) +
+             (parseFloat(cs.borderBottomWidth) || 0) + (parseFloat(cs.borderLeftWidth) || 0)
+  if (bw > 0) return true
+  if (cs.borderRadius && cs.borderRadius !== '0px' && cs.borderRadius !== '0%') return true
+  const pad = (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingRight) || 0) +
+              (parseFloat(cs.paddingBottom) || 0) + (parseFloat(cs.paddingLeft) || 0)
+  if (pad > 0) return true
+  return false
+}
+
+/**
  * 인라인 요소가 텍스트 흐름 속에 삽입되어 있는지 판별.
  * 주변에 의미 있는 텍스트 노드가 있으면 embedded (텍스트 흐름의 일부).
  */
@@ -176,6 +199,10 @@ function getRichTextContent(el) {
       if (node.hasAttribute('data-editor-id')) {
         // 블록 요소 → 제외
         if (!INLINE_TAGS.has(tag)) continue
+        // 인라인 + CSS 박스 스타일(.tag 류 배지) + 비embedded → 독립 추출 대상이므로 제외.
+        // embedded(주변에 텍스트 형제가 있는 경우, 예: <li>... <code>X</code> ...</li>)은
+        // 텍스트 흐름의 일부로 유지해 위치 정합성을 보존해야 한다.
+        if (hasVisualBoxStyle(node) && !isEmbeddedInline(node)) continue
         // 인라인 + 고유 스타일 + embedded → outerHTML로 스타일 보존
         if (hasDistinctStyle(node) && isEmbeddedInline(node)) {
           html += cleanInlineHtml(node)
@@ -185,36 +212,97 @@ function getRichTextContent(el) {
         // 인라인 + 고유 스타일 + 비embedded → 독립 추출 대상, 제외
         if (hasDistinctStyle(node) && !isEmbeddedInline(node)) continue
       }
-      // <li> 요소 → 불릿 마커 삽입 (CSS list-style로 렌더링되어 textContent에 없음)
+      // <li> 요소 → 부모(ul/ol)에 맞춰 리스트 마커 삽입
+      // (CSS list-style 또는 li::before로 렌더링되어 textContent에 없으므로 직접 prefix)
       if (tag === 'li') {
-        const bullet = '• '
-        html += escapeHtml(bullet + node.textContent)
-        plain += bullet + node.textContent
+        const m = computeListMarker(node)
+        html += m.rich + escapeHtml(node.textContent)
+        plain += m.plain + node.textContent
+        if (m.rich) hasHtml = true
         continue
       }
       // 시맨틱 서식 태그(strong, em, b, i, u 등) → 태그 + 인라인 스타일 보존
       if (SEMANTIC_FORMAT_TAGS.has(tag)) {
+        // 아이콘 폰트(예: Font Awesome <i class="fas fa-target">) 처리:
+        // 실제 텍스트가 없고 ::before content에 글리프가 들어있는 경우,
+        // 글리프를 폰트와 함께 인라인 <span>으로 emit하여 flat 결과에 보존한다.
+        let nodeText = node.textContent
+        if (!nodeText && win && (tag === 'i' || tag === 'span')) {
+          const iconSpan = getIconGlyphSpan(node, win)
+          if (iconSpan) {
+            html += iconSpan
+            plain += '' // 글리프는 의미 텍스트가 아니므로 plain에는 추가하지 않음
+            hasHtml = true
+            continue
+          }
+        }
         const inlineStyle = getSemanticInlineStyle(node)
         if (inlineStyle) {
-          html += `<${tag} style="${inlineStyle}">${escapeHtml(node.textContent)}</${tag}>`
+          html += `<${tag} style="${inlineStyle}">${escapeHtml(nodeText)}</${tag}>`
         } else {
-          html += `<${tag}>${escapeHtml(node.textContent)}</${tag}>`
+          html += `<${tag}>${escapeHtml(nodeText)}</${tag}>`
         }
-        plain += node.textContent
+        plain += nodeText
         hasHtml = true
         continue
       }
-      // data-editor-id 없는 인라인 요소(예: <span class="c">, <span class="k">)
-      // CSS 클래스로만 스타일된 경우 computed style을 인라인으로 보존
+      // data-editor-id 없는 인라인 요소(예: <span class="c">, <span class="k">,
+      // 또는 .tag .tag-blue 같은 CSS 배지). CSS 클래스로만 스타일된 경우
+      // computed style을 인라인으로 보존.
       if (tag === 'span' && win) {
         const spanCs = win.getComputedStyle(node)
         const parentCs = win.getComputedStyle(el)
         const diffs = []
+        // 텍스트 서식 차이
         if (spanCs.color !== parentCs.color) diffs.push(`color:${spanCs.color}`)
         if (spanCs.fontWeight !== parentCs.fontWeight) diffs.push(`font-weight:${spanCs.fontWeight}`)
         if (spanCs.fontStyle !== parentCs.fontStyle) diffs.push(`font-style:${spanCs.fontStyle}`)
         if (spanCs.fontSize !== parentCs.fontSize) diffs.push(`font-size:${spanCs.fontSize}`)
         if (spanCs.fontFamily !== parentCs.fontFamily) diffs.push(`font-family:${spanCs.fontFamily.replace(/"/g, "'")}`)
+        // 배지/태그 박스 시각 속성 (배경/테두리/radius/padding)
+        const bg = spanCs.backgroundColor
+        const hasBg = bg && bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent'
+        if (hasBg) diffs.push(`background-color:${bg}`)
+        const bgImage = spanCs.backgroundImage
+        if (bgImage && bgImage !== 'none') diffs.push(`background-image:${bgImage}`)
+        const borderW = (parseFloat(spanCs.borderTopWidth) || 0) + (parseFloat(spanCs.borderRightWidth) || 0) +
+                        (parseFloat(spanCs.borderBottomWidth) || 0) + (parseFloat(spanCs.borderLeftWidth) || 0)
+        const hasBorder = borderW > 0
+        if (hasBorder) {
+          const same = spanCs.borderTopColor === spanCs.borderRightColor &&
+                       spanCs.borderTopColor === spanCs.borderBottomColor &&
+                       spanCs.borderTopColor === spanCs.borderLeftColor &&
+                       spanCs.borderTopWidth === spanCs.borderRightWidth &&
+                       spanCs.borderTopWidth === spanCs.borderBottomWidth &&
+                       spanCs.borderTopWidth === spanCs.borderLeftWidth &&
+                       spanCs.borderTopStyle === spanCs.borderRightStyle &&
+                       spanCs.borderTopStyle === spanCs.borderBottomStyle &&
+                       spanCs.borderTopStyle === spanCs.borderLeftStyle
+          if (same) {
+            diffs.push(`border:${spanCs.borderTopWidth} ${spanCs.borderTopStyle} ${spanCs.borderTopColor}`)
+          } else {
+            diffs.push(`border-top:${spanCs.borderTopWidth} ${spanCs.borderTopStyle} ${spanCs.borderTopColor}`)
+            diffs.push(`border-right:${spanCs.borderRightWidth} ${spanCs.borderRightStyle} ${spanCs.borderRightColor}`)
+            diffs.push(`border-bottom:${spanCs.borderBottomWidth} ${spanCs.borderBottomStyle} ${spanCs.borderBottomColor}`)
+            diffs.push(`border-left:${spanCs.borderLeftWidth} ${spanCs.borderLeftStyle} ${spanCs.borderLeftColor}`)
+          }
+        }
+        const br = spanCs.borderRadius
+        const hasRadius = br && br !== '0px' && br !== '0%'
+        if (hasRadius) diffs.push(`border-radius:${br}`)
+        const padTop = parseFloat(spanCs.paddingTop) || 0
+        const padRight = parseFloat(spanCs.paddingRight) || 0
+        const padBottom = parseFloat(spanCs.paddingBottom) || 0
+        const padLeft = parseFloat(spanCs.paddingLeft) || 0
+        const hasPad = padTop + padRight + padBottom + padLeft > 0
+        if (hasPad) diffs.push(`padding:${spanCs.paddingTop} ${spanCs.paddingRight} ${spanCs.paddingBottom} ${spanCs.paddingLeft}`)
+        // 박스 시각 속성이 있으면 display:inline-block을 강제하여 배경/테두리/padding이
+        // 인라인 텍스트 흐름에서 박스로 렌더되도록 한다.
+        const hasBox = hasBg || hasBorder || hasRadius || hasPad
+        if (hasBox) {
+          const d = spanCs.display
+          diffs.push(`display:${(d === 'inline-block' || d === 'block') ? d : 'inline-block'}`)
+        }
         if (diffs.length > 0) {
           html += `<span style="${diffs.join(';')}">${escapeHtml(node.textContent)}</span>`
           plain += node.textContent
@@ -229,7 +317,14 @@ function getRichTextContent(el) {
   }
   // isRich=true → HTML 문자열 (dangerouslySetInnerHTML용)
   // isRich=false → plain text (React 자동 이스케이프 / exporter에서 escHtml 1회)
-  return { text: hasHtml ? html.trim() : plain.trim(), isRich: hasHtml }
+  // 주의: 일반 trim() 은 \s 가 nbsp(U+00A0)까지 매칭하여 들여쓰기로 쓰인 nbsp 가
+  // 제거된다(파일 트리 등). ASCII 공백/탭/개행만 trim.
+  return { text: hasHtml ? trimAsciiWs(html) : trimAsciiWs(plain), isRich: hasHtml }
+}
+
+/** ASCII 공백·탭·개행만 trim (nbsp/em-space 등 의미 있는 들여쓰기 문자는 보존). */
+function trimAsciiWs(s) {
+  return String(s).replace(/^[ \t\n\r\f\v]+|[ \t\n\r\f\v]+$/g, '')
 }
 
 /** 인라인 요소의 HTML을 에디터 속성 제거 후 반환.
@@ -285,6 +380,122 @@ function resolveStyleVars(el, target) {
 
 function escapeHtml(str) {
   return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+}
+
+/**
+ * 아이콘 폰트(`<i class="fas fa-target">`, `<span class="material-icons">` 등)에서
+ * ::before로 그려지는 글리프를 인라인 텍스트로 변환한다.
+ * textContent가 비어있고 ::before content가 실제 글리프(빈 문자열 아님)인 경우에만 동작.
+ *
+ * @returns {string|null} `<span style="...">글리프</span>` HTML, 글리프 없으면 null
+ */
+export function getIconGlyphSpan(el, win) {
+  if (!win) return null
+  const pcs = win.getComputedStyle(el, '::before')
+  if (!pcs) return null
+  const rawContent = pcs.content
+  if (!rawContent || rawContent === 'none' || rawContent === 'normal') return null
+  // content는 보통 따옴표로 둘러싸여 있음: '"\f140"' 또는 "'\f140'"
+  let glyph = rawContent
+  // attr()/counter()/var() 등 함수형 content는 텍스트로 추출 불가 → 스킵
+  if (/^(attr|counter|counters|var|url|element|target-text|leader)\s*\(/i.test(glyph)) return null
+  // 양 끝 따옴표 제거
+  const quoted = glyph.match(/^["'](.*)["']$/)
+  if (quoted) glyph = quoted[1]
+  // CSS 이스케이프 해제: "\f140" → 실제 Unicode 코드포인트
+  glyph = decodeCssEscapes(glyph)
+  if (!glyph) return null
+
+  // ::before 의 폰트 정보 (FA 폰트 패밀리/굵기)
+  const fontFamily = pcs.fontFamily || ''
+  const fontWeight = pcs.fontWeight || ''
+  const fontStyle = pcs.fontStyle || ''
+  const color = pcs.color || ''
+  const styleParts = []
+  if (fontFamily) styleParts.push(`font-family:${fontFamily.replace(/"/g, "'")}`)
+  if (fontWeight && fontWeight !== '400' && fontWeight !== 'normal') styleParts.push(`font-weight:${fontWeight}`)
+  if (fontStyle && fontStyle !== 'normal') styleParts.push(`font-style:${fontStyle}`)
+  // 색상은 요소 자체의 color와 다를 때만 명시 (보통 동일)
+  const elColor = win.getComputedStyle(el).color
+  if (color && color !== elColor) styleParts.push(`color:${color}`)
+  // FA 글리프는 가변폭 무관 — 줄바꿈 방지
+  styleParts.push('font-variant:normal')
+  styleParts.push('text-rendering:auto')
+  styleParts.push('line-height:1')
+
+  return `<span style="${styleParts.join(';')}">${escapeHtml(glyph)}</span>`
+}
+
+/**
+ * `<li>`의 리스트 마커를 계산.
+ * 우선순위:
+ *   1. `list-style-type`이 `none`이 아니면: `<ol>`은 `1. `, 그 외(`<ul>` 등)는 `• `.
+ *   2. `list-style-type: none`이지만 `::before`에 텍스트 글리프가 있으면(예: `→ `):
+ *      그 글리프를 마커로 사용. ::before 자체 color/font-weight가 li와 다르면
+ *      `<span style="…">` 으로 감싸 rich 형식으로 반환.
+ *   3. 둘 다 없으면 빈 마커.
+ *
+ * @param {Element} li
+ * @returns {{ plain: string, rich: string }} plain = 텍스트 prefix,
+ *          rich = HTML prefix (rich !== plain이면 컨텐츠를 isRich=true로 승격해야 함)
+ */
+export function computeListMarker(li) {
+  const EMPTY = { plain: '', rich: '' }
+  if (!li || li.tagName.toLowerCase() !== 'li') return EMPTY
+  const win = li.ownerDocument?.defaultView
+  if (!win) return EMPTY
+  const liCs = win.getComputedStyle(li)
+  // 1. CSS list-style이 살아있으면 그 우선
+  if (liCs.listStyleType !== 'none') {
+    const parent = li.parentElement
+    const parentTag = parent?.tagName?.toLowerCase()
+    if (parentTag === 'ol') {
+      const start = parseInt(parent.getAttribute('start'), 10)
+      const base = isFinite(start) ? start : 1
+      let idx = 0
+      for (const sib of parent.children) {
+        if (sib.tagName.toLowerCase() === 'li') {
+          if (sib === li) break
+          idx += 1
+        }
+      }
+      const s = `${base + idx}. `
+      return { plain: s, rich: s }
+    }
+    return { plain: '• ', rich: '• ' }
+  }
+  // 2. list-style:none 일 때 ::before content를 마커로 사용
+  const pcs = win.getComputedStyle(li, '::before')
+  const rawContent = pcs?.content
+  if (!rawContent || rawContent === 'none' || rawContent === 'normal') return EMPTY
+  // attr()/counter()/url() 등 함수형은 텍스트로 변환 불가
+  if (/^(attr|counter|counters|var|url|element|target-text|leader)\s*\(/i.test(rawContent)) return EMPTY
+  let glyph = rawContent
+  const quoted = glyph.match(/^["'](.*)["']$/)
+  if (quoted) glyph = quoted[1]
+  glyph = decodeCssEscapes(glyph)
+  if (!glyph) return EMPTY
+  // ::before의 색/굵기가 li와 다르면 inline 스타일 보존
+  const styleParts = []
+  if (pcs.color && pcs.color !== liCs.color) styleParts.push(`color:${pcs.color}`)
+  if (pcs.fontWeight && pcs.fontWeight !== liCs.fontWeight) styleParts.push(`font-weight:${pcs.fontWeight}`)
+  if (pcs.fontStyle && pcs.fontStyle !== liCs.fontStyle && pcs.fontStyle !== 'normal') styleParts.push(`font-style:${pcs.fontStyle}`)
+  const richGlyph = styleParts.length
+    ? `<span style="${styleParts.join(';')}">${escapeHtml(glyph)}</span>`
+    : escapeHtml(glyph)
+  return { plain: glyph, rich: richGlyph }
+}
+
+/** CSS content의 이스케이프 시퀀스를 실제 문자로 변환.
+ *  e.g. "\f140" → "", "\\41 a" → "Aa". 공백 1개는 종결자로 소비된다. */
+function decodeCssEscapes(str) {
+  if (!str) return str
+  // \HHHHHH (1~6자리 hex) + 선택적 공백 1개
+  return str.replace(/\\([0-9a-fA-F]{1,6})\s?/g, (_, hex) => {
+    const code = parseInt(hex, 16)
+    if (!isFinite(code) || code === 0) return ''
+    try { return String.fromCodePoint(code) } catch { return '' }
+  }).replace(/\\(.)/g, '$1')
 }
 
 /**
@@ -534,6 +745,25 @@ function buildFlatElement(el, rect, cs, domOrder, forceType, transformScale = 1,
     const rich = getRichTextContent(el)
     content = rich.text
     isRich = rich.isRich
+
+    // <li>가 단독 추출될 때 부모 ul/ol의 리스트 마커를 content 앞에 prefix.
+    // (ul/ol을 통한 getRichTextContent 경로에서는 이미 line 200-205에서 처리되지만,
+    //  메인 루프에서 각 <li>가 독립 추출되는 경로에는 마커가 없음 — 여기서 보완)
+    if (el.tagName.toLowerCase() === 'li') {
+      const m = computeListMarker(el)
+      if (m.rich) {
+        const richIsHtml = m.rich !== m.plain
+        if (isRich) {
+          content = m.rich + content
+        } else if (richIsHtml) {
+          // 마커가 HTML(span style …)이면 컨텐츠를 isRich로 승격
+          content = m.rich + escapeHtml(content)
+          isRich = true
+        } else {
+          content = m.plain + content
+        }
+      }
+    }
   }
 
   // 원본 CSS z-index 캡처: 자신 또는 조상 중 가장 높은 명시적 z-index 사용
@@ -1351,8 +1581,12 @@ export function extractFlatElements(iframeRef) {
           const parentType = parent.getAttribute('data-editor-type')
           const parentCs = win.getComputedStyle(parent)
           const parentIsFlex = parentCs.display === 'flex' || parentCs.display === 'inline-flex'
+          // CSS 박스 스타일(배경/테두리/padding) + 비embedded → 독립 시각 배지로 취급.
+          // embedded(주변에 텍스트 형제가 있는 inline code 등)는 텍스트 흐름의 일부로 두어
+          // 부모 텍스트와 좌표가 겹치는 문제를 방지한다.
+          const isVisualBadge = hasVisualBoxStyle(el) && !isEmbeddedInline(el)
           // 부모가 flex이면 자식은 독립 위치 → 스킵하지 않고 독립 추출
-          if (!parentIsFlex) {
+          if (!parentIsFlex && !isVisualBadge) {
             if (parentType === 'text' || (parentType === 'container' && isEmbeddedInline(el))) {
               if (!hasDistinctStyle(el) || isEmbeddedInline(el)) continue
             }
@@ -1529,6 +1763,73 @@ export function extractFlatElements(iframeRef) {
       content: svgHtml,
       isRich: false,
       styles: {},
+    })
+  }
+
+  // 아이콘 폰트 요소 추출 — data-editor-id 없는 <i> / <span>의 ::before 글리프를
+  // 텍스트 요소로 별도 스캔. <i>가 text 컨테이너의 인라인 자식이면 이미 F2(getRichTextContent)에서
+  // 처리되었으므로, 가장 가까운 [data-editor-id] 조상이 'text' 타입이면 스킵한다.
+  // 조상이 container이거나 없으면(컨테이너 직속 자식: 예 .icon-item > <i>) 독립 추출.
+  const iconCandidates = doc.querySelectorAll('i, span')
+  for (const ic of iconCandidates) {
+    // 활성 슬라이드 밖 스킵
+    if (revealPresent && !revealPresent.contains(ic)) continue
+    if (isHiddenByAncestor(ic)) continue
+    if (ic.hasAttribute('data-editor-id')) continue
+    // 텍스트 콘텐츠가 있으면 일반 텍스트로 부모를 통해 추출됨 → 스킵
+    if (ic.textContent && ic.textContent.trim()) continue
+    const icCs = win.getComputedStyle(ic)
+    if (icCs.display === 'none' || icCs.visibility === 'hidden') continue
+    // 가장 가까운 [data-editor-id] 조상 탐색
+    let nearestEditor = ic.parentElement
+    while (nearestEditor && nearestEditor !== doc.body) {
+      if (nearestEditor.hasAttribute('data-editor-id')) break
+      nearestEditor = nearestEditor.parentElement
+    }
+    if (nearestEditor && nearestEditor !== doc.body) {
+      const nearestType = nearestEditor.getAttribute('data-editor-type')
+      const nearestId = nearestEditor.getAttribute('data-editor-id')
+      // text 조상이면서 병합되지 않은 경우: 인라인 텍스트로 이미 포함됨
+      if (nearestType === 'text' && !mergedContainerIds.has(nearestId)) continue
+      // 병합 컨테이너 내부면 이미 포함됨
+      if (mergedContainerIds.has(nearestId)) continue
+    }
+    const iconSpan = getIconGlyphSpan(ic, win)
+    if (!iconSpan) continue
+    const icRectRaw = ic.getBoundingClientRect()
+    if (icRectRaw.width < 1 || icRectRaw.height < 1) continue
+    const icRect = unscaleRect(icRectRaw, transformScale, originRect)
+    if (icRect.right < -10 || icRect.bottom < -10 || icRect.left > canvasW + 10 || icRect.top > canvasH + 10) continue
+    // 글리프만으로 구성된 텍스트 요소로 추출
+    const fontSizePx = parseFloat(icCs.fontSize) || icRect.height
+    result.push({
+      id: nextFlatId(),
+      sourceId: null,
+      type: 'text',
+      x: icRect.left,
+      y: icRect.top,
+      width: Math.ceil(icRect.width) + 2,
+      height: icRect.height,
+      rotation: 0,
+      zIndex: 0,
+      _domOrder: zCounter++,
+      _originalZIndex: getEffectiveZIndex(ic),
+      content: iconSpan,
+      isRich: true,
+      styles: {
+        color: icCs.color,
+        fontSize: `${fontSizePx}px`,
+        textAlign: 'center',
+        backgroundColor: 'transparent',
+        backgroundImage: 'none',
+        borderRadius: '0px',
+        border: '0px none',
+        borderTop: '0px none', borderRight: '0px none',
+        borderBottom: '0px none', borderLeft: '0px none',
+        boxShadow: 'none',
+        opacity: '1',
+      },
+      originalRect: { x: icRect.left, y: icRect.top, w: icRect.width, h: icRect.height },
     })
   }
 

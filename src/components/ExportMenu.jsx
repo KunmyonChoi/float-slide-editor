@@ -23,14 +23,6 @@ export default function FileMenu({ fallbackSample }) {
 
   const hasContent = flatElements.length > 0
 
-  // Python 백엔드 상태 확인
-  const [pythonAvailable, setPythonAvailable] = useState(null) // null=확인중, true/false
-  useEffect(() => {
-    import('../core/PptxBackendClient.js').then(({ checkBackend }) =>
-      checkBackend().then(setPythonAvailable)
-    )
-  }, [])
-
   // 외부 클릭 닫기
   useEffect(() => {
     if (!open) return
@@ -156,25 +148,7 @@ export default function FileMenu({ fallbackSample }) {
     }
   }, [])
 
-  // PPT 내보내기 (항상 전체 페이지)
-  const handleExportPpt = useCallback(async () => {
-    setOpen(false)
-    try {
-      const { pages } = await useFlatStore.getState().getAllPagesAsync()
-      const { checkBackend, exportViaPython } = await import('../core/PptxBackendClient.js')
-      if (await checkBackend()) {
-        console.log('%c[PPT Export] python-pptx 엔진 사용', 'color:#22c55e;font-weight:bold')
-        await exportViaPython(pages, canvasSize)
-      } else {
-        console.log('%c[PPT Export] pptxgenjs 엔진 사용 (fallback)', 'color:#f59e0b;font-weight:bold')
-        const { exportToPptx } = await import('../core/PptExporter.js')
-        await exportToPptx(pages, canvasSize)
-      }
-    } catch (err) {
-      console.error('PPT 내보내기 실패:', err)
-      alert('PPT 내보내기 실패: ' + err.message)
-    }
-  }, [canvasSize])
+  // PPT 내보내기는 최상단 툴바의 PptExportButton으로 이동됨.
 
   // JSON 내보내기 (현재 페이지)
   const handleExportJson = useCallback(() => {
@@ -263,11 +237,6 @@ export default function FileMenu({ fallbackSample }) {
         { id: 'exportImage', label: '이미지 — 현재 페이지', shortcut: 'PNG', action: handleExportImage },
         { id: 'exportImageAll', label: '이미지 — 전체 페이지', shortcut: 'PNG', action: handleExportImageAll },
         { id: 'sepE2', type: 'separator' },
-        { id: 'exportPpt',
-          label: pythonAvailable ? 'PPT (전체 페이지)' : 'PPT (전체 페이지)',
-          shortcut: pythonAvailable ? 'python-pptx' : pythonAvailable === false ? 'pptxgenjs' : '...',
-          action: handleExportPpt },
-        { id: 'sepE3', type: 'separator' },
         { id: 'exportJson', label: 'JSON — 현재 페이지', action: handleExportJson },
         { id: 'exportJsonAll', label: 'JSON — 전체 페이지', action: handleExportJsonAll },
       ],

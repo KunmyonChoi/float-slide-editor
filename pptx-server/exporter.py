@@ -80,6 +80,9 @@ def build_pptx(pages: dict, default_canvas_size: dict, fonts: list = None) -> by
         page_cs = info['page_cs']
         slide = prs.slides.add_slide(blank_layout)
 
+        # 텍스트 런 highlight 알파 블렌딩용 슬라이드 배경 RGB 추출
+        slide_bg_rgb = _solid_bg_rgb(info['bg_elements'])
+
         # If this page's background differs from master, apply slide-level override
         if info['fingerprint'] != most_common_fp:
             _apply_background_to_element(slide, info['bg_elements'])
@@ -87,7 +90,7 @@ def build_pptx(pages: dict, default_canvas_size: dict, fonts: list = None) -> by
             for el in info['bg_elements']:
                 if _is_decorative_bg_layer(el):
                     try:
-                        _add_element(slide, el, page_cs, font_name_map)
+                        _add_element(slide, el, page_cs, font_name_map, slide_bg_rgb=slide_bg_rgb)
                     except Exception:
                         pass
         else:
@@ -95,14 +98,14 @@ def build_pptx(pages: dict, default_canvas_size: dict, fonts: list = None) -> by
             for el in info['bg_elements']:
                 if _is_decorative_bg_layer(el):
                     try:
-                        _add_element(slide, el, page_cs, font_name_map)
+                        _add_element(slide, el, page_cs, font_name_map, slide_bg_rgb=slide_bg_rgb)
                     except Exception:
                         pass
 
         # Add content elements
         for el in info['content_elements']:
             try:
-                _add_element(slide, el, page_cs, font_name_map)
+                _add_element(slide, el, page_cs, font_name_map, slide_bg_rgb=slide_bg_rgb)
             except Exception as e:
                 print(f'PPT export: element {el.get("id")} skipped: {e}')
 
@@ -127,6 +130,56 @@ def _page_sort_key(key: str):
 
 def _px(v):
     return int(v * PX_TO_EMU)
+
+
+def _apply_run_highlight(run, color: str, slide_bg_rgb=None):
+    """텍스트 런에 형광펜(highlight) 배경을 적용.
+
+    `<a:rPr>` 자식으로 `<a:highlight><a:srgbClr val="HEX"/></a:highlight>` 를 삽입.
+    python-pptx의 `font.highlight_color`는 fixed enum만 받으므로 XML 직조작.
+    PPT highlight는 opaque만 지원 → rgba의 알파는 슬라이드 배경에 블렌딩 후 opaque hex로 변환.
+    `slide_bg_rgb`가 없으면 슬레이트 다크(15,23,42)를 기본값으로 사용.
+    """
+    from lxml import etree
+    if not color:
+        return
+    rgba = css_color_to_rgba(color)
+    if not rgba:
+        return
+    r, g, b, a = rgba
+    if slide_bg_rgb is None:
+        slide_bg_rgb = (0x0F, 0x17, 0x2A)  # slate-900 다크 기본
+    br, bg_, bb = slide_bg_rgb
+    if a < 0.999:
+        r = round(r * a + br * (1 - a))
+        g = round(g * a + bg_ * (1 - a))
+        b = round(b * a + bb * (1 - a))
+    h = f'{max(0, min(255, r)):02X}{max(0, min(255, g)):02X}{max(0, min(255, b)):02X}'
+    rPr = run._r.get_or_add_rPr()
+    for old in rPr.findall(qn('a:highlight')):
+        rPr.remove(old)
+    hl = etree.SubElement(rPr, qn('a:highlight'))
+    srgb = etree.SubElement(hl, qn('a:srgbClr'))
+    srgb.set('val', h)
+
+
+def _solid_bg_rgb(bg_elements: list):
+    """슬라이드의 가장 큰 solid 배경에서 RGB 튜플 추출.
+    텍스트 런 highlight의 알파 블렌딩 기준색으로 사용. 없으면 None.
+    """
+    if not bg_elements:
+        return None
+    # zIndex 큰 순(위에 덮인 것)부터 보지만, 가장 안쪽 = 가장 큰 base bg는 마지막에 있는 경우가 많음.
+    # 실용적으로: solid fill을 가진 첫 번째 요소의 색을 사용.
+    for el in bg_elements:
+        s = el.get('styles', {})
+        bg = s.get('backgroundColor', '')
+        if not bg or bg in ('transparent', 'rgba(0, 0, 0, 0)'):
+            continue
+        rgb = css_color_to_rgb(bg)
+        if rgb:
+            return rgb
+    return None
 
 
 def _separate_background_elements(elements: list, cs: dict) -> tuple:
@@ -353,7 +406,7 @@ def _lock_shape(shape):
         pass
 
 
-def _add_element(slide, el: dict, cs: dict, font_name_map: dict = None):
+def _add_element(slide, el: dict, cs: dict, font_name_map: dict = None, slide_bg_rgb=None):
     x = _px(el.get('x', 0))
     y = _px(el.get('y', 0))
     w = _px(el.get('width', 0))
@@ -367,7 +420,7 @@ def _add_element(slide, el: dict, cs: dict, font_name_map: dict = None):
     shape_count_before = len(slide.shapes)
 
     if el_type == 'text':
-        _add_text(slide, el, x, y, w, h, rotation, font_name_map)
+        _add_text(slide, el, x, y, w, h, rotation, font_name_map, slide_bg_rgb=slide_bg_rgb)
     elif el_type == 'image':
         _add_image(slide, el, x, y, w, h, rotation)
     elif el_type == 'shape':
@@ -383,7 +436,7 @@ def _add_element(slide, el: dict, cs: dict, font_name_map: dict = None):
             _lock_shape(slide.shapes[si])
 
 
-def _add_text(slide, el: dict, x, y, w, h, rotation, font_name_map: dict = None):
+def _add_text(slide, el: dict, x, y, w, h, rotation, font_name_map: dict = None, slide_bg_rgb=None):
     s = el.get('styles', {})
     content = el.get('content', '')
 
@@ -529,10 +582,10 @@ def _add_text(slide, el: dict, x, y, w, h, rotation, font_name_map: dict = None)
         except (ValueError, TypeError):
             pass
 
-    _populate_text_frame(tf, runs_data, align, line_spacing, font_name_map)
+    _populate_text_frame(tf, runs_data, align, line_spacing, font_name_map, slide_bg_rgb=slide_bg_rgb)
 
 
-def _populate_text_frame(tf, runs_data: list, align, line_spacing, font_name_map: dict = None):
+def _populate_text_frame(tf, runs_data: list, align, line_spacing, font_name_map: dict = None, slide_bg_rgb=None):
     # split runs by newlines into paragraphs
     paragraphs = [[]]
     for run in runs_data:
@@ -590,6 +643,11 @@ def _populate_text_frame(tf, runs_data: list, align, line_spacing, font_name_map
             if letter_spacing is not None:
                 rPr = r._r.get_or_add_rPr()
                 rPr.set('spc', str(int(letter_spacing * 100)))
+            # highlight (텍스트 런 배경: 인라인 <code>, .tag 배지 등)
+            # → <a:rPr><a:highlight><a:srgbClr val="HEX"/></a:highlight></a:rPr>
+            highlight_color = opts.get('highlight')
+            if highlight_color:
+                _apply_run_highlight(r, highlight_color, slide_bg_rgb=slide_bg_rgb)
 
 
 def _add_image(slide, el: dict, x, y, w, h, rotation):
