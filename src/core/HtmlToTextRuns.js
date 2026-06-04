@@ -31,7 +31,7 @@ export function htmlToTextRuns(html, baseStyles = {}) {
   return runs
 }
 
-function walkNode(node, inherited, runs, baseStyles) {
+function walkNode(node, inherited, runs, baseStyles, listStack = []) {
   for (const child of node.childNodes) {
     if (child.nodeType === 3) {
       // 텍스트 노드
@@ -44,6 +44,13 @@ function walkNode(node, inherited, runs, baseStyles) {
       const tag = child.tagName.toLowerCase()
       const style = child.getAttribute('style') || ''
       const ctx = { ...inherited }
+
+      // 리스트 문단 정보 (글머리/번호 — 문단 레벨에서 적용)
+      const nextListStack = (tag === 'ul' || tag === 'ol') ? [...listStack, tag] : listStack
+      if (tag === 'li' && listStack.length) {
+        ctx.listType = listStack[listStack.length - 1]
+        ctx.listLevel = listStack.length - 1
+      }
 
       // 태그 기반 서식
       if (tag === 'b' || tag === 'strong') ctx.bold = true
@@ -84,7 +91,7 @@ function walkNode(node, inherited, runs, baseStyles) {
         }
       }
 
-      walkNode(child, ctx, runs, baseStyles)
+      walkNode(child, ctx, runs, baseStyles, nextListStack)
 
       // 블록 레벨 요소 뒤에 줄바꿈
       if (['div', 'p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'li'].includes(tag)) {
@@ -120,6 +127,12 @@ function buildOptions(ctx, baseStyles) {
   if (ctx.highlight) {
     const hex = blendToOpaqueHex(ctx.highlight)
     if (hex) opts.highlight = hex
+  }
+
+  // 리스트 문단 정보 (PptExporter에서 pptxgenjs bullet/indentLevel로 변환)
+  if (ctx.listType) {
+    opts.listType = ctx.listType
+    opts.listLevel = ctx.listLevel || 0
   }
 
   return opts

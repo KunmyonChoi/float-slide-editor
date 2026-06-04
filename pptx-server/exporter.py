@@ -609,6 +609,17 @@ def _populate_text_frame(tf, runs_data: list, align, line_spacing, font_name_map
         if line_spacing:
             p.line_spacing = line_spacing
 
+        # 리스트 문단이면 글머리/번호 적용 (문단 내 첫 런의 listType 사용)
+        list_type = None
+        list_level = 0
+        for rd in para_runs:
+            if rd['opts'].get('listType'):
+                list_type = rd['opts']['listType']
+                list_level = rd['opts'].get('listLevel', 0)
+                break
+        if list_type:
+            _apply_paragraph_bullet(p, list_type, list_level)
+
         if not para_runs:
             continue
 
@@ -648,6 +659,33 @@ def _populate_text_frame(tf, runs_data: list, align, line_spacing, font_name_map
             highlight_color = opts.get('highlight')
             if highlight_color:
                 _apply_run_highlight(r, highlight_color, slide_bg_rgb=slide_bg_rgb)
+
+
+# 글머리 hanging indent 단위 (EMU). 914400 EMU = 1 inch → 0.3 inch.
+_BULLET_STEP_EMU = 274320
+_BULLET_CHARS = ['•', '◦', '▪']  # • ◦ ▪ (레벨별)
+
+
+def _apply_paragraph_bullet(p, list_type: str, level: int):
+    """문단에 글머리(•) 또는 자동 번호(1.)와 hanging indent를 적용."""
+    level = max(0, min(level, 8))
+    pPr = p._p.get_or_add_pPr()
+    pPr.set('marL', str(_BULLET_STEP_EMU * (level + 1)))
+    pPr.set('indent', str(-_BULLET_STEP_EMU))
+    if level:
+        pPr.set('lvl', str(level))
+    # 기존 글머리 정의 제거 (idempotent)
+    for tag in ('a:buNone', 'a:buFont', 'a:buChar', 'a:buAutoNum'):
+        for e in pPr.findall(qn(tag)):
+            pPr.remove(e)
+    # buFont/buChar/buAutoNum 는 스키마상 lnSpc/spc* 뒤에 와야 하므로 append.
+    if list_type == 'ol':
+        pPr.append(pPr.makeelement(qn('a:buAutoNum'), {'type': 'arabicPeriod'}))
+    else:
+        pPr.append(pPr.makeelement(
+            qn('a:buFont'), {'typeface': 'Arial', 'pitchFamily': '34', 'charset': '0'}))
+        pPr.append(pPr.makeelement(
+            qn('a:buChar'), {'char': _BULLET_CHARS[min(level, len(_BULLET_CHARS) - 1)]}))
 
 
 def _add_image(slide, el: dict, x, y, w, h, rotation):

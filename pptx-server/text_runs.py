@@ -13,6 +13,7 @@ class _RunCollector(HTMLParser):
         self.runs = []
         self.base = base_styles
         self._stack = [{}]
+        self._list_stack = []  # 'ul'/'ol' 중첩 추적 (글머리/번호 export용)
 
     def _ctx(self):
         merged = {}
@@ -22,6 +23,11 @@ class _RunCollector(HTMLParser):
 
     def handle_starttag(self, tag, attrs):
         ctx = {}
+        if tag in ('ul', 'ol'):
+            self._list_stack.append(tag)
+        if tag == 'li' and self._list_stack:
+            ctx['listType'] = self._list_stack[-1]
+            ctx['listLevel'] = len(self._list_stack) - 1
         if tag in ('b', 'strong'):
             ctx['bold'] = True
         if tag in ('i', 'em'):
@@ -72,6 +78,8 @@ class _RunCollector(HTMLParser):
         if tag in BLOCK_TAGS:
             if self.runs and self.runs[-1]['text'] != '\n':
                 self.runs.append({'text': '\n', 'opts': self._ctx()})
+        if tag in ('ul', 'ol') and self._list_stack:
+            self._list_stack.pop()
         if len(self._stack) > 1:
             self._stack.pop()
 
@@ -151,6 +159,11 @@ def html_to_text_runs(html: str, base_styles: dict) -> list:
         if highlight:
             # 원본 컬러 문자열을 그대로 전달 — exporter가 슬라이드 배경에 알파 블렌딩 후 opaque hex 적용
             opts['highlight'] = highlight
+
+        # 리스트 문단 정보 (글머리/번호 — 문단 레벨에서 적용)
+        if ctx.get('listType'):
+            opts['listType'] = ctx['listType']
+            opts['listLevel'] = ctx.get('listLevel', 0)
 
         result.append({'text': run['text'], 'opts': opts})
 
