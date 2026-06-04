@@ -11,8 +11,9 @@
 | 페이지 관리 | ✅ 충분 | 썸네일 sorter view만 추가하면 완성 |
 | 입출력(PPT/HTML/PNG/JSON) | ✅ 견고 | 다른 도구 대비 강점 |
 | 발표 모드(Present) | ⚠️ **취약** | "슬라이드 넘김"만 됨 — 실제 강의에 부족 |
-| 콘텐츠 표현력(표/차트/링크) | ❌ 빈 곳 | 강의자료 핵심 도구 미흡 |
+| 콘텐츠 표현력(표/차트/링크) | ❌ 빈 곳 | 텍스트 리스트(10.1)만 부분 진입, 표·차트·링크 미흡 |
 | 협업/공유 | ❌ 없음 | 본 골드 목표 외 |
+| 코어 재사용성(패키징) | 📋 설계 | Phase 14 설계 문서화 완료, 구현 대기 |
 
 → 가장 큰 부족: **발표 경험**(Phase 9) + **콘텐츠 다양성**(Phase 10)
 
@@ -241,20 +242,24 @@ present: {
 
 > 강의자료를 본격적으로 작성 가능하도록.
 
-### 10.1 텍스트 리스트 인라인 편집
+### 10.1 텍스트 리스트 인라인 편집 — 🔨 부분 완료 / 리뷰 필요
 
-**현재** flat 추출은 `<li>` 마커를 텍스트 prefix로 보존(F1). 그러나 **인라인 에디터에서 새 리스트 작성·편집 안 됨**.
+> `feat/text-lists` 머지됨 (`0fa67f4`·`5c4bdde`·`e095809`·`ca4784a`·`5dc6931`). 핵심 동작은 들어왔으나 **검증·export 매핑 미완**.
 
-**데이터 모델** content가 rich HTML이면 `<ul>/<ol><li>` 그대로 보존 (이미 가능).
+**완료된 것** ✅
+- 인라인 에디터 리스트/순서 리스트 토글 (`toggleList`) — collapsed caret 불안정 해소(전체 Range 확장 후 명령, 끝으로 collapse).
+- 속성 패널 `ListToggle`(없음/•/1.) — 단일 텍스트 박스 + 다중 박스 선택 모두 변환(`TextListTransform.js` `detectListType`/`applyListType`).
+- 리스트 마커 CSS를 `index.css`로 이동(Tailwind preflight 우회, `.flat-text`/`.flat-text-edit` 스코프).
+- 선택 바·편집 도구 묶음 동시 노출 시 충돌 회피.
+- `Tab`/`Shift+Tab` 리스트 내 들여쓰기/내어쓰기, `Ctrl+Shift+8`/`7` 단축키.
 
-**UI 스케치**
-- `FlatInlineEditor`에 `Tab`/`Enter`/`Shift+Tab` 처리:
-  - Enter: 같은 레벨 새 `<li>`.
-  - Tab: 한 단계 들여쓰기 (nested `<ul>` 생성).
-  - Shift+Tab: 한 단계 내어쓰기.
-- 속성 패널 텍스트 섹션에 "리스트 토글" 버튼 추가 (`• ` / `1.` / 없음 순환).
+**리뷰/미완** ⚠️
+- **PPT export 매핑 미구현** — `HtmlToTextRuns.js`/`text_runs.py`에서 `<ul>/<ol>`은 아직 줄바꿈만, pptxgenjs/python-pptx `bullet`/`indentLevel` 매핑 필요. (2차 작업)
+- **줄 분해 정확도 검증 필요** — `contentToLines`의 `<br>`·블록 경계·중첩 li 평탄화가 다양한 입력에서 정확한지 사용자 확인 대기.
+- **마커 크기 조절** 미정 — 현재 마커는 글자 크기를 따라감(`::marker` 상속). 독립 조절(`::marker { font-size }` + CSS 변수)은 논의 보류.
+- 중첩 리스트(Tab) 생성·복원의 견고성(execCommand `indent` 의존) 추가 확인.
 
-**의존성** 없음.
+**데이터 모델** content가 rich HTML이면 `<ul>/<ol><li>` 그대로 보존.
 
 **단축키** `Ctrl+Shift+8` — bullet, `Ctrl+Shift+7` — numbered
 
@@ -433,6 +438,109 @@ present: {
 
 ---
 
+## Phase 14 — Reusable Core (Packaging)
+
+> 목표: **HTML 슬라이드 로딩 → flat 변환 → PPT export** 파이프라인을 다른 **브라우저 앱(React/Vue/바닐)** 에서 재사용 가능하도록 프레임워크 비의존 코어로 분리. (이번 라운드는 *설계 문서화*만, 구현은 별도 브랜치.)
+
+### 14.0 현황 진단 (결합도 실측)
+
+대부분 단계가 이미 React/Zustand와 분리되어 있고, 진짜 결합은 **입력 어댑터 1곳 + 저장소 호출부**에만 있다.
+
+| 단계 | 파일 | React/Zustand | 브라우저 의존 | 재사용성 |
+|------|------|---------------|---------------|----------|
+| HTML 로딩/파싱 | `SlideParser.js` | 없음 | `DOMParser`만 | ✅ 그대로 |
+| flat 변환 | `FlatExtractor.js` | 없음* | **iframe + `getBoundingClientRect`/`getComputedStyle`** | ⚠️ 시그니처만 변경 |
+| HTML→런 변환 | `HtmlToTextRuns.js` | 없음 | `DOMParser`만 | ✅ 그대로 |
+| PPT export (JS) | `PptExporter.js` | 없음 | 없음(pptxgenjs) | ✅ 그대로 |
+| PPT export (서버) | `pptx-server/` | — | — | ✅ 이미 HTTP 서비스 |
+| export 버튼/메뉴 | `*.jsx` | ✅✅ | — | ❌ 앱 어댑터로 잔류 |
+
+\* `FlatExtractor`는 React를 import하지 않는다. `extractFlatElements(iframeRef)`로 **React ref**를 받을 뿐이라, `extractFlatElements(document, window)`로 바꾸면 코어로 분리된다. Zustand 결합은 `flatStore.js`의 *호출부*에만 있다.
+
+**핵심 제약 — flat 변환은 실제 레이아웃 엔진이 필요하다.** `getBoundingClientRect`/`getComputedStyle`는 실제 렌더 결과를 읽으므로 jsdom으로는 불가. 다행히 **본 목표(브라우저 앱)** 에서는 브라우저가 레이아웃을 제공하므로 추가 부담이 없다. (서버/CLI 재사용은 Phase 14 범위 밖 — 그때는 Playwright 헤드리스 래퍼 필요.)
+
+### 14.1 패키지 경계
+
+```
+packages/
+  slide-core/                  ← 프레임워크 0 의존 (npm 배포 가능)
+    src/
+      slide-parser.js          (SlideParser 이동 — 무수정)
+      flat-extractor.js        (extractFlatElements(document, window) 로 시그니처 변경)
+      html-to-text-runs.js     (이동 — 무수정)
+      ppt-exporter.js          (PptExporter 이동 — pptxgenjs는 peerDependency)
+      gradient-parser.js       (GradientParser 이동)
+      schema.js                ← FlatElement / ParsedDeck / ExportPayload 계약 + SCHEMA_VERSION
+      index.js                 ← 공개 API 배럴
+    package.json               (type:module, exports, peerDeps: pptxgenjs)
+apps/
+  float-editor/                ← 현재 앱. React 컴포넌트 + Zustand는 slide-core를 "호출만"
+    src/store/flatStore.js     (extractFlatElements 어댑터: iframeRef → (doc, win) 풀어서 전달)
+    src/components/*.jsx        (잔류)
+services/
+  pptx-server/                 ← 이미 독립. text_runs.py는 html-to-text-runs.js의 미러
+```
+
+리포 구조는 단순 폴더 분리(상대 import)로 시작하고, 외부 배포가 필요해지면 npm workspaces로 승격한다.
+
+### 14.2 공개 API 표면 (`slide-core`)
+
+```js
+// 1) 로딩/파싱 (순수)
+parseSlideDeck(deckHtml: string): { slides, globalStyles, slideCount }
+wrapSlideAsDocument(slide, globalStyles): string
+
+// 2) flat 변환 (DOM/레이아웃 필요 — 호출자가 렌더된 document/window 제공)
+extractFlatElements(document: Document, window: Window):
+  { elements: FlatElement[], canvasSize: { w, h } }
+
+// 3) export
+htmlToTextRuns(html, baseStyles?): TextRun[]
+exportToPptx(pages, defaultCanvasSize): Promise<Blob|void>   // pptxgenjs 경로
+buildExportPayload(pages, defaultCanvasSize): ExportPayload  // 서버 POST 본문 빌더(신규, 순수)
+
+// 4) 계약
+SCHEMA_VERSION: string
+```
+
+`buildExportPayload`를 코어로 끌어올려, **HTTP 호출(fetch)·다운로드 트리거는 앱**, **페이로드 구성은 코어**로 분리한다. (현재 `PptxBackendClient.js`가 둘을 섞고 있음.)
+
+### 14.3 스키마 계약 (`schema.js`) — 재사용성의 실질적 핵심
+
+지금 `HtmlToTextRuns.js`(JS)와 `text_runs.py`(Python)가 **같은 변환을 이중 구현**한다. 단계 간 데이터 형태를 한 곳에 버전과 함께 고정해야 두 구현·외부 앱이 같은 계약을 따르는지 보증된다.
+
+- `FlatElement` 형태(아래) + `SCHEMA_VERSION` (예: `"flat-1"`).
+- `ExportPayload` = `{ schemaVersion, pages: {[k]: {elements, canvasSize, fontImports}}, defaultCanvasSize, fonts }`.
+- 단위 규약 명시: 좌표/크기 = CSS px, 폰트 = px(런 변환 시 ×0.75 → pt), 색 = 6자리 hex.
+- JS↔Python 변환 규칙(색→hex, px→pt, font-family 첫 항목, rgba 불투명 블렌딩)을 **계약 문서**로 박제 → 두 구현의 회귀 테스트 기준.
+
+```js
+// FlatElement (현행 buildFlatElement 산출물 기준)
+{
+  id, sourceId, type: 'text'|'image'|'shape'|'svg'|'video',
+  x, y, width, height, rotation, zIndex,
+  content, isRich,
+  styles: { backgroundColor, color, fontSize, fontFamily, ... },
+  points?, link?,            // (Phase 10.2 이후)
+}
+```
+
+### 14.4 단계별 작업 계획 (구현 시 — 별도 브랜치)
+
+1. **`refactor/flat-extractor-signature`** — `extractFlatElements(iframeRef)` → `(document, window)`. `flatStore.js`에서 `iframeRef.current.contentDocument/contentWindow`를 풀어서 전달. **동작 무변경** 리팩터(회귀 확인 지점: flat 재생성·F1~F4 보존).
+2. **`refactor/schema-module`** — `schema.js` 신설, `SCHEMA_VERSION`·타입 주석·단위 규약 작성. `buildExportPayload` 추출(`PptxBackendClient`에서 페이로드 구성 분리).
+3. **`refactor/extract-slide-core`** — 위 순수 모듈들을 `packages/slide-core/`로 이동, `index.js` 배럴 + `package.json` 작성. 앱은 상대경로 import로 전환. (단순 이동 + import 경로 수정 위주.)
+4. **(옵션) `docs/slide-core-readme`** — 외부 앱용 최소 사용 예제(파싱→iframe 렌더→추출→export) + JS/Python 계약 문서.
+
+### 14.5 완료 기준
+- 다른 브라우저 앱이 `slide-core`만 의존해 (자신의 iframe 렌더 결과로) flat 변환·PPT export를 수행 가능.
+- React/Zustand 의존 코드가 `apps/float-editor/`에만 존재.
+- `SCHEMA_VERSION`이 페이로드에 포함되고, JS·Python 두 export 경로가 같은 계약 문서를 참조.
+
+**의존성** 없음(다른 Phase와 독립). 단, 진행 시 `refactor/flat-extractor-signature`를 먼저 머지해 다른 Phase의 회귀 위험을 줄인다.
+
+---
+
 ## Phase별 의존성 그래프
 
 ```
@@ -440,10 +548,13 @@ Phase 8 (완료) ──┐
                  ├─→ Phase 9 (발표 코어)──┬─→ Phase 10 (콘텐츠)──┐
 Recent fixes ────┘                        │                      ├─→ Phase 11 (UX) ──→ Phase 12 (출력) ──→ Phase 13 (협업)
                                           └──────────────────────┘
+
+Phase 14 (재사용 코어) ── 독립, 어느 시점에나 진입 가능 (구현 시 flat-extractor 시그니처 변경 선행)
 ```
 
 - Phase 9, 10은 병렬 가능 (서로 다른 표면).
 - Phase 11은 Phase 9·10의 새 데이터 타입을 sorter/그룹화 대상에 포함해야 하므로 후행.
+- Phase 14는 다른 Phase와 독립이나, 새 FlatElement 필드(링크·빌드·트랜지션)가 schema 계약에 반영되어야 하므로 가급적 Phase 9·10 데이터 모델이 안정된 뒤 코어를 떼는 편이 재작업이 적다.
 
 ## 단축키 신규 추가 표 (Phase 9~11)
 
