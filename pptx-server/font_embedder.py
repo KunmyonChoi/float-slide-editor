@@ -394,6 +394,15 @@ def _download_and_convert(url: str) -> bytes | None:
     cache_path = FONT_CACHE_DIR / f'{cache_key}.ttf'
     if cache_path.exists():
         data = cache_path.read_bytes()
+        # 과거 버그로 woff/woff2가 .ttf 캐시에 들어갔을 수 있음 → sfnt 아니면 재변환
+        if not _is_sfnt(data):
+            converted = _to_ttf(data)
+            if converted:
+                data = converted
+                try:
+                    cache_path.write_bytes(data)
+                except Exception:
+                    pass
         _font_cache[cache_key] = data
         return data
 
@@ -416,14 +425,24 @@ def _download_and_convert(url: str) -> bytes | None:
     return ttf_data
 
 
+def _is_sfnt(data: bytes) -> bool:
+    """raw TTF/OTF(sfnt) 매직 여부. PowerPoint가 임베드 폰트로 읽을 수 있는 포맷."""
+    return bool(data) and data[:4] in (b'\x00\x01\x00\x00', b'OTTO', b'true', b'ttcf')
+
+
 def _to_ttf(data: bytes) -> bytes | None:
-    """Convert font data to TTF format. Handles WOFF2, WOFF, and raw TTF/OTF."""
+    """Convert font data to TTF/OTF (sfnt). Handles WOFF2, WOFF, and raw TTF/OTF.
+
+    중요: fontTools는 TTFont.flavor('woff'/'woff2')를 보존하므로 save() 전에
+    flavor=None으로 비워야 실제 sfnt(TTF/OTF)로 출력된다. 비우지 않으면
+    woff2 → woff2로 라운드트립만 되어 PowerPoint가 임베드 폰트를 무시한다.
+    """
     if not data or len(data) < 4:
         return None
 
-    magic = data[:4]
     try:
         font = TTFont(io.BytesIO(data))
+        font.flavor = None  # woff/woff2 → 평문 sfnt 강제
         buf = io.BytesIO()
         font.save(buf)
         return buf.getvalue()
