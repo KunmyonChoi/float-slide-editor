@@ -1,0 +1,19 @@
+# Netlify — 정적 프론트엔드(Vite) 호스팅.
+# PPT 고품질 변환은 사용자가 로컬에서 실행하는 Docker 컨테이너(dilly97/float-pptx)가
+# 담당하며, 프론트가 http://localhost:8321 을 직접 호출한다(프록시 불필요).
+# 다른 백엔드(예: 클라우드)를 쓰려면 아래 VITE_PPTX_BACKEND_URL 을 지정하거나
+# 런타임에 localStorage('pptx-backend-url')로 설정.
+
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "20"
+  # VITE_PPTX_BACKEND_URL = "https://your-backend.example.com"  # 클라우드 백엔드 사용 시
+
+# SPA: 모든 경로를 index.html로 (클라이언트 라우팅 대비)
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
