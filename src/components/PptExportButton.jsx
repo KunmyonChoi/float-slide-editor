@@ -149,9 +149,12 @@ export default function PptExportButton() {
         <div style={{
           position: 'absolute',
           top: '100%',
-          right: 0,
+          left: 0, // 버튼이 툴바 왼쪽에 있으므로 오른쪽으로 펼침(화면 밖 방지)
           marginTop: 4,
           minWidth: 230,
+          maxWidth: 'calc(100vw - 16px)',
+          maxHeight: 'calc(100vh - 80px)',
+          overflowY: 'auto',
           background: 'rgba(15,23,42,0.97)',
           backdropFilter: 'blur(16px)',
           border: '1px solid rgba(255,255,255,0.1)',
