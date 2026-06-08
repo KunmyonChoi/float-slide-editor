@@ -1,9 +1,45 @@
 let _backendAvailable = null
 
-export async function checkBackend() {
-  if (_backendAvailable !== null) return _backendAvailable
+// 로컬 컨테이너 배포 기본값 (Docker Hub 이미지 / 포트)
+export const PPTX_DOCKER_IMAGE = 'dilly97/float-pptx'
+export const PPTX_DEFAULT_PORT = 8321
+const BACKEND_URL_KEY = 'pptx-backend-url'
+
+/** `docker run` 안내 명령 (UI 힌트용) */
+export function dockerRunCommand() {
+  return `docker run -p ${PPTX_DEFAULT_PORT}:${PPTX_DEFAULT_PORT} ${PPTX_DOCKER_IMAGE}`
+}
+
+/**
+ * 백엔드 베이스 URL 결정 (우선순위: localStorage 오버라이드 > 빌드 env > 환경 기본).
+ * - dev: '' (상대경로 → vite proxy /api)
+ * - prod: http://localhost:<port> (사용자가 로컬 컨테이너 실행)
+ * 빈 문자열이면 상대경로(같은 origin)를 사용한다.
+ */
+export function getBackendBase() {
   try {
-    const res = await fetch('/api/health', { signal: AbortSignal.timeout(2000) })
+    const o = localStorage.getItem(BACKEND_URL_KEY)
+    if (o !== null) return o.replace(/\/+$/, '')
+  } catch { /* ignore */ }
+  const env = import.meta.env?.VITE_PPTX_BACKEND_URL
+  if (env) return String(env).replace(/\/+$/, '')
+  if (import.meta.env?.DEV) return '' // vite proxy
+  return `http://localhost:${PPTX_DEFAULT_PORT}`
+}
+
+/** 백엔드 URL 런타임 설정(빈 문자열=상대경로). 다음 호출부터 재검사. */
+export function setBackendBase(url) {
+  try {
+    if (url === null || url === undefined) localStorage.removeItem(BACKEND_URL_KEY)
+    else localStorage.setItem(BACKEND_URL_KEY, String(url).trim())
+  } catch { /* ignore */ }
+  _backendAvailable = null
+}
+
+export async function checkBackend(force = false) {
+  if (!force && _backendAvailable !== null) return _backendAvailable
+  try {
+    const res = await fetch(`${getBackendBase()}/api/health`, { signal: AbortSignal.timeout(2000) })
     _backendAvailable = res.ok
   } catch {
     _backendAvailable = false
@@ -67,7 +103,7 @@ export async function exportViaPython(pages, defaultCanvasSize, { embedFonts = t
   // 임베딩 OFF면 폰트를 수집/전송하지 않음 → 서버가 다운로드·임베딩을 건너뛰고
   // 원본 family명으로 출력(파일 가벼움, 시스템 설치 폰트 의존).
   const fonts = embedFonts ? collectFontData(pages) : []
-  const res = await fetch('/api/export/pptx', {
+  const res = await fetch(`${getBackendBase()}/api/export/pptx`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ pages, defaultCanvasSize, fonts, embedFonts }),

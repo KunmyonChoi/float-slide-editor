@@ -1,10 +1,33 @@
 """FastAPI server for high-quality PPTX export via python-pptx"""
+import os
 from fastapi import FastAPI, Request
 from fastapi.responses import Response, JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 import pptx as pptx_lib
 from exporter import build_pptx
 
 app = FastAPI()
+
+# CORS — 공개 프론트(Netlify 등)가 로컬 컨테이너를 직접 호출하므로 허용 필요.
+# ALLOWED_ORIGINS 환경변수(쉼표구분)로 제한 가능, 기본은 모두 허용(* — 로컬 전용 서버).
+_origins_env = os.environ.get('ALLOWED_ORIGINS', '*').strip()
+_allow_origins = ['*'] if _origins_env == '*' else [o.strip() for o in _origins_env.split(',') if o.strip()]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_allow_origins,
+    allow_methods=['*'],
+    allow_headers=['*'],
+)
+
+
+@app.middleware('http')
+async def allow_private_network(request: Request, call_next):
+    """Chrome Private Network Access: 공개 사이트 → localhost 프리플라이트가
+    `Access-Control-Request-Private-Network`를 보내면 허용 헤더로 응답해야 한다."""
+    response = await call_next(request)
+    if request.headers.get('access-control-request-private-network') == 'true':
+        response.headers['Access-Control-Allow-Private-Network'] = 'true'
+    return response
 
 
 @app.get("/api/health")

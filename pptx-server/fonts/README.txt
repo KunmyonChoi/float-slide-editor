@@ -1,0 +1,3 @@
+이 폴더에 .ttf / .otf 폰트를 넣고 이미지를 재빌드하면
+/usr/share/fonts/custom/ 에 설치되어 cairosvg(SVG 내부 텍스트)에서 사용됩니다.
+런타임 추가: docker run -v /my/fonts:/usr/share/fonts/custom:ro ...

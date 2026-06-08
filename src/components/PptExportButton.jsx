@@ -2,6 +2,10 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useFlatStore } from '../store/flatStore'
 import { ToolBtn } from './FloatingToolbar'
+import {
+  checkBackend, exportViaPython, dockerRunCommand,
+  getBackendBase, setBackendBase, PPTX_DOCKER_IMAGE,
+} from '../core/PptxBackendClient'
 
 const EMBED_PREF_KEY = 'ppt-embed-fonts'
 
@@ -33,11 +37,19 @@ export default function PptExportButton() {
   const wrapRef = useRef(null)
   const timerRef = useRef(null)
 
+  const [backendUrl, setBackendUrl] = useState(() => getBackendBase())
+
   // 백엔드 가용성 1회 확인
   useEffect(() => {
-    import('../core/PptxBackendClient.js').then(({ checkBackend }) =>
-      checkBackend().then(setPythonAvailable)
-    )
+    checkBackend().then(setPythonAvailable)
+  }, [])
+
+  // 백엔드 URL 적용 + 재확인
+  const applyBackendUrl = useCallback((url) => {
+    setBackendBase(url)
+    setBackendUrl(getBackendBase())
+    setPythonAvailable(null)
+    checkBackend(true).then(setPythonAvailable)
   }, [])
 
   // 언마운트 시 타이머 정리
@@ -73,8 +85,7 @@ export default function PptExportButton() {
     timerRef.current = setInterval(() => setElapsed(Math.floor((Date.now() - start) / 1000)), 250)
     try {
       const { pages } = await useFlatStore.getState().getAllPagesAsync()
-      const { checkBackend, exportViaPython } = await import('../core/PptxBackendClient.js')
-      if (await checkBackend()) {
+      if (await checkBackend(true)) {
         setStage(embed ? '서버에서 생성 중… (폰트 임베딩 포함)' : '서버에서 생성 중…')
         console.log(
           `%c[PPT Export] python-pptx 엔진 사용 — 폰트 임베딩 ${embed ? 'ON' : 'OFF'}`,
@@ -162,11 +173,13 @@ export default function PptExportButton() {
             hint="가벼움 · 시스템 폰트 사용"
             onClick={() => pickAndExport(false)}
           />
-          {pythonAvailable === false && (
-            <div style={{ padding: '6px 12px', fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>
-              현재 pptxgenjs 폴백 — 임베딩 미지원
-            </div>
-          )}
+          <div style={{ height: 1, margin: '4px 8px', background: 'rgba(255,255,255,0.1)' }} />
+          <BackendSection
+            pythonAvailable={pythonAvailable}
+            backendUrl={backendUrl}
+            onApplyUrl={applyBackendUrl}
+            onRecheck={() => { setPythonAvailable(null); checkBackend(true).then(setPythonAvailable) }}
+          />
           <style>{`.ppt-embed-item:hover { background: rgba(255,255,255,0.1) }`}</style>
         </div>
       )}
@@ -222,6 +235,76 @@ function ExportOverlay({ stage, elapsed }) {
       </div>
     </div>
   )
+}
+
+function BackendSection({ pythonAvailable, backendUrl, onApplyUrl, onRecheck }) {
+  const [draft, setDraft] = useState(backendUrl)
+  const [copied, setCopied] = useState(false)
+  useEffect(() => { setDraft(backendUrl) }, [backendUrl])
+
+  const status = pythonAvailable === true
+    ? { dot: '#22c55e', text: 'python 변환 서버 연결됨' }
+    : pythonAvailable === false
+      ? { dot: '#f59e0b', text: '미연결 — pptxgenjs 폴백(임베딩 미지원)' }
+      : { dot: '#94a3b8', text: '연결 확인 중…' }
+
+  const cmd = dockerRunCommand()
+  const copy = async () => {
+    try { await navigator.clipboard.writeText(cmd); setCopied(true); setTimeout(() => setCopied(false), 1500) } catch { /* ignore */ }
+  }
+
+  return (
+    <div style={{ padding: '6px 12px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#cbd5e1' }}>
+        <span style={{ width: 8, height: 8, borderRadius: '50%', background: status.dot, flex: '0 0 auto' }} />
+        <span>{status.text}</span>
+        <button onClick={onRecheck} title="다시 확인" style={iconBtnStyle}>↻</button>
+      </div>
+
+      {pythonAvailable !== true && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)' }}>
+            고품질 변환 서버 실행 (Docker):
+          </div>
+          <div style={{ display: 'flex', alignItems: 'stretch', gap: 4 }}>
+            <code style={{
+              flex: 1, fontSize: 11, fontFamily: 'ui-monospace, monospace',
+              background: 'rgba(0,0,0,0.35)', color: '#e2e8f0', borderRadius: 5,
+              padding: '5px 7px', whiteSpace: 'nowrap', overflowX: 'auto',
+            }}>{cmd}</code>
+            <button onClick={copy} title="복사" style={{ ...iconBtnStyle, padding: '0 8px' }}>
+              {copied ? '✓' : '복사'}
+            </button>
+          </div>
+          <div style={{ fontSize: 10.5, color: 'rgba(255,255,255,0.35)' }}>
+            이미지 <code style={{ fontSize: 10.5 }}>{PPTX_DOCKER_IMAGE}</code> · 실행 후 ↻로 재확인
+          </div>
+        </div>
+      )}
+
+      <label style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)', marginTop: 2 }}>백엔드 URL</label>
+      <div style={{ display: 'flex', gap: 4 }}>
+        <input
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') onApplyUrl(draft) }}
+          placeholder={`http://localhost:8321`}
+          spellCheck={false}
+          style={{
+            flex: 1, fontSize: 11, fontFamily: 'ui-monospace, monospace',
+            background: 'rgba(0,0,0,0.35)', color: '#e2e8f0',
+            border: '1px solid rgba(255,255,255,0.12)', borderRadius: 5, padding: '5px 7px',
+          }}
+        />
+        <button onClick={() => onApplyUrl(draft)} title="적용" style={{ ...iconBtnStyle, padding: '0 8px' }}>적용</button>
+      </div>
+    </div>
+  )
+}
+
+const iconBtnStyle = {
+  background: 'rgba(255,255,255,0.08)', color: '#e2e8f0', border: 'none',
+  borderRadius: 5, cursor: 'pointer', fontSize: 11, lineHeight: '22px', minWidth: 22,
 }
 
 function MenuItem({ checked, label, hint, onClick }) {
