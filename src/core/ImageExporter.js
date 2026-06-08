@@ -37,20 +37,39 @@ export async function exportAsImage(canvasNode, { format = 'png', scale = 2, qua
   // 텍스트가 캡처에서만 소프트 줄바꿈되는 경우가 있다(큰 챕터 번호 "02",
   // 코드 블록의 긴 줄 등). 소프트 줄바꿈만 끄되(명시적 \n·<br>는 유지),
   // 끄면 가로 오버플로가 생기는(=원래 줄바꿈이 필요한) 요소는 그대로 둔다.
-  const nowrapRestore = []
+  const styleRestore = [] // [el, {prop: origValue}]
+  const setTemp = (el, prop, value) => {
+    if (!styleRestore.some(([e, m]) => e === el && prop in m)) {
+      const entry = styleRestore.find(([e]) => e === el)
+      if (entry) entry[1][prop] = el.style[prop]
+      else styleRestore.push([el, { [prop]: el.style[prop] }])
+    }
+    el.style[prop] = value
+  }
   canvasNode.querySelectorAll('.flat-text').forEach((el) => {
     const cs = window.getComputedStyle(el)
     const ws = cs.whiteSpace
-    if (ws === 'nowrap' || ws === 'pre') return // 이미 소프트 줄바꿈 없음
-    const orig = el.style.whiteSpace
-    // pre-wrap/pre-line: \n 유지하며 소프트 줄바꿈만 제거 → pre
-    // normal 등: nowrap
-    el.style.whiteSpace = (ws === 'pre-wrap' || ws === 'pre-line') ? 'pre' : 'nowrap'
-    // 전환 후 가로 오버플로가 생기면 원래 줄바꿈이 필요한 내용 → 되돌림
-    if (el.scrollWidth > el.clientWidth + 1) {
-      el.style.whiteSpace = orig
-    } else {
-      nowrapRestore.push([el, orig])
+    // 1) 소프트 줄바꿈만 제거(명시적 \n·<br>는 유지). 끄면 가로 오버플로가
+    //    생기는(=원래 줄바꿈이 필요한) 요소는 되돌린다.
+    if (ws !== 'nowrap' && ws !== 'pre') {
+      const orig = el.style.whiteSpace
+      el.style.whiteSpace = (ws === 'pre-wrap' || ws === 'pre-line') ? 'pre' : 'nowrap'
+      if (el.scrollWidth > el.clientWidth + 1) {
+        el.style.whiteSpace = orig
+      } else {
+        styleRestore.push([el, { whiteSpace: orig }])
+      }
+    }
+    // 2) 배지(배경 있는 flex)의 정렬: dom-to-image가 flex 정렬을 화면과 다르게
+    //    렌더해 pill 텍스트가 가운데에서 벗어나는 경우가 있다. 캡처 동안만
+    //    center로 고정(화면상 이미 가운데인 tight 박스는 변화 없음).
+    const disp = cs.display
+    if (disp === 'flex' || disp === 'inline-flex') {
+      const bg = cs.backgroundColor
+      if (bg && bg !== 'transparent' && bg !== 'rgba(0, 0, 0, 0)') {
+        setTemp(el, 'justifyContent', 'center')
+        setTemp(el, 'alignItems', 'center')
+      }
     }
   })
 
@@ -81,9 +100,11 @@ export async function exportAsImage(canvasNode, { format = 'png', scale = 2, qua
     }
     return await domtoimage.toPng(canvasNode, config)
   } finally {
-    // 임시 스타일/인라인 nowrap 복원
+    // 임시 스타일/인라인 보정 복원
     exportStyle.remove()
-    nowrapRestore.forEach(([el, ws]) => { el.style.whiteSpace = ws })
+    styleRestore.forEach(([el, props]) => {
+      Object.entries(props).forEach(([prop, val]) => { el.style[prop] = val })
+    })
   }
 }
 
