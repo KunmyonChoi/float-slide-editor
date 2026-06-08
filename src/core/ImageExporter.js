@@ -32,6 +32,21 @@ export async function exportAsImage(canvasNode, { format = 'png', scale = 2, qua
 
   const domtoimage = (await import('dom-to-image-more')).default
 
+  // 캡처 시 줄바꿈 방지: dom-to-image는 SVG foreignObject로 렌더하는데
+  // letter-spacing·가변폰트의 sub-pixel 차이로, 화면상 딱 맞던 한 줄 텍스트가
+  // 캡처에서만 줄바꿈되는 경우가 있다(예: 큰 챕터 번호 "02"). 현재 한 줄인
+  // 텍스트만 임시로 nowrap 처리해 막고, 캡처 후 복원한다.
+  const nowrapRestore = []
+  canvasNode.querySelectorAll('.flat-text').forEach((el) => {
+    const cs = window.getComputedStyle(el)
+    if (cs.whiteSpace === 'nowrap') return
+    const lh = parseFloat(cs.lineHeight) || parseFloat(cs.fontSize) * 1.2
+    if (lh > 0 && el.scrollHeight <= lh * 1.4) { // 한 줄로 판단
+      nowrapRestore.push([el, el.style.whiteSpace])
+      el.style.whiteSpace = 'nowrap'
+    }
+  })
+
   const width = canvasNode.offsetWidth
   const height = canvasNode.offsetHeight
 
@@ -59,8 +74,9 @@ export async function exportAsImage(canvasNode, { format = 'png', scale = 2, qua
     }
     return await domtoimage.toPng(canvasNode, config)
   } finally {
-    // 임시 스타일 제거
+    // 임시 스타일/인라인 nowrap 복원
     exportStyle.remove()
+    nowrapRestore.forEach(([el, ws]) => { el.style.whiteSpace = ws })
   }
 }
 
