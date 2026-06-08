@@ -43,3 +43,6 @@ scripts/pptx-compare/_tmp_page.html
 # Temp scripts
 check-elements.mjs
 test-ppt-download.mjs
+
+# Local Netlify folder
+.netlify
