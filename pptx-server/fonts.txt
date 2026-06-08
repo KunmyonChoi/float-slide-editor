@@ -1,0 +1,10 @@
+# 빌드 시 설치할 폰트 매니페스트 — "파일명|URL"
+# cairosvg(SVG 내부 텍스트) 렌더 품질용. Google Fonts(OFL).
+# 이미 /usr/share/fonts/custom 에 같은 파일명이 있으면(=pptx-server/fonts/에 직접 넣었거나
+# 캐시) 다운로드를 건너뛴다. '#'으로 시작하면 주석.
+Fraunces[SOFT,WONK,opsz,wght].ttf|https://github.com/google/fonts/raw/main/ofl/fraunces/Fraunces%5BSOFT,WONK,opsz,wght%5D.ttf
+Fraunces-Italic[SOFT,WONK,opsz,wght].ttf|https://github.com/google/fonts/raw/main/ofl/fraunces/Fraunces-Italic%5BSOFT,WONK,opsz,wght%5D.ttf
+GowunBatang-Regular.ttf|https://github.com/google/fonts/raw/main/ofl/gowunbatang/GowunBatang-Regular.ttf
+GowunBatang-Bold.ttf|https://github.com/google/fonts/raw/main/ofl/gowunbatang/GowunBatang-Bold.ttf
+JetBrainsMono[wght].ttf|https://github.com/google/fonts/raw/main/ofl/jetbrainsmono/JetBrainsMono%5Bwght%5D.ttf
+NotoSansKR[wght].ttf|https://github.com/google/fonts/raw/main/ofl/notosanskr/NotoSansKR%5Bwght%5D.ttf

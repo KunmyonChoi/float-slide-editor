@@ -9,7 +9,7 @@
 #   (2) 런타임에 볼륨 마운트: docker run -v /my/fonts:/usr/share/fonts/custom:ro ...
 FROM python:3.12-slim
 
-# cairosvg 시스템 의존 + fontconfig + 기본 라틴/한글 폰트(SVG 텍스트 렌더용)
+# cairosvg 시스템 의존 + fontconfig + 기본 라틴/한글 폰트(SVG 텍스트 렌더용) + curl(폰트 다운로드)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libcairo2 \
     libpango-1.0-0 \
@@ -19,6 +19,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     fontconfig \
     fonts-noto-core \
     fonts-nanum \
+    curl \
+    ca-certificates \
  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -26,8 +28,12 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# 사용자 추가 폰트: pptx-server/fonts/ 안의 .ttf/.otf 가 설치된다(없으면 빈 폴더).
+# 1) 직접 넣은 폰트(pptx-server/fonts/*.ttf,otf) 설치 (없으면 빈 폴더)
 COPY fonts/ /usr/share/fonts/custom/
+# 2) 매니페스트(fonts.txt) 폰트를 빌드 시 다운로드 — 이미 있으면 스킵.
+#    fonts.txt/install-fonts.sh 가 안 바뀌면 Docker 레이어 캐시로 RUN 전체가 스킵된다.
+COPY install-fonts.sh fonts.txt /tmp/
+RUN sh /tmp/install-fonts.sh /tmp/fonts.txt
 
 COPY . .
 
