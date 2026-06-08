@@ -148,6 +148,33 @@ export default function FileMenu({ fallbackSample }) {
     }
   }, [])
 
+  // PDF 내보내기 (현재 페이지) — 브라우저 렌더를 래스터로 굳혀 폰트/플랫폼 무관 동일 표시
+  const handleExportPdf = useCallback(async () => {
+    setOpen(false)
+    const canvasNode = useFlatStore.getState()._canvasRef?.current
+    if (!canvasNode) { alert('캔버스를 찾을 수 없습니다'); return }
+    const { exportCurrentPageToPdf } = await import('../core/PdfExporter.js')
+    try {
+      await exportCurrentPageToPdf(canvasNode, useFlatStore.getState(), { scale: 2 })
+    } catch (err) {
+      alert('PDF 내보내기 실패: ' + err.message)
+    }
+  }, [])
+
+  // PDF 내보내기 (전체 페이지)
+  const handleExportPdfAll = useCallback(async () => {
+    setOpen(false)
+    await useFlatStore.getState().getAllPagesAsync()
+    const canvasNode = useFlatStore.getState()._canvasRef?.current
+    if (!canvasNode) { alert('캔버스를 찾을 수 없습니다'); return }
+    const { exportToPdf } = await import('../core/PdfExporter.js')
+    try {
+      await exportToPdf(canvasNode, useFlatStore.getState(), { scale: 2 })
+    } catch (err) {
+      alert('PDF 내보내기 실패: ' + err.message)
+    }
+  }, [])
+
   // PPT 내보내기는 최상단 툴바의 PptExportButton으로 이동됨.
 
   // JSON 내보내기 (현재 페이지)
@@ -236,6 +263,9 @@ export default function FileMenu({ fallbackSample }) {
         { id: 'sepE1', type: 'separator' },
         { id: 'exportImage', label: '이미지 — 현재 페이지', shortcut: 'PNG', action: handleExportImage },
         { id: 'exportImageAll', label: '이미지 — 전체 페이지', shortcut: 'PNG', action: handleExportImageAll },
+        { id: 'sepPdf', type: 'separator' },
+        { id: 'exportPdf', label: 'PDF — 현재 페이지', shortcut: 'PDF', action: handleExportPdf },
+        { id: 'exportPdfAll', label: 'PDF — 전체 페이지', shortcut: 'PDF', action: handleExportPdfAll },
         { id: 'sepE2', type: 'separator' },
         { id: 'exportJson', label: 'JSON — 현재 페이지', action: handleExportJson },
         { id: 'exportJsonAll', label: 'JSON — 전체 페이지', action: handleExportJsonAll },
