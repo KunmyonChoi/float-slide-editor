@@ -57,6 +57,9 @@ class _RunCollector(HTMLParser):
             ls = _extract_style(style, 'letter-spacing')
             if ls:
                 ctx['letterSpacing'] = ls
+            tt = _extract_style(style, 'text-transform')
+            if tt:
+                ctx['textTransform'] = tt
             # 인라인 background → PPT 텍스트 하이라이트 (코드 박스/배지 등 보존).
             bg = _extract_style(style, 'background-color') or _extract_style(style, 'background')
             if bg:
@@ -107,6 +110,20 @@ def _clean_font(ff: str) -> str | None:
     if not ff:
         return None
     return ff.split(',')[0].strip().strip("'\"")
+
+
+def apply_text_transform(text: str, tt) -> str:
+    """CSS text-transform를 텍스트에 실제 반영 (화면엔 보이지만 export엔 빠지던 변환)."""
+    if not text or not tt or tt == 'none':
+        return text
+    if tt == 'uppercase':
+        return text.upper()
+    if tt == 'lowercase':
+        return text.lower()
+    if tt == 'capitalize':
+        import re
+        return re.sub(r'\b\w', lambda m: m.group().upper(), text)
+    return text
 
 
 def html_to_text_runs(html: str, base_styles: dict) -> list:
@@ -165,6 +182,10 @@ def html_to_text_runs(html: str, base_styles: dict) -> list:
             opts['listType'] = ctx['listType']
             opts['listLevel'] = ctx.get('listLevel', 0)
 
-        result.append({'text': run['text'], 'opts': opts})
+        # text-transform 실제 반영 (ctx 인라인 > base)
+        tt = ctx.get('textTransform') or base_styles.get('textTransform')
+        text = apply_text_transform(run['text'], tt)
+
+        result.append({'text': text, 'opts': opts})
 
     return result

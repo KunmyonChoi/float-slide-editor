@@ -10,7 +10,7 @@ from pptx.enum.text import PP_ALIGN, MSO_ANCHOR
 from pptx.oxml.ns import qn
 
 from gradient import parse_gradient, css_color_to_rgb, css_color_to_rgba, css_color_to_hex
-from text_runs import html_to_text_runs
+from text_runs import html_to_text_runs, apply_text_transform
 
 PX_TO_INCH = 1 / 96
 PX_TO_EMU = 914400 / 96  # 9525
@@ -560,7 +560,7 @@ def _add_text(slide, el: dict, x, y, w, h, rotation, font_name_map: dict = None,
         if s.get('fontStyle') == 'italic':
             opts['italic'] = True
         opts['_weight'] = effective_weight
-        runs_data = [{'text': content, 'opts': opts}]
+        runs_data = [{'text': apply_text_transform(content, s.get('textTransform')), 'opts': opts}]
 
     # text alignment
     if is_circle:

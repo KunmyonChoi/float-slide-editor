@@ -35,9 +35,11 @@ function walkNode(node, inherited, runs, baseStyles, listStack = []) {
   for (const child of node.childNodes) {
     if (child.nodeType === 3) {
       // 텍스트 노드
-      const text = child.textContent
-      if (!text) continue
+      const raw = child.textContent
+      if (!raw) continue
       const opts = buildOptions(inherited, baseStyles)
+      // text-transform 실제 반영 (ctx 인라인 > base)
+      const text = applyTextTransform(raw, inherited.textTransform || baseStyles.textTransform)
       runs.push({ text, options: opts })
     } else if (child.nodeType === 1) {
       // 요소 노드
@@ -73,6 +75,8 @@ function walkNode(node, inherited, runs, baseStyles, listStack = []) {
         const textDecoration = extractStyle(style, 'text-decoration')
         if (textDecoration?.includes('underline')) ctx.underline = true
         if (textDecoration?.includes('line-through')) ctx.strike = true
+        const textTransform = extractStyle(style, 'text-transform')
+        if (textTransform) ctx.textTransform = textTransform
         // 인라인 background → PPT highlight (코드 박스/배지 등). background-color 우선, 없으면 background.
         const bg = extractStyle(style, 'background-color') || extractStyle(style, 'background')
         if (bg) ctx.highlight = bg
@@ -165,6 +169,15 @@ function blendToOpaqueHex(color) {
   return [blend(r, BG.r), blend(g, BG.g), blend(b, BG.b)]
     .map(n => Math.max(0, Math.min(255, n)).toString(16).padStart(2, '0'))
     .join('')
+}
+
+/** CSS text-transform를 텍스트에 실제 반영 (화면엔 보이지만 export엔 빠지던 변환) */
+export function applyTextTransform(text, tt) {
+  if (!text || !tt || tt === 'none') return text
+  if (tt === 'uppercase') return text.toUpperCase()
+  if (tt === 'lowercase') return text.toLowerCase()
+  if (tt === 'capitalize') return text.replace(/\b\w/g, (c) => c.toUpperCase())
+  return text
 }
 
 /** CSS color → 6자리 hex (# 없이) */

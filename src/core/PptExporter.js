@@ -1,7 +1,7 @@
 /**
  * PptExporter — PPTX 내보내기 (pptxgenjs, lazy import)
  */
-import { htmlToTextRuns, cssColorToHex } from './HtmlToTextRuns'
+import { htmlToTextRuns, cssColorToHex, applyTextTransform } from './HtmlToTextRuns'
 import { parseGradient } from './GradientParser'
 
 // px → inches (96 DPI 기준)
@@ -151,7 +151,7 @@ function addText(slide, el, pos) {
     if (s.fontFamily) opts.fontFace = s.fontFamily.split(',')[0].trim().replace(/['"]/g, '')
     if (s.fontWeight && (s.fontWeight === 'bold' || parseInt(s.fontWeight) >= 700)) opts.bold = true
     if (s.fontStyle === 'italic') opts.italic = true
-    textRuns = [{ text: el.content || '', options: opts }]
+    textRuns = [{ text: applyTextTransform(el.content || '', s.textTransform), options: opts }]
   }
 
   // 수직 정렬: merged/배경 있는 텍스트는 alignItems 반영
