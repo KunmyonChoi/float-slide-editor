@@ -63,10 +63,8 @@ _font_cache: dict[str, bytes] = {}
 def resolve_fonts(font_descriptors: list, pages: dict = None) -> list[FontRecord]:
     """Download and convert all font descriptors into FontRecords with TTF data.
     If pages is provided, subset fonts to only include characters actually used."""
-    records = []
-    total_bytes = 0
 
-    # Collect all text used per font family (for subsetting)
+    # Collect all text used per (effective) font family — 인라인 font-family까지 반영
     font_texts = _collect_font_texts(pages) if pages else {}
 
     # Phase 1: Expand Google Fonts @import URLs into individual @font-face entries
@@ -77,7 +75,8 @@ def resolve_fonts(font_descriptors: list, pages: dict = None) -> list[FontRecord
         elif desc.get('type') == 'font-face':
             expanded.append(desc)
 
-    # Phase 2: Download and convert each font
+    # Phase 2: Download/convert/instantiate (서브셋은 제네릭 폴딩 후에)
+    raw = []  # {family, weight, style, ttf_data, is_var}
     seen = set()  # (family, weight, style) dedup
     for desc in expanded:
         family = desc.get('family', '')
@@ -88,52 +87,97 @@ def resolve_fonts(font_descriptors: list, pages: dict = None) -> list[FontRecord
 
         if (not url and not full_font_data) or not family:
             continue
-
         key = (family, weight, style)
         if key in seen:
             continue
         seen.add(key)
 
         try:
-            if full_font_data:
-                # Full variable font already provided
-                ttf_data = _to_ttf(full_font_data)
-            else:
-                ttf_data = _download_and_convert(url)
-
+            ttf_data = _to_ttf(full_font_data) if full_font_data else _download_and_convert(url)
             if not ttf_data:
                 continue
 
-            # Check if variable font → instantiate to specific weight
             is_var = _is_variable_font(ttf_data)
             if is_var:
                 static_data = _instantiate_variable(ttf_data, weight)
                 if static_data:
-                    ttf_data = static_data
-                    # Update font name records to reflect correct weight
-                    ttf_data = _update_font_names(ttf_data, family, weight, style)
+                    ttf_data = _update_font_names(static_data, family, weight, style)
 
-            # Subset to only include characters used in the slides
-            used_text = font_texts.get(family, '')
-            if used_text and len(ttf_data) > 100000:
-                subset_data = _subset_font(ttf_data, used_text)
-                if subset_data:
-                    print(f'Font embed: {family} w{weight} subset {len(ttf_data)}→{len(subset_data)} bytes')
-                    ttf_data = subset_data
-
-            total_bytes += len(ttf_data)
-            if total_bytes > MAX_TOTAL_FONT_BYTES:
-                print(f'Font embed: total size limit reached, skipping remaining')
-                break
-
-            records.append(FontRecord(
-                family=family, weight=weight, style=style,
-                ttf_data=ttf_data, is_variable=is_var,
-            ))
+            raw.append({'family': family, 'weight': weight, 'style': style,
+                        'ttf_data': ttf_data, 'is_var': is_var})
         except Exception as e:
             print(f'Font embed: failed to process {family} w{weight}: {e}')
 
+    # Phase 3: CSS 제네릭(ui-monospace 등)으로 잡힌 텍스트를 같은 부류의 실제
+    # 임베드 폰트 텍스트에 접어 넣어, 그 폰트 서브셋이 코드 글자까지 포함하게 한다.
+    generic_map = _build_generic_map(raw)  # 'monospace'/'serif'/'sans-serif' → family
+    for key in list(font_texts.keys()):
+        cls = GENERIC_FONT_CLASS.get(key.lower())
+        rep = generic_map.get(cls) if cls else None
+        if rep:
+            font_texts[rep] = font_texts.get(rep, '') + font_texts[key]
+
+    # Phase 4: 서브셋 + FontRecord 생성
+    records = []
+    total_bytes = 0
+    for r in raw:
+        ttf_data = r['ttf_data']
+        used_text = font_texts.get(r['family'], '')
+        if used_text and len(ttf_data) > 100000:
+            subset_data = _subset_font(ttf_data, used_text)
+            if subset_data:
+                print(f"Font embed: {r['family']} w{r['weight']} subset {len(ttf_data)}→{len(subset_data)} bytes")
+                ttf_data = subset_data
+        total_bytes += len(ttf_data)
+        if total_bytes > MAX_TOTAL_FONT_BYTES:
+            print('Font embed: total size limit reached, skipping remaining')
+            break
+        records.append(FontRecord(
+            family=r['family'], weight=r['weight'], style=r['style'],
+            ttf_data=ttf_data, is_variable=r['is_var'],
+        ))
+
     return records
+
+
+# CSS 제네릭/시스템 폰트 키워드 → 부류 (실제 폰트가 아니라 임베드 불가)
+GENERIC_FONT_CLASS = {
+    'ui-monospace': 'monospace', 'monospace': 'monospace',
+    'ui-serif': 'serif', 'serif': 'serif',
+    'ui-sans-serif': 'sans-serif', 'sans-serif': 'sans-serif',
+    'system-ui': 'sans-serif', 'ui-rounded': 'sans-serif',
+}
+
+
+def _classify_family(ttf_data: bytes) -> str | None:
+    """폰트를 monospace / serif / sans-serif 로 분류 (post.isFixedPitch + OS/2 panose)."""
+    try:
+        f = TTFont(io.BytesIO(ttf_data))
+        if 'post' in f and getattr(f['post'], 'isFixedPitch', 0):
+            return 'monospace'
+        if 'OS/2' in f:
+            pan = f['OS/2'].panose
+            if getattr(pan, 'bProportion', 0) == 9:  # monospaced
+                return 'monospace'
+            if getattr(pan, 'bFamilyType', 0) == 2:  # latin text
+                serif = getattr(pan, 'bSerifStyle', 0)
+                if 11 <= serif <= 15:
+                    return 'sans-serif'
+                if 2 <= serif <= 10:
+                    return 'serif'
+    except Exception:
+        pass
+    return None
+
+
+def _build_generic_map(raw_records: list) -> dict:
+    """부류(monospace/serif/sans-serif) → 대표 임베드 family 이름."""
+    m = {}
+    for r in raw_records:
+        cls = _classify_family(r['ttf_data'])
+        if cls and cls not in m:
+            m[cls] = r['family']
+    return m
 
 
 def build_font_name_map(records: list[FontRecord]) -> dict:
@@ -151,6 +195,12 @@ def build_font_name_map(records: list[FontRecord]) -> dict:
         else:
             # Non-standard weight → separate typeface with subfamily
             name_map[(rec.family, rec.weight)] = f'{rec.family} {rec.subfamily}'
+    # CSS 제네릭 키워드(ui-monospace 등) → 같은 부류의 대표 임베드 family.
+    # exporter가 ('__generic__', 'monospace') 조회로 코드 런을 실제 폰트에 매칭.
+    for cls, fam in _build_generic_map(
+        [{'family': r.family, 'ttf_data': r.ttf_data} for r in records]
+    ).items():
+        name_map[('__generic__', cls)] = fam
     return name_map
 
 
@@ -508,10 +558,24 @@ def _instantiate_variable(ttf_data: bytes, weight: int) -> bytes | None:
 
 
 def _collect_font_texts(pages: dict) -> dict[str, str]:
-    """Collect all text content per font family from page data for subsetting."""
+    """글자별로 '실제 적용될 font-family'에 텍스트를 모은다(서브셋용).
+
+    인라인 <span style="font-family:..."> 오버라이드까지 반영하기 위해
+    export와 동일한 html_to_text_runs로 런을 만들어 런의 fontFace로 귀속한다.
+    (요소 단위 primary만 보던 옛 방식은 인라인으로 폰트가 바뀐 글자를 놓쳐
+    해당 폰트 서브셋에서 빠지는 누락이 있었음.)
+    """
     font_texts = {}  # family -> set of chars
     if not pages:
         return font_texts
+
+    from text_runs import html_to_text_runs
+    import re as _re
+
+    def add(family, text):
+        if not family or not text:
+            return
+        font_texts.setdefault(family, set()).update(text)
 
     for page in pages.values():
         for el in page.get('elements', []):
@@ -519,23 +583,21 @@ def _collect_font_texts(pages: dict) -> dict[str, str]:
             if not content:
                 continue
             s = el.get('styles', {})
-            ff = s.get('fontFamily', '')
-            if ff:
-                primary = ff.split(',')[0].strip().strip("'\"")
-                if primary not in font_texts:
-                    font_texts[primary] = set()
-                # Strip HTML tags for text content
-                import re as _re
-                plain = _re.sub(r'<[^>]+>', '', content)
-                font_texts[primary].update(plain)
+            base_family = s.get('fontFamily', '')
+            base_primary = base_family.split(',')[0].strip().strip("'\"") if base_family else ''
+            if el.get('isRich'):
+                try:
+                    runs = html_to_text_runs(content, {'fontFamily': base_family})
+                except Exception:
+                    runs = [{'text': _re.sub(r'<[^>]+>', '', content), 'opts': {}}]
+                for r in runs:
+                    add(r['opts'].get('fontFace') or base_primary, r['text'])
+            else:
+                add(base_primary, _re.sub(r'<[^>]+>', '', content))
 
-    # Convert sets to strings + add essential characters (punctuation, digits, spaces)
+    # essential 문자(구두점/숫자/공백) 추가 후 문자열로
     essential = set(' 0123456789.,;:!?-()[]{}"\'+/*@#$%&=<>~`|^_\\')
-    result = {}
-    for family, chars in font_texts.items():
-        chars.update(essential)
-        result[family] = ''.join(chars)
-    return result
+    return {family: ''.join(chars | essential) for family, chars in font_texts.items()}
 
 
 def _subset_font(ttf_data: bytes, text: str) -> bytes | None:

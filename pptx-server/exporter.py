@@ -11,6 +11,7 @@ from pptx.oxml.ns import qn
 
 from gradient import parse_gradient, css_color_to_rgb, css_color_to_rgba, css_color_to_hex
 from text_runs import html_to_text_runs, apply_text_transform
+from font_embedder import GENERIC_FONT_CLASS
 
 PX_TO_INCH = 1 / 96
 PX_TO_EMU = 914400 / 96  # 9525
@@ -647,8 +648,12 @@ def _populate_text_frame(tf, runs_data: list, align, line_spacing, font_name_map
                 r.font.size = Pt(font_size)
             font_face = opts.get('fontFace')
             if font_face:
-                # Map (family, weight) to embedded font typeface if available
                 if font_name_map:
+                    # CSS 제네릭(ui-monospace 등)이면 같은 부류 실제 임베드 폰트로 치환
+                    gcls = GENERIC_FONT_CLASS.get(font_face.lower())
+                    if gcls:
+                        font_face = font_name_map.get(('__generic__', gcls), font_face)
+                    # (family, weight) → 임베드 typeface 매핑
                     weight = opts.get('_weight', 700 if opts.get('bold') else 400)
                     font_face = font_name_map.get((font_face, weight), font_face)
                 r.font.name = font_face
