@@ -279,27 +279,26 @@ def _resolve_google_import(css_url: str) -> list[dict]:
         blocks_per_variant = len(family_blocks) / max(len(weights) * len(styles), 1)
 
         if blocks_per_variant > 3 or family_blocks[0].get('has_unicode_range'):
-            # Subset delivery → download full variable font from GitHub
+            # Subset delivery → download full font from GitHub (weight/style별)
             print(f'Font embed: {family_name} uses subset delivery ({int(blocks_per_variant)} blocks/variant), fetching full font')
-            full_font_data = _download_google_full_font(family_name)
-            if full_font_data:
-                for w in weights:
-                    for s in styles:
+            for w in weights:
+                for s in styles:
+                    full_font_data = _download_google_full_font(family_name, w, s)
+                    if full_font_data:
                         results.append({
                             'type': 'font-face', 'family': family_name,
                             'weight': w, 'style': s,
-                            'url': f'__full_font__:{family_name}',
+                            'url': f'__full_font__:{family_name}:{w}:{s}',
                             '_full_font_data': full_font_data,
                         })
-            else:
-                # Fallback: use first subset URL per weight (limited charset)
-                print(f'Font embed: full font download failed, using first subset per weight')
-                seen = set()
-                for b in family_blocks:
-                    key = (b['weight'], b['style'])
-                    if key not in seen:
-                        seen.add(key)
-                        results.append({'type': 'font-face', **b})
+                    else:
+                        # 폴백: 해당 (weight,style)의 첫 css2 subset 블록 (글자수 제한적)
+                        cand = [b for b in family_blocks if b['weight'] == w and b['style'] == s]
+                        if not cand:
+                            cand = [b for b in family_blocks if b['weight'] == w]
+                        if cand:
+                            print(f'Font embed: {family_name} w{w} {s} → css2 subset 폴백(부분 글리프)')
+                            results.append({'type': 'font-face', **cand[0]})
         else:
             # Not subset → use URLs directly
             seen = set()
@@ -316,49 +315,71 @@ def _resolve_google_import(css_url: str) -> list[dict]:
 _GOOGLE_FONTS_GITHUB = 'https://github.com/google/fonts/raw/main/ofl'
 
 
-def _download_google_full_font(family_name: str) -> bytes | None:
-    """Download the complete variable font file from Google Fonts GitHub repo."""
-    # Convert family name to directory name: "Noto Sans KR" → "notosanskr"
-    dir_name = family_name.lower().replace(' ', '')
-
-    # Variable font filename pattern: FamilyName[axes].ttf
-    # Common patterns: Name[wght].ttf, Name[ital,wght].ttf, Name[SOFT,WONK,opsz,wght].ttf
-    # Try the most common patterns
-    base = family_name.replace(' ', '')
-    patterns = [
-        f'{base}%5Bwght%5D.ttf',
-        f'{base}%5Bwdth%2Cwght%5D.ttf',
-        f'{base}%5Bital%2Cwght%5D.ttf',
-        f'{base}%5BSOFT%2CWONK%2Copsz%2Cwght%5D.ttf',
-        f'{base}%5Bopsz%2Cwght%5D.ttf',
-    ]
-
-    for pattern in patterns:
-        url = f'{_GOOGLE_FONTS_GITHUB}/{dir_name}/{pattern}'
-        cache_key = hashlib.sha256(url.encode()).hexdigest()
-        FONT_CACHE_DIR.mkdir(parents=True, exist_ok=True)
-        cache_path = FONT_CACHE_DIR / f'{cache_key}.ttf'
-
-        if cache_path.exists():
-            data = cache_path.read_bytes()
-            if len(data) > 10000:
-                print(f'Font embed: {family_name} full font from cache ({len(data)} bytes)')
-                return data
-
+def _fetch_github_ttf(url: str) -> bytes | None:
+    """GitHub raw에서 sfnt(TTF/OTF) 폰트를 받아온다 (디스크 캐시). 404/비폰트는 None."""
+    cache_key = hashlib.sha256(url.encode()).hexdigest()
+    FONT_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    cache_path = FONT_CACHE_DIR / f'{cache_key}.ttf'
+    if cache_path.exists():
+        data = cache_path.read_bytes()
+        if len(data) > 10000 and _is_sfnt(data):
+            return data
+    try:
+        resp = requests.get(url, timeout=30, allow_redirects=True)
+    except Exception:
+        return None
+    # 404는 HTML을 돌려주므로 sfnt 매직으로 실제 폰트만 통과
+    if resp.status_code == 200 and len(resp.content) > 10000 and _is_sfnt(resp.content):
+        data = resp.content
         try:
-            resp = requests.get(url, timeout=30, allow_redirects=True)
-            if resp.status_code == 200 and len(resp.content) > 10000:
-                data = resp.content
-                try:
-                    cache_path.write_bytes(data)
-                except Exception:
-                    pass
-                print(f'Font embed: {family_name} full font downloaded ({len(data)} bytes)')
-                return data
+            cache_path.write_bytes(data)
         except Exception:
-            continue
+            pass
+        return data
+    return None
 
-    print(f'Font embed: {family_name} full font not found on GitHub')
+
+def _github_font_candidates(family_name: str, weight: int, style: str) -> list[str]:
+    """family/weight/style에 맞는 GitHub 파일명 후보 (variable 우선, 그다음 static)."""
+    base = family_name.replace(' ', '')
+    italic = (style == 'italic')
+    sub = _weight_to_subfamily(weight, 'normal')  # Regular/Bold/Medium ...
+    names = []
+    # 1) variable 폰트: roman 또는 italic 전용 파일, 흔한 axis 순서들
+    vbase = f'{base}-Italic' if italic else base
+    axis_orders = [
+        'wght', 'ital%2Cwght', 'opsz%2Cwght', 'wght%2Copsz', 'wdth%2Cwght',
+        'slnt%2Cwght', 'SOFT%2CWONK%2Copsz%2Cwght', 'opsz%2Cwght%2CSOFT%2CWONK',
+    ]
+    for ax in axis_orders:
+        names.append(f'{vbase}%5B{ax}%5D.ttf')
+    # 2) static 폰트: weight/style별 개별 파일 (예: GowunBatang-Bold.ttf)
+    if italic:
+        it = 'Italic' if sub == 'Regular' else f'{sub}Italic'
+        statics = [f'{base}-{it}.ttf']
+    else:
+        statics = [f'{base}-{sub}.ttf']
+    for nm in statics:
+        names.append(nm)
+        names.append(f'static/{nm}')
+    return names
+
+
+def _download_google_full_font(family_name: str, weight: int = 400, style: str = 'normal') -> bytes | None:
+    """Google Fonts GitHub repo에서 (family, weight, style)에 맞는 전체 폰트를 받는다.
+
+    variable 폰트는 roman/italic 파일을 받아 호출측에서 weight로 instancing,
+    static 폰트(예: Gowun Batang)는 weight/style별 개별 .ttf를 직접 받는다.
+    italic은 roman으로 대체하지 않는다(가짜 이탤릭 방지) — 없으면 None 반환해
+    호출측이 css2 italic subset으로 폴백하게 한다.
+    """
+    dir_name = family_name.lower().replace(' ', '')
+    for cand in _github_font_candidates(family_name, weight, style):
+        data = _fetch_github_ttf(f'{_GOOGLE_FONTS_GITHUB}/{dir_name}/{cand}')
+        if data:
+            print(f'Font embed: {family_name} w{weight} {style} full font ({len(data)} bytes) ← {cand}')
+            return data
+    print(f'Font embed: {family_name} w{weight} {style} full font not found on GitHub')
     return None
 
 
