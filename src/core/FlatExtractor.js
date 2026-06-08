@@ -653,6 +653,9 @@ function extractStyles(cs, el) {
     objectPosition: cs.objectPosition,
     overflow: cs.overflow,
     overflowX: cs.overflowX,
+    // pre 계열 white-space만 보존(코드 블록 <pre> 등 — 소프트 줄바꿈 금지).
+    // normal/pre-wrap은 미설정 → 렌더러 기본값 pre-wrap으로 \n·공백 보존.
+    ...(/^(pre|pre-line|nowrap)$/.test(cs.whiteSpace || '') ? { whiteSpace: cs.whiteSpace } : {}),
     textShadow: cs.textShadow,
     // flex 정렬 (inline-flex/flex 요소의 내부 정렬)
     display: cs.display,
