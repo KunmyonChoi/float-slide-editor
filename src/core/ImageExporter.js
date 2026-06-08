@@ -32,6 +32,47 @@ export async function exportAsImage(canvasNode, { format = 'png', scale = 2, qua
 
   const domtoimage = (await import('dom-to-image-more')).default
 
+  // 캡처 시 의도치 않은 줄바꿈 방지: dom-to-image는 SVG foreignObject로
+  // 렌더하는데 letter-spacing·가변폰트의 sub-pixel 차이로, 화면에선 딱 맞던
+  // 텍스트가 캡처에서만 소프트 줄바꿈되는 경우가 있다(큰 챕터 번호 "02",
+  // 코드 블록의 긴 줄 등). 소프트 줄바꿈만 끄되(명시적 \n·<br>는 유지),
+  // 끄면 가로 오버플로가 생기는(=원래 줄바꿈이 필요한) 요소는 그대로 둔다.
+  const styleRestore = [] // [el, {prop: origValue}]
+  const setTemp = (el, prop, value) => {
+    if (!styleRestore.some(([e, m]) => e === el && prop in m)) {
+      const entry = styleRestore.find(([e]) => e === el)
+      if (entry) entry[1][prop] = el.style[prop]
+      else styleRestore.push([el, { [prop]: el.style[prop] }])
+    }
+    el.style[prop] = value
+  }
+  canvasNode.querySelectorAll('.flat-text').forEach((el) => {
+    const cs = window.getComputedStyle(el)
+    const ws = cs.whiteSpace
+    // 1) 소프트 줄바꿈만 제거(명시적 \n·<br>는 유지). 끄면 가로 오버플로가
+    //    생기는(=원래 줄바꿈이 필요한) 요소는 되돌린다.
+    if (ws !== 'nowrap' && ws !== 'pre') {
+      const orig = el.style.whiteSpace
+      el.style.whiteSpace = (ws === 'pre-wrap' || ws === 'pre-line') ? 'pre' : 'nowrap'
+      if (el.scrollWidth > el.clientWidth + 1) {
+        el.style.whiteSpace = orig
+      } else {
+        styleRestore.push([el, { whiteSpace: orig }])
+      }
+    }
+    // 2) 배지(배경 있는 flex)의 정렬: dom-to-image가 flex 정렬을 화면과 다르게
+    //    렌더해 pill 텍스트가 가운데에서 벗어나는 경우가 있다. 캡처 동안만
+    //    center로 고정(화면상 이미 가운데인 tight 박스는 변화 없음).
+    const disp = cs.display
+    if (disp === 'flex' || disp === 'inline-flex') {
+      const bg = cs.backgroundColor
+      if (bg && bg !== 'transparent' && bg !== 'rgba(0, 0, 0, 0)') {
+        setTemp(el, 'justifyContent', 'center')
+        setTemp(el, 'alignItems', 'center')
+      }
+    }
+  })
+
   const width = canvasNode.offsetWidth
   const height = canvasNode.offsetHeight
 
@@ -59,8 +100,11 @@ export async function exportAsImage(canvasNode, { format = 'png', scale = 2, qua
     }
     return await domtoimage.toPng(canvasNode, config)
   } finally {
-    // 임시 스타일 제거
+    // 임시 스타일/인라인 보정 복원
     exportStyle.remove()
+    styleRestore.forEach(([el, props]) => {
+      Object.entries(props).forEach(([prop, val]) => { el.style[prop] = val })
+    })
   }
 }
 
@@ -97,6 +141,33 @@ export async function exportAllPagesAsImages(canvasNode, store, options = {}) {
   store._restoreFromCache(currentPageKey)
 
   return results
+}
+
+/**
+ * 여러 페이지 이미지(data URL)를 ZIP 한 파일로 묶어 다운로드
+ * @param {Array<{ key: string, dataUrl: string }>} results - exportAllPagesAsImages 결과
+ * @param {Object} options
+ * @param {string} options.zipName - ZIP 파일명 (기본 'slide-images.zip')
+ * @param {string} options.format - 'png' | 'jpeg' (확장자 결정)
+ */
+export async function downloadImagesAsZip(results, { zipName = 'slide-images.zip', format = 'png' } = {}) {
+  const JSZip = (await import('jszip')).default
+  const zip = new JSZip()
+  const ext = format === 'jpeg' ? 'jpg' : 'png'
+  const pad = String(results.length).length
+  results.forEach((r, i) => {
+    const base64 = (r.dataUrl.split(',')[1]) || ''
+    zip.file(`slide-${String(i + 1).padStart(pad, '0')}.${ext}`, base64, { base64: true })
+  })
+  const blob = await zip.generateAsync({ type: 'blob' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = zipName
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
 }
 
 /**

@@ -136,15 +136,39 @@ export default function FileMenu({ fallbackSample }) {
     await useFlatStore.getState().getAllPagesAsync()
     const canvasNode = useFlatStore.getState()._canvasRef?.current
     if (!canvasNode) { alert('캔버스를 찾을 수 없습니다'); return }
-    const { exportAllPagesAsImages, downloadImage } = await import('../core/ImageExporter.js')
+    const { exportAllPagesAsImages, downloadImagesAsZip } = await import('../core/ImageExporter.js')
     try {
       const results = await exportAllPagesAsImages(canvasNode, useFlatStore.getState(), { format: 'png', scale: 2 })
-      for (let i = 0; i < results.length; i++) {
-        if (i > 0) await new Promise(r => setTimeout(r, 300))
-        downloadImage(results[i].dataUrl, `slide-${i + 1}.png`)
-      }
+      await downloadImagesAsZip(results, { zipName: 'slide-images.zip', format: 'png' })
     } catch (err) {
       alert('이미지 내보내기 실패: ' + err.message)
+    }
+  }, [])
+
+  // PDF 내보내기 (현재 페이지) — 브라우저 렌더를 래스터로 굳혀 폰트/플랫폼 무관 동일 표시
+  const handleExportPdf = useCallback(async () => {
+    setOpen(false)
+    const canvasNode = useFlatStore.getState()._canvasRef?.current
+    if (!canvasNode) { alert('캔버스를 찾을 수 없습니다'); return }
+    const { exportCurrentPageToPdf } = await import('../core/PdfExporter.js')
+    try {
+      await exportCurrentPageToPdf(canvasNode, useFlatStore.getState(), { scale: 2 })
+    } catch (err) {
+      alert('PDF 내보내기 실패: ' + err.message)
+    }
+  }, [])
+
+  // PDF 내보내기 (전체 페이지)
+  const handleExportPdfAll = useCallback(async () => {
+    setOpen(false)
+    await useFlatStore.getState().getAllPagesAsync()
+    const canvasNode = useFlatStore.getState()._canvasRef?.current
+    if (!canvasNode) { alert('캔버스를 찾을 수 없습니다'); return }
+    const { exportToPdf } = await import('../core/PdfExporter.js')
+    try {
+      await exportToPdf(canvasNode, useFlatStore.getState(), { scale: 2 })
+    } catch (err) {
+      alert('PDF 내보내기 실패: ' + err.message)
     }
   }, [])
 
@@ -235,7 +259,10 @@ export default function FileMenu({ fallbackSample }) {
         { id: 'exportHtmlAll', label: 'HTML — 전체 페이지', action: handleExportHtmlAll },
         { id: 'sepE1', type: 'separator' },
         { id: 'exportImage', label: '이미지 — 현재 페이지', shortcut: 'PNG', action: handleExportImage },
-        { id: 'exportImageAll', label: '이미지 — 전체 페이지', shortcut: 'PNG', action: handleExportImageAll },
+        { id: 'exportImageAll', label: '이미지 — 전체 페이지', shortcut: 'ZIP', action: handleExportImageAll },
+        { id: 'sepPdf', type: 'separator' },
+        { id: 'exportPdf', label: 'PDF — 현재 페이지', shortcut: 'PDF', action: handleExportPdf },
+        { id: 'exportPdfAll', label: 'PDF — 전체 페이지', shortcut: 'PDF', action: handleExportPdfAll },
         { id: 'sepE2', type: 'separator' },
         { id: 'exportJson', label: 'JSON — 현재 페이지', action: handleExportJson },
         { id: 'exportJsonAll', label: 'JSON — 전체 페이지', action: handleExportJsonAll },

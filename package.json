@@ -21,6 +21,7 @@
   },
   "dependencies": {
     "dom-to-image-more": "^3.7.2",
+    "jspdf": "^4.2.1",
     "pptxgenjs": "^4.0.1",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
