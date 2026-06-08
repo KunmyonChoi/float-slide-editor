@@ -938,9 +938,11 @@ function buildFlatElement(el, rect, cs, domOrder, forceType, transformScale = 1,
           }
           const expandedW = Math.ceil(nowrapRect.width) + 4
           if (expandedW <= ancestorMaxW + 2) {
-            // 조상 범위 내 → 확장 적용
+            // 조상 범위 내 → 확장 적용 + nowrap으로 재줄바꿈 방지
+            // (CJK는 글자 사이 어디서나 줄바꿈 가능 → px 버퍼만으론 불안정)
             width = expandedW
             height = Math.ceil(lineHeight) || Math.ceil(nowrapRect.height)
+            styles.whiteSpace = 'nowrap'
           }
           // 조상 범위 초과 → 원래 너비 유지 (의도된 줄바꿈)
         } else if (nowrapRect.width > 0 && nowrapRect.width >= width - 1) {
@@ -956,6 +958,8 @@ function buildFlatElement(el, rect, cs, domOrder, forceType, transformScale = 1,
           if (!hasBg && !hasGradientText) {
             const newWidth = Math.ceil(nowrapRect.width) + 4
             const extra = newWidth - width
+            // 단일 줄 텍스트 → nowrap으로 고정해 CJK 글자중간 줄바꿈 방지
+            styles.whiteSpace = 'nowrap'
             const tAlign = styles.textAlign || 'start'
             if (tAlign === 'center') {
               // 가운데 정렬: 너비를 양쪽으로 균등 확장 → x를 좌측으로 절반 이동
