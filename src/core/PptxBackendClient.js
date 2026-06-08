@@ -63,12 +63,14 @@ function _cssProp(css, prop) {
   return m ? m[1].trim() : null
 }
 
-export async function exportViaPython(pages, defaultCanvasSize) {
-  const fonts = collectFontData(pages)
+export async function exportViaPython(pages, defaultCanvasSize, { embedFonts = true } = {}) {
+  // 임베딩 OFF면 폰트를 수집/전송하지 않음 → 서버가 다운로드·임베딩을 건너뛰고
+  // 원본 family명으로 출력(파일 가벼움, 시스템 설치 폰트 의존).
+  const fonts = embedFonts ? collectFontData(pages) : []
   const res = await fetch('/api/export/pptx', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ pages, defaultCanvasSize, fonts }),
+    body: JSON.stringify({ pages, defaultCanvasSize, fonts, embedFonts }),
   })
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }))

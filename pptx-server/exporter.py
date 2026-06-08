@@ -16,7 +16,8 @@ PX_TO_INCH = 1 / 96
 PX_TO_EMU = 914400 / 96  # 9525
 
 
-def build_pptx(pages: dict, default_canvas_size: dict, fonts: list = None) -> bytes:
+def build_pptx(pages: dict, default_canvas_size: dict, fonts: list = None,
+               embed_fonts: bool = True) -> bytes:
     prs = Presentation()
 
     first_page = next(iter(pages.values()), None)
@@ -27,9 +28,11 @@ def build_pptx(pages: dict, default_canvas_size: dict, fonts: list = None) -> by
     prs.slide_height = int(slide_h)
 
     # ── Font resolution (before slide building, so name map is available) ──
+    # embed_fonts=False면 폰트 다운로드·임베딩을 건너뛴다 — 런은 원본 family명을 써
+    # 시스템에 설치된 폰트로 표시(파일 가벼움, 외부 전달 시 깨질 수 있음).
     font_name_map = {}
     font_records = []
-    if fonts:
+    if fonts and embed_fonts:
         try:
             from font_embedder import resolve_fonts, build_font_name_map
             font_records = resolve_fonts(fonts, pages=pages)
