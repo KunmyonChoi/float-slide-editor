@@ -171,6 +171,24 @@ export default function SlideCanvas() {
     }
   }, [mode, viewMode, exitPresentation])
 
+  // HTML 편집 모드: ESC로 요소 선택 해제 (포커스가 iframe에 있을 수 있어 양쪽 리스닝)
+  useEffect(() => {
+    if (mode === 'present') return
+    const onKey = (e) => {
+      if (e.key !== 'Escape') return
+      if (useEditorStore.getState().selectedId) {
+        setSelected(null) // fe:highlight(null) 전송 + 부모 핸들 정리
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    const iframeDoc = iframeRef.current?.contentDocument
+    iframeDoc?.addEventListener('keydown', onKey)
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      iframeDoc?.removeEventListener('keydown', onKey)
+    }
+  }, [mode, slideHtml, setSelected])
+
   // iframe 로드 후 슬라이드 치수 감지 (overflow:hidden + 명시적 크기인 경우)
   const handleIframeLoad = useCallback(() => {
     try {
