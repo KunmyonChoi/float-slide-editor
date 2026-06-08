@@ -13,6 +13,7 @@ class _RunCollector(HTMLParser):
         self.runs = []
         self.base = base_styles
         self._stack = [{}]
+        self._list_stack = []  # 'ul'/'ol' 중첩 추적 (글머리/번호 export용)
 
     def _ctx(self):
         merged = {}
@@ -22,6 +23,11 @@ class _RunCollector(HTMLParser):
 
     def handle_starttag(self, tag, attrs):
         ctx = {}
+        if tag in ('ul', 'ol'):
+            self._list_stack.append(tag)
+        if tag == 'li' and self._list_stack:
+            ctx['listType'] = self._list_stack[-1]
+            ctx['listLevel'] = len(self._list_stack) - 1
         if tag in ('b', 'strong'):
             ctx['bold'] = True
         if tag in ('i', 'em'):
@@ -51,6 +57,9 @@ class _RunCollector(HTMLParser):
             ls = _extract_style(style, 'letter-spacing')
             if ls:
                 ctx['letterSpacing'] = ls
+            tt = _extract_style(style, 'text-transform')
+            if tt:
+                ctx['textTransform'] = tt
             # 인라인 background → PPT 텍스트 하이라이트 (코드 박스/배지 등 보존).
             bg = _extract_style(style, 'background-color') or _extract_style(style, 'background')
             if bg:
@@ -72,6 +81,8 @@ class _RunCollector(HTMLParser):
         if tag in BLOCK_TAGS:
             if self.runs and self.runs[-1]['text'] != '\n':
                 self.runs.append({'text': '\n', 'opts': self._ctx()})
+        if tag in ('ul', 'ol') and self._list_stack:
+            self._list_stack.pop()
         if len(self._stack) > 1:
             self._stack.pop()
 
@@ -99,6 +110,20 @@ def _clean_font(ff: str) -> str | None:
     if not ff:
         return None
     return ff.split(',')[0].strip().strip("'\"")
+
+
+def apply_text_transform(text: str, tt) -> str:
+    """CSS text-transform를 텍스트에 실제 반영 (화면엔 보이지만 export엔 빠지던 변환)."""
+    if not text or not tt or tt == 'none':
+        return text
+    if tt == 'uppercase':
+        return text.upper()
+    if tt == 'lowercase':
+        return text.lower()
+    if tt == 'capitalize':
+        import re
+        return re.sub(r'\b\w', lambda m: m.group().upper(), text)
+    return text
 
 
 def html_to_text_runs(html: str, base_styles: dict) -> list:
@@ -152,6 +177,15 @@ def html_to_text_runs(html: str, base_styles: dict) -> list:
             # 원본 컬러 문자열을 그대로 전달 — exporter가 슬라이드 배경에 알파 블렌딩 후 opaque hex 적용
             opts['highlight'] = highlight
 
-        result.append({'text': run['text'], 'opts': opts})
+        # 리스트 문단 정보 (글머리/번호 — 문단 레벨에서 적용)
+        if ctx.get('listType'):
+            opts['listType'] = ctx['listType']
+            opts['listLevel'] = ctx.get('listLevel', 0)
+
+        # text-transform 실제 반영 (ctx 인라인 > base)
+        tt = ctx.get('textTransform') or base_styles.get('textTransform')
+        text = apply_text_transform(run['text'], tt)
+
+        result.append({'text': text, 'opts': opts})
 
     return result

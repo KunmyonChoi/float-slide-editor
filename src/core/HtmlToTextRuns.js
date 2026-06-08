@@ -31,19 +31,28 @@ export function htmlToTextRuns(html, baseStyles = {}) {
   return runs
 }
 
-function walkNode(node, inherited, runs, baseStyles) {
+function walkNode(node, inherited, runs, baseStyles, listStack = []) {
   for (const child of node.childNodes) {
     if (child.nodeType === 3) {
       // 텍스트 노드
-      const text = child.textContent
-      if (!text) continue
+      const raw = child.textContent
+      if (!raw) continue
       const opts = buildOptions(inherited, baseStyles)
+      // text-transform 실제 반영 (ctx 인라인 > base)
+      const text = applyTextTransform(raw, inherited.textTransform || baseStyles.textTransform)
       runs.push({ text, options: opts })
     } else if (child.nodeType === 1) {
       // 요소 노드
       const tag = child.tagName.toLowerCase()
       const style = child.getAttribute('style') || ''
       const ctx = { ...inherited }
+
+      // 리스트 문단 정보 (글머리/번호 — 문단 레벨에서 적용)
+      const nextListStack = (tag === 'ul' || tag === 'ol') ? [...listStack, tag] : listStack
+      if (tag === 'li' && listStack.length) {
+        ctx.listType = listStack[listStack.length - 1]
+        ctx.listLevel = listStack.length - 1
+      }
 
       // 태그 기반 서식
       if (tag === 'b' || tag === 'strong') ctx.bold = true
@@ -66,6 +75,8 @@ function walkNode(node, inherited, runs, baseStyles) {
         const textDecoration = extractStyle(style, 'text-decoration')
         if (textDecoration?.includes('underline')) ctx.underline = true
         if (textDecoration?.includes('line-through')) ctx.strike = true
+        const textTransform = extractStyle(style, 'text-transform')
+        if (textTransform) ctx.textTransform = textTransform
         // 인라인 background → PPT highlight (코드 박스/배지 등). background-color 우선, 없으면 background.
         const bg = extractStyle(style, 'background-color') || extractStyle(style, 'background')
         if (bg) ctx.highlight = bg
@@ -84,7 +95,7 @@ function walkNode(node, inherited, runs, baseStyles) {
         }
       }
 
-      walkNode(child, ctx, runs, baseStyles)
+      walkNode(child, ctx, runs, baseStyles, nextListStack)
 
       // 블록 레벨 요소 뒤에 줄바꿈
       if (['div', 'p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'li'].includes(tag)) {
@@ -122,6 +133,12 @@ function buildOptions(ctx, baseStyles) {
     if (hex) opts.highlight = hex
   }
 
+  // 리스트 문단 정보 (PptExporter에서 pptxgenjs bullet/indentLevel로 변환)
+  if (ctx.listType) {
+    opts.listType = ctx.listType
+    opts.listLevel = ctx.listLevel || 0
+  }
+
   return opts
 }
 
@@ -152,6 +169,15 @@ function blendToOpaqueHex(color) {
   return [blend(r, BG.r), blend(g, BG.g), blend(b, BG.b)]
     .map(n => Math.max(0, Math.min(255, n)).toString(16).padStart(2, '0'))
     .join('')
+}
+
+/** CSS text-transform를 텍스트에 실제 반영 (화면엔 보이지만 export엔 빠지던 변환) */
+export function applyTextTransform(text, tt) {
+  if (!text || !tt || tt === 'none') return text
+  if (tt === 'uppercase') return text.toUpperCase()
+  if (tt === 'lowercase') return text.toLowerCase()
+  if (tt === 'capitalize') return text.replace(/\b\w/g, (c) => c.toUpperCase())
+  return text
 }
 
 /** CSS color → 6자리 hex (# 없이) */

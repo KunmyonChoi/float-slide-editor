@@ -1,7 +1,7 @@
 /**
  * PptExporter — PPTX 내보내기 (pptxgenjs, lazy import)
  */
-import { htmlToTextRuns, cssColorToHex } from './HtmlToTextRuns'
+import { htmlToTextRuns, cssColorToHex, applyTextTransform } from './HtmlToTextRuns'
 import { parseGradient } from './GradientParser'
 
 // px → inches (96 DPI 기준)
@@ -78,6 +78,46 @@ async function addElementToSlide(slide, el, canvasSize) {
   }
 }
 
+/**
+ * htmlToTextRuns 결과(평면 런 + '\n')를 리스트 문단 구조로 변환.
+ * pptxgenjs는 런별 bullet/indentLevel/breakLine으로 문단 글머리를 표현하므로
+ * '\n'을 줄 단위로 풀어 각 줄의 첫 런에 bullet을, 끝 런에 breakLine을 부여한다.
+ * (listType이 하나라도 있을 때만 호출 — 일반 리치 텍스트는 그대로 둠)
+ */
+function applyListStructure(textRuns) {
+  const lines = [[]]
+  for (const run of textRuns) {
+    const parts = String(run.text ?? '').split('\n')
+    parts.forEach((part, i) => {
+      if (i > 0) lines.push([])
+      if (part !== '') lines[lines.length - 1].push({ text: part, options: { ...run.options } })
+    })
+  }
+  const out = []
+  for (const lineRuns of lines) {
+    if (lineRuns.length === 0) {
+      out.push({ text: '', options: { breakLine: true } })
+      continue
+    }
+    let listType = null
+    let listLevel = 0
+    for (const r of lineRuns) {
+      if (r.options.listType) { listType = r.options.listType; listLevel = r.options.listLevel || 0; break }
+    }
+    lineRuns.forEach((r, ri) => {
+      delete r.options.listType
+      delete r.options.listLevel
+      if (ri === 0 && listType) {
+        r.options.bullet = listType === 'ol' ? { type: 'number' } : true
+        if (listLevel > 0) r.options.indentLevel = listLevel
+      }
+      if (ri === lineRuns.length - 1) r.options.breakLine = true
+      out.push(r)
+    })
+  }
+  return out
+}
+
 function addText(slide, el, pos) {
   const s = el.styles || {}
 
@@ -101,6 +141,9 @@ function addText(slide, el, pos) {
   let textRuns
   if (el.isRich && el.content) {
     textRuns = htmlToTextRuns(el.content, { ...s, color: effectiveColor })
+    if (textRuns.some(r => r.options && r.options.listType)) {
+      textRuns = applyListStructure(textRuns)
+    }
   } else {
     const opts = {}
     if (effectiveColor) opts.color = cssColorToHex(effectiveColor)
@@ -108,7 +151,7 @@ function addText(slide, el, pos) {
     if (s.fontFamily) opts.fontFace = s.fontFamily.split(',')[0].trim().replace(/['"]/g, '')
     if (s.fontWeight && (s.fontWeight === 'bold' || parseInt(s.fontWeight) >= 700)) opts.bold = true
     if (s.fontStyle === 'italic') opts.italic = true
-    textRuns = [{ text: el.content || '', options: opts }]
+    textRuns = [{ text: applyTextTransform(el.content || '', s.textTransform), options: opts }]
   }
 
   // 수직 정렬: merged/배경 있는 텍스트는 alignItems 반영

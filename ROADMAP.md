@@ -252,9 +252,9 @@ present: {
 - 리스트 마커 CSS를 `index.css`로 이동(Tailwind preflight 우회, `.flat-text`/`.flat-text-edit` 스코프).
 - 선택 바·편집 도구 묶음 동시 노출 시 충돌 회피.
 - `Tab`/`Shift+Tab` 리스트 내 들여쓰기/내어쓰기, `Ctrl+Shift+8`/`7` 단축키.
+- **PPT export 글머리/번호 매핑** — 런에 `listType`/`listLevel` 메타 부착(`HtmlToTextRuns.js`·`text_runs.py`), Python은 문단 `<a:buChar>`/`<a:buAutoNum>`+hanging indent, pptxgenjs는 `bullet`/`indentLevel`/`breakLine`으로 적용. 중첩 레벨별 마커(• ◦ ▪) 구분.
 
 **리뷰/미완** ⚠️
-- **PPT export 매핑 미구현** — `HtmlToTextRuns.js`/`text_runs.py`에서 `<ul>/<ol>`은 아직 줄바꿈만, pptxgenjs/python-pptx `bullet`/`indentLevel` 매핑 필요. (2차 작업)
 - **줄 분해 정확도 검증 필요** — `contentToLines`의 `<br>`·블록 경계·중첩 li 평탄화가 다양한 입력에서 정확한지 사용자 확인 대기.
 - **마커 크기 조절** 미정 — 현재 마커는 글자 크기를 따라감(`::marker` 상속). 독립 조절(`::marker { font-size }` + CSS 변수)은 논의 보류.
 - 중첩 리스트(Tab) 생성·복원의 견고성(execCommand `indent` 의존) 추가 확인.
