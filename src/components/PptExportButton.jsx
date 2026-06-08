@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useFlatStore } from '../store/flatStore'
 import { ToolBtn } from './FloatingToolbar'
 
@@ -18,6 +19,7 @@ function loadEmbedPref() {
  * python-pptx 백엔드가 가용하면 그쪽으로, 아니면 pptxgenjs 폴백.
  * 임베딩 ON: 외부 전달 안전(파일 큼) / OFF: 가벼움(시스템 폰트 의존).
  * (pptxgenjs 폴백은 폰트 임베딩 자체를 안 하므로 이 옵션은 python 경로에만 의미)
+ * 내보내는 동안 진행 오버레이(스피너·단계·경과 시간)를 표시.
  */
 export default function PptExportButton() {
   const canvasSize = useFlatStore(s => s.canvasSize)
@@ -26,7 +28,10 @@ export default function PptExportButton() {
   const [busy, setBusy] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const [embedFonts, setEmbedFonts] = useState(loadEmbedPref)
+  const [stage, setStage] = useState('')
+  const [elapsed, setElapsed] = useState(0)
   const wrapRef = useRef(null)
+  const timerRef = useRef(null)
 
   // 백엔드 가용성 1회 확인
   useEffect(() => {
@@ -34,6 +39,9 @@ export default function PptExportButton() {
       checkBackend().then(setPythonAvailable)
     )
   }, [])
+
+  // 언마운트 시 타이머 정리
+  useEffect(() => () => clearInterval(timerRef.current), [])
 
   // 메뉴 외부 클릭/ESC 닫기
   useEffect(() => {
@@ -58,16 +66,23 @@ export default function PptExportButton() {
   const runExport = useCallback(async (embed) => {
     if (busy) return
     setBusy(true)
+    setElapsed(0)
+    setStage('페이지 수집 중…')
+    const start = Date.now()
+    clearInterval(timerRef.current)
+    timerRef.current = setInterval(() => setElapsed(Math.floor((Date.now() - start) / 1000)), 250)
     try {
       const { pages } = await useFlatStore.getState().getAllPagesAsync()
       const { checkBackend, exportViaPython } = await import('../core/PptxBackendClient.js')
       if (await checkBackend()) {
+        setStage(embed ? '서버에서 생성 중… (폰트 임베딩 포함)' : '서버에서 생성 중…')
         console.log(
           `%c[PPT Export] python-pptx 엔진 사용 — 폰트 임베딩 ${embed ? 'ON' : 'OFF'}`,
           'color:#22c55e;font-weight:bold'
         )
         await exportViaPython(pages, canvasSize, { embedFonts: embed })
       } else {
+        setStage('브라우저에서 생성 중… (pptxgenjs)')
         console.log('%c[PPT Export] pptxgenjs 엔진 사용 (fallback)', 'color:#f59e0b;font-weight:bold')
         const { exportToPptx } = await import('../core/PptExporter.js')
         await exportToPptx(pages, canvasSize)
@@ -76,7 +91,9 @@ export default function PptExportButton() {
       console.error('PPT 내보내기 실패:', err)
       alert('PPT 내보내기 실패: ' + err.message)
     } finally {
+      clearInterval(timerRef.current)
       setBusy(false)
+      setStage('')
     }
   }, [busy, canvasSize])
 
@@ -153,6 +170,56 @@ export default function PptExportButton() {
           <style>{`.ppt-embed-item:hover { background: rgba(255,255,255,0.1) }`}</style>
         </div>
       )}
+
+      {busy && createPortal(<ExportOverlay stage={stage} elapsed={elapsed} />, document.body)}
+    </div>
+  )
+}
+
+function ExportOverlay({ stage, elapsed }) {
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, zIndex: 99999,
+      background: 'rgba(2,6,23,0.55)', backdropFilter: 'blur(2px)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+    }}>
+      <div style={{
+        background: 'rgba(15,23,42,0.97)',
+        border: '1px solid rgba(255,255,255,0.1)',
+        borderRadius: 14,
+        padding: '24px 28px',
+        minWidth: 300,
+        boxShadow: '0 20px 60px rgba(0,0,0,0.6)',
+        textAlign: 'center',
+        color: '#e2e8f0',
+      }}>
+        <div style={{
+          width: 36, height: 36, margin: '0 auto',
+          border: '3px solid rgba(255,255,255,0.15)',
+          borderTopColor: '#22c55e',
+          borderRadius: '50%',
+          animation: 'ppt-spin 0.8s linear infinite',
+        }} />
+        <div style={{ marginTop: 16, fontSize: 14, fontWeight: 600 }}>PPT 내보내는 중…</div>
+        <div style={{ marginTop: 6, fontSize: 12, color: 'rgba(255,255,255,0.6)', minHeight: 16 }}>{stage}</div>
+        <div style={{ marginTop: 8, fontSize: 12, color: 'rgba(255,255,255,0.4)', fontVariantNumeric: 'tabular-nums' }}>
+          {elapsed}s 경과
+        </div>
+        <div style={{
+          marginTop: 14, height: 4, borderRadius: 2, overflow: 'hidden',
+          background: 'rgba(255,255,255,0.1)', position: 'relative',
+        }}>
+          <div style={{
+            position: 'absolute', top: 0, left: 0, height: '100%', width: '40%',
+            background: 'linear-gradient(90deg, transparent, #22c55e, transparent)',
+            animation: 'ppt-slide 1.2s ease-in-out infinite',
+          }} />
+        </div>
+        <style>{`
+          @keyframes ppt-spin { to { transform: rotate(360deg) } }
+          @keyframes ppt-slide { 0% { left: -40% } 100% { left: 100% } }
+        `}</style>
+      </div>
     </div>
   )
 }
