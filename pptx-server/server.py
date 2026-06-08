@@ -19,7 +19,8 @@ async def export_pptx(request: Request):
         pages = data.get("pages", {})
         default_cs = data.get("defaultCanvasSize", {"w": 1280, "h": 720})
         fonts = data.get("fonts", [])
-        pptx_bytes = build_pptx(pages, default_cs, fonts=fonts)
+        embed_fonts = data.get("embedFonts", True)
+        pptx_bytes = build_pptx(pages, default_cs, fonts=fonts, embed_fonts=embed_fonts)
         return Response(
             content=pptx_bytes,
             media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
