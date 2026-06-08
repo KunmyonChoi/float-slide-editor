@@ -116,6 +116,33 @@ export async function exportAllPagesAsImages(canvasNode, store, options = {}) {
 }
 
 /**
+ * 여러 페이지 이미지(data URL)를 ZIP 한 파일로 묶어 다운로드
+ * @param {Array<{ key: string, dataUrl: string }>} results - exportAllPagesAsImages 결과
+ * @param {Object} options
+ * @param {string} options.zipName - ZIP 파일명 (기본 'slide-images.zip')
+ * @param {string} options.format - 'png' | 'jpeg' (확장자 결정)
+ */
+export async function downloadImagesAsZip(results, { zipName = 'slide-images.zip', format = 'png' } = {}) {
+  const JSZip = (await import('jszip')).default
+  const zip = new JSZip()
+  const ext = format === 'jpeg' ? 'jpg' : 'png'
+  const pad = String(results.length).length
+  results.forEach((r, i) => {
+    const base64 = (r.dataUrl.split(',')[1]) || ''
+    zip.file(`slide-${String(i + 1).padStart(pad, '0')}.${ext}`, base64, { base64: true })
+  })
+  const blob = await zip.generateAsync({ type: 'blob' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = zipName
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+}
+
+/**
  * data URL을 파일로 다운로드
  */
 export function downloadImage(dataUrl, filename = 'export.png') {
