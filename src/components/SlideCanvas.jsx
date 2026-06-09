@@ -120,6 +120,7 @@ export default function SlideCanvas() {
 
   // HTML 모드 발표: ESC 종료 + 키보드/마우스휠 페이지 네비게이션
   const viewMode = useFlatStore(s => s.viewMode)
+  const currentPageHtmlBacked = useFlatStore(s => s.currentPageHtmlBacked)
   useEffect(() => {
     if (mode !== 'present' || viewMode !== 'html') return
 
@@ -351,6 +352,17 @@ export default function SlideCanvas() {
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
+      {/* flat 전용 페이지: 대응 HTML 슬라이드가 없으면 안내 (split에서 엉뚱한 슬라이드 대신) */}
+      {viewMode === 'split' && !currentPageHtmlBacked && mode !== 'present' && (
+        <div style={{
+          position: 'absolute', inset: 0, zIndex: 20,
+          background: 'rgba(15,23,42,0.92)',
+          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6,
+        }}>
+          <span style={{ color: '#94a3b8', fontSize: 14, fontWeight: 600 }}>HTML 원본 없음</span>
+          <span style={{ color: '#64748b', fontSize: 12 }}>flat 전용으로 추가된 페이지입니다</span>
+        </div>
+      )}
       {/* 드래그 오버레이 */}
       {dragging && (
         <div style={{
