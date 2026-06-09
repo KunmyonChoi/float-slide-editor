@@ -607,9 +607,35 @@ function FontSection({ el, styles, updateStyle, isGradientText, listType, onSetL
         </div>
       </div>
 
+      {/* 수직 맞춤 — 수평 맞춤과 동일 컨셉(버튼 그룹) */}
+      <div>
+        <p className={`${labelClass} mb-0.5`}>수직 맞춤</p>
+        <div className="flex gap-1.5">
+          {[
+            { value: 'flex-start', label: '위', icon: <AlignTopIcon /> },
+            { value: 'center', label: '중간', icon: <AlignMiddleVIcon /> },
+            { value: 'flex-end', label: '아래', icon: <AlignBottomIcon /> },
+          ].map(a => (
+            <button
+              key={a.value}
+              onClick={() => updateStyle('alignItems', a.value)}
+              title={a.label + ' 맞춤'}
+              className={[
+                'flex-1 py-1.5 rounded-lg text-xs transition-colors flex items-center justify-center border',
+                (styles.alignItems || 'center') === a.value
+                  ? 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30'
+                  : 'bg-white/5 text-slate-400 border-white/10 hover:bg-white/10',
+              ].join(' ')}
+            >
+              {a.icon}
+            </button>
+          ))}
+        </div>
+      </div>
+
       {onSetListType && <ListToggle value={listType} onChange={onSetListType} />}
 
-      <div className="grid grid-cols-2 gap-1.5">
+      <div>
         <SelectInput
           label="텍스트 변환"
           value={styles.textTransform || 'none'}
@@ -619,16 +645,6 @@ function FontSection({ el, styles, updateStyle, isGradientText, listType, onSetL
             { value: 'uppercase', label: 'ABC 대문자' },
             { value: 'lowercase', label: 'abc 소문자' },
             { value: 'capitalize', label: 'Abc 첫글자' },
-          ]}
-        />
-        <SelectInput
-          label="수직 정렬"
-          value={styles.alignItems || 'center'}
-          onChange={v => updateStyle('alignItems', v)}
-          options={[
-            { value: 'flex-start', label: '위' },
-            { value: 'center', label: '중간' },
-            { value: 'flex-end', label: '아래' },
           ]}
         />
       </div>

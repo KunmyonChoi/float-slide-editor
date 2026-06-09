@@ -37,6 +37,8 @@ export const useFlatStore = create((set, get) => ({
   flatPageCount: 0,
   /** flat 모드 현재 페이지 인덱스 (0-based) */
   flatCurrentPage: 0,
+  /** 현재 페이지가 HTML 원본 슬라이드를 가지는지 (split 모드 표시용) */
+  currentPageHtmlBacked: true,
 
   canUndo: false,
   canRedo: false,
@@ -81,11 +83,17 @@ export const useFlatStore = create((set, get) => ({
       _pendingEditCommit = null
     }
     if (!_currentPageKey || get().flatElements.length === 0) return
+    const existed = _pageCache[_currentPageKey]
+    // HTML 소스 슬라이드 인덱스: 기존 항목이 있으면 그 값 유지(flat-only의 null 포함),
+    // 없으면(첫 저장) 키에서 파생. 키는 첫 변환 시 슬라이드 인덱스를 인코딩.
+    const htmlSlideIndex = existed ? existed.htmlSlideIndex
+      : (Number.isNaN(parseInt(String(_currentPageKey).split('-')[0])) ? null : parseInt(String(_currentPageKey).split('-')[0]))
     _pageCache[_currentPageKey] = {
       elements: get().flatElements,
       canvasSize: get().canvasSize,
       fontImports: get().fontImports,
       history: _history.getState(),
+      htmlSlideIndex,
     }
     get()._syncPageInfo()
   },
@@ -104,6 +112,7 @@ export const useFlatStore = create((set, get) => ({
       editingFlatId: null,
       canUndo: _history.canUndo,
       canRedo: _history.canRedo,
+      currentPageHtmlBacked: cached.htmlSlideIndex != null,
     })
     get()._syncPageInfo()
     return true
@@ -133,6 +142,7 @@ export const useFlatStore = create((set, get) => ({
       _iframeRef: iframeRef,
       canUndo: false,
       canRedo: false,
+      currentPageHtmlBacked: true, // iframe에서 갓 추출 = HTML 백킹
     })
     get()._syncPageInfo()
   },
@@ -254,6 +264,7 @@ export const useFlatStore = create((set, get) => ({
             canvasSize: result.canvasSize,
             fontImports: result.fontImports || [],
             history: { stack: [], pointer: -1 },
+            htmlSlideIndex: i, // HTML 슬라이드 i에서 추출됨
           }
         } catch (e) {
           console.warn(`Preload page ${pageKey} failed:`, e.message)
@@ -303,6 +314,7 @@ export const useFlatStore = create((set, get) => ({
       canvasSize: { ...cs },
       fontImports: [],
       history: { stack: [], pointer: -1 },
+      htmlSlideIndex: null, // flat-only 페이지: HTML 원본 없음
     }
 
     // 새 페이지로 이동
@@ -366,11 +378,17 @@ export const useFlatStore = create((set, get) => ({
     get()._saveCurrentPage()
     const keys = _getSortedPageKeys()
     if (pageIndex < 0 || pageIndex >= keys.length) return
-    get()._restoreFromCache(keys[pageIndex])
-    // split 모드: iframe도 같은 페이지로 이동
+    const key = keys[pageIndex]
+    get()._restoreFromCache(key)
+    // split 모드: iframe을 이 페이지의 '실제 HTML 슬라이드 인덱스'로 이동.
+    // flat-only 페이지(htmlSlideIndex=null)는 대응 슬라이드가 없으므로 iframe을 건드리지 않는다
+    // (엉뚱한 슬라이드 표시 방지). 인덱스 어긋남도 이 저장값으로 해소.
     if (get().viewMode === 'split') {
-      const ref = get()._iframeRef
-      ref?.current?.contentWindow?.postMessage({ type: 'fe:navigate', page: pageIndex }, '*')
+      const htmlIdx = _pageCache[key]?.htmlSlideIndex
+      if (htmlIdx != null) {
+        const ref = get()._iframeRef
+        ref?.current?.contentWindow?.postMessage({ type: 'fe:navigate', page: htmlIdx }, '*')
+      }
     }
   },
 
@@ -830,6 +848,7 @@ export const useFlatStore = create((set, get) => ({
         elements: cached.elements,
         canvasSize: cached.canvasSize,
         fontImports: cached.fontImports,
+        htmlSlideIndex: cached.htmlSlideIndex,
       }
     }
     // 현재 페이지가 캐시에 없는 경우 (단일 페이지)
@@ -838,6 +857,7 @@ export const useFlatStore = create((set, get) => ({
         elements: get().flatElements,
         canvasSize: get().canvasSize,
         fontImports: get().fontImports,
+        htmlSlideIndex: get().currentPageHtmlBacked ? parseInt(String(_currentPageKey).split('-')[0]) : null,
       }
     }
     return { pages, currentPageKey: _currentPageKey }
@@ -921,11 +941,17 @@ export const useFlatStore = create((set, get) => ({
 
     // 모든 페이지를 캐시에 저장
     for (const key in pagesData) {
+      // 프로젝트에 저장된 htmlSlideIndex 사용, 없으면(구버전) 키에서 파생
+      const derived = parseInt(String(key).split('-')[0])
+      const hsi = pagesData[key].htmlSlideIndex !== undefined
+        ? pagesData[key].htmlSlideIndex
+        : (Number.isNaN(derived) ? null : derived)
       _pageCache[key] = {
         elements: pagesData[key].elements,
         canvasSize: pagesData[key].canvasSize,
         fontImports: pagesData[key].fontImports || [],
         history: { stack: [], pointer: -1 },
+        htmlSlideIndex: hsi,
       }
     }
 
@@ -942,6 +968,7 @@ export const useFlatStore = create((set, get) => ({
         editingFlatId: null,
         canUndo: false,
         canRedo: false,
+        currentPageHtmlBacked: page.htmlSlideIndex != null,
       })
     }
   },
