@@ -390,7 +390,8 @@ describe('exportFlatHtml — border 단축/개별 속성 분리', () => {
   it('모든 border가 0px이면 아무 border도 출력하지 않음', () => {
     const el = makeEl({ type: 'shape' })
     const html = exportFlatHtml([el], CANVAS)
-    expect(html).not.toMatch(/border[^-]/)
+    // border:none(시각적 보더 없음)은 허용, 실제 보더(width/style)만 없어야 함
+    expect(html).not.toMatch(/border:\s*(?!none)/)
     expect(html).not.toContain('border-top')
   })
 })
