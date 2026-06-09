@@ -6,8 +6,11 @@
  * 배경 요소 판정 (캔버스 전체를 덮는 shape)
  */
 export function isBackgroundElement(el, canvasSize) {
+  if (!el) return false
+  if (el.isBackground) return true // 명시 배경 플래그('배경 추가')
+  const cs = canvasSize || { w: 0, h: 0 }
   return el.type === 'shape' && !el.content
-    && Math.abs(el.width - canvasSize.w) < 2 && Math.abs(el.height - canvasSize.h) < 2
+    && Math.abs(el.width - cs.w) < 2 && Math.abs(el.height - cs.h) < 2
     && Math.abs(el.x) < 2 && Math.abs(el.y) < 2
 }
 

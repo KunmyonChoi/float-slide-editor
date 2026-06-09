@@ -1,10 +1,15 @@
 import { create } from 'zustand'
 import { extractFlatElementsFromIframe, nextFlatId } from '../core/FlatExtractor'
 import { HistoryStack } from '../core/HistoryStack'
+import { isBackgroundElement } from '../core/SnapEngine'
+
+// 배경 레이어 판정 — SnapEngine의 canonical 헬퍼 재노출(명시 플래그 + 전체캔버스 휴리스틱)
+export { isBackgroundElement as isBackgroundLayer }
 
 const _history = new HistoryStack()
 const _pageCache = {}   // { [pageKey]: { elements, canvasSize, fontImports, history } }
 let _currentPageKey = null
+
 
 /** 캐시 키를 페이지 순서로 정렬하여 반환 */
 function _getSortedPageKeys() {
@@ -647,7 +652,7 @@ export const useFlatStore = create((set, get) => ({
   bringForward(id) {
     const els = get().flatElements
     const el = els.find(e => e.id === id)
-    if (!el) return
+    if (!el || el.isBackground) return // 배경은 맨 뒤 고정
     const sorted = [...els].sort((a, b) => a.zIndex - b.zIndex)
     const above = sorted.find(e => e.zIndex > el.zIndex)
     if (!above) return
@@ -667,9 +672,10 @@ export const useFlatStore = create((set, get) => ({
   sendBackward(id) {
     const els = get().flatElements
     const el = els.find(e => e.id === id)
-    if (!el) return
+    if (!el || el.isBackground) return // 배경은 맨 뒤 고정
     const sorted = [...els].sort((a, b) => b.zIndex - a.zIndex)
-    const below = sorted.find(e => e.zIndex < el.zIndex)
+    // 배경은 건너뜀 — 콘텐츠가 배경 아래로 내려가지 않게
+    const below = sorted.find(e => e.zIndex < el.zIndex && !e.isBackground)
     if (!below) return
     _history.push({ type: 'zorder', changes: [
       { id: el.id, oldZ: el.zIndex, newZ: below.zIndex },
@@ -687,7 +693,7 @@ export const useFlatStore = create((set, get) => ({
   bringToFront(id) {
     const els = get().flatElements
     const el = els.find(e => e.id === id)
-    if (!el) return
+    if (!el || el.isBackground) return // 배경은 맨 뒤 고정
     const maxZ = Math.max(...els.map(e => e.zIndex))
     if (el.zIndex >= maxZ) return
     _history.push({ type: 'zorder', changes: [
@@ -703,14 +709,20 @@ export const useFlatStore = create((set, get) => ({
   sendToBack(id) {
     const els = get().flatElements
     const el = els.find(e => e.id === id)
-    if (!el) return
-    const minZ = Math.min(...els.map(e => e.zIndex))
-    if (el.zIndex <= minZ) return
+    if (!el || el.isBackground) return // 배경은 맨 뒤 고정
+    // 배경 위로만 내려감 — 콘텐츠가 배경 아래로 숨지 않게 클램프
+    const bgs = els.filter(e => e.isBackground)
+    const bgCeiling = bgs.length ? Math.max(...bgs.map(e => e.zIndex)) : -Infinity
+    const nonBgMin = Math.min(...els.filter(e => !e.isBackground).map(e => e.zIndex))
+    if (el.zIndex === nonBgMin) return // 이미 콘텐츠 최하위(배경 바로 위)면 변경 없음
+    let target = nonBgMin - 1
+    if (target <= bgCeiling) target = bgCeiling + 1 // 배경보다 아래로는 안 감
+    if (el.zIndex === target) return
     _history.push({ type: 'zorder', changes: [
-      { id: el.id, oldZ: el.zIndex, newZ: minZ - 1 },
+      { id: el.id, oldZ: el.zIndex, newZ: target },
     ]})
     const updated = els.map(e =>
-      e.id === el.id ? { ...e, zIndex: minZ - 1 } : e
+      e.id === el.id ? { ...e, zIndex: target } : e
     )
     set({ flatElements: updated, canUndo: _history.canUndo, canRedo: _history.canRedo })
   },
