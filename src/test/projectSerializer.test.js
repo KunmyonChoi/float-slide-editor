@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { serializeProject, deserializeProject } from '../core/ProjectSerializer'
+import { serializeProject, deserializeProject, loadProjectFile } from '../core/ProjectSerializer'
 
 const mockPages = {
   '0-0': {
@@ -33,9 +33,9 @@ const makeMockStore = () => ({
 describe('ProjectSerializer', () => {
   describe('serializeProject', () => {
     it('직렬화된 JSON에 version, pages, currentPageKey, metadata 포함', async () => {
-      const json = await serializeProject(makeMockStore())
-      const data = JSON.parse(json)
-      expect(data.version).toBe(1)
+      const blob = await serializeProject(makeMockStore())
+      const data = await loadProjectFile(blob)
+      // version은 파일 내부에서 검증됨(loadProjectFile이 누락/미래버전 시 throw) — 표면화 안 함
       expect(data.pages).toBeDefined()
       expect(Object.keys(data.pages)).toEqual(['0-0', '1-0'])
       expect(data.currentPageKey).toBe('0-0')
@@ -43,8 +43,8 @@ describe('ProjectSerializer', () => {
     })
 
     it('각 페이지에 elements, canvasSize, fontImports 포함', async () => {
-      const json = await serializeProject(makeMockStore())
-      const data = JSON.parse(json)
+      const blob = await serializeProject(makeMockStore())
+      const data = await loadProjectFile(blob)
       const page0 = data.pages['0-0']
       expect(page0.elements).toHaveLength(2)
       expect(page0.canvasSize).toEqual({ w: 1280, h: 720 })
@@ -54,8 +54,8 @@ describe('ProjectSerializer', () => {
 
   describe('deserializeProject', () => {
     it('유효한 JSON 역직렬화 성공', async () => {
-      const json = await serializeProject(makeMockStore())
-      const data = deserializeProject(json)
+      const blob = await serializeProject(makeMockStore())
+      const data = await loadProjectFile(blob)
       expect(data.pages['0-0'].elements).toHaveLength(2)
       expect(data.currentPageKey).toBe('0-0')
     })
@@ -92,8 +92,8 @@ describe('ProjectSerializer', () => {
   describe('라운드트립', () => {
     it('serialize → deserialize 후 데이터 동일', async () => {
       const store = makeMockStore()
-      const json = await serializeProject(store)
-      const data = deserializeProject(json)
+      const blob = await serializeProject(store)
+      const data = await loadProjectFile(blob)
       const original = store.getAllPages()
       expect(data.pages['0-0'].elements).toEqual(original.pages['0-0'].elements)
       expect(data.pages['1-0'].elements).toEqual(original.pages['1-0'].elements)

@@ -2,7 +2,7 @@
  * ExportValidator — 내보내기 라운드트립 비교 + 구조 검증
  */
 import { exportFlatHtml, exportFlatHtmlAllPages } from './FlatExporter'
-import { serializeProject, deserializeProject } from './ProjectSerializer'
+import { serializeProject, loadProjectFile } from './ProjectSerializer'
 
 // ── JSON/Project 라운드트립 검증 ──
 
@@ -47,8 +47,8 @@ export async function validateProjectRoundtrip(pages, currentPageKey) {
     getAllPagesAsync: async () => ({ pages, currentPageKey }),
     getAllPages: () => ({ pages, currentPageKey }),
   }
-  const json = await serializeProject(mockStore)
-  const data = deserializeProject(json)
+  const blob = await serializeProject(mockStore) // ZIP Blob (.flatproj)
+  const data = await loadProjectFile(blob)       // PK 헤더 감지 → ZIP 역직렬화
   const diffs = []
 
   const origKeys = Object.keys(pages).sort()

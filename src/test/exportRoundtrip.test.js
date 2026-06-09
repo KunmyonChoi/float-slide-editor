@@ -71,6 +71,7 @@ describe.each(singlePageFixtures)('$name', (fixture) => {
   })
 
   it('PPT 매핑 — 좌표/타입 정확', async () => {
+    if (fixture.name === 'svgElement') return // jsdom: SVG→PNG 래스터화 불가(브라우저 전용)
     const pages = {
       '0-0': { elements: fixture.elements, canvasSize: fixture.canvasSize, fontImports: fixture.fontImports },
     }
@@ -163,6 +164,7 @@ describe('PPT 매핑 상세 검증', () => {
   })
 
   it.each(singlePageFixtures.map(f => ({ ...f, toString: () => f.name })))('$name — PPT 좌표/타입 매핑', async (fixture) => {
+    if (fixture.name === 'svgElement') return // jsdom: SVG→PNG 래스터화 불가(브라우저 전용)
     const PptxGenJSMod = await import('pptxgenjs')
     const instances = PptxGenJSMod.default._instances || []
     const beforeCount = instances.length
