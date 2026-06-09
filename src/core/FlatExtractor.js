@@ -1400,12 +1400,23 @@ function tryMergeContainerText(containerEl, containerRect, containerCs, win) {
  * @param {React.RefObject} iframeRef
  * @returns {{ elements: FlatElement[], canvasSize: { w: number, h: number } }}
  */
-export function extractFlatElements(iframeRef) {
+/**
+ * iframe ref 편의 래퍼 — React ref(iframeRef)의 contentDocument/contentWindow를
+ * 풀어 코어 extractFlatElements(doc, win)를 호출. (앱 내부용; 코어는 비의존 유지)
+ */
+export function extractFlatElementsFromIframe(iframeRef) {
   const iframe = iframeRef?.current
   if (!iframe) return { elements: [], canvasSize: { w: 1280, h: 800 } }
+  return extractFlatElements(iframe.contentDocument, iframe.contentWindow)
+}
 
-  const doc = iframe.contentDocument
-  const win = iframe.contentWindow
+/**
+ * flat 변환 코어 — 렌더된 document/window를 받아 FlatElement[]를 추출.
+ * 프레임워크/iframe 비의존(브라우저 레이아웃만 필요) → slide-flat 패키지의 공개 API.
+ * iframe에서 쓰려면 extractFlatElementsFromIframe(ref)를 사용.
+ * @param {Document} doc @param {Window} win
+ */
+export function extractFlatElements(doc, win) {
   if (!doc || !win) return { elements: [], canvasSize: { w: 1280, h: 800 } }
 
   resetFlatCounter()
