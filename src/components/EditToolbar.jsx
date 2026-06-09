@@ -114,6 +114,20 @@ export default function EditToolbar() {
     setSelectedFlat(el.id)
   }, [flatElements, canvasSize, addFlatElement, setSelectedFlat])
 
+  // 배경 레이어 추가 — 캔버스 전체 크기 + z 최하(맨 뒤). 기존 콘텐츠를 가리지 않는다.
+  const insertBackground = useCallback(() => {
+    const minZ = flatElements.length > 0 ? Math.min(...flatElements.map(e => e.zIndex)) : 0
+    const el = {
+      id: nextFlatId(), sourceId: null,
+      type: 'shape', content: '', isRich: false, merged: false,
+      x: 0, y: 0, width: canvasSize.w, height: canvasSize.h,
+      zIndex: minZ - 1, // 맨 뒤
+      styles: { ...DEFAULT_STYLES, backgroundColor: '#ffffff', borderRadius: '0px' },
+    }
+    addFlatElement(el)
+    setSelectedFlat(el.id)
+  }, [flatElements, canvasSize, addFlatElement, setSelectedFlat])
+
   const handleImageFile = useCallback((e) => {
     const file = e.target.files?.[0]
     if (!file) return
@@ -247,6 +261,7 @@ export default function EditToolbar() {
             icon={<RectIcon />}
             label="도형"
             items={[
+              { id: 'background', icon: <RectIcon />, label: '배경 (전체·맨 뒤)', action: insertBackground },
               { id: 'rect', icon: <RectIcon />, label: '사각형', action: () => insertFlatPreset('rect') },
               { id: 'circle', icon: <CircleIcon />, label: '원', action: () => insertFlatPreset('circle') },
               { id: 'lineH', icon: <LineHIcon />, label: '가로 선', action: () => insertFlatPreset('lineH') },
