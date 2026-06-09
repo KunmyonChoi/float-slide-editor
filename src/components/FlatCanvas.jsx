@@ -642,7 +642,7 @@ export default function FlatCanvas() {
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
-      {flatElements.length > 0 && (
+      {canvasSize?.w > 0 && canvasSize?.h > 0 && (
         <div
           ref={canvasRef}
           style={{
