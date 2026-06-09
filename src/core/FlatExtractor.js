@@ -1053,7 +1053,6 @@ function buildFlatElement(el, rect, cs, domOrder, forceType, transformScale = 1,
     zIndex: 0, // 후처리에서 재할당
     _domOrder: domOrder,
     _originalZIndex: effectiveZIndex,
-    _positioned: cs.position !== 'static', // CSS 페인팅 레이어(positioned가 static 위)
     content,
     isRich,
     styles,
@@ -1893,11 +1892,6 @@ export function extractFlatElements(doc, win) {
     const aZ = a._originalZIndex ?? 0
     const bZ = b._originalZIndex ?? 0
     if (aZ !== bZ) return aZ - bZ
-    // 같은 z: CSS 페인팅 레이어 근사 — non-positioned(static) 블록은 positioned 요소 아래로.
-    // _positioned 미지정(svg/icon/merged/pseudo 등 특수 요소)은 콘텐츠로 보아 위(positioned)로 취급.
-    const aPos = a._positioned === false ? 0 : 1
-    const bPos = b._positioned === false ? 0 : 1
-    if (aPos !== bPos) return aPos - bPos
     return a._domOrder - b._domOrder
   })
 
@@ -1906,7 +1900,6 @@ export function extractFlatElements(doc, win) {
     el.zIndex = i
     delete el._domOrder
     delete el._originalZIndex
-    delete el._positioned
   })
 
   const canvasSize = {
