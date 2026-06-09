@@ -120,12 +120,14 @@ export default function EditToolbar() {
     const el = {
       id: nextFlatId(), sourceId: null,
       type: 'shape', content: '', isRich: false, merged: false,
+      isBackground: true, // 배경 레이어: 항상 맨 뒤 고정, z-order 변경 비활성
       x: 0, y: 0, width: canvasSize.w, height: canvasSize.h,
       zIndex: minZ - 1, // 맨 뒤
       styles: { ...DEFAULT_STYLES, backgroundColor: '#ffffff', borderRadius: '0px' },
     }
     addFlatElement(el)
-    setSelectedFlat(el.id)
+    // 배경은 캔버스에서 선택 대상이 아님 → 선택 해제하여 '배경 레이어' 패널이 뜨게 함
+    setSelectedFlat(null)
   }, [flatElements, canvasSize, addFlatElement, setSelectedFlat])
 
   const handleImageFile = useCallback((e) => {
@@ -333,24 +335,28 @@ export default function EditToolbar() {
         </>
       )}
 
-      {/* z-순서 버튼 (flat/split 모드 + 단일 선택 시) */}
-      {isFlatMode && selectedFlatIds.length === 1 && (
-        <>
-          <Divider />
-          <ToolBtn onClick={() => sendToBack(selectedFlatIds[0])} title="맨 뒤로 (Ctrl+Shift+[)">
-            <span className="text-xs">⤓</span>
-          </ToolBtn>
-          <ToolBtn onClick={() => sendBackward(selectedFlatIds[0])} title="뒤로 (Ctrl+[)">
-            <span className="text-xs">↓</span>
-          </ToolBtn>
-          <ToolBtn onClick={() => bringForward(selectedFlatIds[0])} title="앞으로 (Ctrl+])">
-            <span className="text-xs">↑</span>
-          </ToolBtn>
-          <ToolBtn onClick={() => bringToFront(selectedFlatIds[0])} title="맨 앞으로 (Ctrl+Shift+])">
-            <span className="text-xs">⤒</span>
-          </ToolBtn>
-        </>
-      )}
+      {/* z-순서 버튼 (flat/split 모드 + 단일 선택 시). 배경 레이어는 맨 뒤 고정 → 비활성 */}
+      {isFlatMode && selectedFlatIds.length === 1 && (() => {
+        const bgSelected = !!flatElements.find(e => e.id === selectedFlatIds[0])?.isBackground
+        const t = bgSelected ? ' (배경은 맨 뒤 고정)' : ''
+        return (
+          <>
+            <Divider />
+            <ToolBtn onClick={() => sendToBack(selectedFlatIds[0])} disabled={bgSelected} title={'맨 뒤로 (Ctrl+Shift+[)' + t}>
+              <span className="text-xs">⤓</span>
+            </ToolBtn>
+            <ToolBtn onClick={() => sendBackward(selectedFlatIds[0])} disabled={bgSelected} title={'뒤로 (Ctrl+[)' + t}>
+              <span className="text-xs">↓</span>
+            </ToolBtn>
+            <ToolBtn onClick={() => bringForward(selectedFlatIds[0])} disabled={bgSelected} title={'앞으로 (Ctrl+])' + t}>
+              <span className="text-xs">↑</span>
+            </ToolBtn>
+            <ToolBtn onClick={() => bringToFront(selectedFlatIds[0])} disabled={bgSelected} title={'맨 앞으로 (Ctrl+Shift+])' + t}>
+              <span className="text-xs">⤒</span>
+            </ToolBtn>
+          </>
+        )
+      })()}
     </div>
   )
 }

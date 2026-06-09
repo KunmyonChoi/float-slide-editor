@@ -1,5 +1,5 @@
 import { useCallback, useState, useEffect } from 'react'
-import { useFlatStore } from '../store/flatStore'
+import { useFlatStore, isBackgroundLayer } from '../store/flatStore'
 import { useEditorStore } from '../store/editorStore'
 import { BlobStore } from '../core/BlobStore'
 import { pointsToSvgPath } from '../core/PolyShapeUtils'
@@ -14,10 +14,10 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
 
   const { x, y, width, height, type, content } = element
 
-  // 전체 캔버스를 덮는 배경 shape 판정
-  const isFullCanvasBg = type === 'shape' && !content
-    && Math.abs(width - canvasSize.w) < 2 && Math.abs(height - canvasSize.h) < 2
-    && Math.abs(x) < 2 && Math.abs(y) < 2
+  // 배경 레이어 판정(명시 플래그 또는 전체 캔버스 덮는 shape).
+  // 배경은 캔버스에서 클릭으로 선택되지 않음 — pointer-events:none으로 클릭이
+  // 위 요소/빈 캔버스로 통과(속성창 '배경 레이어'에서만 선택).
+  const isFullCanvasBg = isBackgroundLayer(element, canvasSize)
 
   const handleMouseDown = useCallback((e) => {
     // 그리기 모드 중에는 요소 선택 차단
@@ -71,6 +71,8 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
     zIndex,
     boxSizing: 'border-box',
     cursor: 'default',
+    // 배경 레이어: 클릭이 통과(선택 안 됨) — 단, 패널에서 선택된 동안엔 정상 처리
+    pointerEvents: (isFullCanvasBg && !isSelected) ? 'none' : undefined,
     outline: isSelected
       ? `2px solid ${element.locked ? 'rgba(148,163,184,0.6)' : 'rgba(99,102,241,0.8)'}`
       : undefined,

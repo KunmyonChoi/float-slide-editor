@@ -1,5 +1,5 @@
 import { useRef, useEffect, useCallback, useState, useMemo } from 'react'
-import { useFlatStore } from '../store/flatStore'
+import { useFlatStore, isBackgroundLayer } from '../store/flatStore'
 import { useEditorStore } from '../store/editorStore'
 import { isBackgroundElement } from '../core/SnapEngine'
 import { getRotatedAABB } from '../core/RotationUtils'
@@ -574,10 +574,7 @@ export default function FlatCanvas() {
         const els = useFlatStore.getState().flatElements
         const cs = useFlatStore.getState().canvasSize
         const hits = els.filter(el => {
-          // 전체 캔버스 배경 제외
-          if (el.type === 'shape' && !el.content
-            && Math.abs(el.width - cs.w) < 2 && Math.abs(el.height - cs.h) < 2
-            && Math.abs(el.x) < 2 && Math.abs(el.y) < 2) return false
+          if (isBackgroundLayer(el, cs)) return false // 배경 레이어는 마퀴 선택 제외
           // 요소가 마키 영역 안에 완전히 포함되어야 선택
           return el.x >= x1 && el.y >= y1 && el.x + el.width <= x2 && el.y + el.height <= y2
         }).map(el => el.id)
