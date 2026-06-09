@@ -103,10 +103,13 @@ export async function exportViaPython(pages, defaultCanvasSize, { embedFonts = t
   // 임베딩 OFF면 폰트를 수집/전송하지 않음 → 서버가 다운로드·임베딩을 건너뛰고
   // 원본 family명으로 출력(파일 가벼움, 시스템 설치 폰트 의존).
   const fonts = embedFonts ? collectFontData(pages) : []
+  // 공개 계약(SlideDeck)으로 변환해 전송. 서버는 deck/raw/legacy 모두 수용.
+  const { pagesToDeck } = await import('../../packages/slide-contract/adapters.js')
+  const deck = pagesToDeck(pages, defaultCanvasSize, fonts)
   const res = await fetch(`${getBackendBase()}/api/export/pptx`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ pages, defaultCanvasSize, fonts, embedFonts }),
+    body: JSON.stringify({ deck, embedFonts }),
   })
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }))

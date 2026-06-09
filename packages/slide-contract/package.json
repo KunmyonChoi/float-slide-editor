@@ -1,0 +1,14 @@
+{
+  "name": "@float/slide-contract",
+  "version": "1.0.0",
+  "description": "PPTX 엔진 공개 계약(SlideDeck) — 스키마/검증/빌더 (프레임워크 무의존)",
+  "type": "module",
+  "exports": {
+    ".": "./schema.js",
+    "./schema.js": "./schema.js",
+    "./adapters.js": "./adapters.js"
+  },
+  "files": ["schema.js", "adapters.js", "SPEC.md"],
+  "sideEffects": false,
+  "license": "MIT"
+}
