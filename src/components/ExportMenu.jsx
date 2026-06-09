@@ -4,6 +4,17 @@ import { useEditorStore } from '../store/editorStore'
 import { exportFlatHtml, exportFlatHtmlAllPages, downloadHtml } from '../core/FlatExporter'
 import { nextFlatId } from '../core/FlatExtractor'
 
+// 새 프로젝트용 빈 슬라이드 1장 (1280×720 흰 배경)
+const BLANK_DECK = `<!DOCTYPE html>
+<html lang="ko"><head><meta charset="UTF-8"><style>
+* { margin: 0; box-sizing: border-box; }
+body { width: 1280px; height: 720px; overflow: hidden; }
+.slide { width: 1280px; height: 720px; background: #ffffff; display: none; position: relative; }
+.slide.active { display: block; }
+</style></head><body>
+<div class="slide active"></div>
+</body></html>`
+
 /**
  * FileMenu — 파일 드롭다운 메뉴 (저장/열기/내보내기/가져오기)
  * FloatingToolbar에 배치
@@ -70,6 +81,14 @@ export default function FileMenu({ fallbackSample }) {
     clearPageCache()
     loadHtml(fallbackSample)
   }, [clearPageCache, loadHtml, fallbackSample])
+
+  // 새 프로젝트 — 현재 작업을 비우고 빈 슬라이드로 시작
+  const handleNewProject = useCallback(() => {
+    setOpen(false)
+    if (hasContent && !confirm('새 프로젝트를 시작하면 현재 작업이 사라집니다. 계속할까요?')) return
+    clearPageCache()
+    loadHtml(BLANK_DECK)
+  }, [hasContent, clearPageCache, loadHtml])
 
   // 프로젝트 저장 (ZIP 패키지)
   const handleSaveProject = useCallback(async () => {
@@ -247,6 +266,8 @@ export default function FileMenu({ fallbackSample }) {
   }, [canvasSize, loadAllPages, setViewMode])
 
   const ITEMS = [
+    { id: 'newProject', label: '새 프로젝트', action: handleNewProject },
+    { id: 'sepNew', type: 'separator' },
     { id: 'saveProject', label: '프로젝트 저장', shortcut: '.flatproj', action: handleSaveProject, disabled: !hasContent },
     { id: 'openProject', label: '프로젝트 열기', action: handleOpenProject },
     { id: 'sep0', type: 'separator' },
