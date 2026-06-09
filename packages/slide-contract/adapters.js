@@ -32,7 +32,7 @@ export function internalElementToPublic(el) {
   if (el.link != null) out.link = el.link
   if (el.merged) out.merged = true
   if (el.locked) out.locked = true
-  if (el.styles) out.style = el.styles // CSS-native 통과
+  if (el.styles) out.style = { ...el.styles } // CSS-native 통과(얕은 복사로 참조 분리)
   return out
 }
 

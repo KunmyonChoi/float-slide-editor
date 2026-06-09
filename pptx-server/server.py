@@ -5,6 +5,7 @@ from fastapi.responses import Response, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 import pptx as pptx_lib
 from exporter import build_pptx
+from public_adapter import is_public_deck, public_deck_to_internal
 
 app = FastAPI()
 
@@ -39,10 +40,15 @@ def health():
 async def export_pptx(request: Request):
     try:
         data = await request.json()
-        pages = data.get("pages", {})
-        default_cs = data.get("defaultCanvasSize", {"w": 1280, "h": 720})
-        fonts = data.get("fonts", [])
         embed_fonts = data.get("embedFonts", True)
+        # 입력 형태 라우팅: 공개 SlideDeck(envelope {deck} 또는 raw) vs legacy internal payload
+        if is_public_deck(data):
+            deck = data["deck"] if isinstance(data.get("deck"), dict) else data
+            pages, default_cs, fonts = public_deck_to_internal(deck)
+        else:
+            pages = data.get("pages", {})
+            default_cs = data.get("defaultCanvasSize", {"w": 1280, "h": 720})
+            fonts = data.get("fonts", [])
         pptx_bytes = build_pptx(pages, default_cs, fonts=fonts, embed_fonts=embed_fonts)
         return Response(
             content=pptx_bytes,
