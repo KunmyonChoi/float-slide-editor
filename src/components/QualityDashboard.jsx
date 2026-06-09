@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { useEditorStore } from '../store/editorStore'
 import { useFlatStore } from '../store/flatStore'
-import { extractFlatElements } from '../core/FlatExtractor'
+import { extractFlatElementsFromIframe } from '../core/FlatExtractor'
 import { compareFlatConversion } from '../core/FlatCompare'
 import { exportOriginalHtml, exportFlatHtml } from '../core/FlatExporter'
 import { analyzeStructural, aggregateReports } from '../core/StructuralAnalyzer'
@@ -103,7 +103,7 @@ export default function QualityDashboard({ open, onClose }) {
       await wait(350) // 렌더링 대기
 
       // 추출
-      const { elements, canvasSize, fontImports } = extractFlatElements(iframeRef)
+      const { elements, canvasSize, fontImports } = extractFlatElementsFromIframe(iframeRef)
       const originalHtml = exportOriginalHtml(iframeRef) || ''
       const flatHtml = exportFlatHtml(elements, canvasSize, fontImports)
 

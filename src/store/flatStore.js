@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { extractFlatElements, nextFlatId } from '../core/FlatExtractor'
+import { extractFlatElementsFromIframe, nextFlatId } from '../core/FlatExtractor'
 import { HistoryStack } from '../core/HistoryStack'
 
 const _history = new HistoryStack()
@@ -121,7 +121,7 @@ export const useFlatStore = create((set, get) => ({
     }
 
     // 캐시 미스 → 새로 추출
-    const { elements, canvasSize, fontImports } = extractFlatElements(iframeRef)
+    const { elements, canvasSize, fontImports } = extractFlatElementsFromIframe(iframeRef)
     _history.clear()
     _currentPageKey = pageKey || null
     set({
@@ -148,7 +148,7 @@ export const useFlatStore = create((set, get) => ({
     await new Promise(r => setTimeout(r, 400))
 
     if (_currentPageKey) delete _pageCache[_currentPageKey]
-    const { elements, canvasSize, fontImports } = extractFlatElements(ref)
+    const { elements, canvasSize, fontImports } = extractFlatElementsFromIframe(ref)
     _history.clear()
     set({
       flatElements: elements,
@@ -196,7 +196,7 @@ export const useFlatStore = create((set, get) => ({
 
     // 캐시 미스 → DOM 렌더 대기 후 추출
     setTimeout(() => {
-      const { elements, canvasSize, fontImports } = extractFlatElements(ref)
+      const { elements, canvasSize, fontImports } = extractFlatElementsFromIframe(ref)
       _history.clear()
       _currentPageKey = pageKey || null
       set({
@@ -227,7 +227,7 @@ export const useFlatStore = create((set, get) => ({
     try {
       const editorStore = (await import('./editorStore')).useEditorStore
       const { totalPages, currentPage, iframeRef } = editorStore.getState()
-      const { extractFlatElements } = await import('../core/FlatExtractor')
+      const { extractFlatElementsFromIframe } = await import('../core/FlatExtractor')
 
       if (!iframeRef?.current || totalPages <= 1) {
         set({ _preloading: false, preloadProgress: null })
@@ -248,7 +248,7 @@ export const useFlatStore = create((set, get) => ({
         await new Promise(r => setTimeout(r, 400))
 
         try {
-          const result = extractFlatElements(iframeRef)
+          const result = extractFlatElementsFromIframe(iframeRef)
           _pageCache[pageKey] = {
             elements: result.elements,
             canvasSize: result.canvasSize,
@@ -849,7 +849,7 @@ export const useFlatStore = create((set, get) => ({
 
     const editorStore = (await import('./editorStore')).useEditorStore
     const { totalPages, currentPage, isReveal, iframeRef } = editorStore.getState()
-    const { extractFlatElements } = await import('../core/FlatExtractor')
+    const { extractFlatElementsFromIframe } = await import('../core/FlatExtractor')
 
     // 캐시에 모든 페이지가 있으면 빠르게 반환
     const cachedKeys = Object.keys(_pageCache)
@@ -886,7 +886,7 @@ export const useFlatStore = create((set, get) => ({
 
       // 추출
       try {
-        const result = extractFlatElements(iframeRef)
+        const result = extractFlatElementsFromIframe(iframeRef)
         pages[pageKey] = {
           elements: result.elements,
           canvasSize: result.canvasSize,
