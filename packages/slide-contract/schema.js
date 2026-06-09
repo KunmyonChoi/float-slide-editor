@@ -45,7 +45,7 @@
 
 export const SCHEMA_VERSION = '1.0'
 
-export const ELEMENT_TYPES = ['text', 'image', 'shape', 'svg']
+export const ELEMENT_TYPES = ['text', 'image', 'shape', 'svg', 'video']
 
 // ── 빌더 (자체 모델 → SlideDeck 매핑을 쉽게) ──
 
@@ -161,8 +161,10 @@ function validateElement(el, path, errors, warnings) {
   if (el.link != null && (!isObj(el.link) || typeof el.link.href !== 'string')) {
     errors.push(`${path}.link must be {href:string,...}`)
   }
-  if (el.style && el.style.fontSize != null && !isNum(el.style.fontSize)) {
-    warnings.push(`${path}.style.fontSize 는 px 숫자 권장(예: 32, "32px" 아님)`)
+  // fontSize는 숫자(예: 32) 또는 CSS px 문자열(예: "32px") 둘 다 허용(엔진이 양형 처리)
+  const fs = el.style && el.style.fontSize
+  if (fs != null && !isNum(fs) && !(typeof fs === 'string' && /^\d+(\.\d+)?px$/.test(fs.trim()))) {
+    warnings.push(`${path}.style.fontSize 는 숫자 또는 "Npx" 권장 (got ${JSON.stringify(fs)})`)
   }
 }
 

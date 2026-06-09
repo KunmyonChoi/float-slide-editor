@@ -30,11 +30,11 @@ PPTX 엔진의 **유일한 외부 API**. 소비 SW는 이 `SlideDeck` JSON만 �
           "rotation": 0, "z": 1,
           "text": { "html": "<b>제목</b> 일반" },// type=text
           "link": { "href": "https://...", "target": "_blank" },
-          "style": {
+          "style": {                            // CSS-native (엔진이 직접 소비)
             "color": "#222222", "fontSize": 40, "fontFamily": "Noto Sans KR",
-            "fontWeight": 700, "italic": false, "align": "center",
-            "background": "#ffffff", "radius": 8,
-            "padding": [8, 16, 8, 16], "lineHeight": 1.4, "opacity": 1
+            "fontWeight": 700, "fontStyle": "normal", "textAlign": "center",
+            "backgroundColor": "#ffffff", "borderRadius": "8px",
+            "padding": "8px 16px", "lineHeight": "1.4", "opacity": "1"
           }
         },
         { "type": "image", "x": 0, "y": 0, "width": 1280, "height": 720,
@@ -53,10 +53,16 @@ PPTX 엔진의 **유일한 외부 API**. 소비 SW는 이 `SlideDeck` JSON만 �
 | `svg` | `src` | `data:image/svg...` |
 | `shape` | — | `points`로 선/도형 |
 
-### style 키 (정제판 — 자주 쓰는 것)
-`color, fontSize(px 숫자), fontFamily, fontWeight, italic, align,
-background, radius, padding[t,r,b,l], lineHeight, opacity, shadow, gradient`
-그 외 고급 CSS는 어댑터가 내부 표현으로 매핑(SPEC 확장 예정).
+### style — CSS-native (정제 = 깔끔한 envelope, style은 CSS 그대로)
+`style`은 엔진이 직접 소비하는 **CSS 속성 객체**다(구조화 아님 — 그래야 무손실).
+자주 쓰는 키:
+`color, fontSize(숫자 또는 "Npx"), fontFamily, fontWeight, fontStyle("italic"),
+textAlign, backgroundColor, backgroundImage(gradient), borderRadius, boxShadow,
+padding("8px 16px"), lineHeight, opacity, letterSpacing, textShadow,
+textTransform, textDecoration, objectFit, border`
+- 단위: 크기류는 CSS px 문자열 또는 숫자(fontSize). 색은 hex/rgba 허용.
+- **문서화되지 않은 CSS 키도 통과**된다(엔진이 인식하면 반영). HTML 경로
+  라운드트립이 무손실인 이유.
 
 ## 사용법
 
@@ -70,7 +76,7 @@ const d = deck({ canvasSize: { w: 1280, h: 720 },
     page([
       image('data:image/png;base64,...', { x:0, y:0, width:1280, height:720, z:0 }),
       text('<b>안녕하세요</b>', { x:140, y:300, width:1000, height:120, z:1,
-        style: { color:'#fff', fontSize:64, fontFamily:'Noto Sans KR', fontWeight:700, align:'center' } }),
+        style: { color:'#fff', fontSize:64, fontFamily:'Noto Sans KR', fontWeight:700, textAlign:'center' } }),
     ]),
   ],
 })

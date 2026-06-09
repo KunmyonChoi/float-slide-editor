@@ -5,9 +5,10 @@
   "type": "module",
   "exports": {
     ".": "./schema.js",
-    "./schema.js": "./schema.js"
+    "./schema.js": "./schema.js",
+    "./adapters.js": "./adapters.js"
   },
-  "files": ["schema.js", "SPEC.md"],
+  "files": ["schema.js", "adapters.js", "SPEC.md"],
   "sideEffects": false,
   "license": "MIT"
 }
