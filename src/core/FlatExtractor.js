@@ -718,7 +718,10 @@ function getEffectiveZIndex(el) {
   let maxZ = null
   let node = el
   while (node && node.nodeType === Node.ELEMENT_NODE) {
-    const z = node.style.zIndex
+    // computed z-index 사용 — 인라인뿐 아니라 스타일시트(CSS 클래스)로 준
+    // z-index까지 반영해 배경/레이어 스택을 정확히 잡는다. (이전엔 인라인만 봤음)
+    const win = node.ownerDocument && node.ownerDocument.defaultView
+    const z = win ? win.getComputedStyle(node).zIndex : node.style.zIndex
     if (z && z !== 'auto') {
       const parsed = parseInt(z, 10)
       if (!isNaN(parsed) && (maxZ === null || parsed > maxZ)) {
