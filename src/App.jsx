@@ -25,19 +25,26 @@ export default function App() {
       <FloatingToolbar />
       <EditToolbar />
       <div className="flex flex-1 overflow-hidden">
-        {/* SlideCanvas는 항상 마운트 유지 — iframe 재로드 방지 */}
-        {/* 숨길 때도 원래 크기 유지 (flat 추출 시 정확한 레이아웃 필요) */}
-        <div
-          className={isSplit ? 'flex flex-col flex-1 border-r border-white/10' : 'flex flex-col flex-1'}
-          style={showSlide ? undefined : { position: 'fixed', left: -9999, top: 0, width: '100vw', height: '100vh', overflow: 'hidden', pointerEvents: 'none' }}
-        >
-          <SlideCanvas />
-        </div>
-        {showFlat && (
-          <div className="flex flex-col flex-1 min-w-0">
-            <FlatCanvas />
+        {/* SlideCanvas + FlatCanvas 래퍼 — split 시 화면비에 따라 배치 전환:
+            세로로 길면(portrait) 상하 스택, 가로로 길면(landscape) 좌우 분할.
+            (속성 패널은 바깥 row에 그대로 두어 항상 우측) */}
+        <div className={`flex flex-1 min-w-0 min-h-0 ${isSplit ? 'portrait:flex-col landscape:flex-row' : 'flex-row'}`}>
+          {/* SlideCanvas는 항상 마운트 유지 — iframe 재로드 방지 */}
+          {/* 숨길 때도 원래 크기 유지 (flat 추출 시 정확한 레이아웃 필요) */}
+          <div
+            className={isSplit
+              ? 'flex flex-col flex-1 min-w-0 min-h-0 portrait:border-b landscape:border-r border-white/10'
+              : 'flex flex-col flex-1 min-w-0 min-h-0'}
+            style={showSlide ? undefined : { position: 'fixed', left: -9999, top: 0, width: '100vw', height: '100vh', overflow: 'hidden', pointerEvents: 'none' }}
+          >
+            <SlideCanvas />
           </div>
-        )}
+          {showFlat && (
+            <div className="flex flex-col flex-1 min-w-0 min-h-0">
+              <FlatCanvas />
+            </div>
+          )}
+        </div>
         {/* 통합 PropertyPanel — 도킹 시 flex row 마지막, 플로팅 시 fixed */}
         <PropertyPanel />
       </div>
