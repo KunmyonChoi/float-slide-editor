@@ -13,7 +13,7 @@
 | 발표 모드(Present) | ⚠️ **취약** | "슬라이드 넘김"만 됨 — 실제 강의에 부족 |
 | 콘텐츠 표현력(표/차트/링크) | ❌ 빈 곳 | 텍스트 리스트(10.1)만 부분 진입, 표·차트·링크 미흡 |
 | 협업/공유 | ❌ 없음 | 본 골드 목표 외 |
-| 코어 재사용성(패키징) | 📋 설계 | Phase 14 설계 문서화 완료, 구현 대기 |
+| 코어 재사용성(패키징) | 📋 설계 | Phase 14 — 2단계 PPTX 엔진 구조 설계 완료(엔진은 Docker 배포됨), 계약·어댑터 구현 대기 |
 
 → 가장 큰 부족: **발표 경험**(Phase 9) + **콘텐츠 다양성**(Phase 10)
 
@@ -438,106 +438,105 @@ present: {
 
 ---
 
-## Phase 14 — Reusable Core (Packaging)
+## Phase 14 — Reusable PPTX Engine (2단계 구조)
 
-> 목표: **HTML 슬라이드 로딩 → flat 변환 → PPT export** 파이프라인을 다른 **브라우저 앱(React/Vue/바닐)** 에서 재사용 가능하도록 프레임워크 비의존 코어로 분리. (이번 라운드는 *설계 문서화*만, 구현은 별도 브랜치.)
+> 목표: **PPTX 변환을 다른 SW에서 재사용**. 소비 SW가 **HTML 슬라이드**를 갖든 **자체 슬라이드 모델**을 갖든, **공개 계약(`SlideDeck`)을 이음새로 한 2단계**로 흡수한다.
+> 우선순위: **PPTX만 우선**(PDF/이미지는 브라우저 입력에서만 — 14.6). 헤드리스(Playwright)는 범위 밖.
+> 이번 라운드는 *설계 확정 문서화*, 구현은 별도 브랜치.
 
-### 14.0 현황 진단 (결합도 실측)
+### 14.0 2단계 구조 — 공개 계약이 이음새
 
-대부분 단계가 이미 React/Zustand와 분리되어 있고, 진짜 결합은 **입력 어댑터 1곳 + 저장소 호출부**에만 있다.
+```
+STAGE 1 (계약 생산)                       [공개 스키마: SlideDeck]            STAGE 2 (PPTX 엔진)
+─────────────────────                     ───────────────────────            ──────────────────
+HTML 슬라이드 ─flat변환(브라우저)─▶ internal ─[adapter:toPublic]─┐
+                                                                ├─▶ SlideDeck ─[adapter:toInternal]─▶ build_pptx ─▶ .pptx
+자체 모델 ─소비자 매퍼(순수)──────────────────────────────────┘            (Docker/pip/pptxgenjs)
+```
 
-| 단계 | 파일 | React/Zustand | 브라우저 의존 | 재사용성 |
-|------|------|---------------|---------------|----------|
-| HTML 로딩/파싱 | `SlideParser.js` | 없음 | `DOMParser`만 | ✅ 그대로 |
-| flat 변환 | `FlatExtractor.js` | 없음* | **iframe + `getBoundingClientRect`/`getComputedStyle`** | ⚠️ 시그니처만 변경 |
-| HTML→런 변환 | `HtmlToTextRuns.js` | 없음 | `DOMParser`만 | ✅ 그대로 |
-| PPT export (JS) | `PptExporter.js` | 없음 | 없음(pptxgenjs) | ✅ 그대로 |
-| PPT export (서버) | `pptx-server/` | — | — | ✅ 이미 HTTP 서비스 |
-| export 버튼/메뉴 | `*.jsx` | ✅✅ | — | ❌ 앱 어댑터로 잔류 |
+- **공개 스키마 `SlideDeck`가 유일한 외부 API.** 내부 `FlatElement`는 숨긴다.
+- **어댑터 2개**: `internal→public`(HTML 경로 끝), `public→internal`(엔진 입구). 엔진 본체(`build_pptx`)는 그대로 두고 입구에서만 변환 → 저위험.
+- **STAGE 2(PPTX 엔진)는 이미 배포 완료**: Docker Hub `dilly97/float-pptx`(public) + Netlify 프론트. 즉 엔진은 존재하고, 남은 일은 **공개 계약 확정 + 어댑터 + 엔진 입구가 공개 스키마 수용**.
 
-\* `FlatExtractor`는 React를 import하지 않는다. `extractFlatElements(iframeRef)`로 **React ref**를 받을 뿐이라, `extractFlatElements(document, window)`로 바꾸면 코어로 분리된다. Zustand 결합은 `flatStore.js`의 *호출부*에만 있다.
+### 14.1 입력별 필요 작업
 
-**핵심 제약 — flat 변환은 실제 레이아웃 엔진이 필요하다.** `getBoundingClientRect`/`getComputedStyle`는 실제 렌더 결과를 읽으므로 jsdom으로는 불가. 다행히 **본 목표(브라우저 앱)** 에서는 브라우저가 레이아웃을 제공하므로 추가 부담이 없다. (서버/CLI 재사용은 Phase 14 범위 밖 — 그때는 Playwright 헤드리스 래퍼 필요.)
+| 소비자 입력 | PPTX 경로 | 비고 |
+|---|---|---|
+| **자체 모델** | 매퍼(소비자) → `SlideDeck` → 엔진 | **전부 순수**, 브라우저/서버 불필요(엔진은 Docker/pip) ✅ |
+| **HTML 슬라이드** | flat 변환(브라우저) → internal → `toPublic` → `SlideDeck` → 엔진 | flat 변환만 브라우저 필요 |
 
-### 14.1 패키지 경계
+→ 자체 모델 소비자는 internal을 전혀 모르고 **안정적인 `SlideDeck`만 생성**해 보낸다.
+
+### 14.2 공개 스키마 `SlideDeck` (실용적 정제판)
+
+자주 쓰는 값은 정규화(`"32px"→32`, 색=hex)하되, `style`은 **문서화된 CSS-정렬 객체**로 유지한다. (엔진이 gradient·textShadow·boxShadow·letterSpacing·objectFit 등 풍부한 CSS에 의존하므로 완전 추상화는 과함 — 정규화+문서화가 균형점.)
+
+```jsonc
+{ "schemaVersion": "1.0",
+  "canvasSize": { "w":1280, "h":720 },
+  "fonts": [ /* @font-face / google-import 디스크립터 (임베딩용) */ ],
+  "pages": [{
+    "canvasSize": {...},                 // 선택적 페이지 오버라이드
+    "elements": [{
+      "type": "text|image|shape|svg",
+      "x":100,"y":80,"width":400,"height":60,"rotation":0,"z":1,   // px, top-left
+      "text": {"html":"<b>Hi</b>"},      // type별: text
+      "src":"data:...",                  // image/svg
+      "points":[...],                    // shape/line
+      "link":{"href":"...","target":"_blank"},
+      "style": { "color":"#222","fontSize":32,"fontFamily":"Noto Sans KR",
+                 "fontWeight":700,"italic":false,"align":"center",
+                 "background":"#fff","radius":8,"padding":[t,r,b,l],
+                 "lineHeight":1.4,"opacity":1,"shadow":{...},"gradient":{...} }
+    }]
+  }]}
+```
+
+- `schemaVersion` 필수 — 엔진이 호환성 판단/경고.
+- 단위 규약: 좌표/크기 = px, 폰트 크기 = px(엔진이 ×0.75 → pt), 색 = hex.
+
+### 14.3 패키지 경계
 
 ```
 packages/
-  slide-core/                  ← 프레임워크 0 의존 (npm 배포 가능)
-    src/
-      slide-parser.js          (SlideParser 이동 — 무수정)
-      flat-extractor.js        (extractFlatElements(document, window) 로 시그니처 변경)
-      html-to-text-runs.js     (이동 — 무수정)
-      ppt-exporter.js          (PptExporter 이동 — pptxgenjs는 peerDependency)
-      gradient-parser.js       (GradientParser 이동)
-      schema.js                ← FlatElement / ParsedDeck / ExportPayload 계약 + SCHEMA_VERSION
-      index.js                 ← 공개 API 배럴
-    package.json               (type:module, exports, peerDeps: pptxgenjs)
+  slide-contract/              ← STAGE 경계. 프레임워크 0 의존
+    schema.(js|json)           SlideDeck 스키마 + SCHEMA_VERSION + 검증기 + 빌더
+    SPEC.md                    공개 스키마 스펙(자체 모델 매핑 가이드 + 예제)
+  slide-flat/                  ← STAGE 1 (HTML→계약, 브라우저)
+    slide-parser.js            (SlideParser 이동)
+    flat-extractor.js          extractFlatElements(document, window) [시그니처 변경]
+    to-public.js               internal FlatElement → SlideDeck 어댑터
 apps/
-  float-editor/                ← 현재 앱. React 컴포넌트 + Zustand는 slide-core를 "호출만"
-    src/store/flatStore.js     (extractFlatElements 어댑터: iframeRef → (doc, win) 풀어서 전달)
-    src/components/*.jsx        (잔류)
+  float-editor/                ← 현재 앱. React/Zustand는 위 패키지를 호출만
 services/
-  pptx-server/                 ← 이미 독립. text_runs.py는 html-to-text-runs.js의 미러
+  pptx-engine/ (= pptx-server) ← STAGE 2. /api/export/pptx 가 SlideDeck 수용
+    public_to_internal.py      public→internal 어댑터(엔진 입구)
+    (build_pptx 등 본체 무수정)
 ```
 
-리포 구조는 단순 폴더 분리(상대 import)로 시작하고, 외부 배포가 필요해지면 npm workspaces로 승격한다.
-
-### 14.2 공개 API 표면 (`slide-core`)
-
-```js
-// 1) 로딩/파싱 (순수)
-parseSlideDeck(deckHtml: string): { slides, globalStyles, slideCount }
-wrapSlideAsDocument(slide, globalStyles): string
-
-// 2) flat 변환 (DOM/레이아웃 필요 — 호출자가 렌더된 document/window 제공)
-extractFlatElements(document: Document, window: Window):
-  { elements: FlatElement[], canvasSize: { w, h } }
-
-// 3) export
-htmlToTextRuns(html, baseStyles?): TextRun[]
-exportToPptx(pages, defaultCanvasSize): Promise<Blob|void>   // pptxgenjs 경로
-buildExportPayload(pages, defaultCanvasSize): ExportPayload  // 서버 POST 본문 빌더(신규, 순수)
-
-// 4) 계약
-SCHEMA_VERSION: string
-```
-
-`buildExportPayload`를 코어로 끌어올려, **HTTP 호출(fetch)·다운로드 트리거는 앱**, **페이로드 구성은 코어**로 분리한다. (현재 `PptxBackendClient.js`가 둘을 섞고 있음.)
-
-### 14.3 스키마 계약 (`schema.js`) — 재사용성의 실질적 핵심
-
-지금 `HtmlToTextRuns.js`(JS)와 `text_runs.py`(Python)가 **같은 변환을 이중 구현**한다. 단계 간 데이터 형태를 한 곳에 버전과 함께 고정해야 두 구현·외부 앱이 같은 계약을 따르는지 보증된다.
-
-- `FlatElement` 형태(아래) + `SCHEMA_VERSION` (예: `"flat-1"`).
-- `ExportPayload` = `{ schemaVersion, pages: {[k]: {elements, canvasSize, fontImports}}, defaultCanvasSize, fonts }`.
-- 단위 규약 명시: 좌표/크기 = CSS px, 폰트 = px(런 변환 시 ×0.75 → pt), 색 = 6자리 hex.
-- JS↔Python 변환 규칙(색→hex, px→pt, font-family 첫 항목, rgba 불투명 블렌딩)을 **계약 문서**로 박제 → 두 구현의 회귀 테스트 기준.
-
-```js
-// FlatElement (현행 buildFlatElement 산출물 기준)
-{
-  id, sourceId, type: 'text'|'image'|'shape'|'svg'|'video',
-  x, y, width, height, rotation, zIndex,
-  content, isRich,
-  styles: { backgroundColor, color, fontSize, fontFamily, ... },
-  points?, link?,            // (Phase 10.2 이후)
-}
-```
+리포는 폴더 분리(상대 import)로 시작, 외부 npm 배포가 필요해지면 workspaces로 승격.
 
 ### 14.4 단계별 작업 계획 (구현 시 — 별도 브랜치)
 
-1. **`refactor/flat-extractor-signature`** — `extractFlatElements(iframeRef)` → `(document, window)`. `flatStore.js`에서 `iframeRef.current.contentDocument/contentWindow`를 풀어서 전달. **동작 무변경** 리팩터(회귀 확인 지점: flat 재생성·F1~F4 보존).
-2. **`refactor/schema-module`** — `schema.js` 신설, `SCHEMA_VERSION`·타입 주석·단위 규약 작성. `buildExportPayload` 추출(`PptxBackendClient`에서 페이로드 구성 분리).
-3. **`refactor/extract-slide-core`** — 위 순수 모듈들을 `packages/slide-core/`로 이동, `index.js` 배럴 + `package.json` 작성. 앱은 상대경로 import로 전환. (단순 이동 + import 경로 수정 위주.)
-4. **(옵션) `docs/slide-core-readme`** — 외부 앱용 최소 사용 예제(파싱→iframe 렌더→추출→export) + JS/Python 계약 문서.
+1. **`feat/slide-contract`** — `SlideDeck` 스키마(타입/JSON Schema) + `SCHEMA_VERSION` + 검증기 + 빌더 + `SPEC.md`(자체 모델 매핑 예제 포함).
+2. **`feat/contract-adapters`** — `internalToPublic`(JS) + `publicToInternal`(Python 서버 입구, JS pptxgenjs 경로용도). 단위/이름 정규화 규칙을 어댑터에 집약.
+3. **`feat/engine-accept-public`** — `/api/export/pptx`가 **`SlideDeck`(schemaVersion 포함) 수용**, 전환기엔 기존 internal payload도 호환. `PptxBackendClient`는 `SlideDeck`를 전송하도록 변경.
+4. **`refactor/flat-extractor-signature`** — `extractFlatElements(iframeRef)` → `(document, window)` (HTML 경로 분리, 동작 무변경).
+5. **(옵션) `feat/pptx-pip`** — `build_pptx_from_public(deck)` 파이썬 패키지로 노출(서버 없이 Python 앱이 직접 import).
+
+가치의 대부분은 **1(스키마)+2(어댑터)+3(엔진 수용)** 에 있다. 엔진 본체·Docker는 그대로라 추가 비용이 작다.
 
 ### 14.5 완료 기준
-- 다른 브라우저 앱이 `slide-core`만 의존해 (자신의 iframe 렌더 결과로) flat 변환·PPT export를 수행 가능.
-- React/Zustand 의존 코드가 `apps/float-editor/`에만 존재.
-- `SCHEMA_VERSION`이 페이로드에 포함되고, JS·Python 두 export 경로가 같은 계약 문서를 참조.
+- 자체 모델을 가진 외부 SW가 **`SlideDeck`만 생성**해 Docker 엔진(또는 pip)으로 PPTX를 받을 수 있다(브라우저 불필요).
+- HTML 슬라이드 SW는 `slide-flat`(브라우저)로 `SlideDeck`를 만들어 동일 엔진 사용.
+- `schemaVersion`이 모든 페이로드에 포함되고, 엔진이 버전을 검증한다.
+- 내부 `FlatElement`는 공개 표면에서 노출되지 않는다(어댑터 뒤에 은닉).
 
-**의존성** 없음(다른 Phase와 독립). 단, 진행 시 `refactor/flat-extractor-signature`를 먼저 머지해 다른 Phase의 회귀 위험을 줄인다.
+### 14.6 범위 밖 (후속)
+- **PDF/이미지의 "자체 모델" 입력 지원** — 계약→DOM 페인터(현재 `FlatElementRenderer`는 React 결합) 추출이 필요. PDF/이미지는 당분간 **HTML 입력(브라우저)** 에서만.
+- **헤드리스(서버/CLI) flat 변환** — Playwright 래퍼 필요. 현재 범위 밖.
+
+**의존성** 다른 Phase와 독립. 새 `FlatElement` 필드(링크·빌드·트랜지션 등)는 `SlideDeck`/어댑터에 반영되어야 하므로 Phase 9·10 데이터 모델이 안정된 뒤 진행하면 재작업이 적다.
 
 ---
 
@@ -549,12 +548,12 @@ Phase 8 (완료) ──┐
 Recent fixes ────┘                        │                      ├─→ Phase 11 (UX) ──→ Phase 12 (출력) ──→ Phase 13 (협업)
                                           └──────────────────────┘
 
-Phase 14 (재사용 코어) ── 독립, 어느 시점에나 진입 가능 (구현 시 flat-extractor 시그니처 변경 선행)
+Phase 14 (재사용 PPTX 엔진, 2단계) ── 독립. 엔진(Docker) 배포 완료, 공개 계약+어댑터 구현 남음
 ```
 
 - Phase 9, 10은 병렬 가능 (서로 다른 표면).
 - Phase 11은 Phase 9·10의 새 데이터 타입을 sorter/그룹화 대상에 포함해야 하므로 후행.
-- Phase 14는 다른 Phase와 독립이나, 새 FlatElement 필드(링크·빌드·트랜지션)가 schema 계약에 반영되어야 하므로 가급적 Phase 9·10 데이터 모델이 안정된 뒤 코어를 떼는 편이 재작업이 적다.
+- Phase 14는 다른 Phase와 독립이나, 새 FlatElement 필드(링크·빌드·트랜지션)가 SlideDeck 공개 계약·어댑터에 반영되어야 하므로 가급적 Phase 9·10 데이터 모델이 안정된 뒤 진행하면 재작업이 적다.
 
 ## 단축키 신규 추가 표 (Phase 9~11)
 
