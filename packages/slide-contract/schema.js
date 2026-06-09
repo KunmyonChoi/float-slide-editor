@@ -126,6 +126,7 @@ export function validateDeck(d) {
   if (!Array.isArray(d.pages)) {
     errors.push('pages must be an array')
   } else {
+    if (d.pages.length === 0) warnings.push('pages is empty (빈 pptx가 생성됨)')
     d.pages.forEach((p, pi) => {
       if (!isObj(p)) { errors.push(`pages[${pi}] must be an object`); return }
       if (p.canvasSize && (!isNum(p.canvasSize.w) || !isNum(p.canvasSize.h))) {
@@ -146,8 +147,12 @@ function validateElement(el, path, errors, warnings) {
   for (const k of ['x', 'y', 'width', 'height']) {
     if (!isNum(el[k])) errors.push(`${path}.${k} must be a number`)
   }
-  if (el.type === 'text' && !isObj(el.text)) {
-    errors.push(`${path}.text {html|plain} is required for text`)
+  if (el.type === 'text') {
+    if (!isObj(el.text)) {
+      errors.push(`${path}.text {html|plain} is required for text`)
+    } else if (!el.text.html && !el.text.plain) {
+      warnings.push(`${path}.text 에 html 또는 plain 중 하나가 필요(빈 텍스트)`)
+    }
   }
   if ((el.type === 'image' || el.type === 'svg') && typeof el.src !== 'string') {
     errors.push(`${path}.src (string) is required for ${el.type}`)
