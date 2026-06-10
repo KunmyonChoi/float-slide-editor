@@ -10,8 +10,12 @@ import { useFlatStore } from './store/flatStore'
 import { useEditorStore } from './store/editorStore'
 
 export default function App() {
-  const viewMode = useFlatStore(s => s.viewMode)
+  const rawViewMode = useFlatStore(s => s.viewMode)
+  const debugMode = useFlatStore(s => s.debugMode)
   const mode = useEditorStore(s => s.mode)
+
+  // 디버그 꺼짐이면 html/split는 노출하지 않고 항상 flat (진단 뷰는 디버그 전용)
+  const viewMode = debugMode ? rawViewMode : 'flat'
 
   const isSplit = viewMode === 'split'
   const showSlide = viewMode === 'html' || isSplit
@@ -49,7 +53,7 @@ export default function App() {
         <PropertyPanel />
       </div>
       <PageBar />
-      <ComparePanel />
+      {debugMode && <ComparePanel />}
       <InsertPopup />
       {/* flat 모드 발표 — fixed 전체화면 오버레이 */}
       {useFlatPresenter && <FlatPresenter />}

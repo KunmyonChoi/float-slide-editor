@@ -29,7 +29,7 @@ export default function FileMenu({ fallbackSample }) {
   const jsonFileRef = useRef(null)   // .json
 
   const { flatElements, canvasSize, fontImports, viewMode,
-          setViewMode, loadAllPages, clearPageCache } = useFlatStore()
+          setViewMode, loadAllPages, clearPageCache, debugMode, setDebugMode } = useFlatStore()
   const { loadHtml } = useEditorStore()
 
   const hasContent = flatElements.length > 0
@@ -294,6 +294,9 @@ export default function FileMenu({ fallbackSample }) {
         { id: 'importJson', label: 'JSON', action: handleImportJson },
       ],
     },
+    { id: 'sepDebug', type: 'separator' },
+    { id: 'debug', label: '디버그 모드', shortcut: debugMode ? '✓ 켜짐' : '꺼짐',
+      action: () => setDebugMode(!debugMode) },
   ]
 
   return (
