@@ -95,11 +95,14 @@ export const useFlatStore = create((set, get) => ({
   panelMode: 'docked',
   /** 플로팅 패널 위치 기억 */
   floatingPos: { x: null, y: 80 },
+  /** 도킹 속성 패널 접힘 여부 */
+  panelCollapsed: false,
 
   setCroppingFlat(id) { set({ croppingFlatId: id }) },
 
   setPanelMode(mode) { set({ panelMode: mode }) },
   setFloatingPos(pos) { set({ floatingPos: pos }) },
+  togglePanelCollapsed() { set(s => ({ panelCollapsed: !s.panelCollapsed })) },
 
   /** 편집 중 커밋 콜백 등록/해제 (FlatInlineEditor에서 사용) */
   _setPendingEditCommit(fn) {
