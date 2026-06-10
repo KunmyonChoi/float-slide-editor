@@ -19,6 +19,11 @@ def _public_el_to_internal(pel: dict) -> dict:
         html = t.get('html')
         out['content'] = html if html is not None else (t.get('plain') or '')
         out['isRich'] = html is not None
+    elif pel.get('type') == 'table':
+        out['content'] = ''
+        out['isRich'] = False
+        if pel.get('table') is not None:
+            out['table'] = pel['table']
     else:
         out['content'] = pel.get('src') or ''
         out['isRich'] = False

@@ -3,6 +3,7 @@ import { useFlatStore, isBackgroundLayer } from '../store/flatStore'
 import { useEditorStore } from '../store/editorStore'
 import { BlobStore } from '../core/BlobStore'
 import { pointsToSvgPath } from '../core/PolyShapeUtils'
+import { tableContainerStyle, cellStyle } from '../core/slideTable'
 
 /**
  * FlatElementRenderer
@@ -51,7 +52,7 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
   }, [element.id, isFullCanvasBg, setSelectedFlat, toggleSelectFlat])
 
   const handleDoubleClick = useCallback((e) => {
-    if (element.type === 'text') {
+    if (element.type === 'text' || element.type === 'table') {
       e.stopPropagation()
       setEditingFlat(element.id)
     } else if (element.type === 'image') {
@@ -249,6 +250,33 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
         onClick={handleClick}
         dangerouslySetInnerHTML={{ __html: content }}
       />
+    )
+  }
+
+  if (type === 'table' && element.table) {
+    const t = element.table
+    return (
+      <div
+        style={{ ...baseStyle, visibility: isEditing ? 'hidden' : undefined }}
+        onMouseDown={handleMouseDown}
+        onClick={handleClick}
+        onDoubleClick={handleDoubleClick}
+      >
+        <table style={tableContainerStyle(styles)}>
+          <colgroup>
+            {t.colFractions.map((f, c) => <col key={c} style={{ width: `${f * 100}%` }} />)}
+          </colgroup>
+          <tbody>
+            {t.cells.map((row, r) => (
+              <tr key={r} style={{ height: `${t.rowFractions[r] * 100}%` }}>
+                {row.map((cell, c) => (
+                  <td key={c} style={cellStyle(t, r, c, styles)}>{cell.text}</td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     )
   }
 

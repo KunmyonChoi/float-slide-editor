@@ -433,11 +433,114 @@ def _add_element(slide, el: dict, cs: dict, font_name_map: dict = None, slide_bg
         _add_svg(slide, el, x, y, w, h, rotation)
     elif el_type == 'video':
         _add_video_placeholder(slide, el, x, y, w, h, rotation)
+    elif el_type == 'table':
+        _add_table(slide, el, x, y, w, h, rotation)
 
     # Lock background shapes so they can't be accidentally selected in PPT
     if is_bg and len(slide.shapes) > shape_count_before:
         for si in range(shape_count_before, len(slide.shapes)):
             _lock_shape(slide.shapes[si])
+
+
+_PP_ALIGN_MAP = {
+    'left': PP_ALIGN.LEFT, 'center': PP_ALIGN.CENTER,
+    'right': PP_ALIGN.RIGHT, 'justify': PP_ALIGN.JUSTIFY,
+}
+_MSO_ANCHOR_MAP = {
+    'top': MSO_ANCHOR.TOP, 'middle': MSO_ANCHOR.MIDDLE, 'bottom': MSO_ANCHOR.BOTTOM,
+}
+
+
+def _set_cell_borders(cell, color_hex: str, width_pt: float):
+    """셀 4변 테두리를 명시 설정(테마 스타일 무시). width_pt<=0이면 noFill."""
+    tcPr = cell._tc.get_or_add_tcPr()
+    for tag in ('a:lnL', 'a:lnR', 'a:lnT', 'a:lnB'):
+        for e in tcPr.findall(qn(tag)):
+            tcPr.remove(e)
+    new_elems = []
+    for tag in ('a:lnL', 'a:lnR', 'a:lnT', 'a:lnB'):
+        ln = tcPr.makeelement(qn(tag), {'cap': 'flat'})
+        if width_pt and width_pt > 0:
+            ln.set('w', str(int(width_pt * 12700)))
+            fill = ln.makeelement(qn('a:solidFill'), {})
+            clr = fill.makeelement(qn('a:srgbClr'), {'val': color_hex})
+            fill.append(clr)
+            ln.append(fill)
+        else:
+            ln.append(ln.makeelement(qn('a:noFill'), {}))
+        new_elems.append(ln)
+    # lnL/R/T/B 는 tcPr 내 solidFill(채우기)보다 앞서야 하므로 앞쪽에 삽입
+    for i, ln in enumerate(new_elems):
+        tcPr.insert(i, ln)
+
+
+def _add_table(slide, el: dict, x, y, w, h, rotation):
+    t = el.get('table')
+    if not t or not t.get('cells'):
+        return
+    cells = t['cells']
+    rows = len(cells)
+    cols = len(cells[0]) if rows else 0
+    if rows == 0 or cols == 0:
+        return
+
+    s = el.get('styles', {})
+    font_size_pt = round(float(re.sub(r'[^\d.]', '', s.get('fontSize', '14px')) or 14) * 0.75)
+    body_hex = css_color_to_hex(s.get('color', '')) or '334155'
+    header_bg = 'F1F5F9'
+    header_hex = '0F172A'
+    header_row = bool(t.get('headerRow'))
+    border = t.get('border') or {}
+    bw = border.get('width', 1)
+    bc_hex = css_color_to_hex(border.get('color', '#cbd5e1')) or 'CBD5E1'
+
+    gf = slide.shapes.add_table(rows, cols, int(x), int(y), int(w), int(h))
+    table = gf.table
+    table.first_row = False     # 테마 헤더 스타일 비활성(직접 칠함)
+    table.horz_banding = False
+    table.vert_banding = False
+
+    # 열 너비 / 행 높이 — 상대 비율 × 전체
+    col_fr = t.get('colFractions') or [1.0 / cols] * cols
+    row_fr = t.get('rowFractions') or [1.0 / rows] * rows
+    col_total = sum(col_fr) or 1
+    row_total = sum(row_fr) or 1
+    for c in range(cols):
+        table.columns[c].width = Emu(int(col_fr[c] / col_total * w))
+    for r in range(rows):
+        table.rows[r].height = Emu(int(row_fr[r] / row_total * h))
+
+    for r in range(rows):
+        for c in range(cols):
+            cell_data = cells[r][c] if c < len(cells[r]) else {}
+            is_header = header_row and r == 0
+            cell = table.cell(r, c)
+            cell.margin_left = Emu(int(0.06 * 914400))
+            cell.margin_right = Emu(int(0.06 * 914400))
+            cell.margin_top = Emu(int(0.03 * 914400))
+            cell.margin_bottom = Emu(int(0.03 * 914400))
+            cell.vertical_anchor = _MSO_ANCHOR_MAP.get(cell_data.get('valign', 'middle'), MSO_ANCHOR.MIDDLE)
+
+            # 채우기
+            bg = cell_data.get('bg')
+            fill_hex = header_bg if is_header else (css_color_to_hex(bg) if bg else None)
+            if fill_hex:
+                cell.fill.solid()
+                cell.fill.fore_color.rgb = RGBColor.from_string(fill_hex)
+            else:
+                cell.fill.background()  # 투명
+
+            # 텍스트
+            cell.text = cell_data.get('text', '') or ''
+            para = cell.text_frame.paragraphs[0]
+            para.alignment = _PP_ALIGN_MAP.get(cell_data.get('align', 'left'), PP_ALIGN.LEFT)
+            for run in para.runs:
+                run.font.size = Pt(font_size_pt)
+                run.font.bold = is_header
+                run.font.color.rgb = RGBColor.from_string(header_hex if is_header else body_hex)
+            # 빈 셀도 런이 없을 수 있으므로 기본 폰트만(런 없으면 스킵)
+
+            _set_cell_borders(cell, bc_hex, bw)
 
 
 def _add_text(slide, el: dict, x, y, w, h, rotation, font_name_map: dict = None, slide_bg_rgb=None):
