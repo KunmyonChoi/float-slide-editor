@@ -2,7 +2,7 @@ import { useRef, useState, useEffect, useCallback } from 'react'
 import { useEditorStore } from '../store/editorStore'
 import { useFlatStore } from '../store/flatStore'
 import { nextFlatId } from '../core/FlatExtractor'
-import { SLIDE_LAYOUTS } from '../core/slideLayouts'
+import { SLIDE_LAYOUTS, carryLayoutContent } from '../core/slideLayouts'
 import { BlobStore } from '../core/BlobStore'
 import { ToolBtn, Divider, UndoIcon, RedoIcon } from './FloatingToolbar'
 
@@ -63,7 +63,7 @@ export default function EditToolbar() {
   const { viewMode, selectedFlatIds, flatElements, canvasSize,
           canUndo: flatCanUndo, canRedo: flatCanRedo,
           undo: flatUndo, redo: flatRedo,
-          addFlatElement, addFlatElements, setSelectedFlat,
+          addFlatElement, addFlatElements, applyLayoutElements, setSelectedFlat,
           bringForward, sendBackward, bringToFront, sendToBack } = useFlatStore()
   const [insertOpen, setInsertOpen] = useState(false)
   const [shapeOpen, setShapeOpen] = useState(false)
@@ -133,12 +133,13 @@ export default function EditToolbar() {
     setSelectedFlat(null)
   }, [flatElements, canvasSize, addFlatElement, setSelectedFlat])
 
-  // 레이아웃 삽입 — 현재 페이지에 플레이스홀더 요소 세트를 한 번에 추가(단일 undo)
+  // 레이아웃 적용 — 기존 레이아웃이 있으면 변환(역할별 내용 이어받아 교체), 없으면 신규 삽입.
+  // 어느 쪽이든 단일 undo 단위.
   const insertLayout = useCallback((layoutId) => {
     const layout = SLIDE_LAYOUTS.find(l => l.id === layoutId)
     if (!layout) return
-    const specs = layout.build(canvasSize)
-    if (specs.length === 0) return // 빈 슬라이드
+    const existingLayoutEls = flatElements.filter(e => e.layoutRole)
+    const specs = carryLayoutContent(existingLayoutEls, layout.build(canvasSize))
     const maxZ = flatElements.length > 0 ? Math.max(...flatElements.map(e => e.zIndex)) : 0
     const els = specs.map((s, i) => ({
       sourceId: null, rotation: 0, merged: false, isRich: false,
@@ -146,9 +147,14 @@ export default function EditToolbar() {
       id: nextFlatId(),
       zIndex: maxZ + 1 + i,
     }))
-    addFlatElements(els)
+    if (existingLayoutEls.length > 0) {
+      // 변환: 기존 레이아웃 요소 제거 + 새 레이아웃 추가 (빈 슬라이드면 제거만)
+      applyLayoutElements(existingLayoutEls.map(e => e.id), els)
+    } else if (els.length > 0) {
+      addFlatElements(els)
+    }
     setSelectedFlat(null)
-  }, [flatElements, canvasSize, addFlatElements, setSelectedFlat])
+  }, [flatElements, canvasSize, addFlatElements, applyLayoutElements, setSelectedFlat])
 
   const handleImageFile = useCallback((e) => {
     const file = e.target.files?.[0]

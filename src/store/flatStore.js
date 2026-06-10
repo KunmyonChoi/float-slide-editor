@@ -662,6 +662,24 @@ export const useFlatStore = create((set, get) => ({
     })
   },
 
+  /** 레이아웃 변환 — removeIds를 제거하고 addElements를 추가 (단일 undo 단위) */
+  applyLayoutElements(removeIds, addElements) {
+    const els = get().flatElements
+    const removeSet = new Set(removeIds || [])
+    const removed = els.filter(e => removeSet.has(e.id)).map(e => structuredClone(e))
+    if (removed.length === 0 && (!addElements || addElements.length === 0)) return
+    _history.push({
+      type: 'replaceMany',
+      removed,
+      added: (addElements || []).map(e => structuredClone(e)),
+    })
+    set({
+      flatElements: [...els.filter(e => !removeSet.has(e.id)), ...(addElements || [])],
+      selectedFlatIds: [],
+      canUndo: _history.canUndo, canRedo: _history.canRedo,
+    })
+  },
+
   /** 여러 요소에 동일 changes 적용 + batch 히스토리 */
   batchUpdateFlatElements(ids, changes) {
     const els = get().flatElements
@@ -826,6 +844,10 @@ export const useFlatStore = create((set, get) => ({
     } else if (cmd.type === 'addMany') {
       const ids = new Set(cmd.elements.map(e => e.id))
       set({ flatElements: els.filter(e => !ids.has(e.id)) })
+    } else if (cmd.type === 'replaceMany') {
+      // undo: added 제거 → removed 복원
+      const addedIds = new Set(cmd.added.map(e => e.id))
+      set({ flatElements: [...els.filter(e => !addedIds.has(e.id)), ...cmd.removed], selectedFlatIds: [] })
     } else if (cmd.type === 'zorder') {
       const updated = [...els]
       for (const c of cmd.changes) {
@@ -874,6 +896,10 @@ export const useFlatStore = create((set, get) => ({
       set({ flatElements: [...els, cmd.element] })
     } else if (cmd.type === 'addMany') {
       set({ flatElements: [...els, ...cmd.elements] })
+    } else if (cmd.type === 'replaceMany') {
+      // redo: removed 제거 → added 추가
+      const removedIds = new Set(cmd.removed.map(e => e.id))
+      set({ flatElements: [...els.filter(e => !removedIds.has(e.id)), ...cmd.added], selectedFlatIds: [] })
     } else if (cmd.type === 'zorder') {
       const updated = [...els]
       for (const c of cmd.changes) {
