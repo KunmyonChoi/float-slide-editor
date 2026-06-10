@@ -104,9 +104,21 @@ const FALLBACK_SAMPLE = `<!DOCTYPE html>
  */
 export default function FloatingToolbar() {
   const { slideHtml, mode, enterPresentation } = useEditorStore()
-  const { viewMode, setViewMode, extractFromIframe, panelMode, setPanelMode, regenerateAllPages } = useFlatStore()
+  const { viewMode, setViewMode, extractFromIframe, regenerateAllPages, debugMode } = useFlatStore()
   const iframeRef = useEditorStore(s => s.iframeRef)
   const [qualityOpen, setQualityOpen] = useState(false)
+  const [isFullscreen, setIsFullscreen] = useState(false)
+
+  // 브라우저 전체화면 상태 추적
+  useEffect(() => {
+    const h = () => setIsFullscreen(!!document.fullscreenElement)
+    document.addEventListener('fullscreenchange', h)
+    return () => document.removeEventListener('fullscreenchange', h)
+  }, [])
+  const toggleFullscreen = () => {
+    if (document.fullscreenElement) document.exitFullscreen?.()
+    else document.documentElement.requestFullscreen?.()
+  }
 
   // F5 키 → 발표 모드
   useEffect(() => {
@@ -159,18 +171,20 @@ export default function FloatingToolbar() {
 
       <Divider />
 
-      {/* 뷰 모드 토글 */}
-      <ViewModeToggle
-        viewMode={viewMode}
-        disabled={!slideHtml}
-        onChange={(mode) => {
-          if (mode !== 'html' && iframeRef) {
-            const pk = `${useEditorStore.getState().currentPage}-${useEditorStore.getState().revealV || 0}`
-            extractFromIframe(iframeRef, pk)
-          }
-          setViewMode(mode)
-        }}
-      />
+      {/* 뷰 모드 토글 (디버그 모드에서만 — 평소엔 flat 고정) */}
+      {debugMode && (
+        <ViewModeToggle
+          viewMode={viewMode}
+          disabled={!slideHtml}
+          onChange={(mode) => {
+            if (mode !== 'html' && iframeRef) {
+              const pk = `${useEditorStore.getState().currentPage}-${useEditorStore.getState().revealV || 0}`
+              extractFromIframe(iframeRef, pk)
+            }
+            setViewMode(mode)
+          }}
+        />
+      )}
 
       {/* Flat 재생성 */}
       {(viewMode === 'flat' || viewMode === 'split') && (
@@ -185,13 +199,13 @@ export default function FloatingToolbar() {
         </>
       )}
 
-      {/* 패널 모드 토글 */}
+      {/* 브라우저 전체화면 토글 */}
       <ToolBtn
-        onClick={() => setPanelMode(panelMode === 'docked' ? 'floating' : 'docked')}
-        title={panelMode === 'docked' ? '패널 분리 (Floating)' : '패널 고정 (Docked)'}
+        onClick={toggleFullscreen}
+        title={isFullscreen ? '전체화면 종료 (Esc)' : '브라우저 전체화면'}
       >
-        {panelMode === 'docked' ? <UndockIcon /> : <DockIcon />}
-        <span className="text-xs ml-1">{panelMode === 'docked' ? '분리' : '고정'}</span>
+        {isFullscreen ? <FullscreenExitIcon /> : <FullscreenIcon />}
+        <span className="text-xs ml-1">{isFullscreen ? '창' : '전체화면'}</span>
       </ToolBtn>
 
       <Divider />
@@ -201,23 +215,25 @@ export default function FloatingToolbar() {
 
       <Divider />
 
-      {/* 품질 분석 대시보드 */}
-      <ToolBtn
-        onClick={() => setQualityOpen(v => !v)}
-        disabled={!slideHtml || viewMode === 'html'}
-        title="전체 슬라이드 품질 분석"
-      >
-        <QualityIcon /><span className="text-xs ml-1">품질</span>
-      </ToolBtn>
+      {/* 품질 분석 대시보드 (디버그 모드에서만) */}
+      {debugMode && (
+        <ToolBtn
+          onClick={() => setQualityOpen(v => !v)}
+          disabled={!slideHtml || viewMode === 'html'}
+          title="전체 슬라이드 품질 분석"
+        >
+          <QualityIcon /><span className="text-xs ml-1">품질</span>
+        </ToolBtn>
+      )}
 
       <div className="flex-1" />
 
-      <span className="text-xs text-slate-600 px-2 select-none">Phase 8</span>
+      {debugMode && <span className="text-xs text-slate-600 px-2 select-none">Phase 8</span>}
 
     </div>
 
-    {/* 품질 대시보드 패널 */}
-    <QualityDashboard open={qualityOpen} onClose={() => setQualityOpen(false)} />
+    {/* 품질 대시보드 패널 (디버그 모드에서만) */}
+    {debugMode && <QualityDashboard open={qualityOpen} onClose={() => setQualityOpen(false)} />}
     </>
   )
 }
@@ -310,11 +326,18 @@ function QualityIcon() {
   )
 }
 
-function DockIcon() {
+function FullscreenIcon() {
   return (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <rect x="3" y="3" width="18" height="18" rx="2" />
-      <path d="M15 3v18" />
+      <path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M21 16v3a2 2 0 0 1-2 2h-3M3 16v3a2 2 0 0 0 2 2h3" />
+    </svg>
+  )
+}
+
+function FullscreenExitIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M8 3v3a2 2 0 0 1-2 2H3M21 8h-3a2 2 0 0 1-2-2V3M16 21v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3" />
     </svg>
   )
 }
@@ -328,11 +351,3 @@ function RefreshIcon() {
   )
 }
 
-function UndockIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <rect x="3" y="3" width="18" height="18" rx="2" />
-      <rect x="8" y="6" width="12" height="12" rx="1" />
-    </svg>
-  )
-}

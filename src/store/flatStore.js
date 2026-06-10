@@ -97,8 +97,18 @@ export const useFlatStore = create((set, get) => ({
   floatingPos: { x: null, y: 80 },
   /** 도킹 속성 패널 접힘 여부 */
   panelCollapsed: false,
+  /** 디버그 모드 — 품질/변환검증/Phase 라벨/html·split 뷰 등 진단 UI 노출 */
+  debugMode: false,
 
   setCroppingFlat(id) { set({ croppingFlatId: id }) },
+
+  /** 디버그 모드 토글 — 끄면 진단 뷰(html/split)에서 flat으로 복귀 */
+  setDebugMode(v) {
+    const on = !!v
+    const patch = { debugMode: on }
+    if (!on && get().viewMode !== 'flat') patch.viewMode = 'flat'
+    set(patch)
+  },
 
   setPanelMode(mode) { set({ panelMode: mode }) },
   setFloatingPos(pos) { set({ floatingPos: pos }) },
