@@ -33,7 +33,7 @@ export default function FlatSelectionOverlay({ element, scale, otherRects, canva
 
   // 더블클릭 → 텍스트 편집 모드 진입 (text + shape)
   const handleDoubleClick = useCallback((e) => {
-    if (element.type === 'text' || element.type === 'shape') {
+    if (element.type === 'text' || element.type === 'shape' || element.type === 'table') {
       e.stopPropagation()
       setEditingFlat(element.id)
     }
