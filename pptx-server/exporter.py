@@ -555,6 +555,20 @@ def _add_table(slide, el: dict, x, y, w, h, rotation):
             else:
                 _set_cell_borders(cell, bc_hex, bw)
 
+    # 병합 패스 — 스팬 헤드 셀을 우하단까지 병합
+    for r in range(rows):
+        for c in range(cols):
+            cd = cells[r][c] if c < len(cells[r]) else {}
+            cs = cd.get('colSpan', 1) or 1
+            rs = cd.get('rowSpan', 1) or 1
+            if cs > 1 or rs > 1:
+                r2 = min(rows - 1, r + rs - 1)
+                c2 = min(cols - 1, c + cs - 1)
+                try:
+                    table.cell(r, c).merge(table.cell(r2, c2))
+                except Exception:
+                    pass
+
 
 def _add_text(slide, el: dict, x, y, w, h, rotation, font_name_map: dict = None, slide_bg_rgb=None):
     s = el.get('styles', {})

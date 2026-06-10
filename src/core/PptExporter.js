@@ -94,21 +94,22 @@ function addTable(slide, el, pos) {
   const bc = cssColorToHex((t.border && t.border.color) || '#cbd5e1') || 'CBD5E1'
   const border = bw > 0 ? { type: 'solid', pt: Math.max(0.5, bw * 0.75), color: bc } : { type: 'none' }
 
-  const rows = t.cells.map((row, r) => row.map((cell) => {
-    const isHeader = t.headerRow && r === 0
-    const cellFs = cell.fontSize ? Math.round(parseFloat(cell.fontSize) * 0.75) : fontSizePt
-    const cellColor = cell.color ? (cssColorToHex(cell.color) || bodyColor) : (isHeader ? headerColor : bodyColor)
-    const cellBold = cell.fontWeight != null ? (String(cell.fontWeight) === '700' || Number(cell.fontWeight) >= 600) : isHeader
-    const cellFill = cell.bg ? { color: cssColorToHex(cell.bg) || 'FFFFFF' }
-      : (isHeader ? { color: headerBg } : undefined)
-    const cellBorder = cell.border
-      ? (cell.border.width > 0
-        ? { type: 'solid', pt: Math.max(0.5, (cell.border.width || 1) * 0.75), color: cssColorToHex(cell.border.color || '#cbd5e1') || 'CBD5E1' }
-        : { type: 'none' })
-      : border
-    return {
-      text: cell.text || '',
-      options: {
+  const rows = t.cells.map((row, r) => {
+    const out = []
+    row.forEach((cell, c) => {
+      if (cell.covered) return // 병합으로 가려진 셀은 생략
+      const isHeader = t.headerRow && r === 0
+      const cellFs = cell.fontSize ? Math.round(parseFloat(cell.fontSize) * 0.75) : fontSizePt
+      const cellColor = cell.color ? (cssColorToHex(cell.color) || bodyColor) : (isHeader ? headerColor : bodyColor)
+      const cellBold = cell.fontWeight != null ? (String(cell.fontWeight) === '700' || Number(cell.fontWeight) >= 600) : isHeader
+      const cellFill = cell.bg ? { color: cssColorToHex(cell.bg) || 'FFFFFF' }
+        : (isHeader ? { color: headerBg } : undefined)
+      const cellBorder = cell.border
+        ? (cell.border.width > 0
+          ? { type: 'solid', pt: Math.max(0.5, (cell.border.width || 1) * 0.75), color: cssColorToHex(cell.border.color || '#cbd5e1') || 'CBD5E1' }
+          : { type: 'none' })
+        : border
+      const options = {
         fontSize: cellFs,
         color: cellColor,
         bold: cellBold,
@@ -116,9 +117,13 @@ function addTable(slide, el, pos) {
         valign: cell.valign || 'middle',
         fill: cellFill,
         border: cellBorder,
-      },
-    }
-  }))
+      }
+      if (cell.colSpan > 1) options.colspan = cell.colSpan
+      if (cell.rowSpan > 1) options.rowspan = cell.rowSpan
+      out.push({ text: cell.text || '', options })
+    })
+    return out
+  })
 
   const total = t.colFractions.reduce((a, b) => a + b, 0) || 1
   const colW = t.colFractions.map(f => (f / total) * pos.w)
