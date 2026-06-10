@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   createTableData, createTableElement, addRow, removeRow, addCol, removeCol,
   setCellText, setAllCellTexts, setHeaderRow, setBorder,
+  normalizeRange, applyCellRange, rangeFirstCell, cellStyle,
 } from '../core/slideTable'
 import { internalElementToPublic, publicElementToInternal } from '../../packages/slide-contract/adapters'
 
@@ -80,6 +81,54 @@ describe('slideTable 모델/헬퍼', () => {
     expect(el.content).toBe('')
     expect(el.width).toBeGreaterThan(0)
     expect(el.height).toBeGreaterThan(0)
+  })
+})
+
+describe('셀 범위 선택/서식', () => {
+  it('normalizeRange: 좌상↔우하 정렬', () => {
+    expect(normalizeRange({ r0: 2, c0: 3, r1: 0, c1: 1 })).toEqual({ r0: 0, c0: 1, r1: 2, c1: 3 })
+  })
+
+  it('applyCellRange: 범위 내 셀에만 patch 병합', () => {
+    let t = createTableData(3, 3)
+    t = applyCellRange(t, { r0: 0, c0: 0, r1: 1, c1: 1 }, { bg: '#fee2e2' })
+    expect(t.cells[0][0].bg).toBe('#fee2e2')
+    expect(t.cells[1][1].bg).toBe('#fee2e2')
+    expect(t.cells[2][2].bg).toBeUndefined() // 범위 밖
+    expect(t.cells[0][2].bg).toBeUndefined()
+  })
+
+  it('applyCellRange: 역방향 범위도 정규화되어 적용', () => {
+    let t = createTableData(2, 2)
+    t = applyCellRange(t, { r0: 1, c0: 1, r1: 0, c1: 0 }, { color: '#ff0000', fontWeight: 700 })
+    expect(t.cells[0][0].color).toBe('#ff0000')
+    expect(t.cells[0][0].fontWeight).toBe(700)
+    expect(t.cells[1][1].color).toBe('#ff0000')
+  })
+
+  it('rangeFirstCell: 앵커(좌상) 셀 반환', () => {
+    let t = createTableData(2, 2)
+    t = setCellText(t, 0, 1, 'X')
+    expect(rangeFirstCell(t, { r0: 0, c0: 1, r1: 1, c1: 1 }).text).toBe('X')
+  })
+
+  it('cellStyle: 셀별 오버라이드(bg/color/fontWeight/fontSize/border) 반영', () => {
+    let t = createTableData(2, 2)
+    t = applyCellRange(t, { r0: 1, c0: 0, r1: 1, c1: 0 },
+      { bg: '#dbeafe', color: '#1e293b', fontWeight: 700, fontSize: '20px', border: { color: '#ef4444', width: 2 } })
+    const s = cellStyle(t, 1, 0, { color: '#334155' })
+    expect(s.background).toBe('#dbeafe')
+    expect(s.color).toBe('#1e293b')
+    expect(s.fontWeight).toBe(700)
+    expect(s.fontSize).toBe('20px')
+    expect(s.border).toBe('2px solid #ef4444')
+  })
+
+  it('cellStyle: 헤더 행 기본 강조(오버라이드 없을 때)', () => {
+    const t = createTableData(2, 2) // headerRow true
+    const s = cellStyle(t, 0, 0, { color: '#334155' })
+    expect(s.fontWeight).toBe(700)
+    expect(s.background).toBeTruthy()
   })
 })
 

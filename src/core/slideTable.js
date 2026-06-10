@@ -148,6 +148,29 @@ export function setHeaderRow(table, on) {
   return { ...table, headerRow: !!on }
 }
 
+/** {r0,c0,r1,c1} 정규화(좌상↔우하 정렬) */
+export function normalizeRange(range) {
+  return {
+    r0: Math.min(range.r0, range.r1), r1: Math.max(range.r0, range.r1),
+    c0: Math.min(range.c0, range.c1), c1: Math.max(range.c0, range.c1),
+  }
+}
+
+/** 범위 내 셀들에 patch 병합(셀별 서식). patch의 키가 undefined면 해제. */
+export function applyCellRange(table, range, patch) {
+  const { r0, c0, r1, c1 } = normalizeRange(range)
+  const cells = table.cells.map((row, r) =>
+    row.map((cell, c) =>
+      (r >= r0 && r <= r1 && c >= c0 && c <= c1) ? { ...cell, ...patch } : cell))
+  return { ...table, cells }
+}
+
+/** 범위 첫 셀(앵커) 반환 — 툴바 토글 상태 판정용 */
+export function rangeFirstCell(table, range) {
+  const { r0, c0 } = normalizeRange(range)
+  return (table.cells[r0] && table.cells[r0][c0]) || {}
+}
+
 /** 테두리 색/두께 변경 */
 export function setBorder(table, patch) {
   return { ...table, border: { ...table.border, ...patch } }
@@ -169,15 +192,21 @@ export function tableContainerStyle(styles) {
 
 export function cellStyle(table, r, c, styles) {
   const isHeader = table.headerRow && r === 0
-  const cell = table.cells[r][c]
-  const bw = (table.border && table.border.width) ?? 1
-  const bc = (table.border && table.border.color) || TABLE_BORDER_COLOR
+  const cell = (table.cells[r] && table.cells[r][c]) || {}
+  const tbw = (table.border && table.border.width) ?? 1
+  const tbc = (table.border && table.border.color) || TABLE_BORDER_COLOR
+  // 셀별 테두리 오버라이드
+  const cb = cell.border
+  const bw = cb && cb.width != null ? cb.width : tbw
+  const bc = cb && cb.color ? cb.color : tbc
   return {
-    border: `${bw}px solid ${bc}`,
+    border: bw > 0 ? `${bw}px solid ${bc}` : '1px solid transparent',
     padding: '6px 8px',
-    background: isHeader ? TABLE_HEADER_BG : (cell.bg || undefined),
-    color: isHeader ? TABLE_HEADER_COLOR : (styles.color || TABLE_BODY_COLOR),
-    fontWeight: isHeader ? 700 : 400,
+    // 셀별 오버라이드 > 헤더 기본 > 미설정
+    background: cell.bg != null ? cell.bg : (isHeader ? TABLE_HEADER_BG : undefined),
+    color: cell.color != null ? cell.color : (isHeader ? TABLE_HEADER_COLOR : (styles.color || TABLE_BODY_COLOR)),
+    fontWeight: cell.fontWeight != null ? cell.fontWeight : (isHeader ? 700 : 400),
+    fontSize: cell.fontSize != null ? cell.fontSize : undefined,
     textAlign: cell.align || 'left',
     verticalAlign: cell.valign || 'middle',
     overflow: 'hidden',

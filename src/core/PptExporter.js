@@ -96,16 +96,26 @@ function addTable(slide, el, pos) {
 
   const rows = t.cells.map((row, r) => row.map((cell) => {
     const isHeader = t.headerRow && r === 0
+    const cellFs = cell.fontSize ? Math.round(parseFloat(cell.fontSize) * 0.75) : fontSizePt
+    const cellColor = cell.color ? (cssColorToHex(cell.color) || bodyColor) : (isHeader ? headerColor : bodyColor)
+    const cellBold = cell.fontWeight != null ? (String(cell.fontWeight) === '700' || Number(cell.fontWeight) >= 600) : isHeader
+    const cellFill = cell.bg ? { color: cssColorToHex(cell.bg) || 'FFFFFF' }
+      : (isHeader ? { color: headerBg } : undefined)
+    const cellBorder = cell.border
+      ? (cell.border.width > 0
+        ? { type: 'solid', pt: Math.max(0.5, (cell.border.width || 1) * 0.75), color: cssColorToHex(cell.border.color || '#cbd5e1') || 'CBD5E1' }
+        : { type: 'none' })
+      : border
     return {
       text: cell.text || '',
       options: {
-        fontSize: fontSizePt,
-        color: isHeader ? headerColor : bodyColor,
-        bold: isHeader,
+        fontSize: cellFs,
+        color: cellColor,
+        bold: cellBold,
         align: cell.align || 'left',
         valign: cell.valign || 'middle',
-        fill: isHeader ? { color: headerBg } : (cell.bg ? { color: cssColorToHex(cell.bg) || 'FFFFFF' } : undefined),
-        border,
+        fill: cellFill,
+        border: cellBorder,
       },
     }
   }))

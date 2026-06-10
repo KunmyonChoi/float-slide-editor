@@ -521,26 +521,39 @@ def _add_table(slide, el: dict, x, y, w, h, rotation):
             cell.margin_bottom = Emu(int(0.03 * 914400))
             cell.vertical_anchor = _MSO_ANCHOR_MAP.get(cell_data.get('valign', 'middle'), MSO_ANCHOR.MIDDLE)
 
-            # 채우기
+            # 채우기 — 셀별 bg > 헤더 기본
             bg = cell_data.get('bg')
-            fill_hex = header_bg if is_header else (css_color_to_hex(bg) if bg else None)
+            fill_hex = css_color_to_hex(bg) if bg else (header_bg if is_header else None)
             if fill_hex:
                 cell.fill.solid()
                 cell.fill.fore_color.rgb = RGBColor.from_string(fill_hex)
             else:
                 cell.fill.background()  # 투명
 
+            # 셀별 폰트 오버라이드
+            cell_fs = round(float(re.sub(r'[^\d.]', '', cell_data['fontSize']) or font_size_pt / 0.75) * 0.75) \
+                if cell_data.get('fontSize') else font_size_pt
+            cw = cell_data.get('fontWeight')
+            cell_bold = (str(cw) == '700' or (isinstance(cw, (int, float)) and cw >= 600)) if cw is not None else is_header
+            cell_color = css_color_to_hex(cell_data['color']) if cell_data.get('color') else (header_hex if is_header else body_hex)
+
             # 텍스트
             cell.text = cell_data.get('text', '') or ''
             para = cell.text_frame.paragraphs[0]
             para.alignment = _PP_ALIGN_MAP.get(cell_data.get('align', 'left'), PP_ALIGN.LEFT)
             for run in para.runs:
-                run.font.size = Pt(font_size_pt)
-                run.font.bold = is_header
-                run.font.color.rgb = RGBColor.from_string(header_hex if is_header else body_hex)
-            # 빈 셀도 런이 없을 수 있으므로 기본 폰트만(런 없으면 스킵)
+                run.font.size = Pt(cell_fs)
+                run.font.bold = cell_bold
+                run.font.color.rgb = RGBColor.from_string(cell_color or body_hex)
 
-            _set_cell_borders(cell, bc_hex, bw)
+            # 셀별 테두리 오버라이드 > 표 테두리
+            cbd = cell_data.get('border')
+            if cbd is not None:
+                cw_ = cbd.get('width', 1)
+                cc_ = css_color_to_hex(cbd.get('color', '#cbd5e1')) or 'CBD5E1'
+                _set_cell_borders(cell, cc_, cw_)
+            else:
+                _set_cell_borders(cell, bc_hex, bw)
 
 
 def _add_text(slide, el: dict, x, y, w, h, rotation, font_name_map: dict = None, slide_bg_rgb=None):
