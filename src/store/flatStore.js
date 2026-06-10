@@ -11,6 +11,38 @@ const _pageCache = {}   // { [pageKey]: { elements, canvasSize, fontImports, his
 let _currentPageKey = null
 
 
+/**
+ * 재생성 시 페이지 캐시 재구성 (순수) — 원래 순서를 유지하며 html-backed 페이지는
+ * 새로 추출한 데이터로 교체하고, flat-only 페이지(htmlSlideIndex=null)는 그대로 보존한다.
+ * @param {Array<{htmlSlideIndex:number|null, entry:object}>} orderedSnapshot 원래 순서의 페이지들
+ * @param {Object} freshHtml { [slideIdx]: entry } 새로 추출한 HTML 페이지들
+ * @returns {Object} 새 _pageCache 맵
+ */
+export function buildRegeneratedCache(orderedSnapshot, freshHtml) {
+  const cache = {}
+  let idx = 0
+  const usedHtml = new Set()
+  for (const snap of orderedSnapshot) {
+    if (snap.htmlSlideIndex != null) {
+      const fresh = freshHtml[snap.htmlSlideIndex]
+      if (!fresh) continue // HTML 슬라이드가 사라짐 → 스킵
+      cache[`${idx}-0`] = { ...fresh, htmlSlideIndex: snap.htmlSlideIndex }
+      usedHtml.add(snap.htmlSlideIndex)
+    } else {
+      cache[`${idx}-0`] = snap.entry // flat-only 페이지 보존
+    }
+    idx++
+  }
+  // 스냅샷에 없던 새 HTML 슬라이드는 끝에 추가
+  Object.keys(freshHtml).map(Number).sort((a, b) => a - b).forEach(si => {
+    if (!usedHtml.has(si)) {
+      cache[`${idx}-0`] = { ...freshHtml[si], htmlSlideIndex: si }
+      idx++
+    }
+  })
+  return cache
+}
+
 /** 캐시 키를 페이지 순서로 정렬하여 반환 */
 function _getSortedPageKeys() {
   return Object.keys(_pageCache).sort((a, b) => {
@@ -188,14 +220,50 @@ export const useFlatStore = create((set, get) => ({
    * (최초 로딩 시와 동일: 캐시 초기화 → 현재 페이지 재추출 → 나머지 페이지 프리로드)
    */
   async regenerateAllPages() {
-    // 1) 모든 캐시 제거
+    const ref = get()._iframeRef
+    if (!ref?.current) { await get().forceReExtractAll(); return }
+
+    // 1) 현재 순서 + 각 페이지의 소스/데이터 스냅샷 (flat-only 보존용)
+    get()._saveCurrentPage()
+    const orderedSnapshot = _getSortedPageKeys().map(k => ({
+      htmlSlideIndex: _pageCache[k].htmlSlideIndex,
+      entry: _pageCache[k],
+    }))
+
+    // 2) HTML 슬라이드 재추출 (진행률 표시)
+    const editorStore = (await import('./editorStore')).useEditorStore
+    const { totalPages, currentPage } = editorStore.getState()
+    set({ _preloading: true, preloadProgress: { current: 0, total: totalPages } })
+    const freshHtml = {}
+    try {
+      for (let i = 0; i < totalPages; i++) {
+        ref.current.contentWindow?.postMessage({ type: 'fe:navigate', page: i }, '*')
+        await new Promise(r => setTimeout(r, 400))
+        try {
+          const { elements, canvasSize, fontImports } = extractFlatElementsFromIframe(ref)
+          freshHtml[i] = { elements, canvasSize, fontImports: fontImports || [], history: { stack: [], pointer: -1 } }
+        } catch (e) {
+          console.warn(`Regen page ${i} failed:`, e.message)
+        }
+        set({ preloadProgress: { current: i + 1, total: totalPages } })
+      }
+      // 원래 보던 페이지로 iframe 복원
+      ref.current.contentWindow?.postMessage({ type: 'fe:navigate', page: currentPage }, '*')
+      await new Promise(r => setTimeout(r, 300))
+    } finally {
+      set({ _preloading: false, preloadProgress: null })
+    }
+
+    // 3) 원래 순서대로 재구성 — html-backed는 새 데이터로, flat-only는 보존
+    const newCache = buildRegeneratedCache(orderedSnapshot, freshHtml)
     for (const key in _pageCache) delete _pageCache[key]
-    // 2) 현재 페이지를 iframe에서 즉시 재추출 (사용자에게 바로 결과 표시)
-    await get().forceReExtract()
-    // 3) 나머지 페이지를 iframe 순회로 프리로드.
-    //    preloadAllPages 는 _saveCurrentPage() 로 현재 페이지를 캐시에 저장한 뒤
-    //    각 페이지로 navigate → 추출하므로, 클리어된 캐시에 모두 새로 채워진다.
-    await get().preloadAllPages()
+    Object.assign(_pageCache, newCache)
+
+    // 4) 첫 페이지 복원
+    const firstKey = _getSortedPageKeys()[0]
+    _currentPageKey = firstKey || null
+    if (firstKey) get()._restoreFromCache(firstKey)
+    get()._syncPageInfo()
   },
 
   /** 페이지 변경 시 재추출 (split/flat 모드에서 호출) */
