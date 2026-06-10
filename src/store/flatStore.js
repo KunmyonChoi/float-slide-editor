@@ -651,6 +651,17 @@ export const useFlatStore = create((set, get) => ({
     })
   },
 
+  /** 여러 요소를 한 번에 추가 (단일 undo 단위) — 레이아웃 삽입 등 */
+  addFlatElements(elements) {
+    if (!elements || elements.length === 0) return
+    const els = get().flatElements
+    _history.push({ type: 'addMany', elements: elements.map(e => structuredClone(e)) })
+    set({
+      flatElements: [...els, ...elements],
+      canUndo: _history.canUndo, canRedo: _history.canRedo,
+    })
+  },
+
   /** 여러 요소에 동일 changes 적용 + batch 히스토리 */
   batchUpdateFlatElements(ids, changes) {
     const els = get().flatElements
@@ -812,6 +823,9 @@ export const useFlatStore = create((set, get) => ({
       set({ flatElements: updated })
     } else if (cmd.type === 'add') {
       set({ flatElements: els.filter(e => e.id !== cmd.element.id) })
+    } else if (cmd.type === 'addMany') {
+      const ids = new Set(cmd.elements.map(e => e.id))
+      set({ flatElements: els.filter(e => !ids.has(e.id)) })
     } else if (cmd.type === 'zorder') {
       const updated = [...els]
       for (const c of cmd.changes) {
@@ -858,6 +872,8 @@ export const useFlatStore = create((set, get) => ({
       set({ flatElements: els.filter(e => e.id !== cmd.element.id) })
     } else if (cmd.type === 'add') {
       set({ flatElements: [...els, cmd.element] })
+    } else if (cmd.type === 'addMany') {
+      set({ flatElements: [...els, ...cmd.elements] })
     } else if (cmd.type === 'zorder') {
       const updated = [...els]
       for (const c of cmd.changes) {

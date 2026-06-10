@@ -2,6 +2,7 @@ import { useRef, useState, useEffect, useCallback } from 'react'
 import { useEditorStore } from '../store/editorStore'
 import { useFlatStore } from '../store/flatStore'
 import { nextFlatId } from '../core/FlatExtractor'
+import { SLIDE_LAYOUTS } from '../core/slideLayouts'
 import { BlobStore } from '../core/BlobStore'
 import { ToolBtn, Divider, UndoIcon, RedoIcon } from './FloatingToolbar'
 
@@ -62,14 +63,16 @@ export default function EditToolbar() {
   const { viewMode, selectedFlatIds, flatElements, canvasSize,
           canUndo: flatCanUndo, canRedo: flatCanRedo,
           undo: flatUndo, redo: flatRedo,
-          addFlatElement, setSelectedFlat,
+          addFlatElement, addFlatElements, setSelectedFlat,
           bringForward, sendBackward, bringToFront, sendToBack } = useFlatStore()
   const [insertOpen, setInsertOpen] = useState(false)
   const [shapeOpen, setShapeOpen] = useState(false)
   const [videoOpen, setVideoOpen] = useState(false)
+  const [layoutOpen, setLayoutOpen] = useState(false)
   const insertRef = useRef(null)
   const shapeRef = useRef(null)
   const videoRef = useRef(null)
+  const layoutRef = useRef(null)
   const imageInputRef = useRef(null)
 
   const isFlatMode = viewMode === 'flat' || viewMode === 'split'
@@ -129,6 +132,23 @@ export default function EditToolbar() {
     // 배경은 캔버스에서 선택 대상이 아님 → 선택 해제하여 '배경 레이어' 패널이 뜨게 함
     setSelectedFlat(null)
   }, [flatElements, canvasSize, addFlatElement, setSelectedFlat])
+
+  // 레이아웃 삽입 — 현재 페이지에 플레이스홀더 요소 세트를 한 번에 추가(단일 undo)
+  const insertLayout = useCallback((layoutId) => {
+    const layout = SLIDE_LAYOUTS.find(l => l.id === layoutId)
+    if (!layout) return
+    const specs = layout.build(canvasSize)
+    if (specs.length === 0) return // 빈 슬라이드
+    const maxZ = flatElements.length > 0 ? Math.max(...flatElements.map(e => e.zIndex)) : 0
+    const els = specs.map((s, i) => ({
+      sourceId: null, rotation: 0, merged: false, isRich: false,
+      ...s,
+      id: nextFlatId(),
+      zIndex: maxZ + 1 + i,
+    }))
+    addFlatElements(els)
+    setSelectedFlat(null)
+  }, [flatElements, canvasSize, addFlatElements, setSelectedFlat])
 
   const handleImageFile = useCallback((e) => {
     const file = e.target.files?.[0]
@@ -254,6 +274,18 @@ export default function EditToolbar() {
           <ToolBtn onClick={() => insertFlatPreset('text')} title="텍스트 추가">
             <TextIcon /><span className="text-xs ml-1">텍스트</span>
           </ToolBtn>
+
+          {/* 레이아웃 드롭다운 — 백지 시작 스캐폴딩 */}
+          <DropdownBtn
+            innerRef={layoutRef}
+            open={layoutOpen}
+            setOpen={setLayoutOpen}
+            icon={<LayoutIcon />}
+            label="레이아웃"
+            items={SLIDE_LAYOUTS.map(l => ({
+              id: l.id, icon: <LayoutIcon />, label: l.name, action: () => insertLayout(l.id),
+            }))}
+          />
 
           {/* 도형 드롭다운 */}
           <DropdownBtn
@@ -476,6 +508,16 @@ function RectIcon() {
   return (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
       <rect x="3" y="3" width="18" height="18" rx="2" />
+    </svg>
+  )
+}
+
+function LayoutIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <rect x="3" y="3" width="18" height="18" rx="2" />
+      <line x1="3" y1="9" x2="21" y2="9" />
+      <line x1="12" y1="9" x2="12" y2="21" />
     </svg>
   )
 }
