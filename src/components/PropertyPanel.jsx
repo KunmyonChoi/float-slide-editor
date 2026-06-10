@@ -113,26 +113,69 @@ function DockedShell({ children }) {
   const selectedId = useEditorStore(s => s.selectedId)
   const selectedFlatIds = useFlatStore(s => s.selectedFlatIds)
   const viewMode = useFlatStore(s => s.viewMode)
+  const collapsed = useFlatStore(s => s.panelCollapsed)
+  const toggleCollapsed = useFlatStore(s => s.togglePanelCollapsed)
   const isFlatMode = viewMode === 'flat' || viewMode === 'split'
   // Flat 모드: 선택 없어도 슬라이드 배경 패널 표시
   const showContent = isFlatMode || !!selectedId || selectedFlatIds.length > 0
 
+  const shell = {
+    background: 'rgba(15,23,42,0.9)',
+    backdropFilter: 'blur(16px)',
+    borderLeft: '1px solid rgba(255,255,255,0.08)',
+  }
+
+  // 접힘: 얇은 띠 + 펼치기 버튼
+  if (collapsed) {
+    return (
+      <div className="shrink-0 flex flex-col items-center pt-2" style={{ width: 32, ...shell }}>
+        <button
+          onClick={toggleCollapsed}
+          title="속성 패널 펼치기"
+          className="w-7 h-7 flex items-center justify-center rounded-md text-slate-400 hover:bg-white/10 hover:text-slate-200 transition-colors"
+        >
+          <ChevronLeftIcon />
+        </button>
+        <span className="mt-2 text-[10px] text-slate-500" style={{ writingMode: 'vertical-rl' }}>속성</span>
+      </div>
+    )
+  }
+
   return (
-    <div
-      className="shrink-0 overflow-y-auto"
-      style={{
-        width: 260,
-        background: 'rgba(15,23,42,0.9)',
-        backdropFilter: 'blur(16px)',
-        borderLeft: '1px solid rgba(255,255,255,0.08)',
-      }}
-    >
-      {showContent ? children : (
-        <div className="flex items-center justify-center h-full">
-          <span className="text-xs text-slate-600">요소를 선택하세요</span>
-        </div>
-      )}
+    <div className="shrink-0 flex flex-col" style={{ width: 260, ...shell }}>
+      <div className="flex items-center justify-between px-3 py-2 border-b border-white/5 shrink-0">
+        <span className="text-xs font-medium text-slate-400">속성</span>
+        <button
+          onClick={toggleCollapsed}
+          title="속성 패널 접기"
+          className="w-6 h-6 flex items-center justify-center rounded-md text-slate-400 hover:bg-white/10 hover:text-slate-200 transition-colors"
+        >
+          <ChevronRightIcon />
+        </button>
+      </div>
+      <div className="flex-1 overflow-y-auto">
+        {showContent ? children : (
+          <div className="flex items-center justify-center h-full">
+            <span className="text-xs text-slate-600">요소를 선택하세요</span>
+          </div>
+        )}
+      </div>
     </div>
+  )
+}
+
+function ChevronRightIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <polyline points="9 18 15 12 9 6" />
+    </svg>
+  )
+}
+function ChevronLeftIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <polyline points="15 18 9 12 15 6" />
+    </svg>
   )
 }
 

@@ -218,6 +218,8 @@ export default function FlatContextMenu({ x, y, canvasX, canvasY, onClose }) {
       case 'sendToBack': if (singleId) sendToBack(singleId); break
       case 'copyStyle': useFlatStore.getState().copyStyle(); break
       case 'pasteStyle': useFlatStore.getState().pasteStyle(); break
+      case 'group': useFlatStore.getState().groupSelected(); break
+      case 'ungroup': useFlatStore.getState().ungroupSelected(); break
       case 'insertText': insertElement('text'); break
       case 'insertRect': insertElement('rect'); break
       case 'insertCircle': insertElement('circle'); break
@@ -339,6 +341,8 @@ export default function FlatContextMenu({ x, y, canvasX, canvasY, onClose }) {
         ] : []),
       ],
     },
+    { id: 'group', label: '그룹', shortcut: 'Ctrl+G', action: 'group', disabled: selectedFlatIds.length < 2 },
+    { id: 'ungroup', label: '그룹 해제', shortcut: 'Ctrl+Shift+G', action: 'ungroup', disabled: !selectedEls.some(e => e.groupId) },
     { id: 'sep2', type: 'separator' },
     { id: 'all', label: '전체 선택', shortcut: 'Ctrl+A', action: 'selectAll' },
   ] : [

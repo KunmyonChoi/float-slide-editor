@@ -34,6 +34,8 @@ def _public_el_to_internal(pel: dict) -> dict:
         out['merged'] = True
     if pel.get('locked'):
         out['locked'] = True
+    if pel.get('groupId') is not None:
+        out['groupId'] = pel['groupId']
     return out
 
 
