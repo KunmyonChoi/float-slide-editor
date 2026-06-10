@@ -11,7 +11,7 @@ import { tableContainerStyle, cellStyle } from '../core/slideTable'
  * 클릭으로 선택, 드래그로 이동 (Phase 3에서 추가).
  */
 export default function FlatElementRenderer({ element, isSelected, isEditing, scale }) {
-  const { setSelectedFlat, toggleSelectFlat, setEditingFlat, canvasSize } = useFlatStore()
+  const { setSelectedFlat, toggleSelectFlat, selectFlatGroupAware, setEditingFlat, canvasSize } = useFlatStore()
 
   const { x, y, width, height, type, content } = element
 
@@ -29,13 +29,9 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
     }
     e.stopPropagation()
     e.preventDefault() // 브라우저 텍스트 선택 방지
-    if (e.shiftKey) {
-      toggleSelectFlat(element.id)
-    } else {
-      setSelectedFlat(element.id)
-    }
+    selectFlatGroupAware(element.id, e.shiftKey)
     useEditorStore.getState().setSelected(null)
-  }, [element.id, isFullCanvasBg, setSelectedFlat, toggleSelectFlat])
+  }, [element.id, isFullCanvasBg, selectFlatGroupAware])
 
   const handleClick = useCallback((e) => {
     if (useFlatStore.getState().drawMode) return

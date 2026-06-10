@@ -418,6 +418,9 @@ export default function FlatCanvas() {
         if (e.code === 'KeyX' && hasSelection)  { cutElement(); return }
         if (e.code === 'KeyV')                  { pasteElement(); return }
         if (e.code === 'KeyD' && hasSelection)  { e.preventDefault(); duplicateElement(); return }
+        // 그룹 / 그룹 해제
+        if (e.code === 'KeyG' && !e.shiftKey && selectedFlatIds.length >= 2) { e.preventDefault(); useFlatStore.getState().groupSelected(); return }
+        if (e.code === 'KeyG' && e.shiftKey && hasSelection) { e.preventDefault(); useFlatStore.getState().ungroupSelected(); return }
         // z-순서: 단일 선택만
         if (e.code === 'BracketRight' && !e.shiftKey && singleId) { bringForward(singleId); return }
         if (e.code === 'BracketLeft' && !e.shiftKey && singleId)  { sendBackward(singleId); return }
@@ -584,7 +587,9 @@ export default function FlatCanvas() {
           return el.x >= x1 && el.y >= y1 && el.x + el.width <= x2 && el.y + el.height <= y2
         }).map(el => el.id)
         if (hits.length > 0) {
-          useFlatStore.getState().setSelectedFlats(hits)
+          // 그룹 일부만 잡혔으면 그룹 전체 포함
+          const expanded = useFlatStore.getState().expandSelectionToGroups(hits)
+          useFlatStore.getState().setSelectedFlats(expanded)
         } else if (!shiftKey) {
           useFlatStore.getState().setSelectedFlat(null)
         }

@@ -65,7 +65,8 @@ export default function EditToolbar() {
           canUndo: flatCanUndo, canRedo: flatCanRedo,
           undo: flatUndo, redo: flatRedo,
           addFlatElement, addFlatElements, applyLayoutElements, setSelectedFlat,
-          bringForward, sendBackward, bringToFront, sendToBack } = useFlatStore()
+          bringForward, sendBackward, bringToFront, sendToBack,
+          groupSelected, ungroupSelected } = useFlatStore()
   const [insertOpen, setInsertOpen] = useState(false)
   const [shapeOpen, setShapeOpen] = useState(false)
   const [videoOpen, setVideoOpen] = useState(false)
@@ -423,6 +424,28 @@ export default function EditToolbar() {
           </>
         )
       })()}
+
+      {/* 그룹 / 그룹 해제 (flat/split 모드) */}
+      {isFlatMode && selectedFlatIds.length >= 1 && (() => {
+        const canGroup = selectedFlatIds.length >= 2
+        const canUngroup = selectedFlatIds.some(id => flatElements.find(e => e.id === id)?.groupId)
+        if (!canGroup && !canUngroup) return null
+        return (
+          <>
+            <Divider />
+            {canGroup && (
+              <ToolBtn onClick={groupSelected} title="그룹 (Ctrl+G)">
+                <GroupIcon /><span className="text-xs ml-1">그룹</span>
+              </ToolBtn>
+            )}
+            {canUngroup && (
+              <ToolBtn onClick={ungroupSelected} title="그룹 해제 (Ctrl+Shift+G)">
+                <UngroupIcon /><span className="text-xs ml-1">해제</span>
+              </ToolBtn>
+            )}
+          </>
+        )
+      })()}
     </div>
   )
 }
@@ -622,6 +645,24 @@ function TableIcon() {
       <line x1="3" y1="15" x2="21" y2="15" />
       <line x1="9" y1="3" x2="9" y2="21" />
       <line x1="15" y1="3" x2="15" y2="21" />
+    </svg>
+  )
+}
+
+function GroupIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <rect x="3" y="3" width="9" height="9" rx="1" />
+      <rect x="12" y="12" width="9" height="9" rx="1" />
+    </svg>
+  )
+}
+
+function UngroupIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeDasharray="3 2">
+      <rect x="3" y="3" width="9" height="9" rx="1" />
+      <rect x="12" y="12" width="9" height="9" rx="1" />
     </svg>
   )
 }

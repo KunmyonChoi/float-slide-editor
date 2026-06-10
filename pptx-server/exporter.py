@@ -106,12 +106,27 @@ def build_pptx(pages: dict, default_canvas_size: dict, fonts: list = None,
                     except Exception:
                         pass
 
-        # Add content elements
+        # Add content elements (그룹별로 추가된 도형 추적)
+        group_shapes = {}
         for el in info['content_elements']:
+            before = len(slide.shapes)
             try:
                 _add_element(slide, el, page_cs, font_name_map, slide_bg_rgb=slide_bg_rgb)
             except Exception as e:
                 print(f'PPT export: element {el.get("id")} skipped: {e}')
+                continue
+            gid = el.get('groupId')
+            if gid:
+                added = list(slide.shapes)[before:]
+                group_shapes.setdefault(gid, []).extend(added)
+
+        # 같은 그룹의 도형들을 PowerPoint 그룹으로 묶기
+        for gid, shapes in group_shapes.items():
+            if len(shapes) >= 2:
+                try:
+                    slide.shapes.add_group_shape(shapes)
+                except Exception as e:
+                    print(f'PPT export: group {gid} skipped: {e}')
 
     # ── Embed fonts into PPTX package ──
     if font_records:

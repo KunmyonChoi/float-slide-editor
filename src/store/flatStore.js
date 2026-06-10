@@ -499,6 +499,51 @@ export const useFlatStore = create((set, get) => ({
     set({ selectedFlatIds: ids })
   },
 
+  /** 선택된 요소들을 하나의 그룹으로 묶기 (Ctrl+G) */
+  groupSelected() {
+    const ids = get().selectedFlatIds
+    if (ids.length < 2) return
+    const gid = 'grp-' + (globalThis.crypto?.randomUUID?.() || Math.random().toString(36).slice(2, 11))
+    get().batchUpdateFlatElements(ids, { groupId: gid })
+  },
+
+  /** 선택에 포함된 그룹들을 해제 (Ctrl+Shift+G) */
+  ungroupSelected() {
+    const els = get().flatElements
+    const sel = new Set(get().selectedFlatIds)
+    const gids = new Set(els.filter(e => sel.has(e.id) && e.groupId).map(e => e.groupId))
+    if (gids.size === 0) return
+    const memberIds = els.filter(e => e.groupId && gids.has(e.groupId)).map(e => e.id)
+    get().batchUpdateFlatElements(memberIds, { groupId: null })
+  },
+
+  /** 그룹 인식 선택 — 그룹 요소를 선택하면 그룹 전체 선택. additive=Shift 토글 */
+  selectFlatGroupAware(id, additive) {
+    const els = get().flatElements
+    const el = els.find(e => e.id === id)
+    if (!el) return
+    const members = el.groupId ? els.filter(e => e.groupId === el.groupId).map(e => e.id) : [id]
+    if (additive) {
+      const cur = new Set(get().selectedFlatIds)
+      const allIn = members.every(m => cur.has(m))
+      if (allIn) members.forEach(m => cur.delete(m))
+      else members.forEach(m => cur.add(m))
+      set({ selectedFlatIds: [...cur] })
+    } else {
+      set({ selectedFlatIds: members })
+    }
+  },
+
+  /** 주어진 id들을 그룹 단위로 확장(마키 선택이 그룹 일부만 잡았을 때 전체 포함) */
+  expandSelectionToGroups(ids) {
+    const els = get().flatElements
+    const gids = new Set(els.filter(e => ids.includes(e.id) && e.groupId).map(e => e.groupId))
+    if (gids.size === 0) return ids
+    const set2 = new Set(ids)
+    els.forEach(e => { if (e.groupId && gids.has(e.groupId)) set2.add(e.id) })
+    return [...set2]
+  },
+
   /** 인라인 텍스트 편집 시작/종료 */
   setEditingFlat(id) {
     set({ editingFlatId: id })
@@ -618,13 +663,24 @@ export const useFlatStore = create((set, get) => ({
   pasteElement() {
     const { clipboard, flatElements } = get()
     if (!clipboard || clipboard.length === 0) return
-    const newEls = clipboard.map(e => ({
-      ...structuredClone(e),
-      id: nextFlatId(),
-      sourceId: null,
-      x: e.x + 20,
-      y: e.y + 20,
-    }))
+    // 그룹ID 재매핑 — 복제본끼리 새 그룹을 이루되 원본 그룹과는 분리
+    const groupMap = {}
+    const newEls = clipboard.map(e => {
+      const clone = {
+        ...structuredClone(e),
+        id: nextFlatId(),
+        sourceId: null,
+        x: e.x + 20,
+        y: e.y + 20,
+      }
+      if (clone.groupId) {
+        if (!groupMap[clone.groupId]) {
+          groupMap[clone.groupId] = 'grp-' + (globalThis.crypto?.randomUUID?.() || Math.random().toString(36).slice(2, 11))
+        }
+        clone.groupId = groupMap[clone.groupId]
+      }
+      return clone
+    })
     if (newEls.length === 1) {
       get().addFlatElement(newEls[0])
     } else {

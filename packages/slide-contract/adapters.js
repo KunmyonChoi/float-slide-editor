@@ -34,6 +34,7 @@ export function internalElementToPublic(el) {
   if (el.link != null) out.link = el.link
   if (el.merged) out.merged = true
   if (el.locked) out.locked = true
+  if (el.groupId != null) out.groupId = el.groupId
   if (el.styles) out.style = { ...el.styles } // CSS-native 통과(얕은 복사로 참조 분리)
   return out
 }
@@ -62,6 +63,7 @@ export function publicElementToInternal(pel) {
   if (pel.link != null) out.link = pel.link
   if (pel.merged) out.merged = true
   if (pel.locked) out.locked = true
+  if (pel.groupId != null) out.groupId = pel.groupId
   return out
 }
 
