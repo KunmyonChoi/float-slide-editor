@@ -171,6 +171,86 @@ export function rangeFirstCell(table, range) {
   return (table.cells[r0] && table.cells[r0][c0]) || {}
 }
 
+// ── 셀 병합/분할 ───────────────────────────────────
+// 병합: 좌상 셀이 colSpan/rowSpan을 갖고, 나머지는 covered:true(렌더 생략).
+
+/** 범위를 하나로 병합(좌상 셀 텍스트 유지, 나머지 텍스트는 비움) */
+export function mergeCells(table, range) {
+  const { r0, c0, r1, c1 } = normalizeRange(range)
+  if (r0 === r1 && c0 === c1) return table
+  const cells = table.cells.map(row => row.map(cell => ({ ...cell })))
+  const extra = []
+  for (let r = r0; r <= r1; r++) {
+    for (let c = c0; c <= c1; c++) {
+      if (r === r0 && c === c0) continue
+      if (cells[r][c].text) extra.push(cells[r][c].text)
+      cells[r][c] = { text: '', covered: true }
+    }
+  }
+  const head = cells[r0][c0]
+  cells[r0][c0] = {
+    ...head, covered: false,
+    colSpan: c1 - c0 + 1, rowSpan: r1 - r0 + 1,
+    text: head.text || extra.join(' '),
+  }
+  return { ...table, cells }
+}
+
+/** (r,c)의 병합 해제 — 가려졌던 셀 복원 */
+export function splitCell(table, r, c) {
+  const cell = table.cells[r] && table.cells[r][c]
+  if (!cell) return table
+  const cs = cell.colSpan || 1, rs = cell.rowSpan || 1
+  if (cs === 1 && rs === 1) return table
+  const cells = table.cells.map(row => row.map(cl => ({ ...cl })))
+  for (let rr = r; rr < r + rs && rr < table.rows; rr++) {
+    for (let cc = c; cc < c + cs && cc < table.cols; cc++) {
+      cells[rr][cc] = { ...cells[rr][cc], covered: false, colSpan: 1, rowSpan: 1 }
+    }
+  }
+  cells[r][c] = { ...cells[r][c], colSpan: 1, rowSpan: 1, covered: false }
+  return { ...table, cells }
+}
+
+/** 범위에 병합 가능한가(셀이 2개 이상) */
+export function canMerge(range) {
+  const n = normalizeRange(range)
+  return n.r0 !== n.r1 || n.c0 !== n.c1
+}
+
+/** (r,c)가 병합 셀인가 */
+export function isMerged(table, r, c) {
+  const cell = table.cells[r] && table.cells[r][c]
+  return !!cell && ((cell.colSpan || 1) > 1 || (cell.rowSpan || 1) > 1)
+}
+
+// ── 열 너비 / 행 높이 조정 ──────────────────────────
+const MIN_FRAC = 0.04
+
+/** index 열과 index+1 열 사이 경계를 deltaFrac만큼 이동 */
+export function resizeColumn(table, index, deltaFrac) {
+  if (index < 0 || index >= table.cols - 1) return table
+  const cf = table.colFractions.slice()
+  let d = deltaFrac
+  d = Math.max(d, MIN_FRAC - cf[index])
+  d = Math.min(d, cf[index + 1] - MIN_FRAC)
+  cf[index] += d
+  cf[index + 1] -= d
+  return { ...table, colFractions: cf }
+}
+
+/** index 행과 index+1 행 사이 경계를 deltaFrac만큼 이동 */
+export function resizeRow(table, index, deltaFrac) {
+  if (index < 0 || index >= table.rows - 1) return table
+  const rf = table.rowFractions.slice()
+  let d = deltaFrac
+  d = Math.max(d, MIN_FRAC - rf[index])
+  d = Math.min(d, rf[index + 1] - MIN_FRAC)
+  rf[index] += d
+  rf[index + 1] -= d
+  return { ...table, rowFractions: rf }
+}
+
 /** 테두리 색/두께 변경 */
 export function setBorder(table, patch) {
   return { ...table, border: { ...table.border, ...patch } }

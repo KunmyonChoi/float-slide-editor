@@ -3,6 +3,7 @@ import {
   createTableData, createTableElement, addRow, removeRow, addCol, removeCol,
   setCellText, setAllCellTexts, setHeaderRow, setBorder,
   normalizeRange, applyCellRange, rangeFirstCell, cellStyle,
+  mergeCells, splitCell, canMerge, isMerged, resizeColumn, resizeRow,
 } from '../core/slideTable'
 import { internalElementToPublic, publicElementToInternal } from '../../packages/slide-contract/adapters'
 
@@ -129,6 +130,66 @@ describe('셀 범위 선택/서식', () => {
     const s = cellStyle(t, 0, 0, { color: '#334155' })
     expect(s.fontWeight).toBe(700)
     expect(s.background).toBeTruthy()
+  })
+})
+
+describe('셀 병합/분할', () => {
+  it('canMerge: 2셀 이상이어야 true', () => {
+    expect(canMerge({ r0: 0, c0: 0, r1: 0, c1: 0 })).toBe(false)
+    expect(canMerge({ r0: 0, c0: 0, r1: 1, c1: 0 })).toBe(true)
+  })
+
+  it('mergeCells: 좌상에 span 부여 + 나머지 covered, 텍스트 합침', () => {
+    let t = createTableData(3, 3)
+    t = setCellText(t, 0, 0, 'A')
+    t = setCellText(t, 0, 1, 'B')
+    t = mergeCells(t, { r0: 0, c0: 0, r1: 1, c1: 1 })
+    expect(t.cells[0][0].colSpan).toBe(2)
+    expect(t.cells[0][0].rowSpan).toBe(2)
+    expect(t.cells[0][0].text).toBe('A') // 좌상 우선
+    expect(t.cells[0][1].covered).toBe(true)
+    expect(t.cells[1][1].covered).toBe(true)
+    expect(isMerged(t, 0, 0)).toBe(true)
+  })
+
+  it('mergeCells: 좌상 비어있으면 나머지 텍스트 합침', () => {
+    let t = createTableData(2, 2)
+    t = setCellText(t, 0, 1, 'X')
+    t = setCellText(t, 1, 0, 'Y')
+    t = mergeCells(t, { r0: 0, c0: 0, r1: 1, c1: 1 })
+    expect(t.cells[0][0].text).toBe('X Y')
+  })
+
+  it('splitCell: span 해제 + covered 복원', () => {
+    let t = createTableData(3, 3)
+    t = mergeCells(t, { r0: 0, c0: 0, r1: 1, c1: 1 })
+    t = splitCell(t, 0, 0)
+    expect(isMerged(t, 0, 0)).toBe(false)
+    expect(t.cells[0][1].covered).toBe(false)
+    expect(t.cells[1][1].covered).toBe(false)
+  })
+})
+
+describe('열/행 크기 조정', () => {
+  it('resizeColumn: 인접 열 간 분수 이동(합 보존)', () => {
+    const t = createTableData(2, 3) // 1/3씩
+    const t2 = resizeColumn(t, 0, 0.1)
+    expect(t2.colFractions[0]).toBeCloseTo(1 / 3 + 0.1)
+    expect(t2.colFractions[1]).toBeCloseTo(1 / 3 - 0.1)
+    expect(t2.colFractions.reduce((a, b) => a + b, 0)).toBeCloseTo(1)
+  })
+
+  it('resizeColumn: 최소 너비 클램프', () => {
+    const t = createTableData(2, 2) // 0.5/0.5
+    const t2 = resizeColumn(t, 0, 0.9) // 과도 → 클램프
+    expect(t2.colFractions[1]).toBeGreaterThanOrEqual(0.03)
+    expect(t2.colFractions.reduce((a, b) => a + b, 0)).toBeCloseTo(1)
+  })
+
+  it('resizeRow: 인접 행 간 분수 이동', () => {
+    const t = createTableData(3, 2)
+    const t2 = resizeRow(t, 1, -0.1)
+    expect(t2.rowFractions.reduce((a, b) => a + b, 0)).toBeCloseTo(1)
   })
 })
 

@@ -269,8 +269,13 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
           <tbody>
             {t.cells.map((row, r) => (
               <tr key={r} style={{ height: `${t.rowFractions[r] * 100}%` }}>
-                {row.map((cell, c) => (
-                  <td key={c} style={cellStyle(t, r, c, styles)}>{cell.text}</td>
+                {row.map((cell, c) => cell.covered ? null : (
+                  <td
+                    key={c}
+                    colSpan={cell.colSpan > 1 ? cell.colSpan : undefined}
+                    rowSpan={cell.rowSpan > 1 ? cell.rowSpan : undefined}
+                    style={cellStyle(t, r, c, styles)}
+                  >{cell.text}</td>
                 ))}
               </tr>
             ))}
