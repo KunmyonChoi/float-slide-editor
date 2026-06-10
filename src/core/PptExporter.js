@@ -75,7 +75,63 @@ async function addElementToSlide(slide, el, canvasSize) {
     case 'video':
       addVideoPlaceholder(slide, el, { x, y, w, h, rotate })
       break
+    case 'table':
+      addTable(slide, el, { x, y, w, h, rotate })
+      break
   }
+}
+
+/** 표 → pptxgenjs 네이티브 표 (편집 가능) */
+function addTable(slide, el, pos) {
+  const t = el.table
+  if (!t || !t.cells || t.cells.length === 0) return
+  const s = el.styles || {}
+  const fontSizePt = s.fontSize ? Math.round(parseFloat(s.fontSize) * 0.75) : 11
+  const bodyColor = cssColorToHex(s.color) || '334155'
+  const headerBg = 'F1F5F9'
+  const headerColor = '0F172A'
+  const bw = (t.border && t.border.width) ?? 1
+  const bc = cssColorToHex((t.border && t.border.color) || '#cbd5e1') || 'CBD5E1'
+  const border = bw > 0 ? { type: 'solid', pt: Math.max(0.5, bw * 0.75), color: bc } : { type: 'none' }
+
+  const rows = t.cells.map((row, r) => row.map((cell) => {
+    const isHeader = t.headerRow && r === 0
+    const cellFs = cell.fontSize ? Math.round(parseFloat(cell.fontSize) * 0.75) : fontSizePt
+    const cellColor = cell.color ? (cssColorToHex(cell.color) || bodyColor) : (isHeader ? headerColor : bodyColor)
+    const cellBold = cell.fontWeight != null ? (String(cell.fontWeight) === '700' || Number(cell.fontWeight) >= 600) : isHeader
+    const cellFill = cell.bg ? { color: cssColorToHex(cell.bg) || 'FFFFFF' }
+      : (isHeader ? { color: headerBg } : undefined)
+    const cellBorder = cell.border
+      ? (cell.border.width > 0
+        ? { type: 'solid', pt: Math.max(0.5, (cell.border.width || 1) * 0.75), color: cssColorToHex(cell.border.color || '#cbd5e1') || 'CBD5E1' }
+        : { type: 'none' })
+      : border
+    return {
+      text: cell.text || '',
+      options: {
+        fontSize: cellFs,
+        color: cellColor,
+        bold: cellBold,
+        align: cell.align || 'left',
+        valign: cell.valign || 'middle',
+        fill: cellFill,
+        border: cellBorder,
+      },
+    }
+  }))
+
+  const total = t.colFractions.reduce((a, b) => a + b, 0) || 1
+  const colW = t.colFractions.map(f => (f / total) * pos.w)
+  const rowTotal = t.rowFractions.reduce((a, b) => a + b, 0) || 1
+  const rowH = t.rowFractions.map(f => (f / rowTotal) * pos.h)
+
+  slide.addTable(rows, {
+    x: pos.x, y: pos.y, w: pos.w, h: pos.h,
+    colW, rowH,
+    fontFace: 'Arial',
+    border,
+    valign: 'middle',
+  })
 }
 
 /**

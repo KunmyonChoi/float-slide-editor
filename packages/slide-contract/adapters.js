@@ -25,6 +25,8 @@ export function internalElementToPublic(el) {
   if (el.zIndex) out.z = el.zIndex
   if (el.type === 'text') {
     out.text = el.isRich ? { html: el.content || '' } : { plain: el.content || '' }
+  } else if (el.type === 'table') {
+    out.table = el.table // 구조화 표 데이터(통과)
   } else {
     out.src = el.content || ''
   }
@@ -48,6 +50,10 @@ export function publicElementToInternal(pel) {
   if (pel.type === 'text') {
     out.content = pel.text?.html ?? pel.text?.plain ?? ''
     out.isRich = pel.text?.html != null
+  } else if (pel.type === 'table') {
+    out.content = ''
+    out.isRich = false
+    if (pel.table != null) out.table = pel.table
   } else {
     out.content = pel.src || ''
     out.isRich = false

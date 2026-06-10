@@ -3,6 +3,7 @@ import { useEditorStore } from '../store/editorStore'
 import { useFlatStore } from '../store/flatStore'
 import { nextFlatId } from '../core/FlatExtractor'
 import { SLIDE_LAYOUTS, carryLayoutContent } from '../core/slideLayouts'
+import { createTableElement } from '../core/slideTable'
 import { BlobStore } from '../core/BlobStore'
 import { ToolBtn, Divider, UndoIcon, RedoIcon } from './FloatingToolbar'
 
@@ -69,10 +70,12 @@ export default function EditToolbar() {
   const [shapeOpen, setShapeOpen] = useState(false)
   const [videoOpen, setVideoOpen] = useState(false)
   const [layoutOpen, setLayoutOpen] = useState(false)
+  const [tableOpen, setTableOpen] = useState(false)
   const insertRef = useRef(null)
   const shapeRef = useRef(null)
   const videoRef = useRef(null)
   const layoutRef = useRef(null)
+  const tableRef = useRef(null)
   const imageInputRef = useRef(null)
 
   const isFlatMode = viewMode === 'flat' || viewMode === 'split'
@@ -155,6 +158,23 @@ export default function EditToolbar() {
     }
     setSelectedFlat(null)
   }, [flatElements, canvasSize, addFlatElements, applyLayoutElements, setSelectedFlat])
+
+  // 표 삽입 — rows×cols 그리드 피커에서 선택
+  const insertTable = useCallback((rows, cols) => {
+    const partial = createTableElement(rows, cols, canvasSize)
+    const maxZ = flatElements.length > 0 ? Math.max(...flatElements.map(e => e.zIndex)) : 0
+    const el = {
+      id: nextFlatId(),
+      sourceId: null,
+      rotation: 0,
+      ...partial,
+      x: Math.round(((canvasSize?.w || 1280) - partial.width) / 2),
+      y: Math.round(((canvasSize?.h || 720) - partial.height) / 2),
+      zIndex: maxZ + 1,
+    }
+    addFlatElement(el)
+    setSelectedFlat(el.id)
+  }, [flatElements, canvasSize, addFlatElement, setSelectedFlat])
 
   const handleImageFile = useCallback((e) => {
     const file = e.target.files?.[0]
@@ -312,6 +332,14 @@ export default function EditToolbar() {
             ]}
           />
 
+          {/* 표 삽입 — 행×열 그리드 피커 */}
+          <TableSizeDropdown
+            innerRef={tableRef}
+            open={tableOpen}
+            setOpen={setTableOpen}
+            onPick={insertTable}
+          />
+
           <ToolBtn onClick={() => imageInputRef.current?.click()} title="이미지 추가">
             <ImageIcon /><span className="text-xs ml-1">이미지</span>
           </ToolBtn>
@@ -441,6 +469,64 @@ function DropdownBtn({ innerRef, open, setOpen, icon, label, items }) {
   )
 }
 
+// 표 크기 그리드 피커 — 호버로 행×열 선택, 클릭으로 삽입
+const TABLE_PICK_ROWS = 8
+const TABLE_PICK_COLS = 8
+function TableSizeDropdown({ innerRef, open, setOpen, onPick }) {
+  const [hover, setHover] = useState({ r: 0, c: 0 })
+
+  useEffect(() => {
+    if (!open) return
+    setHover({ r: 0, c: 0 })
+    const handler = (e) => {
+      if (innerRef.current && !innerRef.current.contains(e.target)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [open, innerRef, setOpen])
+
+  const CELL = 18, GAP = 2
+  return (
+    <div ref={innerRef} style={{ position: 'relative' }}>
+      <ToolBtn onClick={() => setOpen(v => !v)} title="표 추가">
+        <TableIcon /><span className="text-xs ml-1">표</span><ChevronDown />
+      </ToolBtn>
+      {open && (
+        <div style={{
+          position: 'absolute', top: 'calc(100% + 6px)', left: '50%',
+          transform: 'translateX(-50%)',
+          background: 'rgba(15,23,42,0.97)', backdropFilter: 'blur(16px)',
+          border: '1px solid rgba(255,255,255,0.1)', borderRadius: 10,
+          boxShadow: '0 12px 40px rgba(0,0,0,0.6)', zIndex: 100, padding: 10,
+        }}>
+          <div style={{ display: 'grid', gridTemplateColumns: `repeat(${TABLE_PICK_COLS}, ${CELL}px)`, gap: GAP }}>
+            {Array.from({ length: TABLE_PICK_ROWS * TABLE_PICK_COLS }, (_, i) => {
+              const r = Math.floor(i / TABLE_PICK_COLS)
+              const c = i % TABLE_PICK_COLS
+              const active = r <= hover.r && c <= hover.c
+              return (
+                <div
+                  key={i}
+                  onMouseEnter={() => setHover({ r, c })}
+                  onClick={() => { onPick(r + 1, c + 1); setOpen(false) }}
+                  style={{
+                    width: CELL, height: CELL, borderRadius: 3, cursor: 'pointer',
+                    border: '1px solid rgba(255,255,255,0.18)',
+                    background: active ? 'rgba(99,102,241,0.65)' : 'rgba(255,255,255,0.05)',
+                  }}
+                />
+              )
+            })}
+          </div>
+          <div style={{ marginTop: 8, textAlign: 'center', fontSize: 12, color: '#cbd5e1' }}>
+            {hover.r + 1} × {hover.c + 1}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function HtmlInsertDropdown({ innerRef, open, setOpen, disabled, onInsert }) {
   useEffect(() => {
     if (!open) return
@@ -524,6 +610,18 @@ function LayoutIcon() {
       <rect x="3" y="3" width="18" height="18" rx="2" />
       <line x1="3" y1="9" x2="21" y2="9" />
       <line x1="12" y1="9" x2="12" y2="21" />
+    </svg>
+  )
+}
+
+function TableIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <rect x="3" y="3" width="18" height="18" rx="2" />
+      <line x1="3" y1="9" x2="21" y2="9" />
+      <line x1="3" y1="15" x2="21" y2="15" />
+      <line x1="9" y1="3" x2="9" y2="21" />
+      <line x1="15" y1="3" x2="15" y2="21" />
     </svg>
   )
 }

@@ -6,6 +6,7 @@ import { getRotatedAABB } from '../core/RotationUtils'
 import FlatElementRenderer from './FlatElementRenderer'
 import FlatSelectionOverlay, { FlatGroupOverlay } from './FlatSelectionOverlay'
 import FlatInlineEditor from './FlatInlineEditor'
+import FlatTableEditor from './FlatTableEditor'
 import FlatContextMenu from './FlatContextMenu'
 import ImageCropOverlay from './ImageCropOverlay'
 import { nextFlatId } from '../core/FlatExtractor'
@@ -777,9 +778,9 @@ export default function FlatCanvas() {
               </svg>
             )}
             {editingFlatId && flatElements.find(e => e.id === editingFlatId) && (
-              <FlatInlineEditor
-                element={flatElements.find(e => e.id === editingFlatId)}
-              />
+              flatElements.find(e => e.id === editingFlatId).type === 'table'
+                ? <FlatTableEditor element={flatElements.find(e => e.id === editingFlatId)} />
+                : <FlatInlineEditor element={flatElements.find(e => e.id === editingFlatId)} />
             )}
             {croppingFlatId && flatElements.find(e => e.id === croppingFlatId) && (
               <ImageCropOverlay

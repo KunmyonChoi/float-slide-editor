@@ -9,18 +9,20 @@ import { computeAlignmentChanges, computeDistributionChanges, isBackgroundElemen
 import { nextFlatId } from '../core/FlatExtractor'
 import { BlobStore } from '../core/BlobStore'
 import { detectListType, applyListType } from '../core/TextListTransform'
+import { addRow, removeRow, addCol, removeCol, setHeaderRow, setBorder } from '../core/slideTable'
 
 // ── 글꼴 크기 프리셋 ────────────────────────────────
 
 const FONT_SIZE_PRESETS = [8, 9, 10, 11, 12, 14, 16, 18, 20, 24, 28, 32, 36, 48, 60, 72, 96]
 
-const FLAT_TYPE_LABEL = { text: '텍스트', image: '이미지', shape: '도형', svg: 'SVG', video: '영상' }
+const FLAT_TYPE_LABEL = { text: '텍스트', image: '이미지', shape: '도형', svg: 'SVG', video: '영상', table: '표' }
 const FLAT_TYPE_COLOR = {
   text: 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30',
   image: 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30',
   shape: 'bg-violet-500/20 text-violet-300 border border-violet-500/30',
   svg: 'bg-amber-500/20 text-amber-300 border border-amber-500/30',
   video: 'bg-rose-500/20 text-rose-300 border border-rose-500/30',
+  table: 'bg-sky-500/20 text-sky-300 border border-sky-500/30',
 }
 
 // ── 공통 입력 헬퍼 ──────────────────────────────────
@@ -92,6 +94,12 @@ export default function FlatPropertyContent() {
         {el.type === 'video' && (
           <div className="pt-1 border-t border-white/5">
             <VideoSection el={el} update={update} />
+          </div>
+        )}
+
+        {el.type === 'table' && el.table && (
+          <div className="pt-1 border-t border-white/5">
+            <TableSection el={el} update={update} updateStyle={updateStyle} />
           </div>
         )}
 
@@ -1690,6 +1698,72 @@ function ShapeLineSection({ el, update, updateStyle }) {
 }
 
 // ── 영상 섹션 ──
+
+function TableSection({ el, update, updateStyle }) {
+  const t = el.table
+  // 편집 중 패널 조작 시 클로저의 stale table 대신 스토어 최신 table을 읽어 변형
+  // (셀 편집기의 바깥-클릭 커밋이 mousedown 단계에서 먼저 반영되므로 안전)
+  const applyTable = (mutator) => {
+    const cur = useFlatStore.getState().flatElements.find(e => e.id === el.id)
+    if (!cur || !cur.table) return
+    update({ table: mutator(cur.table) })
+  }
+  const borderColor = (t.border && t.border.color) || '#cbd5e1'
+  const borderWidth = (t.border && t.border.width) ?? 1
+
+  const miniBtn = 'flex-1 text-xs px-2 py-1 rounded bg-white/5 text-slate-300 border border-white/10 hover:bg-white/10 transition-colors disabled:opacity-40 disabled:cursor-not-allowed'
+
+  return (
+    <div className="space-y-2.5">
+      <SectionTitle>표 ({t.rows}×{t.cols})</SectionTitle>
+
+      <div>
+        <p className={`${labelClass} mb-0.5`}>행</p>
+        <div className="flex gap-1">
+          <button className={miniBtn} onClick={() => applyTable(tb => addRow(tb))}>+ 행 추가</button>
+          <button className={miniBtn} onClick={() => applyTable(tb => removeRow(tb, tb.rows - 1))} disabled={t.rows <= 1}>− 행 삭제</button>
+        </div>
+      </div>
+
+      <div>
+        <p className={`${labelClass} mb-0.5`}>열</p>
+        <div className="flex gap-1">
+          <button className={miniBtn} onClick={() => applyTable(tb => addCol(tb))}>+ 열 추가</button>
+          <button className={miniBtn} onClick={() => applyTable(tb => removeCol(tb, tb.cols - 1))} disabled={t.cols <= 1}>− 열 삭제</button>
+        </div>
+      </div>
+
+      <label className="flex items-center gap-2 cursor-pointer">
+        <input
+          type="checkbox"
+          checked={!!t.headerRow}
+          onChange={(e) => applyTable(tb => setHeaderRow(tb, e.target.checked))}
+          className="accent-indigo-500"
+        />
+        <span className="text-xs text-slate-300">첫 행을 헤더로</span>
+      </label>
+
+      <div>
+        <p className={`${labelClass} mb-0.5`}>테두리 색</p>
+        <ColorPicker value={borderColor} onChange={v => applyTable(tb => setBorder(tb, { color: v }))} />
+      </div>
+
+      <div>
+        <p className={`${labelClass} mb-0.5`}>테두리 두께 ({borderWidth}px)</p>
+        <input
+          type="range" min="0" max="6" step="1" value={borderWidth}
+          onChange={(e) => applyTable(tb => setBorder(tb, { width: parseInt(e.target.value, 10) }))}
+          className="w-full accent-indigo-500"
+        />
+      </div>
+
+      <div>
+        <p className={`${labelClass} mb-0.5`}>글자 색</p>
+        <ColorPicker value={el.styles.color} onChange={v => updateStyle('color', v)} />
+      </div>
+    </div>
+  )
+}
 
 function VideoSection({ el, update }) {
   const autoplay = el.autoplay ?? false
