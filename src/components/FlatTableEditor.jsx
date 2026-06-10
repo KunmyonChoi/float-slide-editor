@@ -14,16 +14,26 @@ export default function FlatTableEditor({ element }) {
   const committedRef = useRef(false)
   const wrapRef = useRef(null)
 
+  // 셀 DOM의 현재 텍스트를 스토어에 반영(편집 상태는 건드리지 않음).
+  // 변경이 있을 때만 히스토리에 기록.
+  const writeBack = useCallback(() => {
+    const texts = t.cells.map((row, r) => row.map((cell, c) => {
+      const cellEl = cellRefs.current[`${r}-${c}`]
+      if (!cellEl) return cell.text
+      const raw = cellEl.innerText ?? cellEl.textContent ?? ''
+      return raw.replace(/\n$/, '')
+    }))
+    const changed = texts.some((row, r) => row.some((tx, c) => tx !== t.cells[r][c].text))
+    if (changed) updateFlatElement(element.id, { table: setAllCellTexts(t, texts) })
+  }, [element.id, t, updateFlatElement])
+
+  // 명시적 편집 종료(Esc·바깥클릭·페이지 이동): 텍스트 반영 + 편집 모드 해제
   const commit = useCallback(() => {
     if (committedRef.current) return
     committedRef.current = true
-    const texts = t.cells.map((row, r) => row.map((cell, c) => {
-      const el = cellRefs.current[`${r}-${c}`]
-      return el ? el.innerText.replace(/\n$/, '') : cell.text
-    }))
-    updateFlatElement(element.id, { table: setAllCellTexts(t, texts) })
+    writeBack()
     setEditingFlat(null)
-  }, [element.id, t, updateFlatElement, setEditingFlat])
+  }, [writeBack, setEditingFlat])
 
   // 마운트: 셀 텍스트 주입 + 첫 셀 포커스 + 페이지 이동 시 커밋 등록
   useEffect(() => {
@@ -45,7 +55,9 @@ export default function FlatTableEditor({ element }) {
     committedRef.current = false
     useFlatStore.getState()._setPendingEditCommit(commit)
     return () => {
-      commit()
+      // unmount 시에는 텍스트만 flush — 편집 상태(editingFlatId)는 건드리지 않음.
+      // (StrictMode의 마운트 직후 cleanup→재마운트에서 편집기가 사라지는 것 방지)
+      writeBack()
       useFlatStore.getState()._setPendingEditCommit(null)
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
