@@ -13,15 +13,20 @@ const MUTED = '#64748b'
 // 본문 계열 역할 — 변환 시 내용 풀(FIFO)로 공유(body↔left↔right)
 export const CONTENT_ROLES = new Set(['body', 'left', 'right'])
 
-/** 상대 좌표 텍스트 스펙 → px (size는 캔버스 높이 비율) */
-function text(content, { xf, yf, wf, hf, size, weight = 400, align = 'left', color = TITLE, role }, cs) {
+/**
+ * 상대 좌표 텍스트 스펙 → px (size는 캔버스 높이 비율).
+ * 첫 인자는 빈 박스에 흐리게 표시될 안내문(placeholder). 실제 content는 빈 값으로 시작 →
+ * 사용자가 입력하면 안내문이 사라진다.
+ */
+function text(placeholder, { xf, yf, wf, hf, size, weight = 400, align = 'left', color = TITLE, role }, cs) {
   return {
     type: 'text',
     x: Math.round(xf * cs.w),
     y: Math.round(yf * cs.h),
     width: Math.round(wf * cs.w),
     height: Math.round(hf * cs.h),
-    content,
+    content: '',
+    placeholder,
     isRich: false,
     layoutRole: role,
     styles: {

@@ -118,6 +118,8 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
       filter: textShadowToDropShadow(styles.textShadow),
     } : null
 
+    // 빈 레이아웃 텍스트: 흐린 안내문(placeholder) 표시 — 입력 시작하면 사라짐
+    const showPlaceholder = !isEditing && !content && !!element.placeholder
     const textContent = isRich
       ? <span dangerouslySetInnerHTML={{ __html: content }} />
       : content
@@ -130,7 +132,7 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
           backgroundColor: styles.backgroundColor,
           // 그래디언트 텍스트가 아닐 때만 외부 div에 backgroundImage 적용
           ...(!isGradientText ? { backgroundImage: styles.backgroundImage } : {}),
-          color: styles.color,
+          color: showPlaceholder ? 'rgba(100,116,139,0.6)' : styles.color,
           fontSize: styles.fontSize,
           fontFamily: styles.fontFamily,
           fontWeight: styles.fontWeight,
@@ -172,9 +174,11 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
         onClick={handleClick}
         onDoubleClick={handleDoubleClick}
       >
-        {isGradientText
-          ? <span style={gradientTextStyle}>{textContent}</span>
-          : textContent}
+        {showPlaceholder
+          ? element.placeholder
+          : isGradientText
+            ? <span style={gradientTextStyle}>{textContent}</span>
+            : textContent}
       </div>
     )
   }

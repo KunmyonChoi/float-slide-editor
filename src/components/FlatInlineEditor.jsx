@@ -366,6 +366,7 @@ export default function FlatInlineEditor({ element }) {
         className="flat-text-edit"
         contentEditable
         suppressContentEditableWarning
+        data-placeholder={element.placeholder || ''}
         style={editorStyle}
         onBlur={handleBlur}
         onKeyDown={handleKeyDown}
