@@ -564,8 +564,12 @@ export default function FlatCanvas() {
         const y1 = Math.min(prev.startY, prev.endY)
         const x2 = Math.max(prev.startX, prev.endX)
         const y2 = Math.max(prev.startY, prev.endY)
-        // 최소 크기 이하면 단순 클릭 (배경 click 이벤트가 처리)
-        if (x2 - x1 < 3 && y2 - y1 < 3) return null
+        // 최소 크기 이하면 단순 클릭 → 빈 영역(배경 위 포함) 클릭이므로 선택 해제.
+        // (배경 레이어는 pointer-events:none이라 배경 click에 위임할 수 없음)
+        if (x2 - x1 < 3 && y2 - y1 < 3) {
+          if (!shiftKey) useFlatStore.getState().setSelectedFlat(null)
+          return null
+        }
 
         // 실제 마키 드래그 발생 → 배경 click 무시 플래그 설정
         useFlatStore.setState({ _skipBgClick: true })

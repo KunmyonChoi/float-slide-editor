@@ -301,18 +301,6 @@ export default function EditToolbar() {
             <TextIcon /><span className="text-xs ml-1">텍스트</span>
           </ToolBtn>
 
-          {/* 레이아웃 드롭다운 — 백지 시작 스캐폴딩 */}
-          <DropdownBtn
-            innerRef={layoutRef}
-            open={layoutOpen}
-            setOpen={setLayoutOpen}
-            icon={<LayoutIcon />}
-            label="레이아웃"
-            items={SLIDE_LAYOUTS.map(l => ({
-              id: l.id, icon: <LayoutIcon />, label: l.name, action: () => insertLayout(l.id),
-            }))}
-          />
-
           {/* 도형 드롭다운 */}
           <DropdownBtn
             innerRef={shapeRef}
@@ -369,6 +357,18 @@ export default function EditToolbar() {
             accept="video/*"
             style={{ display: 'none' }}
             onChange={handleVideoFile}
+          />
+
+          {/* 레이아웃 드롭다운 — 백지 시작 스캐폴딩 */}
+          <DropdownBtn
+            innerRef={layoutRef}
+            open={layoutOpen}
+            setOpen={setLayoutOpen}
+            icon={<LayoutIcon />}
+            label="레이아웃"
+            items={SLIDE_LAYOUTS.map(l => ({
+              id: l.id, icon: <LayoutIcon />, label: l.name, action: () => insertLayout(l.id),
+            }))}
           />
         </>
       ) : (
