@@ -222,6 +222,27 @@ export default function FlatPresenter() {
                       fontFamily: 'monospace' }}>ESC</kbd>
         <span style={{ fontSize: 12, color: '#64748b' }}>편집으로 복귀</span>
       </div>
+
+      {/* 우하단 발표 끝내기 — 항상 클릭 가능 (힌트가 사라져도) */}
+      <button
+        type="button"
+        onClick={(e) => { e.stopPropagation(); exitPresentation() }}
+        title="발표 끝내기 (ESC)"
+        style={{
+          position: 'fixed', bottom: 20, right: 20, zIndex: 1011,
+          width: 40, height: 40, borderRadius: 10,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          background: 'rgba(15,23,42,0.6)', backdropFilter: 'blur(12px)',
+          border: '1px solid rgba(255,255,255,0.1)', color: '#cbd5e1',
+          cursor: 'pointer', opacity: 0.4, transition: 'opacity 0.2s',
+        }}
+        onMouseEnter={(e) => { e.currentTarget.style.opacity = '1' }}
+        onMouseLeave={(e) => { e.currentTarget.style.opacity = '0.4' }}
+      >
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <line x1="6" y1="6" x2="18" y2="18" /><line x1="6" y1="18" x2="18" y2="6" />
+        </svg>
+      </button>
     </div>
   )
 }
