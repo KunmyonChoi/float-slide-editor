@@ -1,4 +1,4 @@
-import { memo, useState } from 'react'
+import { memo, useState, useRef, useEffect } from 'react'
 import { useFlatStore } from '../store/flatStore'
 import FlatElementRenderer from './FlatElementRenderer'
 
@@ -21,6 +21,14 @@ export default function SlideListPanel() {
 
   const [dragFrom, setDragFrom] = useState(null)
   const [dragOver, setDragOver] = useState(null) // { index, before }
+  const currentRef = useRef(null)
+
+  // 페이지 전환 시(키보드 포함) 현재 페이지 썸네일을 화면 안으로 스크롤
+  useEffect(() => {
+    if (!collapsed && currentRef.current) {
+      currentRef.current.scrollIntoView({ block: 'nearest' })
+    }
+  }, [flatCurrentPage, collapsed])
 
   if (flatPageCount === 0) return null
 
@@ -73,12 +81,12 @@ export default function SlideListPanel() {
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto py-2 px-2 space-y-1.5">
+      <div className="flex-1 overflow-y-auto thin-scrollbar py-2 px-2 space-y-1.5">
         {pages.map((p) => {
           const isOverBefore = dragOver && dragOver.index === p.index && dragOver.before
           const isOverAfter = dragOver && dragOver.index === p.index && !dragOver.before
           return (
-            <div key={p.key}>
+            <div key={p.key} ref={p.isCurrent ? currentRef : null}>
               {isOverBefore && <DropLine />}
               <div
                 draggable
