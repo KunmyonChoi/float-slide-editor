@@ -10,6 +10,7 @@ import PageBar from './components/PageBar'
 import SlideDeleteToast from './components/SlideDeleteToast'
 import { UrlPromptHost } from './components/UrlPrompt'
 import { AiSettingsHost } from './components/AiSettingsModal'
+import { InfographicHost } from './components/InfographicModal'
 import { useFlatStore } from './store/flatStore'
 import { useEditorStore } from './store/editorStore'
 import { useEffect } from 'react'
@@ -83,6 +84,7 @@ export default function App() {
       <SlideDeleteToast />
       <UrlPromptHost />
       <AiSettingsHost />
+      <InfographicHost />
       {debugMode && <ComparePanel />}
       <InsertPopup />
       {/* flat 모드 발표 — fixed 전체화면 오버레이 */}

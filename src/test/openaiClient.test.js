@@ -1,8 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import {
   getApiKey, setApiKey, hasApiKey, getModel, setModel,
-  getImageModel, setImageModel, pickImageSize, generateImage,
-  chat, generateImagePrompt, DEFAULT_MODEL, DEFAULT_IMAGE_MODEL,
+  getImageModel, setImageModel, pickImageSize, generateImage, editImage,
+  chat, generateImagePrompt, analyzeImageForInfographic,
+  DEFAULT_MODEL, DEFAULT_IMAGE_MODEL,
 } from '../core/OpenAIClient'
 
 function okResponse(content) {
@@ -96,6 +97,62 @@ describe('generateImage', () => {
       ok: false, status: 403, json: async () => ({ error: { message: 'must be verified' } }),
     }))
     await expect(generateImage('x', { width: 100, height: 100 })).rejects.toThrow(/권한/)
+  })
+})
+
+describe('editImage (image-to-image edits)', () => {
+  beforeEach(() => { localStorage.clear(); setApiKey('sk-test') })
+  afterEach(() => { vi.restoreAllMocks() })
+
+  it('빈 이미지/프롬프트는 호출 없이 에러', async () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    await expect(editImage('', 'p')).rejects.toThrow(/입력 이미지/)
+    await expect(editImage('data:image/png;base64,AAAA', '  ')).rejects.toThrow(/비어/)
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('edits 엔드포인트에 FormData(gpt-image-1, size)로 호출하고 b64 반환', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true, status: 200, json: async () => ({ data: [{ b64_json: 'RURJVA==' }] }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const out = await editImage('data:image/png;base64,AAAA', 'make infographic', { width: 1600, height: 900 })
+    expect(out).toBe('data:image/png;base64,RURJVA==')
+
+    const [url, init] = fetchMock.mock.calls[0]
+    expect(url).toContain('images/edits')
+    expect(init.body instanceof FormData).toBe(true)
+    expect(init.body.get('model')).toBe('gpt-image-1')
+    expect(init.body.get('size')).toBe('1536x1024')
+    expect(init.body.get('prompt')).toBe('make infographic')
+    expect(init.headers.Authorization).toBe('Bearer sk-test')
+  })
+})
+
+describe('analyzeImageForInfographic (vision)', () => {
+  beforeEach(() => { localStorage.clear(); setApiKey('sk-test') })
+  afterEach(() => { vi.restoreAllMocks() })
+
+  it('빈 캡처는 호출 없이 에러', async () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    await expect(analyzeImageForInfographic('')).rejects.toThrow(/캡처/)
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('캡처 이미지를 vision content(image_url)로 첨부', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(okResponse('infographic prompt'))
+    vi.stubGlobal('fetch', fetchMock)
+    const out = await analyzeImageForInfographic('data:image/png;base64,AAA')
+    expect(out).toBe('infographic prompt')
+
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body)
+    const userMsg = body.messages[1]
+    expect(Array.isArray(userMsg.content)).toBe(true)
+    expect(userMsg.content[0].type).toBe('text')
+    expect(userMsg.content[1].type).toBe('image_url')
+    expect(userMsg.content[1].image_url.url).toBe('data:image/png;base64,AAA')
   })
 })
 

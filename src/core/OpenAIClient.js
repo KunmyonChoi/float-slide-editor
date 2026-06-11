@@ -14,6 +14,7 @@ const DEFAULT_MODEL = 'gpt-4o-mini'
 const DEFAULT_IMAGE_MODEL = 'gpt-image-1'
 const ENDPOINT = 'https://api.openai.com/v1/chat/completions'
 const IMAGE_ENDPOINT = 'https://api.openai.com/v1/images/generations'
+const IMAGE_EDIT_ENDPOINT = 'https://api.openai.com/v1/images/edits'
 
 export function getApiKey() {
   try { return localStorage.getItem(KEY_STORAGE) || '' } catch { return '' }
@@ -59,15 +60,19 @@ export { DEFAULT_MODEL, DEFAULT_IMAGE_MODEL }
 
 /**
  * Chat Completions 호출 → assistant 텍스트 반환.
- * @param {{ system?: string, user: string, model?: string, temperature?: number, signal?: AbortSignal }} opts
+ * images를 주면 vision(멀티모달) 입력으로 user 메시지에 첨부한다.
+ * @param {{ system?: string, user: string, images?: string[], model?: string, temperature?: number, signal?: AbortSignal }} opts
  */
-export async function chat({ system, user, model, temperature = 0.7, signal } = {}) {
+export async function chat({ system, user, images, model, temperature = 0.7, responseFormat, signal } = {}) {
   const apiKey = getApiKey()
   if (!apiKey) throw new Error('OpenAI API 키가 설정되지 않았습니다. 먼저 키를 입력하세요.')
 
   const messages = []
   if (system) messages.push({ role: 'system', content: system })
-  messages.push({ role: 'user', content: user })
+  const userContent = (images && images.length)
+    ? [{ type: 'text', text: user }, ...images.map(url => ({ type: 'image_url', image_url: { url } }))]
+    : user
+  messages.push({ role: 'user', content: userContent })
 
   let res
   try {
@@ -81,6 +86,7 @@ export async function chat({ system, user, model, temperature = 0.7, signal } = 
         model: model || getModel(),
         messages,
         temperature,
+        ...(responseFormat ? { response_format: responseFormat } : {}),
       }),
       signal,
     })
@@ -138,6 +144,38 @@ export async function generateImagePrompt(text, { model, style, signal } = {}) {
   })
 }
 
+const INFOGRAPHIC_SYSTEM = `You are an expert information designer. You are given a screenshot of a presentation slide.
+Analyze its content, structure, hierarchy, and intent, then write ONE concise English image-generation prompt that recreates the SAME information as a clean, modern INFOGRAPHIC slide.
+
+Rules:
+- Output ONLY the prompt text. No preamble, no quotes, no markdown.
+- Preserve the key message, the main data points, and the visual hierarchy of the slide; reorganize them into a clear infographic layout (sections, simple icons, light charts, arrows/flow where appropriate).
+- Do NOT invent facts or numbers that are not in the slide.
+- Style: clean flat vector infographic, cohesive color palette, generous whitespace, balanced 16:9 composition.
+- Use only very short labels (a few words); avoid paragraphs of text in the image.
+- LANGUAGE: keep every on-image text label in the SAME language and EXACT wording/spelling as the slide (e.g. Korean). NEVER translate labels to English. Wrap each label in double quotes so it is rendered verbatim.
+- End the prompt with one explicit sentence: render all text in the image in the original language exactly as written, with correct, legible Hangul/characters and no gibberish.
+- Under 100 words.`
+
+/**
+ * 슬라이드 캡처(스크린샷) → 인포그래픽 이미지 생성 프롬프트(영어).
+ * vision 가능한 텍스트 모델(getModel, 기본 gpt-4o-mini)을 사용한다.
+ * @param {string} imageDataUrl  슬라이드 캡처 data URL
+ * @param {{ model?: string, signal?: AbortSignal }} [opts]
+ * @returns {Promise<string>}
+ */
+export async function analyzeImageForInfographic(imageDataUrl, { model, signal } = {}) {
+  if (!imageDataUrl) throw new Error('변환할 캡처 이미지가 없습니다.')
+  return chat({
+    system: INFOGRAPHIC_SYSTEM,
+    user: 'Here is a screenshot of the current slide. Produce the infographic image-generation prompt.',
+    images: [imageDataUrl],
+    model,
+    temperature: 0.7,
+    signal,
+  })
+}
+
 // 모델별 지원 사이즈 중 박스 종횡비에 가장 가까운 것 선택.
 export function pickImageSize(model, width, height) {
   const ratio = (width || 1) / (height || 1)
@@ -189,14 +227,67 @@ export async function generateImage(prompt, { model, width, height, size, signal
     throw new Error('OpenAI에 연결할 수 없습니다. 네트워크 연결을 확인하세요.')
   }
 
-  if (!res.ok) {
-    let detail = ''
-    try { detail = (await res.json())?.error?.message || '' } catch { /* 무시 */ }
-    if (res.status === 401) throw new Error('API 키가 유효하지 않습니다. 키를 다시 확인하세요.')
-    if (res.status === 403) throw new Error(`이미지 모델 사용 권한이 없습니다(조직 인증 필요할 수 있음)${detail ? ': ' + detail : ''}`)
-    if (res.status === 429) throw new Error('요청이 너무 많거나 사용 한도를 초과했습니다. 잠시 후 다시 시도하세요.')
-    throw new Error(`이미지 생성 오류 (${res.status})${detail ? ': ' + detail : ''}`)
+  if (!res.ok) await throwImageError(res, '이미지 생성')
+
+  const data = await res.json()
+  const b64 = data?.data?.[0]?.b64_json
+  if (!b64) throw new Error('이미지 응답이 비어 있습니다.')
+  return `data:image/png;base64,${b64}`
+}
+
+async function throwImageError(res, label) {
+  let detail = ''
+  try { detail = (await res.json())?.error?.message || '' } catch { /* 무시 */ }
+  if (res.status === 401) throw new Error('API 키가 유효하지 않습니다. 키를 다시 확인하세요.')
+  if (res.status === 403) throw new Error(`이미지 모델 사용 권한이 없습니다(조직 인증 필요할 수 있음)${detail ? ': ' + detail : ''}`)
+  if (res.status === 429) throw new Error('요청이 너무 많거나 사용 한도를 초과했습니다. 잠시 후 다시 시도하세요.')
+  throw new Error(`${label} 오류 (${res.status})${detail ? ': ' + detail : ''}`)
+}
+
+function dataUrlToBlob(dataUrl) {
+  const [head, b64] = dataUrl.split(',')
+  const mime = head.match(/data:([^;]+)/)?.[1] || 'image/png'
+  const bin = atob(b64)
+  const arr = new Uint8Array(bin.length)
+  for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i)
+  return new Blob([arr], { type: mime })
+}
+
+/**
+ * 입력 이미지 → 인포그래픽으로 편집(image-to-image). gpt-image-1 edits 사용.
+ * 원본의 구도/위치를 유지한 채 변환하는 데 적합하다.
+ * @param {string} imageDataUrl  입력 이미지 data URL(캡처/crop)
+ * @param {string} prompt  편집 지시 프롬프트
+ * @param {{ width?: number, height?: number, size?: string, signal?: AbortSignal }} [opts]
+ * @returns {Promise<string>} `data:image/png;base64,...`
+ */
+export async function editImage(imageDataUrl, prompt, { width, height, size, signal } = {}) {
+  const apiKey = getApiKey()
+  if (!apiKey) throw new Error('OpenAI API 키가 설정되지 않았습니다. 먼저 키를 입력하세요.')
+  if (!imageDataUrl) throw new Error('편집할 입력 이미지가 없습니다.')
+  const p = (prompt || '').trim()
+  if (!p) throw new Error('이미지 편집 프롬프트가 비어 있습니다.')
+
+  const form = new FormData()
+  form.append('model', 'gpt-image-1') // edits는 gpt-image-1 전용(dall-e-3 미지원)
+  form.append('image', dataUrlToBlob(imageDataUrl), 'input.png')
+  form.append('prompt', p)
+  form.append('size', size || pickImageSize('gpt-image-1', width, height))
+  form.append('quality', 'medium')
+
+  let res
+  try {
+    res = await fetch(IMAGE_EDIT_ENDPOINT, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${apiKey}` }, // multipart: Content-Type은 브라우저가 설정
+      body: form,
+      signal,
+    })
+  } catch (e) {
+    if (e?.name === 'AbortError') throw e
+    throw new Error('OpenAI에 연결할 수 없습니다. 네트워크 연결을 확인하세요.')
   }
+  if (!res.ok) await throwImageError(res, '이미지 편집')
 
   const data = await res.json()
   const b64 = data?.data?.[0]?.b64_json
