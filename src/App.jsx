@@ -9,6 +9,7 @@ import ComparePanel from './components/ComparePanel'
 import PageBar from './components/PageBar'
 import SlideDeleteToast from './components/SlideDeleteToast'
 import { UrlPromptHost } from './components/UrlPrompt'
+import { AiSettingsHost } from './components/AiSettingsModal'
 import { useFlatStore } from './store/flatStore'
 import { useEditorStore } from './store/editorStore'
 import { useEffect } from 'react'
@@ -81,6 +82,7 @@ export default function App() {
       <PageBar />
       <SlideDeleteToast />
       <UrlPromptHost />
+      <AiSettingsHost />
       {debugMode && <ComparePanel />}
       <InsertPopup />
       {/* flat 모드 발표 — fixed 전체화면 오버레이 */}
