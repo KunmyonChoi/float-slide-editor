@@ -3,6 +3,7 @@ import { useFlatStore } from '../store/flatStore'
 import { nextFlatId } from '../core/FlatExtractor'
 import { BlobStore } from '../core/BlobStore'
 import { computeAlignmentChanges, computeDistributionChanges } from '../core/SnapEngine'
+import { promptUrl } from './UrlPrompt'
 
 const DEFAULT_STYLES = {
   backgroundColor: 'rgba(0, 0, 0, 0)', backgroundImage: 'none',
@@ -188,8 +189,8 @@ export default function FlatContextMenu({ x, y, canvasX, canvasY, onClose }) {
   }
 
   // 영상 추가
-  const insertVideo = useCallback(() => {
-    const url = prompt('영상 URL을 입력하세요 (YouTube, Vimeo)')
+  const insertVideo = useCallback(async () => {
+    const url = await promptUrl({ title: '영상 URL을 입력하세요', placeholder: 'YouTube, Vimeo URL' })
     if (!url || !url.trim()) return
     const { embedUrl } = parseVideoUrl(url.trim())
     const w = Math.min(560, canvasSize.w * 0.6)
