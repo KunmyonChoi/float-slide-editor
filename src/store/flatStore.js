@@ -583,6 +583,37 @@ export const useFlatStore = create((set, get) => ({
     get()._syncPageInfo()
   },
 
+  /** 현재 페이지를 복제해 바로 뒤에 삽입 (요소는 새 id로 복제) */
+  duplicatePage() {
+    get()._saveCurrentPage()
+    const keys = _getSortedPageKeys()
+    const currentIdx = _currentPageKey ? keys.indexOf(_currentPageKey) : keys.length - 1
+    if (currentIdx < 0) return
+    const src = _pageCache[_currentPageKey]
+    if (!src) return
+    const insertAt = currentIdx + 1
+
+    const reindexed = {}
+    for (let i = 0; i < keys.length; i++) {
+      const newIdx = i < insertAt ? i : i + 1
+      reindexed[`${newIdx}-0`] = _pageCache[keys[i]]
+    }
+    for (const key in _pageCache) delete _pageCache[key]
+    for (const key in reindexed) _pageCache[key] = reindexed[key]
+
+    _pageCache[`${insertAt}-0`] = {
+      elements: src.elements.map(e => ({ ...structuredClone(e), id: nextFlatId() })),
+      canvasSize: { ...src.canvasSize },
+      fontImports: [...(src.fontImports || [])],
+      history: { stack: [], pointer: -1 },
+      htmlSlideIndex: null, // 복제본은 flat-only
+    }
+
+    _currentPageKey = `${insertAt}-0`
+    get()._restoreFromCache(`${insertAt}-0`)
+    get()._syncPageInfo()
+  },
+
   /** 현재 페이지 삭제 (최소 1페이지 유지) */
   deletePage() {
     get()._saveCurrentPage()

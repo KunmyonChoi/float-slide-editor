@@ -84,3 +84,16 @@ describe('startScratchProject (최초 빈 실행 시작 레이아웃)', () => {
     expect(els[0].id).toBeTruthy()
   })
 })
+
+describe('duplicatePage', () => {
+  it('현재 페이지를 새 id로 복제해 바로 뒤에 삽입', () => {
+    load(['A', 'B', 'C'], '1-0') // 현재 = B
+    useFlatStore.getState().duplicatePage()
+    expect(useFlatStore.getState().flatPageCount).toBe(4)
+    const list = useFlatStore.getState().getFlatPageList()
+    // B 뒤에 B 복제본 삽입 → A, B, B', C
+    expect(list[2].isCurrent).toBe(true)               // 복제본이 현재
+    expect(list[2].elements[0].id).not.toBe('B')        // 새 id
+    expect(list[1].elements[0].id).toBe('B')            // 원본 유지
+  })
+})

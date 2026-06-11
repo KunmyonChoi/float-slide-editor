@@ -1,4 +1,5 @@
 import { memo, useState, useRef, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { useFlatStore } from '../store/flatStore'
 import FlatElementRenderer from './FlatElementRenderer'
 
@@ -21,7 +22,18 @@ export default function SlideListPanel() {
 
   const [dragFrom, setDragFrom] = useState(null)
   const [dragOver, setDragOver] = useState(null) // { index, before }
+  const [ctxMenu, setCtxMenu] = useState(null)    // { x, y, index }
   const currentRef = useRef(null)
+
+  // 컨텍스트 메뉴 바깥 클릭/ESC 닫기
+  useEffect(() => {
+    if (!ctxMenu) return
+    const onDown = () => setCtxMenu(null)
+    const onKey = (e) => { if (e.key === 'Escape') setCtxMenu(null) }
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey)
+    return () => { document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onKey) }
+  }, [ctxMenu])
 
   // 페이지 전환 시(키보드 포함) 현재 페이지 썸네일을 화면 안으로 스크롤
   useEffect(() => {
@@ -102,6 +114,11 @@ export default function SlideListPanel() {
                 }}
                 onDrop={(e) => onDrop(e, p.index, e.clientY < e.currentTarget.getBoundingClientRect().top + e.currentTarget.getBoundingClientRect().height / 2)}
                 onClick={() => useFlatStore.getState().goToFlatPage(p.index)}
+                onContextMenu={(e) => {
+                  e.preventDefault(); e.stopPropagation()
+                  useFlatStore.getState().goToFlatPage(p.index) // 우클릭한 페이지를 현재로
+                  setCtxMenu({ x: e.clientX, y: e.clientY, index: p.index })
+                }}
                 className="flex items-start gap-2 cursor-pointer group"
                 style={{ opacity: dragFrom === p.index ? 0.4 : 1 }}
               >
@@ -123,6 +140,64 @@ export default function SlideListPanel() {
           )
         })}
       </div>
+
+      {ctxMenu && createPortal(
+        <SlideContextMenu
+          x={ctxMenu.x} y={ctxMenu.y} index={ctxMenu.index}
+          pageCount={flatPageCount}
+          onClose={() => setCtxMenu(null)}
+        />,
+        document.body,
+      )}
+    </div>
+  )
+}
+
+// 슬라이드 우클릭 컨텍스트 메뉴
+function SlideContextMenu({ x, y, index, pageCount, onClose }) {
+  const run = (fn) => () => { fn(); onClose() }
+  const s = useFlatStore.getState()
+  const items = [
+    { label: '새 슬라이드', shortcut: 'Ctrl+M', action: () => s.addPage() },
+    { label: '슬라이드 복제', action: () => s.duplicatePage() },
+    { type: 'sep' },
+    { label: '앞으로 이동', action: () => s.movePageOrder(-1), disabled: index <= 0 },
+    { label: '뒤로 이동', action: () => s.movePageOrder(1), disabled: index >= pageCount - 1 },
+    { type: 'sep' },
+    { label: '삭제', shortcut: 'Del', action: () => s.deletePage(), disabled: pageCount <= 1, danger: true },
+  ]
+  // 화면 밖으로 넘치지 않게 위치 보정
+  const left = Math.min(x, window.innerWidth - 180)
+  const top = Math.min(y, window.innerHeight - items.length * 30 - 12)
+  return (
+    <div
+      onMouseDown={(e) => e.stopPropagation()}
+      style={{
+        position: 'fixed', left, top, zIndex: 10050, minWidth: 168,
+        background: 'rgba(15,23,42,0.97)', backdropFilter: 'blur(16px)',
+        border: '1px solid rgba(255,255,255,0.1)', borderRadius: 10,
+        boxShadow: '0 12px 40px rgba(0,0,0,0.6)', padding: 4,
+      }}
+    >
+      {items.map((it, i) => it.type === 'sep'
+        ? <div key={i} style={{ height: 1, margin: '4px 8px', background: 'rgba(255,255,255,0.1)' }} />
+        : (
+          <div
+            key={i}
+            onClick={it.disabled ? undefined : run(it.action)}
+            style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              padding: '6px 12px', borderRadius: 6, fontSize: 13,
+              cursor: it.disabled ? 'default' : 'pointer',
+              color: it.disabled ? 'rgba(255,255,255,0.3)' : (it.danger ? '#fca5a5' : '#e2e8f0'),
+            }}
+            className={it.disabled ? '' : 'slide-ctx-item'}
+          >
+            <span>{it.label}</span>
+            {it.shortcut && <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', marginLeft: 20 }}>{it.shortcut}</span>}
+          </div>
+        ))}
+      <style>{`.slide-ctx-item:hover{background:rgba(255,255,255,0.1)}`}</style>
     </div>
   )
 }
