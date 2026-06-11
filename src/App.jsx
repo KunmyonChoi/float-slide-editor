@@ -17,6 +17,15 @@ export default function App() {
   const debugMode = useFlatStore(s => s.debugMode)
   const mode = useEditorStore(s => s.mode)
 
+  // 최초 빈 실행 → 제목 슬라이드로 시작(PowerPoint 식, 바로 편집 가능). 콘텐츠 있으면 유지.
+  useEffect(() => {
+    const fs = useFlatStore.getState()
+    const es = useEditorStore.getState()
+    if (fs.flatPageCount === 0 && !es.slideHtml) {
+      fs.startScratchProject('title')
+    }
+  }, [])
+
   // 전체화면이 해제됐는데 발표 중이면(ESC로 전체화면만 빠져나온 경우) 발표도 종료
   useEffect(() => {
     const onFsChange = () => {

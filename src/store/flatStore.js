@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { extractFlatElementsFromIframe, nextFlatId } from '../core/FlatExtractor'
+import { SLIDE_LAYOUTS } from '../core/slideLayouts'
 import { HistoryStack } from '../core/HistoryStack'
 import { isBackgroundElement } from '../core/SnapEngine'
 
@@ -97,6 +98,17 @@ let _pendingEditCommit = null  // 편집 중 unmount 전 커밋용 콜백
 // reveal.js 등은 한 번의 네비게이션에 pageChange를 여러 번 쏘므로, 일정 시간 창 동안 억제한다.
 let _expectIframePage = null
 let _deletedPageStash = null  // 실행취소 토스트용: 마지막 삭제 페이지 {index, entry}
+let _pendingStarterLayout = null  // 새 프로젝트: 첫 빈 페이지 추출 후 적용할 시작 레이아웃 id
+
+/** 시작 레이아웃 요소 빌드(부분 → 완성 FlatElement) */
+function _buildStarterLayout(layoutId, cs) {
+  const layout = SLIDE_LAYOUTS.find(l => l.id === layoutId)
+  if (!layout) return []
+  return layout.build(cs).map((s, i) => ({
+    sourceId: null, rotation: 0, merged: false, isRich: false,
+    ...s, id: nextFlatId(), zIndex: i + 1,
+  }))
+}
 let _expectIframeTimer = null
 function _expectIframeNav(idx) {
   _expectIframePage = idx
@@ -299,6 +311,30 @@ export const useFlatStore = create((set, get) => ({
       canRedo: false,
       currentPageHtmlBacked: true, // iframe에서 갓 추출 = HTML 백킹
     })
+    get()._syncPageInfo()
+
+    // 새 프로젝트: 빈 페이지면 시작 레이아웃(제목 슬라이드) 적용
+    if (_pendingStarterLayout && elements.length === 0) {
+      const starter = _buildStarterLayout(_pendingStarterLayout, get().canvasSize)
+      _pendingStarterLayout = null
+      if (starter.length) {
+        set({ flatElements: starter, currentPageHtmlBacked: false })
+        get()._saveCurrentPage()
+        // flat-only로 표시 → 재생성 시 보존
+        if (_pageCache[_currentPageKey]) _pageCache[_currentPageKey].htmlSlideIndex = null
+      }
+    }
+  },
+
+  /** 새 프로젝트 시작 시, 첫 빈 페이지 추출 후 적용할 시작 레이아웃 예약 */
+  setPendingStarterLayout(layoutId) { _pendingStarterLayout = layoutId },
+
+  /** iframe 없이 1페이지(시작 레이아웃) flat 프로젝트 생성 — 최초 빈 실행 시 사용 */
+  startScratchProject(layoutId = 'title') {
+    const cs = { w: 1280, h: 720 }
+    const elements = _buildStarterLayout(layoutId, cs)
+    for (const key in _pageCache) delete _pageCache[key] // 기존 캐시 비우고 단일 페이지로
+    get().loadAllPages({ '0-0': { elements, canvasSize: cs, fontImports: [], htmlSlideIndex: null } }, '0-0')
     get()._syncPageInfo()
   },
 
