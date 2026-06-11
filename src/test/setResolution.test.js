@@ -61,6 +61,16 @@ describe('setResolution — 통합 비례 스케일', () => {
     expect(p.points).toEqual([{ x: 0, y: 0 }, { x: 200, y: 100 }])
   })
 
+  it('padding/border 등 px 스타일도 함께 스케일(줄바꿈 방지)', () => {
+    load([{ elements: [el('t', { type: 'text', styles: { fontSize: '20px', padding: '4px 8px', borderRadius: '6px', lineHeight: '1.5' } })], canvasSize: CS(1280, 720), htmlSlideIndex: null }], '0-0')
+    useFlatStore.getState().setResolution(CS(1920, 1080)) // 1.5x
+    const s = useFlatStore.getState().flatElements[0].styles
+    expect(s.fontSize).toBe('30px')
+    expect(s.padding).toBe('6px 12px')   // 4*1.5, 8*1.5
+    expect(s.borderRadius).toBe('9px')
+    expect(s.lineHeight).toBe('1.5')      // 단위 없는 값은 불변
+  })
+
   it('잘못된 크기는 무시', () => {
     useFlatStore.getState().setResolution({ w: 0, h: 100 })
     expect(useFlatStore.getState().flatElements[0].x).toBeCloseTo(100) // 변화 없음

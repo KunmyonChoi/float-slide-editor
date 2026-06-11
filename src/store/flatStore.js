@@ -52,25 +52,40 @@ function _getSortedPageKeys() {
   })
 }
 
-/** 요소들을 oldCs→newCs 비율로 비례 스케일(해상도 변경용). 좌표/크기/points/글자크기. */
+// 해상도 변경 시 함께 스케일해야 텍스트 줄바꿈/레이아웃이 보존되는 px 기반 스타일.
+const SCALE_STYLE_KEYS = [
+  'fontSize', 'lineHeight', 'letterSpacing',
+  'padding', 'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft',
+  'borderRadius',
+  'border', 'borderWidth', 'borderTop', 'borderRight', 'borderBottom', 'borderLeft',
+  'borderTopWidth', 'borderRightWidth', 'borderBottomWidth', 'borderLeftWidth',
+  'gap', 'columnGap', 'rowGap',
+]
+
+/** 문자열 내 모든 Npx 값을 k배 (단위 없는 값/색상은 영향 없음). */
+function scaleCssPx(value, k) {
+  return String(value).replace(/(-?\d*\.?\d+)px/g, (_, n) => (Math.round(parseFloat(n) * k * 100) / 100) + 'px')
+}
+
+/** 요소들을 oldCs→newCs 비율로 비례 스케일(해상도 변경용). 좌표/크기/points + px 스타일. */
 function scaleFlatElements(elements, oldCs, newCs) {
   if (!oldCs?.w || !oldCs?.h) return elements
   const sx = newCs.w / oldCs.w
   const sy = newCs.h / oldCs.h
-  const sf = (sx + sy) / 2 // 글자크기: 가로·세로 평균
-  const scalePx = (v, k) => {
-    const n = parseFloat(v)
-    return Number.isFinite(n) ? Math.round(n * k * 100) / 100 + 'px' : v
-  }
+  const sf = (sx + sy) / 2 // 글꼴/패딩 등: 가로·세로 평균
   const r = (v) => Math.round(v * 100) / 100
   return elements.map(el => {
     const out = { ...el, x: r(el.x * sx), y: r(el.y * sy), width: r(el.width * sx), height: r(el.height * sy) }
     if (Array.isArray(el.points)) out.points = el.points.map(p => ({ ...p, x: r(p.x * sx), y: r(p.y * sy) }))
-    if (el.styles && el.styles.fontSize) out.styles = { ...el.styles, fontSize: scalePx(el.styles.fontSize, sf) }
+    if (el.styles) {
+      const st = { ...el.styles }
+      for (const key of SCALE_STYLE_KEYS) if (st[key] != null) st[key] = scaleCssPx(st[key], sf)
+      out.styles = st
+    }
     if (el.table?.cells) {
       out.table = {
         ...el.table,
-        cells: el.table.cells.map(row => row.map(c => (c.fontSize ? { ...c, fontSize: scalePx(c.fontSize, sf) } : c))),
+        cells: el.table.cells.map(row => row.map(c => (c.fontSize ? { ...c, fontSize: scaleCssPx(c.fontSize, sf) } : c))),
       }
     }
     return out
