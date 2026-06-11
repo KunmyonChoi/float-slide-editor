@@ -37,6 +37,19 @@ export default function PageBar() {
         if (e.key === 'PageDown') { e.preventDefault(); useFlatStore.getState().movePageOrder(1); return }
       }
 
+      // Ctrl+M: 페이지 추가 / Ctrl+Shift+M: 현재 페이지 삭제 (flat 모드, 편집 중 제외)
+      if (isFM && (e.ctrlKey || e.metaKey) && e.code === 'KeyM') {
+        e.preventDefault()
+        if (useFlatStore.getState().editingFlatId) return
+        if (e.shiftKey) {
+          const fc = useFlatStore.getState().flatPageCount
+          if (fc > 1 && confirm('현재 페이지를 삭제하시겠습니까?')) useFlatStore.getState().deletePage()
+        } else {
+          useFlatStore.getState().addPage()
+        }
+        return
+      }
+
       // Flat 모드에서 Arrow는: 요소 선택 시 이동용, Shift+Arrow도 10px 이동용 → 페이지 이동 스킵
       const isArrow = ['ArrowRight','ArrowLeft','ArrowUp','ArrowDown'].includes(e.key)
       if (isArrow && isFM) {
@@ -61,11 +74,19 @@ export default function PageBar() {
           else navigatePage(-1)
         }
       } else if (e.key === 'ArrowUp') {
-        const { isReveal } = useEditorStore.getState()
-        if (isReveal && !isFM) { e.preventDefault(); navigateDirection('up') }
+        // flat 모드: 위 = 이전 페이지. HTML(reveal) 2D 덱은 기존대로 방향 이동.
+        if (isFM) { e.preventDefault(); useFlatStore.getState().navigateFlatPage(-1) }
+        else {
+          const { isReveal } = useEditorStore.getState()
+          if (isReveal) { e.preventDefault(); navigateDirection('up') }
+        }
       } else if (e.key === 'ArrowDown') {
-        const { isReveal } = useEditorStore.getState()
-        if (isReveal && !isFM) { e.preventDefault(); navigateDirection('down') }
+        // flat 모드: 아래 = 다음 페이지.
+        if (isFM) { e.preventDefault(); useFlatStore.getState().navigateFlatPage(1) }
+        else {
+          const { isReveal } = useEditorStore.getState()
+          if (isReveal) { e.preventDefault(); navigateDirection('down') }
+        }
       }
     }
     window.addEventListener('keydown', onKeyDown)
@@ -117,12 +138,12 @@ export default function PageBar() {
         <span style={pageLabel}>{flatCurrentPage + 1} / {flatPageCount}</span>
         <button onClick={() => useFlatStore.getState().navigateFlatPage(1)} disabled={!canNext} style={btnStyle(canNext)}>&#8250;</button>
         <span style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.1)', margin: '0 4px' }} />
-        <button onClick={() => useFlatStore.getState().addPage()} style={{ ...btnStyle(true), fontSize: 14, width: 24, height: 24 }} title="페이지 추가">+</button>
+        <button onClick={() => useFlatStore.getState().addPage()} style={{ ...btnStyle(true), fontSize: 14, width: 24, height: 24 }} title="페이지 추가 (Ctrl+M)">+</button>
         <button
           onClick={() => { if (flatPageCount > 1 && confirm('현재 페이지를 삭제하시겠습니까?')) useFlatStore.getState().deletePage() }}
           disabled={flatPageCount <= 1}
           style={{ ...btnStyle(flatPageCount > 1), fontSize: 14, width: 24, height: 24 }}
-          title="페이지 삭제"
+          title="페이지 삭제 (Ctrl+Shift+M)"
         >&minus;</button>
         <span style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.1)', margin: '0 4px' }} />
         <button
