@@ -2,7 +2,6 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import { useFlatStore } from '../store/flatStore'
 import { useEditorStore } from '../store/editorStore'
 import { exportFlatHtml, exportFlatHtmlAllPages, downloadHtml } from '../core/FlatExporter'
-import { nextFlatId } from '../core/FlatExtractor'
 
 // 새 프로젝트용 빈 슬라이드 1장 (1280×720 흰 배경)
 const BLANK_DECK = `<!DOCTYPE html>
@@ -26,7 +25,6 @@ export default function FileMenu({ fallbackSample }) {
   const menuRef = useRef(null)
   const fileRef = useRef(null)       // .flatproj
   const htmlFileRef = useRef(null)   // .html
-  const jsonFileRef = useRef(null)   // .json
 
   const { flatElements, canvasSize, fontImports, viewMode,
           setViewMode, loadAllPages, clearPageCache, debugMode, setDebugMode } = useFlatStore()
@@ -231,50 +229,11 @@ export default function FileMenu({ fallbackSample }) {
     URL.revokeObjectURL(url)
   }, [])
 
-  // JSON 가져오기
-  const handleImportJson = useCallback(() => {
-    setOpen(false)
-    jsonFileRef.current?.click()
-  }, [])
-
-  const handleJsonFile = useCallback((e) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-    const reader = new FileReader()
-    reader.onload = (ev) => {
-      try {
-        const data = JSON.parse(ev.target.result)
-        if (!data.elements || !Array.isArray(data.elements)) {
-          throw new Error('유효하지 않은 JSON 형식')
-        }
-        const elements = data.elements.map(el => ({
-          ...el,
-          id: nextFlatId(),
-          sourceId: null,
-        }))
-        const cs = data.canvasSize || canvasSize
-        const fi = data.fontImports || []
-        loadAllPages({
-          '0-0': { elements, canvasSize: cs, fontImports: fi },
-        }, '0-0')
-        const { viewMode } = useFlatStore.getState()
-        if (viewMode === 'html') setViewMode('flat')
-      } catch (err) {
-        alert('JSON 파일을 가져올 수 없습니다: ' + err.message)
-      }
-    }
-    reader.readAsText(file)
-    e.target.value = ''
-  }, [canvasSize, loadAllPages, setViewMode])
-
   const ITEMS = [
     { id: 'newProject', label: '새 프로젝트', action: handleNewProject },
     { id: 'sepNew', type: 'separator' },
     { id: 'saveProject', label: '프로젝트 저장', shortcut: '.flatproj', action: handleSaveProject, disabled: !hasContent },
     { id: 'openProject', label: '프로젝트 열기', action: handleOpenProject },
-    { id: 'sep0', type: 'separator' },
-    { id: 'openHtml', label: 'HTML 열기', action: handleOpenHtml },
-    { id: 'loadSample', label: '샘플 슬라이드', action: handleLoadSample },
     { id: 'sep1', type: 'separator' },
     { id: 'export', label: '내보내기', submenu: 'export', disabled: !hasContent,
       children: [
@@ -293,10 +252,12 @@ export default function FileMenu({ fallbackSample }) {
     },
     { id: 'import', label: '가져오기', submenu: 'import',
       children: [
-        { id: 'importJson', label: 'JSON', action: handleImportJson },
+        { id: 'importHtml', label: 'HTML 슬라이드 가져오기', action: handleOpenHtml },
       ],
     },
     { id: 'sepDebug', type: 'separator' },
+    // 샘플 슬라이드는 디버그/데모용 — 디버그 모드일 때만 노출
+    ...(debugMode ? [{ id: 'loadSample', label: '샘플 슬라이드', action: handleLoadSample }] : []),
     { id: 'debug', label: '디버그 모드', shortcut: debugMode ? '✓ 켜짐' : '꺼짐',
       action: () => setDebugMode(!debugMode) },
   ]
@@ -429,7 +390,6 @@ export default function FileMenu({ fallbackSample }) {
 
       <input ref={fileRef} type="file" accept=".flatproj" style={{ display: 'none' }} onChange={handleProjectFile} />
       <input ref={htmlFileRef} type="file" accept=".html,.htm" style={{ display: 'none' }} onChange={handleHtmlFile} />
-      <input ref={jsonFileRef} type="file" accept=".json" style={{ display: 'none' }} onChange={handleJsonFile} />
     </div>
   )
 }
