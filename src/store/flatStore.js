@@ -52,6 +52,9 @@ function _getSortedPageKeys() {
   })
 }
 let _pendingEditCommit = null  // 편집 중 unmount 전 커밋용 콜백
+// flat 주도 페이지 이동(goToFlatPage)이 iframe에 보낸 fe:navigate의 에코(fe:pageChange→reExtract)를
+// 무시하기 위한 기대 페이지 인덱스. 이미 캐시 복원을 마쳤으므로 재추출/재복원이 불필요·유해.
+let _expectIframePage = null
 
 export const useFlatStore = create((set, get) => ({
   /** FlatElement 배열 */
@@ -284,6 +287,15 @@ export const useFlatStore = create((set, get) => ({
     const ref = get()._iframeRef
     if (!ref) return
 
+    // flat 주도 이동이 보낸 fe:navigate의 에코면 무시 — 이미 goToFlatPage가 캐시 복원함.
+    // (페이지 중간 삽입으로 flat↔HTML 인덱스가 어긋난 뒤 엉뚱한 재추출/재복원 방지)
+    const pageIdx = parseInt(String(pageKey).split('-')[0])
+    if (_expectIframePage != null && pageIdx === _expectIframePage) {
+      _expectIframePage = null
+      return
+    }
+    _expectIframePage = null
+
     // 현재 페이지 캐시 저장
     get()._saveCurrentPage()
 
@@ -472,8 +484,12 @@ export const useFlatStore = create((set, get) => ({
     if (get().viewMode === 'split') {
       const htmlIdx = _pageCache[key]?.htmlSlideIndex
       if (htmlIdx != null) {
+        // 이 네비게이션으로 돌아올 fe:pageChange 에코는 reExtract에서 무시
+        _expectIframePage = htmlIdx
         const ref = get()._iframeRef
         ref?.current?.contentWindow?.postMessage({ type: 'fe:navigate', page: htmlIdx }, '*')
+      } else {
+        _expectIframePage = null
       }
     }
   },
