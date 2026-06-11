@@ -340,10 +340,15 @@ export default function FlatCanvas() {
 
   // 첫 추출 완료 후 모든 페이지를 백그라운드 프리로드
   const preloadDone = useRef(false)
-  // flatElements가 비워졌다가 다시 채워지면 프리로드 재트리거
+  // 덱 전체가 비워진 경우(새 HTML 로드/초기화 → flatPageCount 0)에만 프리로드 재트리거.
+  // 공백(빈) 페이지로 이동해 flatElements만 0이 된 것은 재트리거 대상이 아님
+  // (그렇지 않으면 빈 페이지 이동 시 전체 일괄 변환이 재실행됨).
   const prevElCount = useRef(flatElements.length)
   useEffect(() => {
-    if (prevElCount.current > 0 && flatElements.length === 0) preloadDone.current = false
+    if (prevElCount.current > 0 && flatElements.length === 0
+        && useFlatStore.getState().flatPageCount === 0) {
+      preloadDone.current = false
+    }
     prevElCount.current = flatElements.length
   }, [flatElements.length])
   useEffect(() => {
