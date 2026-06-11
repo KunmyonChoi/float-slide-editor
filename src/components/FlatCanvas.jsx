@@ -332,15 +332,23 @@ export default function FlatCanvas() {
     const key = `${currentPage}-${revealV}`
     if (prevPage.current === key) return
     prevPage.current = key
-    if (viewMode === 'split' || viewMode === 'flat') reExtract(key)
+    // split 모드에서만 iframe 페이지 변경을 flat에 반영.
+    // flat 단일 모드는 flat 페이지 시스템(goToFlatPage)이 단독 관리하므로
+    // iframe 기반 재추출을 트리거하지 않는다(삽입한 페이지 보존).
+    if (viewMode === 'split') reExtract(key)
   }, [currentPage, revealV, viewMode, reExtract])
 
   // 첫 추출 완료 후 모든 페이지를 백그라운드 프리로드
   const preloadDone = useRef(false)
-  // flatElements가 비워졌다가 다시 채워지면 프리로드 재트리거
+  // 덱 전체가 비워진 경우(새 HTML 로드/초기화 → flatPageCount 0)에만 프리로드 재트리거.
+  // 공백(빈) 페이지로 이동해 flatElements만 0이 된 것은 재트리거 대상이 아님
+  // (그렇지 않으면 빈 페이지 이동 시 전체 일괄 변환이 재실행됨).
   const prevElCount = useRef(flatElements.length)
   useEffect(() => {
-    if (prevElCount.current > 0 && flatElements.length === 0) preloadDone.current = false
+    if (prevElCount.current > 0 && flatElements.length === 0
+        && useFlatStore.getState().flatPageCount === 0) {
+      preloadDone.current = false
+    }
     prevElCount.current = flatElements.length
   }, [flatElements.length])
   useEffect(() => {
