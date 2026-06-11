@@ -111,6 +111,8 @@ export const useFlatStore = create((set, get) => ({
   floatingPos: { x: null, y: 80 },
   /** 도킹 속성 패널 접힘 여부 */
   panelCollapsed: false,
+  /** 좌측 슬라이드 목록 패널 접힘 여부 (기본 접힘) */
+  slideListCollapsed: true,
   /** 디버그 모드 — 품질/변환검증/Phase 라벨/html·split 뷰 등 진단 UI 노출 */
   debugMode: false,
 
@@ -127,6 +129,52 @@ export const useFlatStore = create((set, get) => ({
   setPanelMode(mode) { set({ panelMode: mode }) },
   setFloatingPos(pos) { set({ floatingPos: pos }) },
   togglePanelCollapsed() { set(s => ({ panelCollapsed: !s.panelCollapsed })) },
+  toggleSlideListCollapsed() { set(s => ({ slideListCollapsed: !s.slideListCollapsed })) },
+
+  /**
+   * 슬라이드 목록용 페이지 열거 — 읽기 전용(부작용 없음, _saveCurrentPage 호출 금지).
+   * 현재 페이지는 라이브 상태, 그 외는 _pageCache에서 읽는다.
+   * @returns {Array<{ key, index, isCurrent, elements, canvasSize, htmlSlideIndex }>}
+   */
+  getFlatPageList() {
+    const keys = _getSortedPageKeys()
+    const curKey = _currentPageKey
+    const liveEls = get().flatElements
+    const liveCs = get().canvasSize
+    return keys.map((key, i) => {
+      const isCurrent = key === curKey
+      const entry = _pageCache[key]
+      return {
+        key,
+        index: i,
+        isCurrent,
+        elements: isCurrent ? liveEls : (entry?.elements || []),
+        canvasSize: isCurrent ? liveCs : (entry?.canvasSize || liveCs),
+        htmlSlideIndex: entry ? entry.htmlSlideIndex : (isCurrent ? null : undefined),
+      }
+    })
+  },
+
+  /** 페이지를 fromIdx에서 toIdx로 이동(임의 위치). 현재 페이지 식별 보존. */
+  reorderPage(fromIdx, toIdx) {
+    get()._saveCurrentPage()
+    const keys = _getSortedPageKeys()
+    if (fromIdx < 0 || fromIdx >= keys.length || toIdx < 0 || toIdx >= keys.length || fromIdx === toIdx) return
+    const curEntry = _currentPageKey ? _pageCache[_currentPageKey] : null
+    const entries = keys.map(k => _pageCache[k])
+    const [moved] = entries.splice(fromIdx, 1)
+    entries.splice(toIdx, 0, moved)
+    // 캐시 재구성 (순차 키)
+    for (const k in _pageCache) delete _pageCache[k]
+    entries.forEach((entry, i) => { _pageCache[`${i}-0`] = entry })
+    // 현재 페이지가 가리키던 엔트리의 새 인덱스로 _currentPageKey 갱신
+    if (curEntry) {
+      const newIdx = entries.indexOf(curEntry)
+      if (newIdx >= 0) _currentPageKey = `${newIdx}-0`
+    }
+    // 내용은 그대로(상태 유지) — 인덱스만 동기화
+    get()._syncPageInfo()
+  },
 
   /** 편집 중 커밋 콜백 등록/해제 (FlatInlineEditor에서 사용) */
   _setPendingEditCommit(fn) {

@@ -2,6 +2,7 @@ import SlideCanvas, { InsertPopup } from './components/SlideCanvas'
 import FloatingToolbar from './components/FloatingToolbar'
 import EditToolbar from './components/EditToolbar'
 import PropertyPanel from './components/PropertyPanel'
+import SlideListPanel from './components/SlideListPanel'
 import FlatCanvas from './components/FlatCanvas'
 import FlatPresenter from './components/FlatPresenter'
 import ComparePanel from './components/ComparePanel'
@@ -29,6 +30,8 @@ export default function App() {
       <FloatingToolbar />
       <EditToolbar />
       <div className="flex flex-1 overflow-hidden">
+        {/* 좌측 슬라이드 목록 패널 (flat/split 편집 모드 전용) */}
+        {mode !== 'present' && (viewMode === 'flat' || viewMode === 'split') && <SlideListPanel />}
         {/* SlideCanvas + FlatCanvas 래퍼 — split 시 화면비에 따라 배치 전환:
             세로로 길면(portrait) 상하 스택, 가로로 길면(landscape) 좌우 분할.
             (속성 패널은 바깥 row에 그대로 두어 항상 우측) */}
