@@ -4,6 +4,7 @@ import { nextFlatId } from '../core/FlatExtractor'
 import { BlobStore } from '../core/BlobStore'
 import { computeAlignmentChanges, computeDistributionChanges } from '../core/SnapEngine'
 import { promptUrl } from './UrlPrompt'
+import { openInfographic } from './InfographicModal'
 
 const DEFAULT_STYLES = {
   backgroundColor: 'rgba(0, 0, 0, 0)', backgroundImage: 'none',
@@ -228,6 +229,7 @@ export default function FlatContextMenu({ x, y, canvasX, canvasY, onClose }) {
       case 'insertImage': fileInputRef.current?.click(); return // onClose 호출하지 않음
       case 'insertVideo': insertVideo(); break
       case 'formatBackground': if (bgElement) setSelectedFlat(bgElement.id); break
+      case 'aiInfographic': openInfographic(); break
       case 'convertToBg': {
         // 선택된 요소를 배경 레이어로 변환
         for (const el of selectedEls) {
@@ -362,6 +364,7 @@ export default function FlatContextMenu({ x, y, canvasX, canvasY, onClose }) {
       ],
     },
     { id: 'sep2', type: 'separator' },
+    { id: 'aiInfographic', label: 'AI 인포그래픽 변환', action: 'aiInfographic' },
     { id: 'all', label: '전체 선택', shortcut: 'Ctrl+A', action: 'selectAll' },
   ]
 

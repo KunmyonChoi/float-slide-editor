@@ -6,6 +6,7 @@ import { getRotatedAABB } from '../core/RotationUtils'
 import FlatElementRenderer from './FlatElementRenderer'
 import FlatSelectionOverlay, { FlatGroupOverlay } from './FlatSelectionOverlay'
 import FlatAiBar from './FlatAiBar'
+import FlatSelectionAiBar from './FlatSelectionAiBar'
 import FlatInlineEditor from './FlatInlineEditor'
 import FlatTableEditor from './FlatTableEditor'
 import FlatContextMenu from './FlatContextMenu'
@@ -705,47 +706,50 @@ export default function FlatCanvas() {
       const { startX, startY, rect } = marqueeRef.current
       const endX = (e.clientX - rect.left) / scale
       const endY = (e.clientY - rect.top) / scale
+      marqueeRef.current.endX = endX // onUp에서 store 변경 없이 읽기 위해 ref에 저장
+      marqueeRef.current.endY = endY
       setMarquee({ startX, startY, endX, endY })
     }
     const onUp = () => {
-      if (!marqueeRef.current) return
-      const { shiftKey } = marqueeRef.current
+      const m = marqueeRef.current
+      if (!m) return
       marqueeRef.current = null
+      const { shiftKey, startX, startY } = m
+      const endX = m.endX ?? startX
+      const endY = m.endY ?? startY
+      setMarquee(null) // 순수 업데이트만 — store 변경은 아래 핸들러 본문에서(렌더 중 setState 금지)
+
       // 마키 영역 계산
-      setMarquee(prev => {
-        if (!prev) return null
-        const x1 = Math.min(prev.startX, prev.endX)
-        const y1 = Math.min(prev.startY, prev.endY)
-        const x2 = Math.max(prev.startX, prev.endX)
-        const y2 = Math.max(prev.startY, prev.endY)
-        // 최소 크기 이하면 단순 클릭 → 빈 영역(배경 위 포함) 클릭이므로 선택 해제.
-        // (배경 레이어는 pointer-events:none이라 배경 click에 위임할 수 없음)
-        if (x2 - x1 < 3 && y2 - y1 < 3) {
-          if (!shiftKey) useFlatStore.getState().setSelectedFlat(null)
-          return null
-        }
+      const x1 = Math.min(startX, endX)
+      const y1 = Math.min(startY, endY)
+      const x2 = Math.max(startX, endX)
+      const y2 = Math.max(startY, endY)
+      // 최소 크기 이하면 단순 클릭 → 빈 영역(배경 위 포함) 클릭이므로 선택 해제.
+      // (배경 레이어는 pointer-events:none이라 배경 click에 위임할 수 없음)
+      if (x2 - x1 < 3 && y2 - y1 < 3) {
+        if (!shiftKey) useFlatStore.getState().setSelectedFlat(null)
+        return
+      }
 
-        // 실제 마키 드래그 발생 → 배경 click 무시 플래그 설정
-        useFlatStore.setState({ _skipBgClick: true })
-        requestAnimationFrame(() => useFlatStore.setState({ _skipBgClick: false }))
+      // 실제 마키 드래그 발생 → 배경 click 무시 플래그 설정
+      useFlatStore.setState({ _skipBgClick: true })
+      requestAnimationFrame(() => useFlatStore.setState({ _skipBgClick: false }))
 
-        // 완전 포함된 요소만 선택 (PPT 방식) + 배경 제외
-        const els = useFlatStore.getState().flatElements
-        const cs = useFlatStore.getState().canvasSize
-        const hits = els.filter(el => {
-          if (isBackgroundLayer(el, cs)) return false // 배경 레이어는 마퀴 선택 제외
-          // 요소가 마키 영역 안에 완전히 포함되어야 선택
-          return el.x >= x1 && el.y >= y1 && el.x + el.width <= x2 && el.y + el.height <= y2
-        }).map(el => el.id)
-        if (hits.length > 0) {
-          // 그룹 일부만 잡혔으면 그룹 전체 포함
-          const expanded = useFlatStore.getState().expandSelectionToGroups(hits)
-          useFlatStore.getState().setSelectedFlats(expanded)
-        } else if (!shiftKey) {
-          useFlatStore.getState().setSelectedFlat(null)
-        }
-        return null
-      })
+      // 완전 포함된 요소만 선택 (PPT 방식) + 배경 제외
+      const els = useFlatStore.getState().flatElements
+      const cs = useFlatStore.getState().canvasSize
+      const hits = els.filter(el => {
+        if (isBackgroundLayer(el, cs)) return false // 배경 레이어는 마퀴 선택 제외
+        // 요소가 마키 영역 안에 완전히 포함되어야 선택
+        return el.x >= x1 && el.y >= y1 && el.x + el.width <= x2 && el.y + el.height <= y2
+      }).map(el => el.id)
+      if (hits.length > 0) {
+        // 그룹 일부만 잡혔으면 그룹 전체 포함
+        const expanded = useFlatStore.getState().expandSelectionToGroups(hits)
+        useFlatStore.getState().setSelectedFlats(expanded)
+      } else if (!shiftKey) {
+        useFlatStore.getState().setSelectedFlat(null)
+      }
     }
     window.addEventListener('mousemove', onMove)
     window.addEventListener('mouseup', onUp)
@@ -846,6 +850,10 @@ export default function FlatCanvas() {
             {selectedEls.length > 1 && (
               <FlatGroupOverlay elements={selectedEls} scale={scale}
                 otherRects={otherRects} canvasSize={canvasSize} onSnapGuides={setSnapGuides} />
+            )}
+            {/* 다중 선택 시 전용 AI 플로팅바 (편집 중에는 숨김) */}
+            {selectedEls.length > 1 && !editingFlatId && (
+              <FlatSelectionAiBar elements={selectedEls} scale={scale} canvasRef={canvasRef} />
             )}
             {/* 스냅 가이드 */}
             {snapGuides.map((g, i) => {
