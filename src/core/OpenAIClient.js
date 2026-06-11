@@ -112,7 +112,7 @@ Given the text content of a single slide text box, infer its purpose, topic, and
 Rules:
 - Output ONLY the prompt text. No preamble, no quotes, no labels, no markdown.
 - Write in English regardless of the input language.
-- Choose a fitting visual style (e.g. clean flat infographic illustration, isometric, minimal vector, editorial photo) that matches the slide's purpose.
+- If a required visual style is provided, you MUST use exactly that style. Otherwise choose a fitting style (e.g. clean flat infographic illustration) that matches the slide's purpose.
 - Specify subject, composition, mood, and a coherent color palette.
 - Avoid embedding readable text/words inside the image; describe imagery only.
 - Keep it under 60 words, suitable for a 16:9 slide background or accent graphic.`
@@ -123,12 +123,15 @@ Rules:
  * @param {{ model?: string, signal?: AbortSignal }} [opts]
  * @returns {Promise<string>}
  */
-export async function generateImagePrompt(text, { model, signal } = {}) {
+export async function generateImagePrompt(text, { model, style, signal } = {}) {
   const trimmed = (text || '').trim()
   if (!trimmed) throw new Error('텍스트 박스에 분석할 내용이 없습니다.')
+  const styleClause = (style || '').trim()
+    ? `\n\nRequired visual style (use exactly this): ${style.trim()}`
+    : ''
   return chat({
     system: IMAGE_PROMPT_SYSTEM,
-    user: `Slide text box content:\n"""\n${trimmed}\n"""`,
+    user: `Slide text box content:\n"""\n${trimmed}\n"""${styleClause}`,
     model,
     temperature: 0.8,
     signal,

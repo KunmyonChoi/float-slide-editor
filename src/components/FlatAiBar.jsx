@@ -13,9 +13,23 @@ import { openAiSettings } from './AiSettingsModal'
  *
  * 캔버스 줌과 무관하게 읽기 좋게 하려고 document.body 포털 + 화면 좌표로 배치한다.
  */
+// 발표자료에 어울리는 이미지 화풍 — directive는 프롬프트에 주입되는 영어 지시문
+const STYLES = [
+  { id: 'auto', label: '자동 (내용에 맞게)', directive: '' },
+  { id: 'flat', label: '플랫 인포그래픽', directive: 'clean flat vector infographic illustration, simple geometric shapes, modern business style' },
+  { id: 'isometric', label: '아이소메트릭', directive: 'isometric 3D vector illustration, soft shadows, clean and modern' },
+  { id: 'line', label: '미니멀 라인아트', directive: 'minimal single-weight line art, outline illustration with lots of negative space' },
+  { id: '3d', label: '3D 렌더', directive: 'soft 3D render, rounded clay-like shapes, studio lighting, pastel palette' },
+  { id: 'photo', label: '사진 (실사)', directive: 'photorealistic editorial photograph, natural lighting, shallow depth of field' },
+  { id: 'geometric', label: '추상 지오메트릭', directive: 'abstract geometric composition, bold shapes and smooth gradients, corporate modern' },
+  { id: 'watercolor', label: '수채화', directive: 'soft watercolor illustration, gentle washes, hand-painted texture' },
+  { id: 'sketch', label: '손그림 스케치', directive: 'hand-drawn sketch, friendly pencil and ink doodle style' },
+]
+
 export default function FlatAiBar({ element, scale, canvasRef }) {
   // 'idle' | 'loading' | 'preview' | 'error'
   const [phase, setPhase] = useState('idle')
+  const [styleId, setStyleId] = useState('flat')
   const [status, setStatus] = useState('')
   const [prompt, setPrompt] = useState('')
   const [imageUrl, setImageUrl] = useState('')
@@ -70,7 +84,8 @@ export default function FlatAiBar({ element, scale, canvasRef }) {
     setPhase('loading'); setError(''); setImageUrl('')
     try {
       setStatus('내용 분석 중…')
-      const p = await generateImagePrompt(text, { signal: ctrl.signal })
+      const directive = STYLES.find(s => s.id === styleId)?.directive || ''
+      const p = await generateImagePrompt(text, { style: directive, signal: ctrl.signal })
       if (ctrl.signal.aborted) return
       setPrompt(p)
       setStatus('AI 이미지 생성 중… (수십 초 걸릴 수 있어요)')
@@ -83,7 +98,7 @@ export default function FlatAiBar({ element, scale, canvasRef }) {
       setError(e?.message || 'AI 호출에 실패했습니다.')
       setPhase('error')
     }
-  }, [sourceText, element.width, element.height])
+  }, [sourceText, styleId, element.width, element.height])
 
   // 현재 프롬프트(편집 가능)로 이미지만 다시 생성
   const regenerate = useCallback(async () => {
@@ -134,7 +149,7 @@ export default function FlatAiBar({ element, scale, canvasRef }) {
   const BAR_H = 36
   const placeAbove = elemTop - BAR_H - 8 >= 8
   const anchorTop = placeAbove ? elemTop - BAR_H - 8 : elemBottom + 8
-  const anchorLeft = Math.max(8, Math.min(window.innerWidth - 260, elemLeft))
+  const anchorLeft = Math.max(8, Math.min(window.innerWidth - 360, elemLeft))
 
   const PANEL_W = 360
   const PANEL_H_EST = 380
@@ -150,7 +165,11 @@ export default function FlatAiBar({ element, scale, canvasRef }) {
       {phase === 'idle' && (
         <div
           data-edit-accessory="true"
-          onMouseDown={e => e.preventDefault()}
+          // 포털 자식의 React 이벤트는 FlatCanvas(부모)로 버블링되므로 반드시 전파 차단.
+          // (안 하면 mousedown이 캔버스 마퀴로 전달돼 mouseup에서 선택 해제→바 언마운트)
+          // preventDefault는 하지 않음 — <select> 드롭다운 열림을 막기 때문.
+          onMouseDown={e => e.stopPropagation()}
+          onClick={e => e.stopPropagation()}
           style={{
             position: 'fixed', left: anchorLeft, top: anchorTop, zIndex: 10040,
             display: 'flex', alignItems: 'center', gap: 6,
@@ -160,6 +179,14 @@ export default function FlatAiBar({ element, scale, canvasRef }) {
             boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
           }}
         >
+          <select
+            value={styleId}
+            onChange={e => setStyleId(e.target.value)}
+            title="이미지 화풍"
+            style={styleSelectStyle}
+          >
+            {STYLES.map(s => <option key={s.id} value={s.id} style={{ background: '#1e293b', color: '#f1f5f9' }}>{s.label}</option>)}
+          </select>
           <button
             type="button"
             onClick={run}
@@ -256,6 +283,11 @@ const aiBtnStyle = {
   display: 'flex', alignItems: 'center', padding: '6px 8px', borderRadius: 8,
   border: 'none', cursor: 'pointer', color: '#c7d2fe',
   background: 'rgba(99,102,241,0.18)',
+}
+const styleSelectStyle = {
+  height: 26, maxWidth: 150, fontSize: 12, padding: '0 6px', borderRadius: 7, cursor: 'pointer',
+  background: 'rgba(255,255,255,0.06)', color: '#e2e8f0',
+  border: '1px solid rgba(255,255,255,0.14)', outline: 'none',
 }
 const ghostBtnStyle = {
   padding: '6px 12px', fontSize: 12.5, borderRadius: 8, cursor: 'pointer',

@@ -161,4 +161,21 @@ describe('generateImagePrompt', () => {
     expect(body.messages[0].role).toBe('system')
     expect(body.messages[1].content).toContain('매출 성장 추이')
   })
+
+  it('화풍(style) directive를 user 메시지에 주입', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(okResponse('isometric scene'))
+    vi.stubGlobal('fetch', fetchMock)
+    await generateImagePrompt('팀 협업', { style: 'isometric 3D vector illustration' })
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body)
+    expect(body.messages[1].content).toContain('Required visual style')
+    expect(body.messages[1].content).toContain('isometric 3D vector illustration')
+  })
+
+  it('style 미지정이면 directive 절을 넣지 않음', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(okResponse('x'))
+    vi.stubGlobal('fetch', fetchMock)
+    await generateImagePrompt('팀 협업')
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body)
+    expect(body.messages[1].content).not.toContain('Required visual style')
+  })
 })
