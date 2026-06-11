@@ -412,6 +412,16 @@ export default function FlatCanvas() {
         return
       }
 
+      // 선택 없음 + Delete → 현재 슬라이드 삭제 (PowerPoint, 복구 토스트 제공).
+      // Backspace는 제외(오타 위험). flat 모드 + 2장 이상 + 편집 중 아님.
+      if (e.key === 'Delete' && !hasSelection && !useFlatStore.getState().editingFlatId
+          && (viewMode === 'flat' || viewMode === 'split')
+          && useFlatStore.getState().flatPageCount > 1) {
+        e.preventDefault()
+        useFlatStore.getState().deletePage()
+        return
+      }
+
       // F5 → 처음부터 발표, Shift+F5 → 현재 페이지부터 (PowerPoint 호환)
       if (e.key === 'F5') {
         e.preventDefault()
