@@ -395,9 +395,16 @@ function MultiElementPanel({ elements }) {
         <div className="pt-1 border-t border-white/5">
           <SectionTitle>채우기</SectionTitle>
           <div>
-            <p className={`${labelClass} mb-0.5`}>배경색 {commonBg === null && <span className="text-slate-600">(혼합)</span>}</p>
+            <div className="flex items-center justify-between mb-0.5">
+              <p className={labelClass}>배경색 {commonBg === null && <span className="text-slate-600">(혼합)</span>}</p>
+              <button
+                onClick={() => updateAllStyle('backgroundColor', 'transparent')}
+                className="text-xs px-1.5 py-0.5 rounded bg-white/5 text-slate-400 border border-white/10 hover:bg-white/10"
+                title="배경 없음(투명)으로"
+              >투명</button>
+            </div>
             <ColorPicker
-              value={commonBg || '#ffffff'}
+              value={commonBg && commonBg !== 'transparent' && commonBg !== 'rgba(0, 0, 0, 0)' ? commonBg : 'transparent'}
               onChange={v => updateAllStyle('backgroundColor', v)}
               showOpacity
             />
@@ -742,9 +749,24 @@ function FillSection({ styles, updateStyle, updateStyles, previewStyle, isText }
     <div className="space-y-2">
       <SectionTitle>채우기</SectionTitle>
       <div style={hasGradient && !isGradientText ? { opacity: 0.4, pointerEvents: 'none' } : undefined}>
-        <p className={`${labelClass} mb-0.5`}>배경색{hasGradient && !isGradientText ? ' (그래디언트 사용 중)' : ''}</p>
+        {(() => {
+          const bg = styles.backgroundColor
+          const isTransparent = !bg || bg === 'transparent' || bg === 'rgba(0, 0, 0, 0)'
+          return (
+            <div className="flex items-center justify-between mb-0.5">
+              <p className={labelClass}>배경색{hasGradient && !isGradientText ? ' (그래디언트 사용 중)' : isTransparent ? ' (투명)' : ''}</p>
+              {!isTransparent && (
+                <button
+                  onClick={() => updateStyle('backgroundColor', 'transparent')}
+                  className="text-xs px-1.5 py-0.5 rounded bg-white/5 text-slate-400 border border-white/10 hover:bg-white/10"
+                  title="배경 없음(투명)으로"
+                >투명</button>
+              )}
+            </div>
+          )
+        })()}
         <ColorPicker
-          value={styles.backgroundColor}
+          value={styles.backgroundColor || 'transparent'}
           onChange={v => updateStyle('backgroundColor', v)}
           showOpacity
         />
