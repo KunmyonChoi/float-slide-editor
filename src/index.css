@@ -38,3 +38,25 @@ body {
   color: rgba(100, 116, 139, 0.6);
   pointer-events: none;
 }
+
+/* ── 얇은 스크롤바 (슬라이드 목록 등 어두운 패널용) ── */
+.thin-scrollbar {
+  scrollbar-width: thin;                              /* Firefox */
+  scrollbar-color: rgba(148, 163, 184, 0.35) transparent;
+}
+.thin-scrollbar::-webkit-scrollbar {
+  width: 8px;
+}
+.thin-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.thin-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.3);
+  border-radius: 4px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+.thin-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.55);
+  background-clip: padding-box;
+}

@@ -74,6 +74,10 @@ export default function FlatPropertyContent() {
       <div className="p-3 space-y-3">
         <PositionSection el={el} update={update} />
 
+        <div className="pt-1 border-t border-white/5">
+          <OrderSection el={el} />
+        </div>
+
         {(el.type === 'text' || (el.type === 'shape' && el.content)) && (
           <div className="pt-1 border-t border-white/5">
             <FontSection
@@ -452,6 +456,25 @@ function getGroupBBox(elements) {
 }
 
 // ── 섹션 컴포넌트 ───────────────────────────────────
+
+// 순서(z-order) — 배경 레이어는 맨 뒤 고정이라 비활성
+function OrderSection({ el }) {
+  const isBg = !!el.isBackground
+  const hint = isBg ? ' (배경은 맨 뒤 고정)' : ''
+  const act = (fn) => () => useFlatStore.getState()[fn](el.id)
+  const btn = 'flex-1 flex items-center justify-center text-sm px-2 py-1.5 rounded bg-white/5 text-slate-300 border border-white/10 hover:bg-white/10 transition-colors disabled:opacity-40 disabled:cursor-not-allowed'
+  return (
+    <div>
+      <SectionTitle>순서</SectionTitle>
+      <div className="flex gap-1">
+        <button className={btn} disabled={isBg} onClick={act('sendToBack')} title={'맨 뒤로 (Ctrl+Shift+[)' + hint}>⤓</button>
+        <button className={btn} disabled={isBg} onClick={act('sendBackward')} title={'뒤로 (Ctrl+[)' + hint}>↓</button>
+        <button className={btn} disabled={isBg} onClick={act('bringForward')} title={'앞으로 (Ctrl+])' + hint}>↑</button>
+        <button className={btn} disabled={isBg} onClick={act('bringToFront')} title={'맨 앞으로 (Ctrl+Shift+])' + hint}>⤒</button>
+      </div>
+    </div>
+  )
+}
 
 function PositionSection({ el, update }) {
   return (

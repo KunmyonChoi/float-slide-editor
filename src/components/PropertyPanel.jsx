@@ -100,7 +100,7 @@ function FloatingShell({ children, showHtml }) {
         <GripIcon />
       </div>
 
-      <div className="overflow-y-auto" style={{ maxHeight: 'calc(100vh - 120px)' }} data-no-drag>
+      <div className="overflow-y-auto thin-scrollbar" style={{ maxHeight: 'calc(100vh - 120px)' }} data-no-drag>
         {children}
       </div>
     </div>
@@ -153,7 +153,7 @@ function DockedShell({ children }) {
           <ChevronRightIcon />
         </button>
       </div>
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto thin-scrollbar">
         {showContent ? children : (
           <div className="flex items-center justify-center h-full">
             <span className="text-xs text-slate-600">요소를 선택하세요</span>

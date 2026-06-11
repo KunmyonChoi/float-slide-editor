@@ -24,12 +24,16 @@ export default function PageBar() {
   useEffect(() => {
     const onKeyDown = (e) => {
       if (useEditorStore.getState().mode === 'present') return
-      if (useFlatStore.getState()._preloading) return
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return
       if (e.target.tagName === 'IFRAME' && useFlatStore.getState().viewMode === 'html') return
 
       const vm = useFlatStore.getState().viewMode
       const isFM = vm === 'flat' || vm === 'split'
+      // 프리로드(백그라운드 일괄 변환) 중에는 순수 flat 페이지 이동만 허용.
+      // 구조 변경(Ctrl+조합)·split/html iframe 조작은 프리로드와 충돌하므로 차단.
+      const isPlainNavKey = !e.ctrlKey && !e.metaKey &&
+        ['ArrowRight', 'ArrowLeft', 'ArrowUp', 'ArrowDown', 'PageUp', 'PageDown'].includes(e.key)
+      if (useFlatStore.getState()._preloading && !(vm === 'flat' && isPlainNavKey)) return
 
       // Ctrl+Shift+PageUp/Down: 페이지 순서 이동
       if (isFM && (e.ctrlKey || e.metaKey) && e.shiftKey) {
