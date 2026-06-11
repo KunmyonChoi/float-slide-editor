@@ -155,19 +155,26 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
             ? 'hidden' : 'visible',
           whiteSpace: styles.whiteSpace || 'pre-wrap',
           wordBreak: styles.whiteSpace === 'nowrap' ? 'normal' : 'break-word',
-          // flex 정렬: 요소 자체가 flex이거나, 배경 있는 텍스트/병합 요소
+          // 세로 정렬: 배경 색 유무와 무관하게 alignItems(세로정렬 설정)에만 의존.
+          // 미설정이면 위(블록 흐름)가 기본. flex는 명시적 세로정렬·자체 flex·병합 요소일 때만.
           ...(() => {
             const isSelfFlex = styles.display === 'flex' || styles.display === 'inline-flex'
-            const hasBg = styles.backgroundColor && styles.backgroundColor !== 'rgba(0, 0, 0, 0)' && styles.backgroundColor !== 'transparent'
-            if (!isSelfFlex && !merged && !hasBg) return {}
+            const vAlign = styles.alignItems // 'flex-start' | 'center' | 'flex-end' | undefined
+            const hasVAlign = vAlign === 'center' || vAlign === 'flex-end'
+            if (!isSelfFlex && !merged && !hasVAlign) return {} // 기본: 위(블록 흐름)
             return {
               display: 'flex',
-              alignItems: isSelfFlex ? (styles.alignItems || 'center') : styles.isFlex ? (styles.alignItems || 'center') : 'center',
+              // 명시적 세로정렬이 있으면 그것을, 없으면(병합/self-flex 버튼류) 중앙
+              alignItems: vAlign || (styles.isFlex ? (styles.alignItems || 'center') : 'center'),
               justifyContent: isSelfFlex ? (styles.justifyContent || 'center') : styles.isFlex ? (styles.justifyContent || 'center') : (styles.textAlign === 'center' ? 'center' : styles.textAlign === 'right' ? 'flex-end' : 'flex-start'),
               ...(styles.gap && styles.gap !== '0px' && styles.gap !== 'normal' ? { gap: styles.gap } : {}),
             }
           })(),
           visibility: isEditing ? 'hidden' : undefined,
+          // 빈 플레이스홀더: 점선 테두리로 배경색과 무관하게 위치 표시(선택 시엔 선택 외곽선 우선)
+          ...(showPlaceholder && !isSelected
+            ? { outline: '1px dashed rgba(148,163,184,0.5)', outlineOffset: -1 }
+            : {}),
         }}
         onMouseDown={handleMouseDown}
         onClick={handleClick}
