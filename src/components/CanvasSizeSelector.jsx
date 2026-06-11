@@ -51,12 +51,13 @@ export default function CanvasSizeSelector() {
   }, [open])
 
   const applySize = (size) => {
-    setCanvasSize(size)
-    if (size) useFlatStore.setState({ canvasSize: size })
-    const { viewMode, forceReExtractAll } = useFlatStore.getState()
-    if (viewMode === 'flat' || viewMode === 'split') {
-      forceReExtractAll()
+    setCanvasSize(size) // editorStore 오버라이드(HTML iframe 크기)
+    if (size) {
+      // 구체 해상도: 모든 flat 페이지를 새 크기에 비례 스케일(통합 — HTML/처음부터 동일).
+      // 모든 페이지 보존, iframe 재추출 안 함.
+      useFlatStore.getState().setResolution(size)
     }
+    // auto(null): flat 내용은 그대로 두어 페이지 소실 방지. HTML 뷰는 editorStore가 재감지.
   }
 
   const selectPreset = (preset) => {

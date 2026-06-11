@@ -51,6 +51,31 @@ function _getSortedPageKeys() {
     return aP - bP || aV - bV
   })
 }
+
+/** 요소들을 oldCs→newCs 비율로 비례 스케일(해상도 변경용). 좌표/크기/points/글자크기. */
+function scaleFlatElements(elements, oldCs, newCs) {
+  if (!oldCs?.w || !oldCs?.h) return elements
+  const sx = newCs.w / oldCs.w
+  const sy = newCs.h / oldCs.h
+  const sf = (sx + sy) / 2 // 글자크기: 가로·세로 평균
+  const scalePx = (v, k) => {
+    const n = parseFloat(v)
+    return Number.isFinite(n) ? Math.round(n * k * 100) / 100 + 'px' : v
+  }
+  const r = (v) => Math.round(v * 100) / 100
+  return elements.map(el => {
+    const out = { ...el, x: r(el.x * sx), y: r(el.y * sy), width: r(el.width * sx), height: r(el.height * sy) }
+    if (Array.isArray(el.points)) out.points = el.points.map(p => ({ ...p, x: r(p.x * sx), y: r(p.y * sy) }))
+    if (el.styles && el.styles.fontSize) out.styles = { ...el.styles, fontSize: scalePx(el.styles.fontSize, sf) }
+    if (el.table?.cells) {
+      out.table = {
+        ...el.table,
+        cells: el.table.cells.map(row => row.map(c => (c.fontSize ? { ...c, fontSize: scalePx(c.fontSize, sf) } : c))),
+      }
+    }
+    return out
+  })
+}
 let _pendingEditCommit = null  // 편집 중 unmount 전 커밋용 콜백
 // flat 주도 페이지 이동(goToFlatPage)이 iframe에 보낸 fe:navigate의 에코(fe:pageChange→reExtract)를
 // 무시하기 위한 기대 페이지 인덱스. 이미 캐시 복원을 마쳤으므로 재추출/재복원이 불필요·유해.
@@ -288,6 +313,33 @@ export const useFlatStore = create((set, get) => ({
   forceReExtractAll() {
     for (const key in _pageCache) delete _pageCache[key]
     get().forceReExtract()
+  },
+
+  /**
+   * 해상도 변경 — 모든 페이지의 flat 내용을 새 크기에 비례 스케일(통합 동작).
+   * HTML/처음부터 구분 없이 동일하게 처리하며 모든 페이지를 보존한다. iframe 불필요.
+   */
+  setResolution(newSize) {
+    if (!newSize?.w || !newSize?.h) return
+    get()._saveCurrentPage()
+    const keys = _getSortedPageKeys()
+    for (const key of keys) {
+      const entry = _pageCache[key]
+      if (!entry) continue
+      const oldCs = entry.canvasSize || newSize
+      entry.elements = scaleFlatElements(entry.elements, oldCs, newSize)
+      entry.canvasSize = { ...newSize }
+    }
+    // 현재 페이지 라이브 상태 갱신
+    if (_currentPageKey && _pageCache[_currentPageKey]) {
+      const cur = _pageCache[_currentPageKey]
+      set({ flatElements: cur.elements, canvasSize: cur.canvasSize, selectedFlatIds: [] })
+    } else {
+      // 캐시에 현재 페이지가 없으면(단일 페이지) 라이브 요소를 직접 스케일
+      const oldCs = get().canvasSize || newSize
+      set({ flatElements: scaleFlatElements(get().flatElements, oldCs, newSize), canvasSize: { ...newSize }, selectedFlatIds: [] })
+    }
+    get()._syncPageInfo()
   },
 
   /**
