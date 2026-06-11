@@ -1,0 +1,205 @@
+/**
+ * OpenAIClient — 브라우저에서 직접 OpenAI(ChatGPT) API를 호출한다.
+ *
+ * 키는 사용자 본인 것을 설정 화면에서 입력받아 localStorage에 보관한다(서버 없음).
+ * OpenAI REST API는 CORS를 허용하므로 별도 백엔드 프록시 없이 호출 가능하다.
+ *
+ * 주의: localStorage 키는 같은 브라우저를 쓰는 사람에게 노출될 수 있다(공용 PC 주의).
+ */
+
+const KEY_STORAGE = 'openai-api-key'
+const MODEL_STORAGE = 'openai-model'
+const IMAGE_MODEL_STORAGE = 'openai-image-model'
+const DEFAULT_MODEL = 'gpt-4o-mini'
+const DEFAULT_IMAGE_MODEL = 'gpt-image-1'
+const ENDPOINT = 'https://api.openai.com/v1/chat/completions'
+const IMAGE_ENDPOINT = 'https://api.openai.com/v1/images/generations'
+
+export function getApiKey() {
+  try { return localStorage.getItem(KEY_STORAGE) || '' } catch { return '' }
+}
+
+export function setApiKey(key) {
+  try {
+    const v = (key || '').trim()
+    if (v) localStorage.setItem(KEY_STORAGE, v)
+    else localStorage.removeItem(KEY_STORAGE)
+  } catch { /* localStorage 비활성 환경 무시 */ }
+}
+
+export function hasApiKey() {
+  return !!getApiKey()
+}
+
+export function getModel() {
+  try { return localStorage.getItem(MODEL_STORAGE) || DEFAULT_MODEL } catch { return DEFAULT_MODEL }
+}
+
+export function setModel(model) {
+  try {
+    const v = (model || '').trim()
+    if (v) localStorage.setItem(MODEL_STORAGE, v)
+    else localStorage.removeItem(MODEL_STORAGE)
+  } catch { /* 무시 */ }
+}
+
+export function getImageModel() {
+  try { return localStorage.getItem(IMAGE_MODEL_STORAGE) || DEFAULT_IMAGE_MODEL } catch { return DEFAULT_IMAGE_MODEL }
+}
+
+export function setImageModel(model) {
+  try {
+    const v = (model || '').trim()
+    if (v) localStorage.setItem(IMAGE_MODEL_STORAGE, v)
+    else localStorage.removeItem(IMAGE_MODEL_STORAGE)
+  } catch { /* 무시 */ }
+}
+
+export { DEFAULT_MODEL, DEFAULT_IMAGE_MODEL }
+
+/**
+ * Chat Completions 호출 → assistant 텍스트 반환.
+ * @param {{ system?: string, user: string, model?: string, temperature?: number, signal?: AbortSignal }} opts
+ */
+export async function chat({ system, user, model, temperature = 0.7, signal } = {}) {
+  const apiKey = getApiKey()
+  if (!apiKey) throw new Error('OpenAI API 키가 설정되지 않았습니다. 먼저 키를 입력하세요.')
+
+  const messages = []
+  if (system) messages.push({ role: 'system', content: system })
+  messages.push({ role: 'user', content: user })
+
+  let res
+  try {
+    res = await fetch(ENDPOINT, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: model || getModel(),
+        messages,
+        temperature,
+      }),
+      signal,
+    })
+  } catch (e) {
+    if (e?.name === 'AbortError') throw e
+    throw new Error('OpenAI에 연결할 수 없습니다. 네트워크 연결을 확인하세요.')
+  }
+
+  if (!res.ok) {
+    let detail = ''
+    try {
+      const j = await res.json()
+      detail = j?.error?.message || ''
+    } catch { /* 본문 파싱 실패 무시 */ }
+    if (res.status === 401) throw new Error('API 키가 유효하지 않습니다. 키를 다시 확인하세요.')
+    if (res.status === 429) throw new Error('요청이 너무 많거나 사용 한도를 초과했습니다. 잠시 후 다시 시도하세요.')
+    throw new Error(`OpenAI 오류 (${res.status})${detail ? ': ' + detail : ''}`)
+  }
+
+  const data = await res.json()
+  const text = data?.choices?.[0]?.message?.content
+  if (!text) throw new Error('OpenAI 응답이 비어 있습니다.')
+  return text.trim()
+}
+
+const IMAGE_PROMPT_SYSTEM = `You are an expert visual director for presentation slides.
+Given the text content of a single slide text box, infer its purpose, topic, and tone, then write ONE concise English image-generation prompt for an image that visually supports that slide.
+
+Rules:
+- Output ONLY the prompt text. No preamble, no quotes, no labels, no markdown.
+- Write in English regardless of the input language.
+- If a required visual style is provided, you MUST use exactly that style. Otherwise choose a fitting style (e.g. clean flat infographic illustration) that matches the slide's purpose.
+- Specify subject, composition, mood, and a coherent color palette.
+- Avoid embedding readable text/words inside the image; describe imagery only.
+- Keep it under 60 words, suitable for a 16:9 slide background or accent graphic.`
+
+/**
+ * 텍스트 박스 내용 → 목적에 맞는 영어 이미지 생성 프롬프트 1개.
+ * @param {string} text  텍스트 박스의 평문 내용
+ * @param {{ model?: string, signal?: AbortSignal }} [opts]
+ * @returns {Promise<string>}
+ */
+export async function generateImagePrompt(text, { model, style, signal } = {}) {
+  const trimmed = (text || '').trim()
+  if (!trimmed) throw new Error('텍스트 박스에 분석할 내용이 없습니다.')
+  const styleClause = (style || '').trim()
+    ? `\n\nRequired visual style (use exactly this): ${style.trim()}`
+    : ''
+  return chat({
+    system: IMAGE_PROMPT_SYSTEM,
+    user: `Slide text box content:\n"""\n${trimmed}\n"""${styleClause}`,
+    model,
+    temperature: 0.8,
+    signal,
+  })
+}
+
+// 모델별 지원 사이즈 중 박스 종횡비에 가장 가까운 것 선택.
+export function pickImageSize(model, width, height) {
+  const ratio = (width || 1) / (height || 1)
+  const landscape = ratio > 1.2
+  const portrait = ratio < 0.83
+  if (model === 'dall-e-3') {
+    if (landscape) return '1792x1024'
+    if (portrait) return '1024x1792'
+    return '1024x1024'
+  }
+  // gpt-image-1 (및 기타)
+  if (landscape) return '1536x1024'
+  if (portrait) return '1024x1536'
+  return '1024x1024'
+}
+
+/**
+ * 프롬프트 → 생성 이미지(data URL).
+ * @param {string} prompt  영어 이미지 생성 프롬프트
+ * @param {{ model?: string, width?: number, height?: number, size?: string, signal?: AbortSignal }} [opts]
+ * @returns {Promise<string>} `data:image/png;base64,...`
+ */
+export async function generateImage(prompt, { model, width, height, size, signal } = {}) {
+  const apiKey = getApiKey()
+  if (!apiKey) throw new Error('OpenAI API 키가 설정되지 않았습니다. 먼저 키를 입력하세요.')
+  const p = (prompt || '').trim()
+  if (!p) throw new Error('이미지 생성 프롬프트가 비어 있습니다.')
+
+  const m = model || getImageModel()
+  const body = {
+    model: m,
+    prompt: p,
+    n: 1,
+    size: size || pickImageSize(m, width, height),
+  }
+  if (m === 'gpt-image-1') body.quality = 'medium'
+  else body.response_format = 'b64_json' // dall-e 계열은 명시해야 b64 반환
+
+  let res
+  try {
+    res = await fetch(IMAGE_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify(body),
+      signal,
+    })
+  } catch (e) {
+    if (e?.name === 'AbortError') throw e
+    throw new Error('OpenAI에 연결할 수 없습니다. 네트워크 연결을 확인하세요.')
+  }
+
+  if (!res.ok) {
+    let detail = ''
+    try { detail = (await res.json())?.error?.message || '' } catch { /* 무시 */ }
+    if (res.status === 401) throw new Error('API 키가 유효하지 않습니다. 키를 다시 확인하세요.')
+    if (res.status === 403) throw new Error(`이미지 모델 사용 권한이 없습니다(조직 인증 필요할 수 있음)${detail ? ': ' + detail : ''}`)
+    if (res.status === 429) throw new Error('요청이 너무 많거나 사용 한도를 초과했습니다. 잠시 후 다시 시도하세요.')
+    throw new Error(`이미지 생성 오류 (${res.status})${detail ? ': ' + detail : ''}`)
+  }
+
+  const data = await res.json()
+  const b64 = data?.data?.[0]?.b64_json
+  if (!b64) throw new Error('이미지 응답이 비어 있습니다.')
+  return `data:image/png;base64,${b64}`
+}

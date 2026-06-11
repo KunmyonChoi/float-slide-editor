@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import { useFlatStore } from '../store/flatStore'
 import { useEditorStore } from '../store/editorStore'
 import { exportFlatHtml, exportFlatHtmlAllPages, downloadHtml } from '../core/FlatExporter'
+import { openAiSettings } from './AiSettingsModal'
 
 // 새 프로젝트용 빈 슬라이드 1장 (1280×720 흰 배경)
 const BLANK_DECK = `<!DOCTYPE html>
@@ -255,6 +256,8 @@ export default function FileMenu({ fallbackSample }) {
         { id: 'importHtml', label: 'HTML 슬라이드 가져오기', action: handleOpenHtml },
       ],
     },
+    { id: 'sepAi', type: 'separator' },
+    { id: 'aiSettings', label: 'AI 설정', shortcut: 'OpenAI', action: openAiSettings },
     { id: 'sepDebug', type: 'separator' },
     // 샘플 슬라이드는 디버그/데모용 — 디버그 모드일 때만 노출
     ...(debugMode ? [{ id: 'loadSample', label: '샘플 슬라이드', action: handleLoadSample }] : []),

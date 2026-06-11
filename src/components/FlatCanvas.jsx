@@ -5,6 +5,7 @@ import { isBackgroundElement } from '../core/SnapEngine'
 import { getRotatedAABB } from '../core/RotationUtils'
 import FlatElementRenderer from './FlatElementRenderer'
 import FlatSelectionOverlay, { FlatGroupOverlay } from './FlatSelectionOverlay'
+import FlatAiBar from './FlatAiBar'
 import FlatInlineEditor from './FlatInlineEditor'
 import FlatTableEditor from './FlatTableEditor'
 import FlatContextMenu from './FlatContextMenu'
@@ -837,6 +838,10 @@ export default function FlatCanvas() {
             {selectedEls.length === 1 && selectedEl && (
               <FlatSelectionOverlay element={selectedEl} scale={scale}
                 otherRects={otherRects} canvasSize={canvasSize} onSnapGuides={setSnapGuides} />
+            )}
+            {/* 텍스트 박스 단일 선택 시 전용 AI 플로팅바 (편집 중에는 숨김) */}
+            {selectedEls.length === 1 && selectedEl && selectedEl.type === 'text' && !editingFlatId && (
+              <FlatAiBar element={selectedEl} scale={scale} canvasRef={canvasRef} />
             )}
             {selectedEls.length > 1 && (
               <FlatGroupOverlay elements={selectedEls} scale={scale}
