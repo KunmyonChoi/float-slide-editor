@@ -24,6 +24,15 @@ export default function SlideListPanel() {
   const [dragOver, setDragOver] = useState(null) // { index, before }
   const [ctxMenu, setCtxMenu] = useState(null)    // { x, y, index }
   const currentRef = useRef(null)
+  const listRef = useRef(null)
+
+  // 목록에 포커스가 있을 때 Enter → 현재 슬라이드 뒤에 새 페이지 추가
+  const onListKeyDown = (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault(); e.stopPropagation()
+      useFlatStore.getState().addPage()
+    }
+  }
 
   // 컨텍스트 메뉴 바깥 클릭/ESC 닫기
   useEffect(() => {
@@ -93,7 +102,13 @@ export default function SlideListPanel() {
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto thin-scrollbar py-2 px-2 space-y-1.5">
+      <div
+        ref={listRef}
+        tabIndex={0}
+        onKeyDown={onListKeyDown}
+        style={{ outline: 'none' }}
+        className="flex-1 overflow-y-auto thin-scrollbar py-2 px-2 space-y-1.5"
+      >
         {pages.map((p) => {
           const isOverBefore = dragOver && dragOver.index === p.index && dragOver.before
           const isOverAfter = dragOver && dragOver.index === p.index && !dragOver.before
@@ -113,7 +128,7 @@ export default function SlideListPanel() {
                   }
                 }}
                 onDrop={(e) => onDrop(e, p.index, e.clientY < e.currentTarget.getBoundingClientRect().top + e.currentTarget.getBoundingClientRect().height / 2)}
-                onClick={() => useFlatStore.getState().goToFlatPage(p.index)}
+                onClick={() => { useFlatStore.getState().goToFlatPage(p.index); listRef.current?.focus() }}
                 onContextMenu={(e) => {
                   e.preventDefault(); e.stopPropagation()
                   useFlatStore.getState().goToFlatPage(p.index) // 우클릭한 페이지를 현재로
