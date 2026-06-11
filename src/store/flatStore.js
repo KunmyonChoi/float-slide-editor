@@ -51,6 +51,46 @@ function _getSortedPageKeys() {
     return aP - bP || aV - bV
   })
 }
+
+// 해상도 변경 시 함께 스케일해야 텍스트 줄바꿈/레이아웃이 보존되는 px 기반 스타일.
+const SCALE_STYLE_KEYS = [
+  'fontSize', 'lineHeight', 'letterSpacing',
+  'padding', 'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft',
+  'borderRadius',
+  'border', 'borderWidth', 'borderTop', 'borderRight', 'borderBottom', 'borderLeft',
+  'borderTopWidth', 'borderRightWidth', 'borderBottomWidth', 'borderLeftWidth',
+  'gap', 'columnGap', 'rowGap',
+]
+
+/** 문자열 내 모든 Npx 값을 k배 (단위 없는 값/색상은 영향 없음). */
+function scaleCssPx(value, k) {
+  return String(value).replace(/(-?\d*\.?\d+)px/g, (_, n) => (Math.round(parseFloat(n) * k * 100) / 100) + 'px')
+}
+
+/** 요소들을 oldCs→newCs 비율로 비례 스케일(해상도 변경용). 좌표/크기/points + px 스타일. */
+function scaleFlatElements(elements, oldCs, newCs) {
+  if (!oldCs?.w || !oldCs?.h) return elements
+  const sx = newCs.w / oldCs.w
+  const sy = newCs.h / oldCs.h
+  const sf = (sx + sy) / 2 // 글꼴/패딩 등: 가로·세로 평균
+  const r = (v) => Math.round(v * 100) / 100
+  return elements.map(el => {
+    const out = { ...el, x: r(el.x * sx), y: r(el.y * sy), width: r(el.width * sx), height: r(el.height * sy) }
+    if (Array.isArray(el.points)) out.points = el.points.map(p => ({ ...p, x: r(p.x * sx), y: r(p.y * sy) }))
+    if (el.styles) {
+      const st = { ...el.styles }
+      for (const key of SCALE_STYLE_KEYS) if (st[key] != null) st[key] = scaleCssPx(st[key], sf)
+      out.styles = st
+    }
+    if (el.table?.cells) {
+      out.table = {
+        ...el.table,
+        cells: el.table.cells.map(row => row.map(c => (c.fontSize ? { ...c, fontSize: scaleCssPx(c.fontSize, sf) } : c))),
+      }
+    }
+    return out
+  })
+}
 let _pendingEditCommit = null  // 편집 중 unmount 전 커밋용 콜백
 // flat 주도 페이지 이동(goToFlatPage)이 iframe에 보낸 fe:navigate의 에코(fe:pageChange→reExtract)를
 // 무시하기 위한 기대 페이지 인덱스. 이미 캐시 복원을 마쳤으므로 재추출/재복원이 불필요·유해.
@@ -288,6 +328,33 @@ export const useFlatStore = create((set, get) => ({
   forceReExtractAll() {
     for (const key in _pageCache) delete _pageCache[key]
     get().forceReExtract()
+  },
+
+  /**
+   * 해상도 변경 — 모든 페이지의 flat 내용을 새 크기에 비례 스케일(통합 동작).
+   * HTML/처음부터 구분 없이 동일하게 처리하며 모든 페이지를 보존한다. iframe 불필요.
+   */
+  setResolution(newSize) {
+    if (!newSize?.w || !newSize?.h) return
+    get()._saveCurrentPage()
+    const keys = _getSortedPageKeys()
+    for (const key of keys) {
+      const entry = _pageCache[key]
+      if (!entry) continue
+      const oldCs = entry.canvasSize || newSize
+      entry.elements = scaleFlatElements(entry.elements, oldCs, newSize)
+      entry.canvasSize = { ...newSize }
+    }
+    // 현재 페이지 라이브 상태 갱신
+    if (_currentPageKey && _pageCache[_currentPageKey]) {
+      const cur = _pageCache[_currentPageKey]
+      set({ flatElements: cur.elements, canvasSize: cur.canvasSize, selectedFlatIds: [] })
+    } else {
+      // 캐시에 현재 페이지가 없으면(단일 페이지) 라이브 요소를 직접 스케일
+      const oldCs = get().canvasSize || newSize
+      set({ flatElements: scaleFlatElements(get().flatElements, oldCs, newSize), canvasSize: { ...newSize }, selectedFlatIds: [] })
+    }
+    get()._syncPageInfo()
   },
 
   /**
