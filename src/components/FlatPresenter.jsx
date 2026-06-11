@@ -14,6 +14,18 @@ export default function FlatPresenter() {
   const [hintVisible, setHintVisible] = useState(true)
   const [allPages, setAllPages] = useState(null)
   const [loading, setLoading] = useState(true)
+  // 마우스 포인터: 움직이면 표시, 3초 정지하면 숨김(발표 중 포인터가 화면을 계속 가리지 않도록)
+  const [cursorVisible, setCursorVisible] = useState(true)
+  const cursorTimerRef = useRef(null)
+  const handleMouseMove = useCallback(() => {
+    setCursorVisible(true)
+    if (cursorTimerRef.current) clearTimeout(cursorTimerRef.current)
+    cursorTimerRef.current = setTimeout(() => setCursorVisible(false), 3000)
+  }, [])
+  useEffect(() => {
+    cursorTimerRef.current = setTimeout(() => setCursorVisible(false), 3000)
+    return () => { if (cursorTimerRef.current) clearTimeout(cursorTimerRef.current) }
+  }, [])
 
   // 미방문 페이지 포함 전체 페이지 비동기 추출 (프리로드 완료 대기)
   useEffect(() => {
@@ -156,9 +168,10 @@ export default function FlatPresenter() {
       style={{
         position: 'fixed', inset: 0, zIndex: 1000,
         background: '#000',
-        cursor: 'none',
+        cursor: cursorVisible ? 'default' : 'none',
       }}
       onClick={handleClick}
+      onMouseMove={handleMouseMove}
     >
       {/* 로딩 중 */}
       {loading && (
