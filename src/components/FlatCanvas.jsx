@@ -603,20 +603,15 @@ export default function FlatCanvas() {
     if (!stage) return
     const onWheel = (e) => {
       if (useFlatStore.getState().editingFlatId) return
-      if (e.ctrlKey || e.metaKey) {
+      // 마우스 휠 = 커서 기준 줌. (Shift+휠은 줌 상태에서 가로 팬)
+      if (e.shiftKey && scaleRef.current > fitScaleRef.current + 1e-6) {
         e.preventDefault()
-        const factor = Math.exp(-e.deltaY * 0.0015)
-        applyZoom(scaleRef.current * factor, { clientX: e.clientX, clientY: e.clientY })
-      } else if (scaleRef.current > fitScaleRef.current + 1e-6) {
-        // 줌 상태에서만 팬
-        e.preventDefault()
-        setPan(prev => clampPan(
-          e.shiftKey
-            ? { x: prev.x - e.deltaY, y: prev.y }
-            : { x: prev.x - (e.deltaX || 0), y: prev.y - e.deltaY },
-          scaleRef.current,
-        ))
+        setPan(prev => clampPan({ x: prev.x - (e.deltaX || e.deltaY), y: prev.y }, scaleRef.current))
+        return
       }
+      e.preventDefault()
+      const factor = Math.exp(-e.deltaY * 0.0015)
+      applyZoom(scaleRef.current * factor, { clientX: e.clientX, clientY: e.clientY })
     }
     stage.addEventListener('wheel', onWheel, { passive: false })
     return () => stage.removeEventListener('wheel', onWheel)
@@ -1057,7 +1052,9 @@ export default function FlatCanvas() {
 }
 
 function ZoomControl({ scale, onZoomIn, onZoomOut, onFit, on100 }) {
-  const stop = (e) => e.stopPropagation()
+  // mousedown preventDefault → 버튼이 포커스를 가져가지 않음(클릭 후 Space/Enter가
+  // 버튼에 먹히는 현상 방지). 클릭(onClick)은 그대로 동작.
+  const stop = (e) => { e.stopPropagation(); e.preventDefault() }
   const btn = {
     width: 26, height: 26, display: 'flex', alignItems: 'center', justifyContent: 'center',
     borderRadius: 6, border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.05)',
