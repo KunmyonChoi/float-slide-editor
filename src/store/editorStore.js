@@ -147,12 +147,16 @@ export const useEditorStore = create((set, get) => ({
     return get().elements.get(id)
   },
 
-  /** 발표 모드 진입 — CSS 전체화면 + 에이전트 비활성 */
+  /** 발표 모드 진입 — 브라우저 전체화면 + CSS 전체화면 + 에이전트 비활성 */
   enterPresentation() {
     const { iframeRef } = get()
     set({ selectedId: null, mode: 'present' })
     iframeRef?.current?.contentWindow?.postMessage({ type: 'fe:setMode', mode: 'present' }, '*')
     iframeRef?.current?.contentWindow?.focus()
+    // 사용자 제스처(발표 버튼/F5) 컨텍스트에서 동기 호출 → 실제 브라우저 전체화면
+    try {
+      if (!document.fullscreenElement) document.documentElement.requestFullscreen?.().catch(() => {})
+    } catch { /* 미지원/거부 무시 */ }
   },
 
   /** 편집 모드 복귀 */
@@ -160,6 +164,9 @@ export const useEditorStore = create((set, get) => ({
     const { iframeRef } = get()
     set({ mode: 'edit' })
     iframeRef?.current?.contentWindow?.postMessage({ type: 'fe:setMode', mode: 'edit' }, '*')
+    try {
+      if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {})
+    } catch { /* 무시 */ }
   },
 
   // ── DOM 읽기 헬퍼 (Phase 3) ────────────────────────────────

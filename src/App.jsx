@@ -9,11 +9,23 @@ import ComparePanel from './components/ComparePanel'
 import PageBar from './components/PageBar'
 import { useFlatStore } from './store/flatStore'
 import { useEditorStore } from './store/editorStore'
+import { useEffect } from 'react'
 
 export default function App() {
   const rawViewMode = useFlatStore(s => s.viewMode)
   const debugMode = useFlatStore(s => s.debugMode)
   const mode = useEditorStore(s => s.mode)
+
+  // 전체화면이 해제됐는데 발표 중이면(ESC로 전체화면만 빠져나온 경우) 발표도 종료
+  useEffect(() => {
+    const onFsChange = () => {
+      if (!document.fullscreenElement && useEditorStore.getState().mode === 'present') {
+        useEditorStore.getState().exitPresentation()
+      }
+    }
+    document.addEventListener('fullscreenchange', onFsChange)
+    return () => document.removeEventListener('fullscreenchange', onFsChange)
+  }, [])
 
   // 디버그 꺼짐이면 html/split는 노출하지 않고 항상 flat (진단 뷰는 디버그 전용)
   const viewMode = debugMode ? rawViewMode : 'flat'
