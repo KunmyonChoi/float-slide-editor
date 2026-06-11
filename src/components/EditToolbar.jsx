@@ -64,8 +64,7 @@ export default function EditToolbar() {
   const { viewMode, selectedFlatIds, flatElements, canvasSize,
           canUndo: flatCanUndo, canRedo: flatCanRedo,
           undo: flatUndo, redo: flatRedo,
-          addFlatElement, addFlatElements, applyLayoutElements, setSelectedFlat,
-          bringForward, sendBackward, bringToFront, sendToBack } = useFlatStore()
+          addFlatElement, addFlatElements, applyLayoutElements, setSelectedFlat } = useFlatStore()
   const [insertOpen, setInsertOpen] = useState(false)
   const [shapeOpen, setShapeOpen] = useState(false)
   const [videoOpen, setVideoOpen] = useState(false)
@@ -400,29 +399,6 @@ export default function EditToolbar() {
           </ToolBtn>
         </>
       )}
-
-      {/* z-순서 버튼 (flat/split 모드 + 단일 선택 시). 배경 레이어는 맨 뒤 고정 → 비활성 */}
-      {isFlatMode && selectedFlatIds.length === 1 && (() => {
-        const bgSelected = !!flatElements.find(e => e.id === selectedFlatIds[0])?.isBackground
-        const t = bgSelected ? ' (배경은 맨 뒤 고정)' : ''
-        return (
-          <>
-            <Divider />
-            <ToolBtn onClick={() => sendToBack(selectedFlatIds[0])} disabled={bgSelected} title={'맨 뒤로 (Ctrl+Shift+[)' + t}>
-              <span className="text-xs">⤓</span>
-            </ToolBtn>
-            <ToolBtn onClick={() => sendBackward(selectedFlatIds[0])} disabled={bgSelected} title={'뒤로 (Ctrl+[)' + t}>
-              <span className="text-xs">↓</span>
-            </ToolBtn>
-            <ToolBtn onClick={() => bringForward(selectedFlatIds[0])} disabled={bgSelected} title={'앞으로 (Ctrl+])' + t}>
-              <span className="text-xs">↑</span>
-            </ToolBtn>
-            <ToolBtn onClick={() => bringToFront(selectedFlatIds[0])} disabled={bgSelected} title={'맨 앞으로 (Ctrl+Shift+])' + t}>
-              <span className="text-xs">⤒</span>
-            </ToolBtn>
-          </>
-        )
-      })()}
 
     </div>
   )
