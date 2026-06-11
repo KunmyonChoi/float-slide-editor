@@ -35,7 +35,7 @@ export default function FlatCanvas() {
           removeSelectedElements, updateFlatElement, undo, redo, viewMode, reExtract,
           fontImports, copyElement, cutElement, pasteElement, duplicateElement, selectAllFlats,
           bringForward, sendBackward, bringToFront, sendToBack, setCroppingFlat,
-          addFlatElement, setCanvasRef, preloadProgress, drawMode, setDrawMode } = useFlatStore()
+          addFlatElement, setCanvasRef, preloadProgress, drawMode, setDrawMode, flatPageCount } = useFlatStore()
   const [dragOver, setDragOver] = useState(false)
   const [drawPoints, setDrawPoints] = useState([])     // 그리기 중 확정된 점들
   const [drawPreview, setDrawPreview] = useState(null)  // 마우스 위치 (프리뷰용)
@@ -994,7 +994,9 @@ export default function FlatCanvas() {
         />
       )}
 
-      {flatElements.length === 0 && (
+      {/* 빈 안내: 변환 중이거나, 프로젝트 자체가 없을 때만. 프로젝트 안의 빈 페이지는
+          빈 캔버스만 보이게(작성 중인데 'HTML 로드' 안내가 뜨는 혼란 방지) */}
+      {flatElements.length === 0 && (preloadProgress || flatPageCount === 0) && (
         <div style={{
           position: 'absolute', inset: 0,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
