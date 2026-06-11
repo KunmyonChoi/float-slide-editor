@@ -6,6 +6,7 @@ import { SLIDE_LAYOUTS, carryLayoutContent } from '../core/slideLayouts'
 import { createTableElement } from '../core/slideTable'
 import { BlobStore } from '../core/BlobStore'
 import { ToolBtn, Divider, UndoIcon, RedoIcon } from './FloatingToolbar'
+import { promptUrl } from './UrlPrompt'
 
 const HTML_INSERT_ITEMS = [
   { tag: 'p',   label: '텍스트', icon: '📝', attrs: { textContent: '새 텍스트' } },
@@ -213,8 +214,8 @@ export default function EditToolbar() {
   const videoInputRef = useRef(null)
 
   // 영상 URL 입력
-  const insertVideoUrl = useCallback(() => {
-    const url = prompt('영상 URL을 입력하세요 (YouTube, Vimeo)')
+  const insertVideoUrl = useCallback(async () => {
+    const url = await promptUrl({ title: '영상 URL을 입력하세요', placeholder: 'YouTube, Vimeo URL' })
     if (!url || !url.trim()) return
     const embedUrl = parseVideoUrl(url.trim())
     const w = Math.min(560, canvasSize.w * 0.6)

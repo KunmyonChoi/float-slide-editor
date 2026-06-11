@@ -2,6 +2,7 @@ import { useRef, useEffect, useCallback, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useFlatStore } from '../store/flatStore'
 import EmojiPicker from './EmojiPicker'
+import { promptUrl } from './UrlPrompt'
 
 // 선택 툴바 팔레트
 const TEXT_COLORS = ['#0f172a', '#ffffff', '#ef4444', '#f59e0b', '#10b981', '#3b82f6', '#8b5cf6', '#ec4899']
@@ -150,13 +151,13 @@ export default function FlatInlineEditor({ element }) {
   }, [refreshSelection])
 
   // 선택 영역에 하이퍼링크 적용 (Ctrl+K / 툴바)
-  const applyLink = useCallback(() => {
+  const applyLink = useCallback(async () => {
     const el = ref.current
     const sel = window.getSelection()
     if (!el || !sel || sel.rangeCount === 0 || sel.isCollapsed) return
     const saved = sel.getRangeAt(0).cloneRange()
-    suppressCommitRef.current = true // prompt가 포커스를 가져가도 커밋 금지
-    const url = window.prompt('링크 URL을 입력하세요', 'https://')
+    suppressCommitRef.current = true // 팝업이 포커스를 가져가도 커밋 금지
+    const url = await promptUrl({ title: '링크 URL을 입력하세요', placeholder: 'https://', initialValue: 'https://' })
     suppressCommitRef.current = false
     el.focus()
     sel.removeAllRanges()
