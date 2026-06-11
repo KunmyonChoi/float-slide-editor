@@ -21,6 +21,11 @@ export default function FlatCanvas() {
   const stageRef = useRef(null)
   const canvasRef = useRef(null)
   const [scale, setScale] = useState(1)
+  const [pan, setPan] = useState({ x: 0, y: 0 })  // 줌 초과 시 화면 px 오프셋
+  const fitScaleRef = useRef(1)        // 현재 '맞춤' 스케일
+  const fitModeRef = useRef(true)      // true면 리사이즈 시 자동 맞춤 유지
+  const spaceDownRef = useRef(false)   // 스페이스 누름(팬 모드)
+  const panDragRef = useRef(null)      // 스페이스+드래그 팬 진행 상태
   const [marquee, setMarquee] = useState(null)
   const marqueeRef = useRef(null) // 마키 시작 좌표 기억
   const [contextMenu, setContextMenu] = useState(null)
@@ -518,17 +523,19 @@ export default function FlatCanvas() {
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [removeSelectedElements, updateFlatElement, undo, redo, copyElement, cutElement, pasteElement, duplicateElement, selectAllFlats, bringForward, sendBackward, bringToFront, sendToBack])
 
-  /** scale 재계산 */
+  /** 맞춤 scale 재계산. 맞춤 모드면 scale도 맞춤값으로 동기화. */
   const recalcScale = useCallback(() => {
     if (!stageRef.current) return
     const r = stageRef.current.getBoundingClientRect()
     if (!r.width || !r.height) return
     const pad = 48
-    const s = Math.min(
+    const fit = Math.min(
       (r.width - pad * 2) / canvasSize.w,
-      (r.height - pad * 2) / canvasSize.h
+      (r.height - pad * 2) / canvasSize.h,
+      1,
     )
-    setScale(Math.min(s, 1))
+    fitScaleRef.current = fit
+    if (fitModeRef.current) { setScale(fit); setPan({ x: 0, y: 0 }) }
   }, [canvasSize])
 
   useEffect(() => {
@@ -539,12 +546,141 @@ export default function FlatCanvas() {
     return () => ro.disconnect()
   }, [recalcScale])
 
+  // ── 줌/팬 ─────────────────────────────────────────
+  const ZOOM_MIN = 0.1, ZOOM_MAX = 8
+
+  // scale/pan 최신값을 고정 클로저(휠/드래그 핸들러)에서 읽기 위한 ref
+  const scaleRef = useRef(scale)
+  scaleRef.current = scale
+  const panRef = useRef(pan)
+  panRef.current = pan
+
+  // 캔버스가 화면 밖으로 완전히 벗어나지 않도록 팬 클램프(최소 40px 노출)
+  const clampPan = useCallback((p, s) => {
+    const stage = stageRef.current?.getBoundingClientRect()
+    if (!stage) return p
+    const maxX = (canvasSize.w * s + stage.width) / 2 - 40
+    const maxY = (canvasSize.h * s + stage.height) / 2 - 40
+    return {
+      x: Math.max(-maxX, Math.min(maxX, p.x)),
+      y: Math.max(-maxY, Math.min(maxY, p.y)),
+    }
+  }, [canvasSize])
+
+  // 줌 적용(클램프). focal {clientX, clientY} 지정 시 그 지점을 고정(커서 기준 줌).
+  const applyZoom = useCallback((next, focal) => {
+    const ns = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, next))
+    fitModeRef.current = false
+    const stage = stageRef.current?.getBoundingClientRect()
+    if (stage && ns > fitScaleRef.current) {
+      setPan(prevPan => {
+        const cx = stage.left + stage.width / 2
+        const cy = stage.top + stage.height / 2
+        const fx = focal ? focal.clientX : cx
+        const fy = focal ? focal.clientY : cy
+        const offX = fx - cx - prevPan.x
+        const offY = fy - cy - prevPan.y
+        const k = ns / scaleRef.current - 1
+        return clampPan({ x: prevPan.x - offX * k, y: prevPan.y - offY * k }, ns)
+      })
+    } else {
+      setPan({ x: 0, y: 0 }) // 맞춤 이하로 줄이면 중앙 정렬
+    }
+    setScale(ns)
+  }, [clampPan])
+
+  const fitToWindow = useCallback(() => {
+    fitModeRef.current = true
+    setScale(fitScaleRef.current)
+    setPan({ x: 0, y: 0 })
+  }, [])
+
+  const zoomTo100 = useCallback(() => { applyZoom(1) }, [applyZoom])
+
+  // 휠: Ctrl/Cmd+휠=커서 기준 줌, 휠=세로 팬, Shift+휠=가로 팬
+  useEffect(() => {
+    const stage = stageRef.current
+    if (!stage) return
+    const onWheel = (e) => {
+      if (useFlatStore.getState().editingFlatId) return
+      if (e.ctrlKey || e.metaKey) {
+        e.preventDefault()
+        const factor = Math.exp(-e.deltaY * 0.0015)
+        applyZoom(scaleRef.current * factor, { clientX: e.clientX, clientY: e.clientY })
+      } else if (scaleRef.current > fitScaleRef.current + 1e-6) {
+        // 줌 상태에서만 팬
+        e.preventDefault()
+        setPan(prev => clampPan(
+          e.shiftKey
+            ? { x: prev.x - e.deltaY, y: prev.y }
+            : { x: prev.x - (e.deltaX || 0), y: prev.y - e.deltaY },
+          scaleRef.current,
+        ))
+      }
+    }
+    stage.addEventListener('wheel', onWheel, { passive: false })
+    return () => stage.removeEventListener('wheel', onWheel)
+  }, [applyZoom, clampPan])
+
+  // 스페이스: 팬 모드 토글(누르는 동안)
+  useEffect(() => {
+    const onDown = (e) => {
+      if (e.code !== 'Space') return
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable) return
+      if (useFlatStore.getState().editingFlatId) return
+      spaceDownRef.current = true
+      if (stageRef.current) stageRef.current.style.cursor = 'grab'
+    }
+    const onUp = (e) => {
+      if (e.code !== 'Space') return
+      spaceDownRef.current = false
+      if (stageRef.current) stageRef.current.style.cursor = ''
+    }
+    window.addEventListener('keydown', onDown)
+    window.addEventListener('keyup', onUp)
+    return () => { window.removeEventListener('keydown', onDown); window.removeEventListener('keyup', onUp) }
+  }, [])
+
+  // 스페이스/가운데버튼 + 드래그 팬 (캡처 단계 → 요소 위에서도 동작)
+  useEffect(() => {
+    const stage = stageRef.current
+    if (!stage) return
+    const onDownCapture = (e) => {
+      if (!(spaceDownRef.current || e.button === 1)) return
+      if (useFlatStore.getState().editingFlatId) return
+      e.preventDefault(); e.stopPropagation()
+      panDragRef.current = { startX: e.clientX, startY: e.clientY, startPanX: panRef.current.x, startPanY: panRef.current.y }
+      stage.style.cursor = 'grabbing'
+    }
+    stage.addEventListener('mousedown', onDownCapture, true)
+    return () => stage.removeEventListener('mousedown', onDownCapture, true)
+  }, [])
+
+  // 팬 드래그 진행
+  useEffect(() => {
+    const onMove = (e) => {
+      const d = panDragRef.current
+      if (!d) return
+      setPan(clampPan({ x: d.startPanX + (e.clientX - d.startX), y: d.startPanY + (e.clientY - d.startY) }, scaleRef.current))
+    }
+    const onUp = () => {
+      if (panDragRef.current) {
+        panDragRef.current = null
+        if (stageRef.current) stageRef.current.style.cursor = spaceDownRef.current ? 'grab' : ''
+      }
+    }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+    return () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp) }
+  }, [clampPan])
+
   // 마키 선택: mousedown → mousemove → mouseup
   // 배경 요소는 stopPropagation 안 하므로 여기까지 버블링됨
   // 선택 해제는 mouseup에서 판단 (드래그 없고 배경도 안 눌렸으면 해제)
   const handleStageMouseDown = useCallback((e) => {
     if (e.button === 2) return // 우클릭은 컨텍스트 메뉴가 처리
     setContextMenu(null) // 좌클릭 시 컨텍스트 메뉴 닫기
+    if (panDragRef.current) return // 팬 진행 중이면 마키 무시
     if (useFlatStore.getState().editingFlatId || useFlatStore.getState().croppingFlatId) return
     if (!canvasRef.current) return
     const rect = canvasRef.current.getBoundingClientRect()
@@ -666,7 +802,7 @@ export default function FlatCanvas() {
             left: '50%',
             width: canvasSize.w,
             height: canvasSize.h,
-            transform: `translate(-50%, -50%) scale(${scale})`,
+            transform: `translate(calc(-50% + ${pan.x}px), calc(-50% + ${pan.y}px)) scale(${scale})`,
             transformOrigin: 'center center',
             boxShadow: '0 20px 80px rgba(0,0,0,0.7)',
             background: '#fff',
@@ -905,6 +1041,44 @@ export default function FlatCanvas() {
           </div>
         </div>
       )}
+
+      {/* 줌 컨트롤 (우하단 플로팅) */}
+      {canvasSize?.w > 0 && (
+        <ZoomControl
+          scale={scale}
+          onZoomIn={() => applyZoom(scaleRef.current * 1.2)}
+          onZoomOut={() => applyZoom(scaleRef.current / 1.2)}
+          onFit={fitToWindow}
+          on100={zoomTo100}
+        />
+      )}
+    </div>
+  )
+}
+
+function ZoomControl({ scale, onZoomIn, onZoomOut, onFit, on100 }) {
+  const stop = (e) => e.stopPropagation()
+  const btn = {
+    width: 26, height: 26, display: 'flex', alignItems: 'center', justifyContent: 'center',
+    borderRadius: 6, border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.05)',
+    color: '#cbd5e1', cursor: 'pointer', fontSize: 14, lineHeight: 1,
+  }
+  const txt = { ...btn, width: 'auto', padding: '0 8px', fontSize: 12, fontVariantNumeric: 'tabular-nums' }
+  return (
+    <div
+      onMouseDown={stop}
+      style={{
+        position: 'absolute', right: 12, bottom: 12, zIndex: 60,
+        display: 'flex', alignItems: 'center', gap: 4, padding: 4, borderRadius: 9,
+        background: 'rgba(15,23,42,0.9)', backdropFilter: 'blur(12px)',
+        border: '1px solid rgba(255,255,255,0.1)', boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
+      }}
+    >
+      <button style={btn} onClick={onZoomOut} title="축소 (Ctrl+휠)">−</button>
+      <button style={txt} onClick={on100} title="100%">{Math.round(scale * 100)}%</button>
+      <button style={btn} onClick={onZoomIn} title="확대 (Ctrl+휠)">+</button>
+      <div style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.12)' }} />
+      <button style={txt} onClick={onFit} title="창에 맞춤">맞춤</button>
     </div>
   )
 }
