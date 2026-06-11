@@ -173,23 +173,39 @@ export default function FlatSelectionOverlay({ element, scale, otherRects, canva
       } else if (d.mode === 'resize') {
         let w = d.startW, h = d.startH
         const dir = d.dir
+        const sym = e.altKey || e.ctrlKey || e.metaKey   // Alt(또는 Ctrl: PowerPoint): 중심 대칭
+        const lockRatio = e.shiftKey  // Shift: 가로세로 비율 고정
 
         // 회전된 요소: 마우스 delta를 로컬 좌표로 변환
         const rot = d.startRotation || 0
         const { dx: ldx, dy: ldy } = rot ? canvasDeltaToLocal(dx, dy, rot) : { dx, dy }
 
-        if (dir.includes('e')) w = Math.max(MIN_SIZE, d.startW + ldx)
-        if (dir.includes('w')) w = Math.max(MIN_SIZE, d.startW - ldx)
-        if (dir.includes('s')) h = Math.max(MIN_SIZE, d.startH + ldy)
-        if (dir.includes('n')) h = Math.max(MIN_SIZE, d.startH - ldy)
+        const k = sym ? 2 : 1 // 중심 대칭이면 양쪽이 움직이므로 변화량 2배
+        if (dir.includes('e')) w = Math.max(MIN_SIZE, d.startW + ldx * k)
+        if (dir.includes('w')) w = Math.max(MIN_SIZE, d.startW - ldx * k)
+        if (dir.includes('s')) h = Math.max(MIN_SIZE, d.startH + ldy * k)
+        if (dir.includes('n')) h = Math.max(MIN_SIZE, d.startH - ldy * k)
 
-        // 앵커 포인트(드래그 반대편) 기준으로 중심점 보정
-        // 비회전 시에도 동일 공식 적용 (cos0=1, sin0=0 → 기존 로직과 동일)
+        // 비율 고정 — 더 많이 변한 축을 기준으로 나머지를 비례 계산
+        if (lockRatio) {
+          const ratio = d.startW / d.startH
+          const horiz = dir.includes('e') || dir.includes('w')
+          const vert = dir.includes('n') || dir.includes('s')
+          if (horiz && vert) {
+            if (Math.abs(w / d.startW - 1) >= Math.abs(h / d.startH - 1)) h = w / ratio
+            else w = h * ratio
+          } else if (horiz) { h = w / ratio } else { w = h * ratio }
+          w = Math.max(MIN_SIZE, w); h = Math.max(MIN_SIZE, h)
+        }
+
+        // 앵커 보정: 중심 대칭이면 중심 고정(dax=day=0), 아니면 반대편 고정
         let dax = 0, day = 0
-        if (dir.includes('e')) dax = (w - d.startW) / 2
-        if (dir.includes('w')) dax = (d.startW - w) / 2
-        if (dir.includes('s')) day = (h - d.startH) / 2
-        if (dir.includes('n')) day = (d.startH - h) / 2
+        if (!sym) {
+          if (dir.includes('e')) dax = (w - d.startW) / 2
+          if (dir.includes('w')) dax = (d.startW - w) / 2
+          if (dir.includes('s')) day = (h - d.startH) / 2
+          if (dir.includes('n')) day = (d.startH - h) / 2
+        }
 
         const rad = rot * Math.PI / 180
         const cosR = Math.cos(rad), sinR = Math.sin(rad)
@@ -198,8 +214,8 @@ export default function FlatSelectionOverlay({ element, scale, otherRects, canva
         let x = startCX + dax * cosR - day * sinR - w / 2
         let y = startCY + dax * sinR + day * cosR - h / 2
 
-        // 리사이즈 스냅 (비회전 시만)
-        if (!rot && d.otherRects && onSnapGuides) {
+        // 리사이즈 스냅 (비회전 + 보조키 미사용 시만 — 비율/대칭을 깨지 않도록)
+        if (!rot && !lockRatio && !sym && d.otherRects && onSnapGuides) {
           const snap = computeResizeSnapGuides(
             { x, y, width: w, height: h }, dir, d.otherRects, canvasSize
           )
@@ -533,16 +549,39 @@ export function FlatGroupOverlay({ elements, scale, otherRects, canvasSize, onSn
         batchPreviewFlatElements(changesMap)
       } else if (d.mode === 'resize') {
         const { bbox: origBbox, dir, startPositions } = d
-        let newX = origBbox.x, newY = origBbox.y
+        const sym = e.altKey || e.ctrlKey || e.metaKey  // Alt(또는 Ctrl: PowerPoint): 그룹 중심 대칭
+        const lockRatio = e.shiftKey // Shift: 그룹 비율 고정
+        const k = sym ? 2 : 1
         let newW = origBbox.w, newH = origBbox.h
 
-        if (dir.includes('e')) newW = Math.max(MIN_SIZE, origBbox.w + dx)
-        if (dir.includes('w')) { newW = Math.max(MIN_SIZE, origBbox.w - dx); newX = origBbox.x + (origBbox.w - newW) }
-        if (dir.includes('s')) newH = Math.max(MIN_SIZE, origBbox.h + dy)
-        if (dir.includes('n')) { newH = Math.max(MIN_SIZE, origBbox.h - dy); newY = origBbox.y + (origBbox.h - newH) }
+        if (dir.includes('e')) newW = Math.max(MIN_SIZE, origBbox.w + dx * k)
+        if (dir.includes('w')) newW = Math.max(MIN_SIZE, origBbox.w - dx * k)
+        if (dir.includes('s')) newH = Math.max(MIN_SIZE, origBbox.h + dy * k)
+        if (dir.includes('n')) newH = Math.max(MIN_SIZE, origBbox.h - dy * k)
 
-        // 그룹 리사이즈 스냅
-        if (d.otherRects && onSnapGuides) {
+        if (lockRatio) {
+          const ratio = origBbox.w / origBbox.h
+          const horiz = dir.includes('e') || dir.includes('w')
+          const vert = dir.includes('n') || dir.includes('s')
+          if (horiz && vert) {
+            if (Math.abs(newW / origBbox.w - 1) >= Math.abs(newH / origBbox.h - 1)) newH = newW / ratio
+            else newW = newH * ratio
+          } else if (horiz) { newH = newW / ratio } else { newW = newH * ratio }
+          newW = Math.max(MIN_SIZE, newW); newH = Math.max(MIN_SIZE, newH)
+        }
+
+        // 위치: 중심 대칭이면 중심 고정, 아니면 반대편 고정
+        let newX = origBbox.x, newY = origBbox.y
+        if (sym) {
+          newX = origBbox.x + (origBbox.w - newW) / 2
+          newY = origBbox.y + (origBbox.h - newH) / 2
+        } else {
+          if (dir.includes('w')) newX = origBbox.x + (origBbox.w - newW)
+          if (dir.includes('n')) newY = origBbox.y + (origBbox.h - newH)
+        }
+
+        // 그룹 리사이즈 스냅 (보조키 미사용 시만)
+        if (!lockRatio && !sym && d.otherRects && onSnapGuides) {
           const snap = computeResizeSnapGuides(
             { x: newX, y: newY, width: newW, height: newH }, dir, d.otherRects, canvasSize
           )

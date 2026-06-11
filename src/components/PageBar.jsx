@@ -47,7 +47,7 @@ export default function PageBar() {
         if (useFlatStore.getState().editingFlatId) return
         if (e.shiftKey) {
           const fc = useFlatStore.getState().flatPageCount
-          if (fc > 1 && confirm('현재 페이지를 삭제하시겠습니까?')) useFlatStore.getState().deletePage()
+          if (fc > 1) useFlatStore.getState().deletePage() // 복구 토스트 제공 → 확인창 불필요
         } else {
           useFlatStore.getState().addPage()
         }
@@ -144,7 +144,7 @@ export default function PageBar() {
         <span style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.1)', margin: '0 4px' }} />
         <button onClick={() => useFlatStore.getState().addPage()} style={{ ...btnStyle(true), fontSize: 14, width: 24, height: 24 }} title="페이지 추가 (Ctrl+M)">+</button>
         <button
-          onClick={() => { if (flatPageCount > 1 && confirm('현재 페이지를 삭제하시겠습니까?')) useFlatStore.getState().deletePage() }}
+          onClick={() => { if (flatPageCount > 1) useFlatStore.getState().deletePage() }}
           disabled={flatPageCount <= 1}
           style={{ ...btnStyle(flatPageCount > 1), fontSize: 14, width: 24, height: 24 }}
           title="페이지 삭제 (Ctrl+Shift+M)"

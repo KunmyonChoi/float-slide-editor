@@ -86,6 +86,8 @@ export default function FileMenu({ fallbackSample }) {
   const handleNewProject = useCallback(() => {
     setOpen(false)
     if (hasContent && !confirm('새 프로젝트를 시작하면 현재 작업이 사라집니다. 계속할까요?')) return
+    // 빈 페이지 추출 후 '제목 슬라이드' 레이아웃을 자동 적용(PowerPoint 식 시작점)
+    useFlatStore.getState().setPendingStarterLayout('title')
     clearPageCache()
     loadHtml(BLANK_DECK)
   }, [hasContent, clearPageCache, loadHtml])

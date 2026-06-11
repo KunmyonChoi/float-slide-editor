@@ -65,7 +65,9 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
     top: y,
     width,
     height,
-    zIndex,
+    // 배경 레이어는 항상 모든 콘텐츠(텍스트 등) 아래로 렌더 — 모델 zIndex와 무관하게 보장.
+    // (모델 z는 그대로 두고 렌더 z만 큰 음수로 오프셋)
+    zIndex: isFullCanvasBg ? zIndex - 1000000 : zIndex,
     boxSizing: 'border-box',
     cursor: 'default',
     // 배경 레이어: 클릭이 통과(선택 안 됨) — 단, 패널에서 선택된 동안엔 정상 처리

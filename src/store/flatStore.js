@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { extractFlatElementsFromIframe, nextFlatId } from '../core/FlatExtractor'
+import { SLIDE_LAYOUTS } from '../core/slideLayouts'
 import { HistoryStack } from '../core/HistoryStack'
 import { isBackgroundElement } from '../core/SnapEngine'
 
@@ -96,6 +97,18 @@ let _pendingEditCommit = null  // 편집 중 unmount 전 커밋용 콜백
 // 무시하기 위한 기대 페이지 인덱스. 이미 캐시 복원을 마쳤으므로 재추출/재복원이 불필요·유해.
 // reveal.js 등은 한 번의 네비게이션에 pageChange를 여러 번 쏘므로, 일정 시간 창 동안 억제한다.
 let _expectIframePage = null
+let _deletedPageStash = null  // 실행취소 토스트용: 마지막 삭제 페이지 {index, entry}
+let _pendingStarterLayout = null  // 새 프로젝트: 첫 빈 페이지 추출 후 적용할 시작 레이아웃 id
+
+/** 시작 레이아웃 요소 빌드(부분 → 완성 FlatElement) */
+function _buildStarterLayout(layoutId, cs) {
+  const layout = SLIDE_LAYOUTS.find(l => l.id === layoutId)
+  if (!layout) return []
+  return layout.build(cs).map((s, i) => ({
+    sourceId: null, rotation: 0, merged: false, isRich: false,
+    ...s, id: nextFlatId(), zIndex: i + 1,
+  }))
+}
 let _expectIframeTimer = null
 function _expectIframeNav(idx) {
   _expectIframePage = idx
@@ -153,6 +166,8 @@ export const useFlatStore = create((set, get) => ({
   panelCollapsed: false,
   /** 좌측 슬라이드 목록 패널 접힘 여부 (기본 접힘) */
   slideListCollapsed: true,
+  /** 페이지 삭제 실행취소 토스트 상태: null | { seq, index } */
+  pageDeleteNotice: null,
   /** 디버그 모드 — 품질/변환검증/Phase 라벨/html·split 뷰 등 진단 UI 노출 */
   debugMode: false,
 
@@ -296,6 +311,30 @@ export const useFlatStore = create((set, get) => ({
       canRedo: false,
       currentPageHtmlBacked: true, // iframe에서 갓 추출 = HTML 백킹
     })
+    get()._syncPageInfo()
+
+    // 새 프로젝트: 빈 페이지면 시작 레이아웃(제목 슬라이드) 적용
+    if (_pendingStarterLayout && elements.length === 0) {
+      const starter = _buildStarterLayout(_pendingStarterLayout, get().canvasSize)
+      _pendingStarterLayout = null
+      if (starter.length) {
+        set({ flatElements: starter, currentPageHtmlBacked: false })
+        get()._saveCurrentPage()
+        // flat-only로 표시 → 재생성 시 보존
+        if (_pageCache[_currentPageKey]) _pageCache[_currentPageKey].htmlSlideIndex = null
+      }
+    }
+  },
+
+  /** 새 프로젝트 시작 시, 첫 빈 페이지 추출 후 적용할 시작 레이아웃 예약 */
+  setPendingStarterLayout(layoutId) { _pendingStarterLayout = layoutId },
+
+  /** iframe 없이 1페이지(시작 레이아웃) flat 프로젝트 생성 — 최초 빈 실행 시 사용 */
+  startScratchProject(layoutId = 'title') {
+    const cs = { w: 1280, h: 720 }
+    const elements = _buildStarterLayout(layoutId, cs)
+    for (const key in _pageCache) delete _pageCache[key] // 기존 캐시 비우고 단일 페이지로
+    get().loadAllPages({ '0-0': { elements, canvasSize: cs, fontImports: [], htmlSlideIndex: null } }, '0-0')
     get()._syncPageInfo()
   },
 
@@ -544,12 +583,46 @@ export const useFlatStore = create((set, get) => ({
     get()._syncPageInfo()
   },
 
+  /** 현재 페이지를 복제해 바로 뒤에 삽입 (요소는 새 id로 복제) */
+  duplicatePage() {
+    get()._saveCurrentPage()
+    const keys = _getSortedPageKeys()
+    const currentIdx = _currentPageKey ? keys.indexOf(_currentPageKey) : keys.length - 1
+    if (currentIdx < 0) return
+    const src = _pageCache[_currentPageKey]
+    if (!src) return
+    const insertAt = currentIdx + 1
+
+    const reindexed = {}
+    for (let i = 0; i < keys.length; i++) {
+      const newIdx = i < insertAt ? i : i + 1
+      reindexed[`${newIdx}-0`] = _pageCache[keys[i]]
+    }
+    for (const key in _pageCache) delete _pageCache[key]
+    for (const key in reindexed) _pageCache[key] = reindexed[key]
+
+    _pageCache[`${insertAt}-0`] = {
+      elements: src.elements.map(e => ({ ...structuredClone(e), id: nextFlatId() })),
+      canvasSize: { ...src.canvasSize },
+      fontImports: [...(src.fontImports || [])],
+      history: { stack: [], pointer: -1 },
+      htmlSlideIndex: null, // 복제본은 flat-only
+    }
+
+    _currentPageKey = `${insertAt}-0`
+    get()._restoreFromCache(`${insertAt}-0`)
+    get()._syncPageInfo()
+  },
+
   /** 현재 페이지 삭제 (최소 1페이지 유지) */
   deletePage() {
+    get()._saveCurrentPage()
     const keys = _getSortedPageKeys()
     if (keys.length <= 1) return // 마지막 페이지는 삭제 불가
 
     const idx = keys.indexOf(_currentPageKey)
+    // 복구용 스태시 (실행취소 토스트)
+    _deletedPageStash = { index: idx, entry: structuredClone(_pageCache[_currentPageKey]) }
     delete _pageCache[_currentPageKey]
 
     // 삭제 후 키 재정렬 (0-0, 1-0, 2-0, ...)
@@ -567,6 +640,32 @@ export const useFlatStore = create((set, get) => ({
     const targetKey = newKeys[Math.min(idx, newKeys.length - 1)]
     get()._restoreFromCache(targetKey)
     get()._syncPageInfo()
+    set({ pageDeleteNotice: _deletedPageStash ? { seq: (get().pageDeleteNotice?.seq || 0) + 1, index: idx } : null })
+  },
+
+  /** 마지막으로 삭제한 페이지 복원 (실행취소 토스트) */
+  restoreDeletedPage() {
+    const stash = _deletedPageStash
+    if (!stash) return
+    _deletedPageStash = null
+    get()._saveCurrentPage()
+    const keys = _getSortedPageKeys()
+    const at = Math.max(0, Math.min(stash.index, keys.length))
+    // at 이상 키를 한 칸 뒤로 밀고 그 자리에 복원
+    const reindexed = {}
+    keys.forEach((k, i) => { reindexed[`${i < at ? i : i + 1}-0`] = _pageCache[k] })
+    for (const k in _pageCache) delete _pageCache[k]
+    for (const k in reindexed) _pageCache[k] = reindexed[k]
+    _pageCache[`${at}-0`] = stash.entry
+    _currentPageKey = `${at}-0`
+    get()._restoreFromCache(`${at}-0`)
+    get()._syncPageInfo()
+    set({ pageDeleteNotice: null })
+  },
+
+  dismissPageDeleteNotice() {
+    _deletedPageStash = null
+    set({ pageDeleteNotice: null })
   },
 
   /** 현재 페이지 순서 이동 (delta: -1=앞으로, +1=뒤로) */

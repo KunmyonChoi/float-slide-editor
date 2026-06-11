@@ -60,3 +60,16 @@ body {
   background: rgba(148, 163, 184, 0.55);
   background-clip: padding-box;
 }
+
+/* ── 앱 UI는 드래그로 텍스트 선택 안 되게(메뉴/툴바/패널) ──
+   입력 필드와 편집 가능한 텍스트(contentEditable)만 선택 허용. */
+body {
+  user-select: none;
+  -webkit-user-select: none;
+}
+input, textarea, select,
+[contenteditable], [contenteditable="true"],
+.flat-text-edit {
+  user-select: text;
+  -webkit-user-select: text;
+}

@@ -7,6 +7,7 @@ import FlatCanvas from './components/FlatCanvas'
 import FlatPresenter from './components/FlatPresenter'
 import ComparePanel from './components/ComparePanel'
 import PageBar from './components/PageBar'
+import SlideDeleteToast from './components/SlideDeleteToast'
 import { useFlatStore } from './store/flatStore'
 import { useEditorStore } from './store/editorStore'
 import { useEffect } from 'react'
@@ -15,6 +16,15 @@ export default function App() {
   const rawViewMode = useFlatStore(s => s.viewMode)
   const debugMode = useFlatStore(s => s.debugMode)
   const mode = useEditorStore(s => s.mode)
+
+  // 최초 빈 실행 → 제목 슬라이드로 시작(PowerPoint 식, 바로 편집 가능). 콘텐츠 있으면 유지.
+  useEffect(() => {
+    const fs = useFlatStore.getState()
+    const es = useEditorStore.getState()
+    if (fs.flatPageCount === 0 && !es.slideHtml) {
+      fs.startScratchProject('title')
+    }
+  }, [])
 
   // 전체화면이 해제됐는데 발표 중이면(ESC로 전체화면만 빠져나온 경우) 발표도 종료
   useEffect(() => {
@@ -68,6 +78,7 @@ export default function App() {
         <PropertyPanel />
       </div>
       <PageBar />
+      <SlideDeleteToast />
       {debugMode && <ComparePanel />}
       <InsertPopup />
       {/* flat 모드 발표 — fixed 전체화면 오버레이 */}

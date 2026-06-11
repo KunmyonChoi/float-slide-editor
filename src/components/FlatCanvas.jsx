@@ -35,7 +35,7 @@ export default function FlatCanvas() {
           removeSelectedElements, updateFlatElement, undo, redo, viewMode, reExtract,
           fontImports, copyElement, cutElement, pasteElement, duplicateElement, selectAllFlats,
           bringForward, sendBackward, bringToFront, sendToBack, setCroppingFlat,
-          addFlatElement, setCanvasRef, preloadProgress, drawMode, setDrawMode } = useFlatStore()
+          addFlatElement, setCanvasRef, preloadProgress, drawMode, setDrawMode, flatPageCount } = useFlatStore()
   const [dragOver, setDragOver] = useState(false)
   const [drawPoints, setDrawPoints] = useState([])     // 그리기 중 확정된 점들
   const [drawPreview, setDrawPreview] = useState(null)  // 마우스 위치 (프리뷰용)
@@ -395,11 +395,11 @@ export default function FlatCanvas() {
       const hasSelection = selectedFlatIds.length > 0
       const singleId = selectedFlatIds.length === 1 ? selectedFlatIds[0] : null
 
-      // Enter → 텍스트/도형 편집 모드 진입 (단일 선택만)
-      if (e.key === 'Enter' && singleId) {
+      // Enter / F2 → 텍스트/도형 편집 모드 진입 (단일 선택만, F2는 PowerPoint 호환)
+      if ((e.key === 'Enter' || e.key === 'F2') && singleId) {
         const els = useFlatStore.getState().flatElements
         const el = els.find(el => el.id === singleId)
-        if (el && (el.type === 'text' || el.type === 'shape')) {
+        if (el && (el.type === 'text' || el.type === 'shape' || el.type === 'table')) {
           e.preventDefault()
           useFlatStore.getState().setEditingFlat(singleId)
           return
@@ -412,10 +412,21 @@ export default function FlatCanvas() {
         return
       }
 
-      // F5 → 발표 모드
+      // 선택 없음 + Delete → 현재 슬라이드 삭제 (PowerPoint, 복구 토스트 제공).
+      // Backspace는 제외(오타 위험). flat 모드 + 2장 이상 + 편집 중 아님.
+      if (e.key === 'Delete' && !hasSelection && !useFlatStore.getState().editingFlatId
+          && (viewMode === 'flat' || viewMode === 'split')
+          && useFlatStore.getState().flatPageCount > 1) {
+        e.preventDefault()
+        useFlatStore.getState().deletePage()
+        return
+      }
+
+      // F5 → 처음부터 발표, Shift+F5 → 현재 페이지부터 (PowerPoint 호환)
       if (e.key === 'F5') {
         e.preventDefault()
-        useEditorStore.getState().enterPresentation()
+        const startIndex = e.shiftKey ? useFlatStore.getState().flatCurrentPage : 0
+        useEditorStore.getState().enterPresentation({ startIndex })
         return
       }
 
@@ -603,20 +614,15 @@ export default function FlatCanvas() {
     if (!stage) return
     const onWheel = (e) => {
       if (useFlatStore.getState().editingFlatId) return
-      if (e.ctrlKey || e.metaKey) {
+      // 마우스 휠 = 커서 기준 줌. (Shift+휠은 줌 상태에서 가로 팬)
+      if (e.shiftKey && scaleRef.current > fitScaleRef.current + 1e-6) {
         e.preventDefault()
-        const factor = Math.exp(-e.deltaY * 0.0015)
-        applyZoom(scaleRef.current * factor, { clientX: e.clientX, clientY: e.clientY })
-      } else if (scaleRef.current > fitScaleRef.current + 1e-6) {
-        // 줌 상태에서만 팬
-        e.preventDefault()
-        setPan(prev => clampPan(
-          e.shiftKey
-            ? { x: prev.x - e.deltaY, y: prev.y }
-            : { x: prev.x - (e.deltaX || 0), y: prev.y - e.deltaY },
-          scaleRef.current,
-        ))
+        setPan(prev => clampPan({ x: prev.x - (e.deltaX || e.deltaY), y: prev.y }, scaleRef.current))
+        return
       }
+      e.preventDefault()
+      const factor = Math.exp(-e.deltaY * 0.0015)
+      applyZoom(scaleRef.current * factor, { clientX: e.clientX, clientY: e.clientY })
     }
     stage.addEventListener('wheel', onWheel, { passive: false })
     return () => stage.removeEventListener('wheel', onWheel)
@@ -988,7 +994,9 @@ export default function FlatCanvas() {
         />
       )}
 
-      {flatElements.length === 0 && (
+      {/* 빈 안내: 변환 중이거나, 프로젝트 자체가 없을 때만. 프로젝트 안의 빈 페이지는
+          빈 캔버스만 보이게(작성 중인데 'HTML 로드' 안내가 뜨는 혼란 방지) */}
+      {flatElements.length === 0 && (preloadProgress || flatPageCount === 0) && (
         <div style={{
           position: 'absolute', inset: 0,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -1057,7 +1065,9 @@ export default function FlatCanvas() {
 }
 
 function ZoomControl({ scale, onZoomIn, onZoomOut, onFit, on100 }) {
-  const stop = (e) => e.stopPropagation()
+  // mousedown preventDefault → 버튼이 포커스를 가져가지 않음(클릭 후 Space/Enter가
+  // 버튼에 먹히는 현상 방지). 클릭(onClick)은 그대로 동작.
+  const stop = (e) => { e.stopPropagation(); e.preventDefault() }
   const btn = {
     width: 26, height: 26, display: 'flex', alignItems: 'center', justifyContent: 'center',
     borderRadius: 6, border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.05)',
