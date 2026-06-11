@@ -104,7 +104,7 @@ const FALLBACK_SAMPLE = `<!DOCTYPE html>
  */
 export default function FloatingToolbar() {
   const { slideHtml, mode, enterPresentation } = useEditorStore()
-  const { viewMode, setViewMode, extractFromIframe, regenerateAllPages, debugMode } = useFlatStore()
+  const { viewMode, setViewMode, extractFromIframe, regenerateAllPages, debugMode, flatPageCount } = useFlatStore()
   const iframeRef = useEditorStore(s => s.iframeRef)
   const [qualityOpen, setQualityOpen] = useState(false)
   const [isFullscreen, setIsFullscreen] = useState(false)
@@ -160,10 +160,11 @@ export default function FloatingToolbar() {
 
       <Divider />
 
-      {/* 발표 모드 진입 */}
+      {/* 발표 모드 진입 — flat 페이지가 있거나 HTML 덱이 있으면 활성(처음부터 시작한
+          프로젝트도 발표 가능) */}
       <ToolBtn
-        onClick={enterPresentation}
-        disabled={!slideHtml}
+        onClick={() => enterPresentation()}
+        disabled={flatPageCount === 0 && !slideHtml}
         title="발표 모드 (F5) — 전체화면, 슬라이드 자체 네비게이션 동작"
         highlight
       >
