@@ -54,7 +54,18 @@ function _getSortedPageKeys() {
 let _pendingEditCommit = null  // 편집 중 unmount 전 커밋용 콜백
 // flat 주도 페이지 이동(goToFlatPage)이 iframe에 보낸 fe:navigate의 에코(fe:pageChange→reExtract)를
 // 무시하기 위한 기대 페이지 인덱스. 이미 캐시 복원을 마쳤으므로 재추출/재복원이 불필요·유해.
+// reveal.js 등은 한 번의 네비게이션에 pageChange를 여러 번 쏘므로, 일정 시간 창 동안 억제한다.
 let _expectIframePage = null
+let _expectIframeTimer = null
+function _expectIframeNav(idx) {
+  _expectIframePage = idx
+  if (_expectIframeTimer) clearTimeout(_expectIframeTimer)
+  _expectIframeTimer = setTimeout(() => { _expectIframePage = null; _expectIframeTimer = null }, 600)
+}
+function _clearExpectIframeNav() {
+  _expectIframePage = null
+  if (_expectIframeTimer) { clearTimeout(_expectIframeTimer); _expectIframeTimer = null }
+}
 
 export const useFlatStore = create((set, get) => ({
   /** FlatElement 배열 */
@@ -289,12 +300,9 @@ export const useFlatStore = create((set, get) => ({
 
     // flat 주도 이동이 보낸 fe:navigate의 에코면 무시 — 이미 goToFlatPage가 캐시 복원함.
     // (페이지 중간 삽입으로 flat↔HTML 인덱스가 어긋난 뒤 엉뚱한 재추출/재복원 방지)
+    // 한 번의 네비게이션에 에코가 여러 번 와도 시간 창 동안 모두 무시(타이머가 해제).
     const pageIdx = parseInt(String(pageKey).split('-')[0])
-    if (_expectIframePage != null && pageIdx === _expectIframePage) {
-      _expectIframePage = null
-      return
-    }
-    _expectIframePage = null
+    if (_expectIframePage != null && pageIdx === _expectIframePage) return
 
     // 현재 페이지 캐시 저장
     get()._saveCurrentPage()
@@ -484,12 +492,12 @@ export const useFlatStore = create((set, get) => ({
     if (get().viewMode === 'split') {
       const htmlIdx = _pageCache[key]?.htmlSlideIndex
       if (htmlIdx != null) {
-        // 이 네비게이션으로 돌아올 fe:pageChange 에코는 reExtract에서 무시
-        _expectIframePage = htmlIdx
+        // 이 네비게이션으로 돌아올 fe:pageChange 에코(들)는 reExtract에서 무시
+        _expectIframeNav(htmlIdx)
         const ref = get()._iframeRef
         ref?.current?.contentWindow?.postMessage({ type: 'fe:navigate', page: htmlIdx }, '*')
       } else {
-        _expectIframePage = null
+        _clearExpectIframeNav()
       }
     }
   },

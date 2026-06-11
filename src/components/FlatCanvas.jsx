@@ -332,7 +332,10 @@ export default function FlatCanvas() {
     const key = `${currentPage}-${revealV}`
     if (prevPage.current === key) return
     prevPage.current = key
-    if (viewMode === 'split' || viewMode === 'flat') reExtract(key)
+    // split 모드에서만 iframe 페이지 변경을 flat에 반영.
+    // flat 단일 모드는 flat 페이지 시스템(goToFlatPage)이 단독 관리하므로
+    // iframe 기반 재추출을 트리거하지 않는다(삽입한 페이지 보존).
+    if (viewMode === 'split') reExtract(key)
   }, [currentPage, revealV, viewMode, reExtract])
 
   // 첫 추출 완료 후 모든 페이지를 백그라운드 프리로드
