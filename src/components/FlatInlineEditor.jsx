@@ -307,12 +307,11 @@ export default function FlatInlineEditor({ element }) {
     e.stopPropagation()
   }, [commit, applyLink, toggleList, isCaretInList, refreshSelection])
 
-  // shape 또는 배경 있는 텍스트 → flex 레이아웃으로 중앙 정렬
+  // 세로 정렬: 배경 색 유무와 무관(렌더러와 일치). 명시적 세로정렬·자체flex·병합·도형만 flex.
   const isShape = element.type === 'shape'
-  const hasBg = styles.backgroundColor
-    && styles.backgroundColor !== 'rgba(0, 0, 0, 0)'
-    && styles.backgroundColor !== 'transparent'
-  const needsFlex = merged || hasBg || isShape
+  const vAlign = styles.alignItems
+  const hasVAlign = vAlign === 'center' || vAlign === 'flex-end'
+  const needsFlex = merged || isShape || styles.display === 'flex' || styles.display === 'inline-flex' || hasVAlign
 
   const editorStyle = {
     position: 'absolute',
@@ -342,10 +341,10 @@ export default function FlatInlineEditor({ element }) {
     border: styles.border,
     boxShadow: styles.boxShadow,
     opacity: styles.opacity,
-    // flex 레이아웃 (merged/배경 있는 텍스트)
+    // flex 레이아웃 (세로정렬/병합/도형)
     ...(needsFlex ? {
       display: 'flex',
-      alignItems: styles.isFlex ? (styles.alignItems || 'center') : 'center',
+      alignItems: vAlign || (styles.isFlex ? (styles.alignItems || 'center') : 'center'),
       justifyContent: styles.isFlex
         ? (styles.justifyContent || 'center')
         : (styles.textAlign === 'center' ? 'center'
