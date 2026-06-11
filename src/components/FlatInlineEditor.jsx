@@ -52,6 +52,8 @@ export default function FlatInlineEditor({ element }) {
   const [listFmt, setListFmt] = useState({ ul: false, ol: false }) // 리스트 활성 상태
   const [editorRect, setEditorRect] = useState(null) // 편집 도구 묶음 앵커용
   const [emojiOpen, setEmojiOpen] = useState(false)
+  const [linkHover, setLinkHover] = useState(null) // 호버한 링크 { rect, anchor, href } 또는 null
+  const linkHideTimerRef = useRef(null)
 
   const { x, y, width, height, content, styles, merged } = element
 
@@ -167,6 +169,63 @@ export default function FlatInlineEditor({ element }) {
     }
     refreshSelection()
   }, [refreshSelection])
+
+  // ── 링크 호버 버블 (열기/편집/제거) ──────────────────────
+  const cancelHideLink = useCallback(() => {
+    if (linkHideTimerRef.current) { clearTimeout(linkHideTimerRef.current); linkHideTimerRef.current = null }
+  }, [])
+  const scheduleHideLink = useCallback(() => {
+    cancelHideLink()
+    linkHideTimerRef.current = setTimeout(() => setLinkHover(null), 200)
+  }, [cancelHideLink])
+
+  const handleEditorMouseOver = useCallback((e) => {
+    const a = e.target.closest?.('a')
+    if (a && ref.current?.contains(a)) {
+      cancelHideLink()
+      setLinkHover({ rect: a.getBoundingClientRect(), anchor: a, href: a.getAttribute('href') || '' })
+    }
+  }, [cancelHideLink])
+
+  const handleEditorMouseOut = useCallback((e) => {
+    const a = e.target.closest?.('a')
+    if (!a) return
+    // 링크를 벗어나 버블이 아닌 곳으로 이동하면 잠시 후 숨김
+    const to = e.relatedTarget
+    if (to && to.closest && to.closest('[data-link-bubble]')) return
+    scheduleHideLink()
+  }, [scheduleHideLink])
+
+  const openHoverLink = useCallback(() => {
+    const href = linkHover?.href
+    if (href) window.open(href, '_blank', 'noopener,noreferrer')
+  }, [linkHover])
+
+  const editHoverLink = useCallback(async () => {
+    const anchor = linkHover?.anchor
+    if (!anchor) return
+    suppressCommitRef.current = true
+    const url = await promptUrl({ title: '링크 URL 편집', initialValue: anchor.getAttribute('href') || 'https://' })
+    suppressCommitRef.current = false
+    ref.current?.focus()
+    if (url) {
+      anchor.setAttribute('href', url)
+      setLinkHover({ rect: anchor.getBoundingClientRect(), anchor, href: url })
+    }
+  }, [linkHover])
+
+  const removeHoverLink = useCallback(() => {
+    const anchor = linkHover?.anchor
+    const parent = anchor?.parentNode
+    if (!anchor || !parent) return
+    while (anchor.firstChild) parent.insertBefore(anchor.firstChild, anchor)
+    parent.removeChild(anchor)
+    ref.current?.normalize?.()
+    setLinkHover(null)
+    ref.current?.focus()
+  }, [linkHover])
+
+  useEffect(() => () => cancelHideLink(), [cancelHideLink])
 
   // 저장된 caret 위치에 이모지 삽입 (선택이 있으면 대체)
   const insertEmoji = useCallback((emoji) => {
@@ -371,7 +430,22 @@ export default function FlatInlineEditor({ element }) {
         onBlur={handleBlur}
         onKeyDown={handleKeyDown}
         onMouseDown={(e) => e.stopPropagation()}
+        onMouseOver={handleEditorMouseOver}
+        onMouseOut={handleEditorMouseOut}
       />
+      {linkHover && createPortal(
+        <LinkBubble
+          rect={linkHover.rect}
+          sel={sel}
+          href={linkHover.href}
+          onOpen={openHoverLink}
+          onEdit={editHoverLink}
+          onRemove={removeHoverLink}
+          onEnter={cancelHideLink}
+          onLeave={scheduleHideLink}
+        />,
+        document.body
+      )}
       {sel && createPortal(
         <SelectionToolbar sel={sel} fmt={fmt} onCmd={applyCmd} onFontSize={changeFontSize} onLink={applyLink} />,
         document.body
@@ -561,4 +635,57 @@ function Swatch({ color, round, onMouseDown, title }) {
 
 function Sep() {
   return <div style={{ width: 1, height: 18, background: 'rgba(255,255,255,0.12)', margin: '0 2px' }} />
+}
+
+// ── 링크 호버 버블: 열기/편집/제거 ─────────────────────────
+function LinkBubble({ rect, sel, href, onOpen, onEdit, onRemove, onEnter, onLeave }) {
+  const H = 34
+  const W = 240
+  const left = Math.max(8, Math.min(window.innerWidth - 248, rect.left))
+  const aboveTop = rect.top - H - 6
+  const belowTop = rect.bottom + 6
+  let top = aboveTop >= 8 ? aboveTop : belowTop // 기본 위, 공간 없으면 아래
+  // 텍스트 선택 툴바와 겹치면 반대쪽으로 회피
+  if (sel) {
+    const tb = computeSelToolbarPos(sel)
+    const tbRect = { x0: tb.left - tb.halfW, x1: tb.left + tb.halfW, y0: tb.top, y1: tb.top + tb.height }
+    const bubbleRect = (t) => ({ x0: left, x1: left + W, y0: t, y1: t + H })
+    if (rectsOverlap(bubbleRect(top), tbRect)) {
+      const alt = top === aboveTop ? belowTop : aboveTop
+      const fits = alt >= 8 && alt + H <= window.innerHeight - 8 && !rectsOverlap(bubbleRect(alt), tbRect)
+      top = fits ? alt : belowTop
+    }
+  }
+  const short = !href ? '(빈 링크)' : (href.length > 36 ? href.slice(0, 35) + '…' : href)
+  const noBlur = (fn) => (e) => { e.preventDefault(); e.stopPropagation(); fn() }
+  const btn = {
+    border: 'none', background: 'transparent', color: '#cbd5e1',
+    fontSize: 12, padding: '4px 7px', borderRadius: 6, cursor: 'pointer',
+  }
+  return (
+    <div
+      data-link-bubble
+      data-edit-accessory
+      onMouseEnter={onEnter}
+      onMouseLeave={onLeave}
+      onMouseDown={(e) => e.preventDefault()}
+      style={{
+        position: 'fixed', left, top, zIndex: 10050,
+        display: 'flex', alignItems: 'center', gap: 2,
+        height: H, padding: '0 4px',
+        background: 'rgba(15,23,42,0.97)', color: '#e2e8f0',
+        border: '1px solid rgba(255,255,255,0.14)', borderRadius: 8,
+        boxShadow: '0 8px 24px rgba(0,0,0,0.45)', backdropFilter: 'blur(8px)',
+      }}
+    >
+      <button
+        onMouseDown={noBlur(onOpen)}
+        title={href || ''}
+        style={{ ...btn, color: '#93c5fd', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+      >{short}</button>
+      <Sep />
+      <button onMouseDown={noBlur(onEdit)} style={btn} title="링크 편집">편집</button>
+      <button onMouseDown={noBlur(onRemove)} style={{ ...btn, color: '#fca5a5' }} title="링크 제거">제거</button>
+    </div>
+  )
 }
