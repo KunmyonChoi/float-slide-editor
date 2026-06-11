@@ -147,10 +147,13 @@ export const useEditorStore = create((set, get) => ({
     return get().elements.get(id)
   },
 
+  /** 발표 시작 슬라이드 인덱스 (F5=0 처음부터, Shift+F5=현재 페이지) */
+  presentStartIndex: 0,
+
   /** 발표 모드 진입 — 브라우저 전체화면 + CSS 전체화면 + 에이전트 비활성 */
-  enterPresentation() {
+  enterPresentation(opts = {}) {
     const { iframeRef } = get()
-    set({ selectedId: null, mode: 'present' })
+    set({ selectedId: null, mode: 'present', presentStartIndex: opts.startIndex || 0 })
     iframeRef?.current?.contentWindow?.postMessage({ type: 'fe:setMode', mode: 'present' }, '*')
     iframeRef?.current?.contentWindow?.focus()
     // 사용자 제스처(발표 버튼/F5) 컨텍스트에서 동기 호출 → 실제 브라우저 전체화면

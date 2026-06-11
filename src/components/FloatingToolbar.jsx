@@ -120,12 +120,13 @@ export default function FloatingToolbar() {
     else document.documentElement.requestFullscreen?.()
   }
 
-  // F5 키 → 발표 모드
+  // F5 → 처음부터 발표, Shift+F5 → 현재 페이지부터 (PowerPoint 호환)
   useEffect(() => {
     const onKeyDown = (e) => {
       if (e.key === 'F5') {
         e.preventDefault()
-        enterPresentation()
+        const startIndex = e.shiftKey ? useFlatStore.getState().flatCurrentPage : 0
+        enterPresentation({ startIndex })
       }
     }
     window.addEventListener('keydown', onKeyDown)

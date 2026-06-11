@@ -395,11 +395,11 @@ export default function FlatCanvas() {
       const hasSelection = selectedFlatIds.length > 0
       const singleId = selectedFlatIds.length === 1 ? selectedFlatIds[0] : null
 
-      // Enter → 텍스트/도형 편집 모드 진입 (단일 선택만)
-      if (e.key === 'Enter' && singleId) {
+      // Enter / F2 → 텍스트/도형 편집 모드 진입 (단일 선택만, F2는 PowerPoint 호환)
+      if ((e.key === 'Enter' || e.key === 'F2') && singleId) {
         const els = useFlatStore.getState().flatElements
         const el = els.find(el => el.id === singleId)
-        if (el && (el.type === 'text' || el.type === 'shape')) {
+        if (el && (el.type === 'text' || el.type === 'shape' || el.type === 'table')) {
           e.preventDefault()
           useFlatStore.getState().setEditingFlat(singleId)
           return
@@ -412,10 +412,11 @@ export default function FlatCanvas() {
         return
       }
 
-      // F5 → 발표 모드
+      // F5 → 처음부터 발표, Shift+F5 → 현재 페이지부터 (PowerPoint 호환)
       if (e.key === 'F5') {
         e.preventDefault()
-        useEditorStore.getState().enterPresentation()
+        const startIndex = e.shiftKey ? useFlatStore.getState().flatCurrentPage : 0
+        useEditorStore.getState().enterPresentation({ startIndex })
         return
       }
 

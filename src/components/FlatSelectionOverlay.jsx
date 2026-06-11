@@ -173,7 +173,7 @@ export default function FlatSelectionOverlay({ element, scale, otherRects, canva
       } else if (d.mode === 'resize') {
         let w = d.startW, h = d.startH
         const dir = d.dir
-        const sym = e.altKey   // Alt: 중심 대칭(양쪽 동시)
+        const sym = e.altKey || e.ctrlKey || e.metaKey   // Alt(또는 Ctrl: PowerPoint): 중심 대칭
         const lockRatio = e.shiftKey  // Shift: 가로세로 비율 고정
 
         // 회전된 요소: 마우스 delta를 로컬 좌표로 변환
@@ -549,7 +549,7 @@ export function FlatGroupOverlay({ elements, scale, otherRects, canvasSize, onSn
         batchPreviewFlatElements(changesMap)
       } else if (d.mode === 'resize') {
         const { bbox: origBbox, dir, startPositions } = d
-        const sym = e.altKey       // Alt: 그룹 중심 대칭
+        const sym = e.altKey || e.ctrlKey || e.metaKey  // Alt(또는 Ctrl: PowerPoint): 그룹 중심 대칭
         const lockRatio = e.shiftKey // Shift: 그룹 비율 고정
         const k = sym ? 2 : 1
         let newW = origBbox.w, newH = origBbox.h

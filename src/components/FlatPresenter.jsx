@@ -42,7 +42,14 @@ export default function FlatPresenter() {
     })
   }, [allPages])
 
-  const [currentSlide, setCurrentSlide] = useState(0)
+  // 발표 시작 인덱스(F5=0, Shift+F5=현재 페이지). 마운트 시 1회 고정.
+  const [currentSlide, setCurrentSlide] = useState(() => useEditorStore.getState().presentStartIndex || 0)
+  // allPages 로드 후 범위 클램프(시작 인덱스가 총 슬라이드 수 초과 방지)
+  useEffect(() => {
+    if (allPages && sortedKeys.length > 0) {
+      setCurrentSlide(c => Math.max(0, Math.min(c, sortedKeys.length - 1)))
+    }
+  }, [allPages]) // eslint-disable-line react-hooks/exhaustive-deps
   const page = allPages?.[sortedKeys[currentSlide]]
   const elements = page?.elements || []
   const canvasSize = page?.canvasSize || { w: 1280, h: 720 }
