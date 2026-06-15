@@ -1309,23 +1309,6 @@ export const useFlatStore = create((set, get) => ({
     set({ canUndo: _history.canUndo, canRedo: _history.canRedo })
   },
 
-  /** 현재 페이지 요소를 통째로 교체(undo 1회). 어드바이저 슬라이드 재구성 등에 사용.
-   *  fontImports를 주면 함께 갱신(재구성 HTML의 웹폰트 반영). */
-  replaceCurrentPageElements(newElements, fontImports) {
-    const removed = get().flatElements
-    _history.push({ type: 'replaceMany', removed, added: newElements })
-    const updates = {
-      flatElements: newElements,
-      selectedFlatIds: [],
-      editingFlatId: null,
-      canUndo: _history.canUndo,
-      canRedo: _history.canRedo,
-    }
-    if (Array.isArray(fontImports)) updates.fontImports = fontImports
-    set(updates)
-    get()._saveCurrentPage()
-  },
-
   /** 히스토리 초기화 */
   clearHistory() {
     _history.clear()

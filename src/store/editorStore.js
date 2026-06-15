@@ -107,7 +107,14 @@ export const useEditorStore = create((set, get) => ({
   canUndo: false,
   canRedo: false,
 
-  loadHtml(fullHtml) {
+  /**
+   * 실제 HTML 슬라이드를 외부에서 가져왔는지 여부.
+   * 가져오기/드롭/샘플 = true, 새 프로젝트(빈 덱)/스크래치 = false.
+   * 'Flat 전체 재생성'은 원본 HTML이 있을 때만 의미가 있으므로 이 플래그로 게이팅한다.
+   */
+  htmlImported: false,
+
+  loadHtml(fullHtml, { imported = false } = {}) {
     const { html, elements } = prepareHtmlForEditor(fullHtml)
     // 덱이 의존하는 외부 stylesheet(<link rel="stylesheet">)를 메인 문서에도 주입.
     // flat presenter는 iframe이 아닌 메인 React 트리에 렌더되므로
@@ -121,6 +128,23 @@ export const useEditorStore = create((set, get) => ({
     // 변환하는 레이스를 방지한다.
     set({
       slideHtml: html, elements, selectedId: null, canUndo: false, canRedo: false,
+      htmlImported: imported,
+      currentPage: 0, totalPages: 1,
+      isReveal: false, revealH: 0, revealV: 0, revealTotalH: 0, revealTotalV: 0, revealVCounts: null,
+      canLeft: false, canRight: false, canUp: false, canDown: false,
+    })
+  },
+
+  /**
+   * 덱 상태를 스크래치(빈 시작점)로 리셋 — 새 프로젝트용.
+   * 앱 최초 실행(새로고침) 시 startScratchProject가 동작하는 초기 상태를 그대로 재현한다.
+   * slideHtml을 비워 flat 스크래치로 두고, reveal/페이지 구조와 임포트 플래그를 초기화한다.
+   */
+  resetDeck() {
+    _history.clear()
+    set({
+      slideHtml: '', elements: [], selectedId: null, canUndo: false, canRedo: false,
+      htmlImported: false,
       currentPage: 0, totalPages: 1,
       isReveal: false, revealH: 0, revealV: 0, revealTotalH: 0, revealTotalV: 0, revealVCounts: null,
       canLeft: false, canRight: false, canUp: false, canDown: false,
@@ -130,6 +154,11 @@ export const useEditorStore = create((set, get) => ({
   /** @param {{ w: number, h: number } | null} size */
   setCanvasSize(size) {
     set({ canvasSize: size })
+  },
+
+  /** 외부 HTML 임포트 플래그 직접 설정 (예: flat 프로젝트 열기 시 false) */
+  setHtmlImported(v) {
+    set({ htmlImported: !!v })
   },
 
   /** 삽입 플레이스홀더 클릭 → 대기 삽입 정보 설정 */

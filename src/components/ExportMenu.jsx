@@ -10,16 +10,6 @@ const ACCEPT_FLATPROJ = { 'application/octet-stream': ['.flatproj'] }
 const ACCEPT_HTML = { 'text/html': ['.html', '.htm'] }
 
 // 새 프로젝트용 빈 슬라이드 1장 (1280×720 흰 배경)
-const BLANK_DECK = `<!DOCTYPE html>
-<html lang="ko"><head><meta charset="UTF-8"><style>
-* { margin: 0; box-sizing: border-box; }
-body { width: 1280px; height: 720px; overflow: hidden; }
-.slide { width: 1280px; height: 720px; background: #ffffff; display: none; position: relative; }
-.slide.active { display: block; }
-</style></head><body>
-<div class="slide active"></div>
-</body></html>`
-
 /**
  * FileMenu — 파일 드롭다운 메뉴 (저장/열기/내보내기/가져오기)
  * FloatingToolbar에 배치
@@ -31,8 +21,8 @@ export default function FileMenu({ fallbackSample }) {
   const menuRef = useRef(null)
 
   const { flatElements, canvasSize, fontImports,
-          setViewMode, loadAllPages, clearPageCache, debugMode, setDebugMode } = useFlatStore()
-  const { loadHtml } = useEditorStore()
+          setViewMode, loadAllPages, clearPageCache, regenerateAllPages, debugMode, setDebugMode } = useFlatStore()
+  const { loadHtml, htmlImported } = useEditorStore()
 
   const hasContent = flatElements.length > 0
 
@@ -69,14 +59,14 @@ export default function FileMenu({ fallbackSample }) {
     if (!file) return
     const text = await file.text()
     clearPageCache()
-    loadHtml(text)
+    loadHtml(text, { imported: true })
   }, [clearPageCache, loadHtml])
 
   // 샘플 슬라이드
   const handleLoadSample = useCallback(() => {
     setOpen(false)
     clearPageCache()
-    loadHtml(fallbackSample)
+    loadHtml(fallbackSample, { imported: true })
   }, [clearPageCache, loadHtml, fallbackSample])
 
   // 새 프로젝트 — 현재 작업을 비우고 빈 슬라이드로 시작
@@ -92,11 +82,12 @@ export default function FileMenu({ fallbackSample }) {
       })
       if (!ok) return
     }
-    // 빈 페이지 추출 후 '제목 슬라이드' 레이아웃을 자동 적용(PowerPoint 식 시작점)
-    useFlatStore.getState().setPendingStarterLayout('title')
+    // 앱 최초 실행(새로고침)과 동일한 경로로 시작 — 제목 슬라이드 레이아웃 + 슬라이드 목록이
+    // 즉시 보이도록 startScratchProject를 직접 호출한다(빈 덱 HTML 추출 트리거에 의존하지 않음).
     clearPageCache()
-    loadHtml(BLANK_DECK)
-  }, [hasContent, clearPageCache, loadHtml])
+    useEditorStore.getState().resetDeck()
+    useFlatStore.getState().startScratchProject('title')
+  }, [hasContent, clearPageCache])
 
   // 프로젝트 저장 (ZIP 패키지) — 시스템 저장 팝업으로 파일명 선택
   const handleSaveProject = useCallback(async () => {
@@ -115,12 +106,27 @@ export default function FileMenu({ fallbackSample }) {
     try {
       const data = await loadProjectFile(file)
       loadAllPages(data.pages, data.currentPageKey)
+      // flat 프로젝트는 원본 HTML이 없으므로 'Flat 재생성' 게이트를 닫는다.
+      useEditorStore.getState().setHtmlImported(false)
       const { viewMode } = useFlatStore.getState()
       if (viewMode === 'html') setViewMode('flat')
     } catch (err) {
       alert('프로젝트 파일을 열 수 없습니다: ' + err.message)
     }
   }, [loadAllPages, setViewMode])
+
+  // 원본으로 되돌리기 — 처음 가져온 HTML 슬라이드 상태로 전체 페이지를 다시 변환(편집 내용 삭제)
+  const handleRevertToOriginal = useCallback(async () => {
+    setOpen(false)
+    const ok = await confirmDialog({
+      title: '원본으로 되돌리기',
+      message: '편집한 내용이 사라지고\n처음 가져온 슬라이드로 되돌립니다. 계속할까요?',
+      confirmText: '되돌리기',
+      cancelText: '취소',
+      danger: true,
+    })
+    if (ok) regenerateAllPages()
+  }, [regenerateAllPages])
 
   // HTML 내보내기 (현재 페이지)
   const handleExportHtml = useCallback(() => {
@@ -258,6 +264,8 @@ export default function FileMenu({ fallbackSample }) {
         { id: 'importHtml', label: 'HTML 슬라이드 가져오기', action: handleOpenHtml },
       ],
     },
+    // 외부 HTML을 가져온 경우에만 노출 — 처음 가져온 원본으로 되돌리기
+    ...(htmlImported ? [{ id: 'revertOriginal', label: '원본으로 되돌리기', action: handleRevertToOriginal }] : []),
     { id: 'sepAi', type: 'separator' },
     { id: 'aiSettings', label: 'AI 설정', shortcut: 'OpenAI', action: openAiSettings },
     { id: 'sepDebug', type: 'separator' },
