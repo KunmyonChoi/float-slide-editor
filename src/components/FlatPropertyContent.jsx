@@ -11,6 +11,7 @@ import { BlobStore } from '../core/BlobStore'
 import { detectListType, applyListType } from '../core/TextListTransform'
 import { addRow, removeRow, addCol, removeCol, setHeaderRow, setBorder } from '../core/slideTable'
 import { useScrub } from './useScrub'
+import { setFontSizeUniformPx, stripInlineFormatting, FORMAT_STRIP } from '../core/TextStyleScope'
 
 // ── 글꼴 크기 프리셋 ────────────────────────────────
 
@@ -561,6 +562,22 @@ function FontSection({ el, styles, updateStyle, previewStyle, isGradientText, li
   const isStrike = decoration.includes('line-through')
   const mixed = detectTextMixed(el)
 
+  // 속성 패널 = 항상 전체 적용: base 스타일 + 인라인 override(부분 수정분)까지 함께 처리.
+  // 글자 크기는 절대값이므로 "전체 통일"(인라인 font-size 제거).
+  const setUniformSize = (px) => {
+    const r = setFontSizeUniformPx(el.content, el.isRich, px)
+    useFlatStore.getState().updateFlatElement(el.id, { content: r.content, styles: { fontSize: r.fontSize } })
+  }
+  const previewUniformSize = (px) => {
+    const r = setFontSizeUniformPx(el.content, el.isRich, px)
+    useFlatStore.getState().previewFlatElement(el.id, { content: r.content, styles: { fontSize: r.fontSize } })
+  }
+  // 굵게/이탤릭/밑줄/취소선: base 설정 + 해당 인라인 override 제거 → 전체 통일
+  const applyWholeFormat = (which, styleChanges) => {
+    const content = stripInlineFormatting(el.content, el.isRich, FORMAT_STRIP[which])
+    useFlatStore.getState().updateFlatElement(el.id, { content, styles: styleChanges })
+  }
+
   return (
     <div className="space-y-2">
       <SectionTitle>글꼴</SectionTitle>
@@ -573,8 +590,8 @@ function FontSection({ el, styles, updateStyle, previewStyle, isGradientText, li
       <div className="grid grid-cols-2 gap-1.5">
         <FontSizeInput
           value={parseFontSize(styles.fontSize)}
-          onChange={v => updateStyle('fontSize', v + 'px')}
-          onPreview={previewStyle && (v => previewStyle('fontSize', v + 'px'))}
+          onChange={setUniformSize}
+          onPreview={previewUniformSize}
         />
         <SelectInput
           label="굵기"
@@ -595,23 +612,32 @@ function FontSection({ el, styles, updateStyle, previewStyle, isGradientText, li
       </div>
 
       <div className="flex gap-1.5">
-        <ToggleBtn active={isBold} mixed={mixed.bold} onClick={() => updateStyle('fontWeight', isBold ? '400' : '700')} title="굵게 (Bold)">
+        <ToggleBtn active={isBold} mixed={mixed.bold} onClick={() => {
+          // 혼합이면 전체 ON, 아니면 토글 — 전체 적용(인라인 굵게 override 제거)
+          const turnOn = mixed.bold ? true : !isBold
+          applyWholeFormat('bold', { fontWeight: turnOn ? '700' : '400' })
+        }} title="굵게 (Bold)">
           <b>B</b>
         </ToggleBtn>
-        <ToggleBtn active={isItalic} mixed={mixed.italic} onClick={() => updateStyle('fontStyle', isItalic ? 'normal' : 'italic')} title="기울임 (Italic)">
+        <ToggleBtn active={isItalic} mixed={mixed.italic} onClick={() => {
+          const turnOn = mixed.italic ? true : !isItalic
+          applyWholeFormat('italic', { fontStyle: turnOn ? 'italic' : 'normal' })
+        }} title="기울임 (Italic)">
           <i>I</i>
         </ToggleBtn>
         <ToggleBtn active={isUnderline} mixed={mixed.underline} onClick={() => {
-          const parts = decoration.split(/\s+/).filter(d => d && d !== 'none')
-          const next = isUnderline ? parts.filter(d => d !== 'underline') : [...parts, 'underline']
-          updateStyle('textDecoration', next.length ? next.join(' ') : 'none')
+          const turnOn = mixed.underline ? true : !isUnderline
+          const parts = decoration.split(/\s+/).filter(d => d && d !== 'none' && d !== 'underline')
+          if (turnOn) parts.push('underline')
+          applyWholeFormat('underline', { textDecoration: parts.length ? parts.join(' ') : 'none' })
         }} title="밑줄 (Underline)">
           <u>U</u>
         </ToggleBtn>
         <ToggleBtn active={isStrike} mixed={mixed.strike} onClick={() => {
-          const parts = decoration.split(/\s+/).filter(d => d && d !== 'none')
-          const next = isStrike ? parts.filter(d => d !== 'line-through') : [...parts, 'line-through']
-          updateStyle('textDecoration', next.length ? next.join(' ') : 'none')
+          const turnOn = mixed.strike ? true : !isStrike
+          const parts = decoration.split(/\s+/).filter(d => d && d !== 'none' && d !== 'line-through')
+          if (turnOn) parts.push('line-through')
+          applyWholeFormat('strike', { textDecoration: parts.length ? parts.join(' ') : 'none' })
         }} title="취소선 (Strikethrough)">
           <s>S</s>
         </ToggleBtn>
