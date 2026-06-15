@@ -5,7 +5,6 @@ import CanvasSizeSelector from './CanvasSizeSelector'
 import QualityDashboard from './QualityDashboard'
 import FileMenu from './ExportMenu'
 import PptExportButton from './PptExportButton'
-import { openAdviser } from './AdviserModal'
 
 const FALLBACK_SAMPLE = `<!DOCTYPE html>
 <html lang="ko">
@@ -105,7 +104,7 @@ const FALLBACK_SAMPLE = `<!DOCTYPE html>
  */
 export default function FloatingToolbar() {
   const { slideHtml, mode, enterPresentation } = useEditorStore()
-  const { viewMode, setViewMode, extractFromIframe, regenerateAllPages, debugMode, flatPageCount } = useFlatStore()
+  const { viewMode, setViewMode, extractFromIframe, debugMode, flatPageCount } = useFlatStore()
   const iframeRef = useEditorStore(s => s.iframeRef)
   const [qualityOpen, setQualityOpen] = useState(false)
   const [isFullscreen, setIsFullscreen] = useState(false)
@@ -172,15 +171,6 @@ export default function FloatingToolbar() {
         <PresentIcon /><span className="text-xs ml-1">발표</span>
       </ToolBtn>
 
-      {/* AI 어드바이저 — 전체 덱 분석/조언 */}
-      <ToolBtn
-        onClick={() => openAdviser()}
-        disabled={flatPageCount === 0 && !slideHtml}
-        title="AI 어드바이저 — 발표 목적·청중 기준 전체 덱 평가/조언"
-      >
-        <AdviserIcon /><span className="text-xs ml-1">어드바이저</span>
-      </ToolBtn>
-
       <Divider />
 
       {/* 뷰 모드 토글 (디버그 모드에서만 — 평소엔 flat 고정) */}
@@ -196,19 +186,6 @@ export default function FloatingToolbar() {
             setViewMode(mode)
           }}
         />
-      )}
-
-      {/* Flat 재생성 */}
-      {(viewMode === 'flat' || viewMode === 'split') && (
-        <>
-          <ToolBtn
-            onClick={regenerateAllPages}
-            title="Flat 전체 재생성 — HTML 슬라이드 모든 페이지를 처음부터 끝까지 다시 변환"
-          >
-            <RefreshIcon /><span className="text-xs ml-1">재생성</span>
-          </ToolBtn>
-          <Divider />
-        </>
       )}
 
       {/* 브라우저 전체화면 토글 */}
@@ -330,14 +307,6 @@ function PresentIcon() {
   )
 }
 
-function AdviserIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.2 1 2h6c0-.8.4-1.5 1-2A7 7 0 0 0 12 2z" />
-    </svg>
-  )
-}
-
 function QualityIcon() {
   return (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -358,15 +327,6 @@ function FullscreenExitIcon() {
   return (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
       <path d="M8 3v3a2 2 0 0 1-2 2H3M21 8h-3a2 2 0 0 1-2-2V3M16 21v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3" />
-    </svg>
-  )
-}
-
-function RefreshIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <path d="M21 2v6h-6" /><path d="M3 12a9 9 0 0 1 15-6.7L21 8" />
-      <path d="M3 22v-6h6" /><path d="M21 12a9 9 0 0 1-15 6.7L3 16" />
     </svg>
   )
 }

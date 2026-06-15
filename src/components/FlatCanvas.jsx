@@ -189,7 +189,7 @@ export default function FlatCanvas() {
         }
         const text = await htmlFile.text()
         useFlatStore.getState().clearPageCache()
-        useEditorStore.getState().loadHtml(text)
+        useEditorStore.getState().loadHtml(text, { imported: true })
       })()
       return
     }
