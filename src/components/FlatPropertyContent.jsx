@@ -863,6 +863,10 @@ function LineSection({ styles, updateStyle, updateStyles, previewStyle }) {
 
   const updateBorder = (key, val) => {
     const next = { ...b, [key]: val }
+    // 한쪽만 바꿔도 테두리가 그려지도록 나머지를 합리적 기본값으로 보정
+    // (너비만 올리면 style이 none이라, 종류만 바꾸면 width가 0이라 무효화되던 문제)
+    if (key === 'width' && val > 0 && next.style === 'none') next.style = 'solid'
+    if (key === 'style' && val !== 'none' && next.width === 0) next.width = 1
     if (next.style === 'none' || next.width === 0) {
       updateStyle('border', '0px none')
     } else {
@@ -878,6 +882,9 @@ function LineSection({ styles, updateStyle, updateStyles, previewStyle }) {
   const updateSideBorder = (sideKey, key, val) => {
     const current = getSideBorder(sideKey)
     const next = { ...current, [key]: val }
+    // 한쪽만 바꿔도 테두리가 그려지도록 나머지를 합리적 기본값으로 보정
+    if (key === 'width' && val > 0 && next.style === 'none') next.style = 'solid'
+    if (key === 'style' && val !== 'none' && next.width === 0) next.width = 1
     if (next.style === 'none' || next.width === 0) {
       updateStyle(sideKey, '0px none transparent')
     } else {
