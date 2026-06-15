@@ -208,9 +208,14 @@ export default function SlideCanvas() {
     } catch { /* sandbox 제한 무시 */ }
 
     // flat 모드 기본: iframe 로드 후 자동 flat 추출 트리거
-    setTimeout(() => {
+    setTimeout(async () => {
       const flatState = useFlatStore.getState()
       if (flatState.viewMode === 'flat' || flatState.viewMode === 'split') {
+        // 웹폰트 로드 후 추출 — 폴백 폰트로 박스가 잡혀 텍스트가 넘치는 것 방지
+        try {
+          const fonts = iframeRef.current?.contentDocument?.fonts
+          if (fonts?.ready) await Promise.race([fonts.ready, new Promise(r => setTimeout(r, 2500))])
+        } catch { /* 접근 불가 무시 */ }
         const edState = useEditorStore.getState()
         const pageKey = `${edState.currentPage}-0`
         flatState.extractFromIframe(edState.iframeRef, pageKey)

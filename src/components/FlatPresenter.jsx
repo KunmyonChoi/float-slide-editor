@@ -190,6 +190,7 @@ export default function FlatPresenter() {
                 isSelected={false}
                 isEditing={false}
                 scale={scale}
+                canvasSize={canvasSize}
               />
             ))}
           </div>

@@ -36,7 +36,7 @@ export default function FlatCanvas() {
 
   const { flatElements, selectedFlatIds, editingFlatId, croppingFlatId, setSelectedFlat, setSelectedFlats, canvasSize,
           removeSelectedElements, updateFlatElement, undo, redo, viewMode, reExtract,
-          fontImports, copyElement, cutElement, pasteElement, duplicateElement, selectAllFlats,
+          copyElement, cutElement, pasteElement, duplicateElement, selectAllFlats,
           bringForward, sendBackward, bringToFront, sendToBack, setCroppingFlat,
           addFlatElement, setCanvasRef, preloadProgress, drawMode, setDrawMode, flatPageCount } = useFlatStore()
   const [dragOver, setDragOver] = useState(false)
@@ -44,36 +44,37 @@ export default function FlatCanvas() {
   const [drawPreview, setDrawPreview] = useState(null)  // 마우스 위치 (프리뷰용)
   const { currentPage, revealV, mode } = useEditorStore()
 
-  // 웹폰트를 부모 문서 <head>에 주입 — iframe 폰트와 동일하게 렌더링.
-  // 내용(fontKey)이 바뀔 때만 재실행 → 페이지 이동/프리로드 시 참조만 바뀌어도
-  // 제거→재주입을 반복하던(reflow/FOUC, 레이아웃 깜빡임) 문제 방지.
-  const fontKey = (fontImports || []).join('\n')
+  // 웹폰트를 부모 문서 <head>에 **합집합·영속**으로 주입 — 모든 페이지의 폰트를 한 번에
+  // 넣고 제거하지 않는다. (현재 페이지 fontImports에 묶어 제거→재주입하면, 페이지 전환 시
+  // 비현재 썸네일이 폰트를 잃어 모양이 달라지고 깜빡임(움찔)이 생긴다.)
+  // 덱 교체 시에는 editorStore._injectDeckStylesheets가 data-flat-font를 정리한다.
+  const allFonts = useFlatStore.getState().getAllFontImports()
+  const allFontKey = allFonts.join('\n')
   useEffect(() => {
-    if (!fontImports || fontImports.length === 0) return
-    const injected = []
-    for (const imp of fontImports) {
+    for (const imp of allFonts) {
       const urlMatch = imp.match(/@import\s+url\(['"]?([^'")\s]+)['"]?\)/)
       if (urlMatch) {
         const href = urlMatch[1]
-        if (!isFontUrl(href)) continue // 폰트 URL만 — 비폰트(reset/reveal 등) 주입 차단
-        if (document.querySelector(`link[href="${href}"]`)) continue // 중복 스킵
+        if (!isFontUrl(href)) continue // 폰트 URL만(비폰트 차단)
+        const exists = [...document.querySelectorAll('link[data-flat-font]')].some(l => l.getAttribute('href') === href)
+        if (exists) continue
         const link = document.createElement('link')
         link.rel = 'stylesheet'
         link.href = href
         link.dataset.flatFont = 'true'
         document.head.appendChild(link)
-        injected.push(link)
       } else if (imp.includes('@font-face')) {
+        const exists = [...document.querySelectorAll('style[data-flat-font]')].some(s => s.textContent === imp)
+        if (exists) continue
         const style = document.createElement('style')
         style.textContent = imp
         style.dataset.flatFont = 'true'
         document.head.appendChild(style)
-        injected.push(style)
       }
     }
-    return () => { for (const el of injected) el.remove() }
+    // 제거 없음(영속) — 덱 교체 시 일괄 정리
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fontKey])
+  }, [allFontKey])
 
   // canvasRef를 store에 노출 (이미지 내보내기용)
   useEffect(() => {

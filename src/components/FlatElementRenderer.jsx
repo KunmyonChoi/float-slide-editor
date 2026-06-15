@@ -10,8 +10,17 @@ import { tableContainerStyle, cellStyle } from '../core/slideTable'
  * 단일 FlatElement를 절대 좌표로 렌더링한다.
  * 클릭으로 선택, 드래그로 이동 (Phase 3에서 추가).
  */
-export default function FlatElementRenderer({ element, isSelected, isEditing, scale }) {
-  const { setSelectedFlat, toggleSelectFlat, selectFlatGroupAware, setEditingFlat, canvasSize } = useFlatStore()
+export default function FlatElementRenderer({ element, isSelected, isEditing, scale, canvasSize: canvasSizeProp }) {
+  // 개별 선택자 구독 — 스토어 전체를 구독하면 현재 페이지 변경 등 무관한 갱신마다
+  // 모든 인스턴스(특히 썸네일)가 재렌더되어 깜빡임(움찔)이 생긴다. 함수는 안정 참조.
+  const setSelectedFlat = useFlatStore(s => s.setSelectedFlat)
+  const toggleSelectFlat = useFlatStore(s => s.toggleSelectFlat)
+  const selectFlatGroupAware = useFlatStore(s => s.selectFlatGroupAware)
+  const setEditingFlat = useFlatStore(s => s.setEditingFlat)
+  // 썸네일·발표 등 비현재 페이지는 그 페이지의 canvasSize(prop)를 사용 → 배경/레이아웃
+  // 판정이 '현재 페이지'에 좌우되지 않음. prop이 있으면 스토어 canvasSize를 구독하지 않아
+  // (선택자 결과가 상수) 현재 페이지 변경 시 재렌더되지 않는다.
+  const canvasSize = useFlatStore(s => canvasSizeProp || s.canvasSize)
 
   const { x, y, width, height, type, content } = element
 

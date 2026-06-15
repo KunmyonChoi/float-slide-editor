@@ -22,8 +22,8 @@ function _isFontStylesheet(href) {
  */
 function _injectDeckStylesheets(fullHtml) {
   if (typeof document === 'undefined' || !fullHtml) return
-  // 이전 덱에서 주입한 스타일시트 제거(임포트 간 누적·잔존 방지)
-  for (const old of document.head.querySelectorAll('link[data-fe-deck-css]')) old.remove()
+  // 이전 덱에서 주입한 스타일시트/폰트 제거(임포트 간 누적·잔존 방지)
+  for (const old of document.head.querySelectorAll('link[data-fe-deck-css], link[data-flat-font], style[data-flat-font]')) old.remove()
   let doc
   try {
     doc = new DOMParser().parseFromString(fullHtml, 'text/html')
@@ -116,7 +116,15 @@ export const useEditorStore = create((set, get) => ({
     _history.clear()
     // 사용자가 로드 전에 선택해둔 캔버스 크기는 그대로 유지한다.
     // 자동 감지로 되돌리려면 캔버스 선택기에서 "자동 감지"를 직접 선택.
-    set({ slideHtml: html, elements, selectedId: null, canUndo: false, canRedo: false })
+    // 이전 덱의 페이지/reveal 구조 상태를 리셋 — 새 iframe이 구조를 보고하기 전
+    // 프리로드가 스테일 totalPages/revealVCounts(예: 23)를 읽어 엉뚱한 페이지 수를
+    // 변환하는 레이스를 방지한다.
+    set({
+      slideHtml: html, elements, selectedId: null, canUndo: false, canRedo: false,
+      currentPage: 0, totalPages: 1,
+      isReveal: false, revealH: 0, revealV: 0, revealTotalH: 0, revealTotalV: 0, revealVCounts: null,
+      canLeft: false, canRight: false, canUp: false, canDown: false,
+    })
   },
 
   /** @param {{ w: number, h: number } | null} size */
