@@ -24,6 +24,9 @@ body {
 .flat-text ol, .flat-text-edit ol {
   margin: 0;
   padding-left: 1.4em;
+  /* 불릿을 텍스트와 한 덩어리로 — 세로정렬(상/중/하)이 ul 폭을 바꿔도
+     가운데/오른쪽 정렬에서 불릿과 텍스트가 벌어지지 않도록 inside 고정. */
+  list-style-position: inside;
 }
 .flat-text ul, .flat-text-edit ul { list-style: disc; }
 .flat-text ol, .flat-text-edit ol { list-style: decimal; }
