@@ -181,6 +181,24 @@ describe('analyzeImageForInfographic (vision)', () => {
     expect(userMsg.content[1].type).toBe('image_url')
     expect(userMsg.content[1].image_url.url).toBe('data:image/png;base64,AAA')
   })
+
+  it('화풍(style) directive를 user 텍스트에 주입', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(okResponse('{}'))
+    vi.stubGlobal('fetch', fetchMock)
+    await analyzeImageForInfographic('data:image/png;base64,AAA', { style: 'soft watercolor illustration' })
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body)
+    const text = body.messages[1].content[0].text
+    expect(text).toContain('Required visual style')
+    expect(text).toContain('soft watercolor illustration')
+  })
+
+  it('style 미지정이면 directive 절을 넣지 않음', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(okResponse('{}'))
+    vi.stubGlobal('fetch', fetchMock)
+    await analyzeImageForInfographic('data:image/png;base64,AAA')
+    const text = JSON.parse(fetchMock.mock.calls[0][1].body).messages[1].content[0].text
+    expect(text).not.toContain('Required visual style')
+  })
 })
 
 describe('OpenAIClient — chat 요청 구성', () => {

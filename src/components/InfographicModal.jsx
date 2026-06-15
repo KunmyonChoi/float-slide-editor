@@ -5,6 +5,7 @@ import { useFlatStore } from '../store/flatStore'
 import { nextFlatId } from '../core/FlatExtractor'
 import { hasApiKey, analyzeImageForInfographic, generateImage, editImage } from '../core/OpenAIClient'
 import { openAiSettings } from './AiSettingsModal'
+import { INFOGRAPHIC_STYLES } from '../core/aiImageStyles'
 
 /**
  * AI 인포그래픽 변환.
@@ -92,6 +93,7 @@ function InfographicDialog() {
   const ids = useInfographicStore(s => s.ids)
   const [status, setStatus] = useState('idle') // 'idle'|'capturing'|'analyzing'|'generating'|'error'
   const [method, setMethod] = useState('analyze') // 'analyze'(분석→재생성) | 'edit'(이미지 편집)
+  const [styleId, setStyleId] = useState('auto') // 화풍(스타일)
   const [prompt, setPrompt] = useState('')
   const [results, setResults] = useState({ analyze: null, edit: null }) // 방법별 생성 이미지 캐시
   const [error, setError] = useState('')
@@ -140,7 +142,8 @@ function InfographicDialog() {
       let p = (basePrompt || '').trim()
       if (!p) {
         setStatus('analyzing')
-        p = await analyzeImageForInfographic(cap, { signal: ctrl.signal })
+        const directive = INFOGRAPHIC_STYLES.find(s => s.id === styleId)?.directive || ''
+        p = await analyzeImageForInfographic(cap, { style: directive, signal: ctrl.signal })
         if (ctrl.signal.aborted) return
         setPrompt(p)
       }
@@ -157,10 +160,22 @@ function InfographicDialog() {
       setError(e?.message || 'AI 변환에 실패했습니다.')
       setStatus('error')
     }
-  }, [ensureCapture])
+  }, [ensureCapture, styleId])
 
   // 탭 전환 — 생성하지 않음(캐시된 이미지 있으면 표시, 없으면 설명)
   const switchMethod = useCallback((m) => setMethod(m), [])
+
+  // 화풍 변경 — 분석 결과가 화풍에 묶이므로 무효화하고 설명+생성 상태로 복귀
+  // (캡처는 화풍 무관이라 유지, 다음 '생성' 시 새 화풍으로 재분석)
+  const changeStyle = useCallback((id) => {
+    if (id === styleId) return
+    abortRef.current?.abort()
+    setStyleId(id)
+    setPrompt('')
+    setResults({ analyze: null, edit: null })
+    setError('')
+    setStatus('idle')
+  }, [styleId])
 
   // 진행 중 작업 정리만(오픈 시 자동 생성 없음)
   useEffect(() => () => abortRef.current?.abort(), [])
@@ -266,6 +281,27 @@ function InfographicDialog() {
               }}
             >{m.label}</button>
           ))}
+        </div>
+
+        {/* 화풍(스타일) 선택 — 변경 시 결과 무효화 후 재분석 필요 */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: 12, color: '#94a3b8', flexShrink: 0 }}>화풍</span>
+          <select
+            value={styleId}
+            disabled={isLoading}
+            onChange={e => changeStyle(e.target.value)}
+            title="이미지 화풍"
+            style={{
+              flex: 1, height: 30, fontSize: 12, padding: '0 8px', borderRadius: 8,
+              cursor: isLoading ? 'default' : 'pointer', opacity: isLoading ? 0.5 : 1,
+              background: 'rgba(255,255,255,0.06)', color: '#e2e8f0',
+              border: '1px solid rgba(255,255,255,0.14)', outline: 'none',
+            }}
+          >
+            {INFOGRAPHIC_STYLES.map(s => (
+              <option key={s.id} value={s.id} style={{ background: '#1e293b', color: '#f1f5f9' }}>{s.label}</option>
+            ))}
+          </select>
         </div>
 
         {/* 본문: 진행 중 / 에러 / 이미지 / 설명 */}
