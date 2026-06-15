@@ -2038,7 +2038,13 @@ function extractFontImports(doc) {
     const styleBaseUrl = doc.baseURI || ''
     const importMatches = text.match(/@import\s+url\([^)]+\)\s*;?/g)
     if (importMatches) {
-      for (const m of importMatches) addUnique(m.endsWith(';') ? m : m + ';')
+      for (const m of importMatches) {
+        // 폰트 @import만 — 레이아웃/리셋 CSS(@import url(reveal.css) 등)가 섞여
+        // 부모 문서에 주입되는 것을 차단
+        const um = m.match(/url\(['"]?([^'")\s]+)['"]?\)/)
+        if (um && !isFontUrl(um[1])) continue
+        addUnique(m.endsWith(';') ? m : m + ';')
+      }
     }
     const fontFaceMatches = text.match(/@font-face\s*\{[^}]+\}/g)
     if (fontFaceMatches) {
@@ -2235,7 +2241,7 @@ function resolveRelativeUrls(cssText, baseUrl) {
 }
 
 /** 폰트 관련 URL인지 판별 */
-function isFontUrl(href) {
+export function isFontUrl(href) {
   if (!href) return false
   const lower = href.toLowerCase()
   return lower.includes('fonts.googleapis.com') ||

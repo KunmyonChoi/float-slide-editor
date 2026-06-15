@@ -24,25 +24,38 @@ function _injectDeckStylesheets(fullHtml) {
   if (typeof document === 'undefined' || !fullHtml) return
   // 이전 덱에서 주입한 스타일시트 제거(임포트 간 누적·잔존 방지)
   for (const old of document.head.querySelectorAll('link[data-fe-deck-css]')) old.remove()
-  if (!fullHtml) return
+  let doc
   try {
-    const doc = new DOMParser().parseFromString(fullHtml, 'text/html')
-    const links = doc.querySelectorAll('link[rel~="stylesheet"][href]')
-    for (const l of links) {
-      const href = l.getAttribute('href')
-      if (!href || !_isFontStylesheet(href)) continue // 폰트/아이콘 CSS만
-      const existing = document.head.querySelector(`link[data-fe-deck-css="${cssEscape(href)}"]`)
-      if (existing) continue
-      const el = document.createElement('link')
-      el.rel = 'stylesheet'
-      el.href = href
-      el.setAttribute('data-fe-deck-css', href)
-      const cross = l.getAttribute('crossorigin')
-      if (cross) el.crossOrigin = cross
-      document.head.appendChild(el)
-    }
+    doc = new DOMParser().parseFromString(fullHtml, 'text/html')
   } catch {
-    /* 주입 실패는 무시 — 아이콘만 영향 */
+    return /* 파싱 실패 무시 */
+  }
+  const links = doc.querySelectorAll('link[rel~="stylesheet"][href]')
+  for (const l of links) {
+    const href = l.getAttribute('href')
+    if (!href) continue
+    if (!_isFontStylesheet(href)) {
+      // 비폰트(reset/reveal/theme 등) 덱 CSS는 주입하지 않을 뿐 아니라, 어떤 경로로든
+      // 메인 문서에 이미 들어와 있으면 제거한다. (Tailwind v4는 모든 스타일이 @layer라
+      // unlayered 덱 CSS가 앱 UI를 덮어써 레이아웃이 무너지는 것을 방지)
+      let abs = href
+      try { abs = new URL(href, location.href).href } catch { /* 상대경로 무시 */ }
+      for (const el of document.head.querySelectorAll('link[rel~="stylesheet"][href]')) {
+        if (el.dataset.flatFont) continue // 우리가 넣은 폰트는 보존
+        if (el.href === abs || el.getAttribute('href') === href) el.remove()
+      }
+      continue
+    }
+    // 폰트/아이콘 CSS만 주입
+    const existing = document.head.querySelector(`link[data-fe-deck-css="${cssEscape(href)}"]`)
+    if (existing) continue
+    const el = document.createElement('link')
+    el.rel = 'stylesheet'
+    el.href = href
+    el.setAttribute('data-fe-deck-css', href)
+    const cross = l.getAttribute('crossorigin')
+    if (cross) el.crossOrigin = cross
+    document.head.appendChild(el)
   }
 }
 
@@ -73,6 +86,8 @@ export const useEditorStore = create((set, get) => ({
   revealV: 0,
   revealTotalH: 0,
   revealTotalV: 0,
+  /** 수평 슬라이드별 수직 개수 배열(없으면 null) — flat 변환 시 (h,v) 경로 산출용 */
+  revealVCounts: null,
   canLeft: false,
   canRight: false,
   canUp: false,
@@ -136,6 +151,7 @@ export const useEditorStore = create((set, get) => ({
       update.revealV = data.v ?? 0
       update.revealTotalH = data.totalH ?? data.total
       update.revealTotalV = data.totalV ?? 0
+      update.revealVCounts = Array.isArray(data.vCounts) ? data.vCounts : null
       update.canLeft = !!data.canLeft
       update.canRight = !!data.canRight
       update.canUp = !!data.canUp

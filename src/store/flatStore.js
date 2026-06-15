@@ -28,20 +28,59 @@ export function buildRegeneratedCache(orderedSnapshot, freshHtml) {
       const fresh = freshHtml[snap.htmlSlideIndex]
       if (!fresh) continue // HTML 슬라이드가 사라짐 → 스킵
       cache[`${idx}-0`] = { ...fresh, htmlSlideIndex: snap.htmlSlideIndex }
-      usedHtml.add(snap.htmlSlideIndex)
+      usedHtml.add(String(snap.htmlSlideIndex))
     } else {
       cache[`${idx}-0`] = snap.entry // flat-only 페이지 보존
     }
     idx++
   }
-  // 스냅샷에 없던 새 HTML 슬라이드는 끝에 추가
-  Object.keys(freshHtml).map(Number).sort((a, b) => a - b).forEach(si => {
-    if (!usedHtml.has(si)) {
-      cache[`${idx}-0`] = { ...freshHtml[si], htmlSlideIndex: si }
+  // 스냅샷에 없던 새 HTML 슬라이드는 끝에 추가 (route id "h-v" 순서로)
+  Object.keys(freshHtml).sort(compareRouteIds).forEach(rid => {
+    if (!usedHtml.has(String(rid))) {
+      cache[`${idx}-0`] = { ...freshHtml[rid], htmlSlideIndex: rid }
       idx++
     }
   })
   return cache
+}
+
+/**
+ * htmlSlideIndex / 페이지 키를 reveal 경로 {h, v}로 파싱.
+ * "h-v" 문자열 또는 레거시 정수 h(=> v:0) 모두 지원.
+ */
+export function parseRouteId(id) {
+  if (id == null) return null
+  const parts = String(id).split('-')
+  const h = parseInt(parts[0], 10)
+  if (Number.isNaN(h)) return null
+  const v = parts.length > 1 ? parseInt(parts[1], 10) : 0
+  return { h, v: Number.isNaN(v) ? 0 : v }
+}
+
+function compareRouteIds(a, b) {
+  const ra = parseRouteId(a) || { h: 0, v: 0 }
+  const rb = parseRouteId(b) || { h: 0, v: 0 }
+  return ra.h - rb.h || ra.v - rb.v
+}
+
+/**
+ * reveal 구조(revealVCounts)로 (h,v) 전체 경로 목록을 만든다.
+ * 수직이 있으면 H×V를 좌우 선형 순서(h, 그 안의 v)로 펼치고,
+ * 정보가 없으면(reveal 아님/미보고) totalPages 기준 수평만 반환(기존 동작).
+ * @returns {Array<{h:number, v:number, id:string}>}
+ */
+export function buildRevealRoutes(editorState) {
+  const vCounts = editorState && editorState.revealVCounts
+  if (Array.isArray(vCounts) && vCounts.length) {
+    const routes = []
+    for (let h = 0; h < vCounts.length; h++) {
+      const vc = Math.max(1, vCounts[h] || 1)
+      for (let v = 0; v < vc; v++) routes.push({ h, v, id: `${h}-${v}` })
+    }
+    return routes
+  }
+  const total = (editorState && editorState.totalPages) || 1
+  return Array.from({ length: total }, (_, h) => ({ h, v: 0, id: `${h}-0` }))
 }
 
 /** 캐시 키를 페이지 순서로 정렬하여 반환 */
@@ -254,7 +293,7 @@ export const useFlatStore = create((set, get) => ({
     // HTML 소스 슬라이드 인덱스: 기존 항목이 있으면 그 값 유지(flat-only의 null 포함),
     // 없으면(첫 저장) 키에서 파생. 키는 첫 변환 시 슬라이드 인덱스를 인코딩.
     const htmlSlideIndex = existed ? existed.htmlSlideIndex
-      : (Number.isNaN(parseInt(String(_currentPageKey).split('-')[0])) ? null : parseInt(String(_currentPageKey).split('-')[0]))
+      : (parseRouteId(_currentPageKey) ? _currentPageKey : null)
     _pageCache[_currentPageKey] = {
       elements: get().flatElements,
       canvasSize: get().canvasSize,
@@ -343,9 +382,9 @@ export const useFlatStore = create((set, get) => ({
     const ref = get()._iframeRef
     if (!ref?.current) return
 
-    // flat 모드에서는 iframe 페이지가 동기화 안 되어 있을 수 있으므로, 현재 페이지로 이동
-    const pageIdx = _currentPageKey ? parseInt(_currentPageKey.split('-')[0]) : 0
-    ref.current.contentWindow?.postMessage({ type: 'fe:navigate', page: pageIdx }, '*')
+    // flat 모드에서는 iframe 페이지가 동기화 안 되어 있을 수 있으므로, 현재 (h,v)로 이동
+    const r = parseRouteId(_currentPageKey) || { h: 0, v: 0 }
+    ref.current.contentWindow?.postMessage({ type: 'fe:navigate', page: r.h, v: r.v }, '*')
     await new Promise(r => setTimeout(r, 400))
 
     if (_currentPageKey) delete _pageCache[_currentPageKey]
@@ -413,23 +452,27 @@ export const useFlatStore = create((set, get) => ({
 
     // 2) HTML 슬라이드 재추출 (진행률 표시)
     const editorStore = (await import('./editorStore')).useEditorStore
-    const { totalPages, currentPage } = editorStore.getState()
-    set({ _preloading: true, preloadProgress: { current: 0, total: totalPages } })
+    const es = editorStore.getState()
+    const { currentPage, revealV } = es
+    const routes = buildRevealRoutes(es)
+    const origH = currentPage, origV = revealV || 0
+    set({ _preloading: true, preloadProgress: { current: 0, total: routes.length } })
     const freshHtml = {}
     try {
-      for (let i = 0; i < totalPages; i++) {
-        ref.current.contentWindow?.postMessage({ type: 'fe:navigate', page: i }, '*')
+      for (let ri = 0; ri < routes.length; ri++) {
+        const route = routes[ri]
+        ref.current.contentWindow?.postMessage({ type: 'fe:navigate', page: route.h, v: route.v }, '*')
         await new Promise(r => setTimeout(r, 400))
         try {
           const { elements, canvasSize, fontImports } = extractFlatElementsFromIframe(ref)
-          freshHtml[i] = { elements, canvasSize, fontImports: fontImports || [], history: { stack: [], pointer: -1 } }
+          freshHtml[route.id] = { elements, canvasSize, fontImports: fontImports || [], history: { stack: [], pointer: -1 } }
         } catch (e) {
-          console.warn(`Regen page ${i} failed:`, e.message)
+          console.warn(`Regen page ${route.id} failed:`, e.message)
         }
-        set({ preloadProgress: { current: i + 1, total: totalPages } })
+        set({ preloadProgress: { current: ri + 1, total: routes.length } })
       }
       // 원래 보던 페이지로 iframe 복원
-      ref.current.contentWindow?.postMessage({ type: 'fe:navigate', page: currentPage }, '*')
+      ref.current.contentWindow?.postMessage({ type: 'fe:navigate', page: origH, v: origV }, '*')
       await new Promise(r => setTimeout(r, 300))
     } finally {
       set({ _preloading: false, preloadProgress: null })
@@ -455,8 +498,7 @@ export const useFlatStore = create((set, get) => ({
     // flat 주도 이동이 보낸 fe:navigate의 에코면 무시 — 이미 goToFlatPage가 캐시 복원함.
     // (페이지 중간 삽입으로 flat↔HTML 인덱스가 어긋난 뒤 엉뚱한 재추출/재복원 방지)
     // 한 번의 네비게이션에 에코가 여러 번 와도 시간 창 동안 모두 무시(타이머가 해제).
-    const pageIdx = parseInt(String(pageKey).split('-')[0])
-    if (_expectIframePage != null && pageIdx === _expectIframePage) return
+    if (_expectIframePage != null && String(pageKey) === String(_expectIframePage)) return
 
     // 현재 페이지 캐시 저장
     get()._saveCurrentPage()
@@ -496,49 +538,51 @@ export const useFlatStore = create((set, get) => ({
 
     try {
       const editorStore = (await import('./editorStore')).useEditorStore
-      const { totalPages, currentPage, iframeRef } = editorStore.getState()
+      const es = editorStore.getState()
+      const { currentPage, revealV, iframeRef } = es
       const { extractFlatElementsFromIframe } = await import('../core/FlatExtractor')
 
-      if (!iframeRef?.current || totalPages <= 1) {
+      // (h,v) 전체 경로 — 수직 서브슬라이드까지 포함
+      const routes = buildRevealRoutes(es)
+      if (!iframeRef?.current || routes.length <= 1) {
         set({ _preloading: false, preloadProgress: null })
         return
       }
 
       get()._saveCurrentPage()
-      const origPage = currentPage
+      const origH = currentPage, origV = revealV || 0
       let done = Object.keys(_pageCache).length
 
-      set({ preloadProgress: { current: done, total: totalPages } })
+      set({ preloadProgress: { current: done, total: routes.length } })
 
-      for (let i = 0; i < totalPages; i++) {
-        const pageKey = `${i}-0`
-        if (_pageCache[pageKey]) continue
+      for (const route of routes) {
+        if (_pageCache[route.id]) continue
 
-        iframeRef.current.contentWindow.postMessage({ type: 'fe:navigate', page: i }, '*')
+        iframeRef.current.contentWindow.postMessage({ type: 'fe:navigate', page: route.h, v: route.v }, '*')
         await new Promise(r => setTimeout(r, 400))
 
         try {
           const result = extractFlatElementsFromIframe(iframeRef)
-          _pageCache[pageKey] = {
+          _pageCache[route.id] = {
             elements: result.elements,
             canvasSize: result.canvasSize,
             fontImports: result.fontImports || [],
             history: { stack: [], pointer: -1 },
-            htmlSlideIndex: i, // HTML 슬라이드 i에서 추출됨
+            htmlSlideIndex: route.id, // 출처 (h,v) 경로
           }
         } catch (e) {
-          console.warn(`Preload page ${pageKey} failed:`, e.message)
+          console.warn(`Preload page ${route.id} failed:`, e.message)
         }
 
         done++
-        set({ preloadProgress: { current: done, total: totalPages } })
+        set({ preloadProgress: { current: done, total: routes.length } })
       }
 
       // 원래 페이지로 복원
-      iframeRef.current.contentWindow.postMessage({ type: 'fe:navigate', page: origPage }, '*')
+      iframeRef.current.contentWindow.postMessage({ type: 'fe:navigate', page: origH, v: origV }, '*')
       await new Promise(r => setTimeout(r, 300))
 
-      console.log(`Preload: ${totalPages} pages cached`)
+      console.log(`Preload: ${routes.length} pages cached`)
       get()._syncPageInfo()
     } catch (e) {
       console.warn('Preload failed:', e.message)
@@ -704,12 +748,13 @@ export const useFlatStore = create((set, get) => ({
     // flat-only 페이지(htmlSlideIndex=null)는 대응 슬라이드가 없으므로 iframe을 건드리지 않는다
     // (엉뚱한 슬라이드 표시 방지). 인덱스 어긋남도 이 저장값으로 해소.
     if (get().viewMode === 'split') {
-      const htmlIdx = _pageCache[key]?.htmlSlideIndex
-      if (htmlIdx != null) {
+      const routeId = _pageCache[key]?.htmlSlideIndex
+      const route = parseRouteId(routeId)
+      if (route) {
         // 이 네비게이션으로 돌아올 fe:pageChange 에코(들)는 reExtract에서 무시
-        _expectIframeNav(htmlIdx)
+        _expectIframeNav(`${route.h}-${route.v}`)
         const ref = get()._iframeRef
-        ref?.current?.contentWindow?.postMessage({ type: 'fe:navigate', page: htmlIdx }, '*')
+        ref?.current?.contentWindow?.postMessage({ type: 'fe:navigate', page: route.h, v: route.v }, '*')
       } else {
         _clearExpectIframeNav()
       }
@@ -1286,7 +1331,7 @@ export const useFlatStore = create((set, get) => ({
         elements: get().flatElements,
         canvasSize: get().canvasSize,
         fontImports: get().fontImports,
-        htmlSlideIndex: get().currentPageHtmlBacked ? parseInt(String(_currentPageKey).split('-')[0]) : null,
+        htmlSlideIndex: get().currentPageHtmlBacked ? _currentPageKey : null,
       }
     }
     return { pages, currentPageKey: _currentPageKey }
@@ -1297,12 +1342,16 @@ export const useFlatStore = create((set, get) => ({
     get()._saveCurrentPage()
 
     const editorStore = (await import('./editorStore')).useEditorStore
-    const { totalPages, currentPage, isReveal, iframeRef } = editorStore.getState()
+    const es = editorStore.getState()
+    const { currentPage, revealV, iframeRef } = es
     const { extractFlatElementsFromIframe } = await import('../core/FlatExtractor')
+
+    // (h,v) 전체 경로 — 수직 서브슬라이드까지 포함
+    const routes = buildRevealRoutes(es)
 
     // 캐시에 모든 페이지가 있으면 빠르게 반환
     const cachedKeys = Object.keys(_pageCache)
-    if (cachedKeys.length >= totalPages) {
+    if (cachedKeys.length >= routes.length) {
       return get().getAllPages()
     }
 
@@ -1311,7 +1360,7 @@ export const useFlatStore = create((set, get) => ({
       return get().getAllPages()
     }
 
-    const origPage = currentPage
+    const origH = currentPage, origV = revealV || 0
     const pages = {}
 
     // 현재 캐시 내용 먼저 복사
@@ -1320,34 +1369,34 @@ export const useFlatStore = create((set, get) => ({
         elements: _pageCache[key].elements,
         canvasSize: _pageCache[key].canvasSize,
         fontImports: _pageCache[key].fontImports,
+        htmlSlideIndex: _pageCache[key].htmlSlideIndex,
       }
     }
 
-    // 미방문 페이지 추출 — 직접 page 번호로 점프 (delta가 아닌 절대 인덱스)
-    for (let i = 0; i < totalPages; i++) {
-      const pageKey = `${i}-0`
-      if (pages[pageKey]) continue
+    // 미방문 페이지 추출 — (h,v)로 직접 점프
+    for (const route of routes) {
+      if (pages[route.id]) continue
 
-      // 해당 페이지로 직접 이동
-      iframeRef.current.contentWindow.postMessage({ type: 'fe:navigate', page: i }, '*')
+      iframeRef.current.contentWindow.postMessage({ type: 'fe:navigate', page: route.h, v: route.v }, '*')
       // 페이지 전환 + DOM 렌더링 대기
       await new Promise(r => setTimeout(r, 350))
 
       // 추출
       try {
         const result = extractFlatElementsFromIframe(iframeRef)
-        pages[pageKey] = {
+        pages[route.id] = {
           elements: result.elements,
           canvasSize: result.canvasSize,
           fontImports: result.fontImports || [],
+          htmlSlideIndex: route.id,
         }
       } catch (e) {
-        console.warn(`Page ${pageKey} extraction failed:`, e.message)
+        console.warn(`Page ${route.id} extraction failed:`, e.message)
       }
     }
 
     // 원래 페이지로 복원
-    iframeRef.current.contentWindow.postMessage({ type: 'fe:navigate', page: origPage }, '*')
+    iframeRef.current.contentWindow.postMessage({ type: 'fe:navigate', page: origH, v: origV }, '*')
     await new Promise(r => setTimeout(r, 350))
 
     // 현재 페이지가 누락된 경우
@@ -1356,6 +1405,7 @@ export const useFlatStore = create((set, get) => ({
         elements: get().flatElements,
         canvasSize: get().canvasSize,
         fontImports: get().fontImports,
+        htmlSlideIndex: get().currentPageHtmlBacked ? _currentPageKey : null,
       }
     }
 
