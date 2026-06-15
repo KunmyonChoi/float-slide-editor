@@ -28,10 +28,11 @@ body {
      가운데/오른쪽 정렬에서 불릿과 텍스트가 벌어지지 않도록 inside 고정. */
   list-style-position: inside;
 }
-.flat-text ul, .flat-text-edit ul { list-style: disc; }
-.flat-text ol, .flat-text-edit ol { list-style: decimal; }
-.flat-text ul ul, .flat-text-edit ul ul { list-style: circle; }
-.flat-text ul ul ul, .flat-text-edit ul ul ul { list-style: square; }
+/* list-style 단축속성은 list-style-position을 outside로 리셋하므로 type만 지정 */
+.flat-text ul, .flat-text-edit ul { list-style-type: disc; }
+.flat-text ol, .flat-text-edit ol { list-style-type: decimal; }
+.flat-text ul ul, .flat-text-edit ul ul { list-style-type: circle; }
+.flat-text ul ul ul, .flat-text-edit ul ul ul { list-style-type: square; }
 .flat-text li, .flat-text-edit li { margin: 0; }
 
 /* ── 빈 레이아웃 텍스트 편집 시 안내문(placeholder) ──
