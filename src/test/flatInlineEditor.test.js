@@ -240,11 +240,36 @@ describe('편집 중 선택/이동 동작', () => {
     seedStore([makeTextEl(), makeTextEl({ id: 'flat-txt-2', x: 500 })])
   })
 
-  it('편집 중에 다른 요소를 선택해도 editingFlatId 유지 (blur로 커밋)', () => {
+  it('편집 중 다른 요소 선택 시 활성 편집을 커밋하고 편집 종료 (단일 선택)', () => {
+    // preventDefault가 blur를 막아도 store에서 직접 커밋·종료해야 함
+    let committed = false
     useFlatStore.getState().setEditingFlat('flat-txt-1')
+    useFlatStore.getState()._setPendingEditCommit(() => { committed = true })
     useFlatStore.getState().setSelectedFlat('flat-txt-2')
-    // editingFlatId는 blur 이벤트에서만 해제됨 — store에서는 독립 상태
-    expect(useFlatStore.getState().editingFlatId).toBe('flat-txt-1')
+    expect(committed).toBe(true)
+    expect(useFlatStore.getState().editingFlatId).toBeNull()
     expect(useFlatStore.getState().selectedFlatIds).toEqual(['flat-txt-2'])
+  })
+
+  it('편집 중 selectFlatGroupAware로 다른 요소 선택 시에도 편집 종료', () => {
+    useFlatStore.getState().setEditingFlat('flat-txt-1')
+    useFlatStore.getState().selectFlatGroupAware('flat-txt-2', false)
+    expect(useFlatStore.getState().editingFlatId).toBeNull()
+    expect(useFlatStore.getState().selectedFlatIds).toEqual(['flat-txt-2'])
+  })
+
+  it('편집 중 같은 요소를 선택하면 편집 유지', () => {
+    useFlatStore.getState().setEditingFlat('flat-txt-1')
+    useFlatStore.getState().setSelectedFlat('flat-txt-1')
+    expect(useFlatStore.getState().editingFlatId).toBe('flat-txt-1')
+  })
+
+  it('편집 중 새 요소로 편집 전환 시 이전 편집 커밋', () => {
+    let committed = false
+    useFlatStore.getState().setEditingFlat('flat-txt-1')
+    useFlatStore.getState()._setPendingEditCommit(() => { committed = true })
+    useFlatStore.getState().setEditingFlat('flat-txt-2')
+    expect(committed).toBe(true)
+    expect(useFlatStore.getState().editingFlatId).toBe('flat-txt-2')
   })
 })
