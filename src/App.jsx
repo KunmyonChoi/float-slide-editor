@@ -12,6 +12,7 @@ import { UrlPromptHost } from './components/UrlPrompt'
 import { AiSettingsHost } from './components/AiSettingsModal'
 import { InfographicHost } from './components/InfographicModal'
 import { ConfirmHost } from './components/ConfirmDialog'
+import { AdviserHost } from './components/AdviserModal'
 import { useFlatStore } from './store/flatStore'
 import { useEditorStore } from './store/editorStore'
 import { useEffect } from 'react'
@@ -87,6 +88,7 @@ export default function App() {
       <AiSettingsHost />
       <InfographicHost />
       <ConfirmHost />
+      <AdviserHost />
       {debugMode && <ComparePanel />}
       <InsertPopup />
       {/* flat 모드 발표 — fixed 전체화면 오버레이 */}
