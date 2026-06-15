@@ -85,18 +85,18 @@ export default function FlatContextMenu({ x, y, canvasX, canvasY, onClose }) {
     setAdjusted({ x: ax, y: ay })
   }, [x, y])
 
-  // 외부 클릭 + Escape 닫기
+  // 외부 클릭(터치/마우스/펜 공용 pointerdown) + Escape 닫기
   useEffect(() => {
-    const onMouseDown = (e) => {
+    const onPointerDown = (e) => {
       if (menuRef.current && !menuRef.current.contains(e.target)) onClose()
     }
     const onKeyDown = (e) => {
       if (e.key === 'Escape') onClose()
     }
-    document.addEventListener('mousedown', onMouseDown)
+    document.addEventListener('pointerdown', onPointerDown)
     document.addEventListener('keydown', onKeyDown)
     return () => {
-      document.removeEventListener('mousedown', onMouseDown)
+      document.removeEventListener('pointerdown', onPointerDown)
       document.removeEventListener('keydown', onKeyDown)
     }
   }, [onClose])

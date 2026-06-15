@@ -3,6 +3,8 @@ import { createPortal } from 'react-dom'
 import { useFlatStore } from '../store/flatStore'
 import EmojiPicker from './EmojiPicker'
 import { promptUrl } from './UrlPrompt'
+import { isCoarsePointer, useIsTouch } from '../core/pointerEnv'
+import { useVisualViewport } from './useVisualViewport'
 
 // 선택 툴바 팔레트
 const TEXT_COLORS = ['#0f172a', '#ffffff', '#ef4444', '#f59e0b', '#10b981', '#3b82f6', '#8b5cf6', '#ec4899']
@@ -96,10 +98,11 @@ export default function FlatInlineEditor({ element }) {
       ref.current.innerHTML = displayContent
     }
     ref.current.focus()
-    // 전체 선택
+    // 데스크톱: 전체 선택 / 터치: 끝에 캐럿만 (진입 즉시 선택바·OS 메뉴가 글씨를 가리지 않도록)
     const sel = window.getSelection()
     const range = document.createRange()
     range.selectNodeContents(ref.current)
+    if (isCoarsePointer()) range.collapse(false)
     sel.removeAllRanges()
     sel.addRange(range)
     committedRef.current = false
@@ -485,15 +488,22 @@ const rectsOverlap = (a, b) => a.x0 < b.x1 && a.x1 > b.x0 && a.y0 < b.y1 && a.y1
 // ── 편집 도구 묶음: 글머리/번호 리스트 + 이모지 (편집 중 항상 노출) ──
 
 function EditAccessory({ rect, sel, open, accessoryRef, listFmt, onToggleList, onToggleEmoji, onPick }) {
+  const vp = useVisualViewport()
+  const touch = useIsTouch()
   const BTN = 28
   const CLUSTER_W = BTN * 3 + 4 * 2 + 8 // 버튼 3 + gap + padding
   const CLUSTER_H = BTN + 4 * 2
   let top = rect.top - CLUSTER_H - 6
   if (top < 8) top = rect.bottom + 4
-  const left = Math.min(window.innerWidth - CLUSTER_W - 8, Math.max(8, rect.right - CLUSTER_W))
+  let left = Math.min(window.innerWidth - CLUSTER_W - 8, Math.max(8, rect.right - CLUSTER_W))
 
-  // 선택 바가 동시에 보이고 겹치면 세로로 비켜서기 (선택 바가 우선, 도구 묶음이 양보)
-  if (sel) {
+  if (touch && vp.isKeyboardOpen) {
+    // 터치 + 키보드 열림: 키보드 위 도킹. 선택바가 있으면 그 위에 한 단 더 올림.
+    const dockBottom = vp.offsetTop + vp.height - 8
+    top = sel ? dockBottom - SEL_TOOLBAR_H - 8 - CLUSTER_H : dockBottom - CLUSTER_H
+    left = window.innerWidth - CLUSTER_W - 8
+  } else if (sel) {
+    // 선택 바가 동시에 보이고 겹치면 세로로 비켜서기 (선택 바가 우선, 도구 묶음이 양보)
     const st = computeSelToolbarPos(sel)
     const selBox = { x0: st.left - st.halfW, x1: st.left + st.halfW, y0: st.top, y1: st.top + st.height }
     const accBox = { x0: left, x1: left + CLUSTER_W, y0: top, y1: top + CLUSTER_H }
@@ -541,7 +551,14 @@ function EditAccessory({ rect, sel, open, accessoryRef, listFmt, onToggleList, o
 // ── 선택 영역 부분 서식 툴바 ──────────────────────────
 
 function SelectionToolbar({ sel, fmt, onCmd, onFontSize, onLink }) {
-  const { top, left } = computeSelToolbarPos(sel)
+  const vp = useVisualViewport()
+  const touch = useIsTouch()
+  let { top, left } = computeSelToolbarPos(sel)
+  // 터치 + 키보드 열림: 선택 위치를 따라가지 않고 키보드 바로 위에 가로 중앙 도킹 → 글씨 안 가림
+  if (touch && vp.isKeyboardOpen) {
+    top = vp.offsetTop + vp.height - SEL_TOOLBAR_H - 8
+    left = window.innerWidth / 2
+  }
 
   // 툴바 영역 mousedown은 기본동작 차단 → 에디터 포커스/선택 유지 (blur 커밋 방지)
   const keepSelection = (e) => e.preventDefault()
