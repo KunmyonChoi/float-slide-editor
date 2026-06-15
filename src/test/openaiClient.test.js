@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import {
   getApiKey, setApiKey, hasApiKey, getModel, setModel,
-  getImageModel, setImageModel, pickImageSize, generateImage, editImage,
+  getImageModel, setImageModel, pickImageSize, flexSize, generationSize,
+  generateImage, editImage,
   chat, generateImagePrompt, analyzeImageForInfographic,
   DEFAULT_MODEL, DEFAULT_IMAGE_MODEL,
 } from '../core/OpenAIClient'
@@ -49,6 +50,20 @@ describe('pickImageSize — 종횡비별 지원 사이즈', () => {
     expect(pickImageSize('dall-e-3', 1600, 900)).toBe('1792x1024')
     expect(pickImageSize('dall-e-3', 900, 1600)).toBe('1024x1792')
     expect(pickImageSize('dall-e-3', 500, 500)).toBe('1024x1024')
+  })
+})
+
+describe('flexSize / generationSize (gpt-image-2 정확 종횡비)', () => {
+  it('flexSize: 16배수로 종횡비 맞춤', () => {
+    expect(flexSize(1280, 720)).toBe('1536x864')   // 16:9
+    expect(flexSize(720, 1280)).toBe('864x1536')   // 세로
+    expect(flexSize(1000, 1000)).toBe('1536x1536') // 정사각
+  })
+  it('generationSize: 유연 모델은 flex, 그 외는 프리셋', () => {
+    expect(generationSize('gpt-image-2', 1280, 720)).toBe('1536x864')
+    expect(generationSize('gpt-image-1.5', 1280, 720)).toBe('1536x864')
+    expect(generationSize('gpt-image-1', 1600, 900)).toBe('1536x1024')
+    expect(generationSize('dall-e-3', 1600, 900)).toBe('1792x1024')
   })
 })
 
@@ -112,7 +127,8 @@ describe('editImage (image-to-image edits)', () => {
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
-  it('edits 엔드포인트에 FormData(gpt-image-1, size)로 호출하고 b64 반환', async () => {
+  it('edits: 설정이 gpt-image-2면 1.5로 폴백 + input_fidelity:high', async () => {
+    setImageModel('gpt-image-2') // edits 미지원 → 1.5로 폴백
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true, status: 200, json: async () => ({ data: [{ b64_json: 'RURJVA==' }] }),
     })
@@ -123,10 +139,21 @@ describe('editImage (image-to-image edits)', () => {
     const [url, init] = fetchMock.mock.calls[0]
     expect(url).toContain('images/edits')
     expect(init.body instanceof FormData).toBe(true)
-    expect(init.body.get('model')).toBe('gpt-image-1')
+    expect(init.body.get('model')).toBe('gpt-image-1.5')
+    expect(init.body.get('input_fidelity')).toBe('high')
     expect(init.body.get('size')).toBe('1536x1024')
     expect(init.body.get('prompt')).toBe('make infographic')
     expect(init.headers.Authorization).toBe('Bearer sk-test')
+  })
+
+  it('edits: 설정이 edits 지원 모델이면 그대로 사용', async () => {
+    setImageModel('gpt-image-1')
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true, status: 200, json: async () => ({ data: [{ b64_json: 'RURJVA==' }] }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    await editImage('data:image/png;base64,AAAA', 'x', { width: 500, height: 500 })
+    expect(fetchMock.mock.calls[0][1].body.get('model')).toBe('gpt-image-1')
   })
 })
 

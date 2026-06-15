@@ -21,7 +21,7 @@ function closeAiSettings() {
 }
 
 const MODEL_OPTIONS = ['gpt-4o-mini', 'gpt-4o', 'gpt-4.1-mini', 'gpt-4.1']
-const IMAGE_MODEL_OPTIONS = ['gpt-image-1', 'dall-e-3']
+const IMAGE_MODEL_OPTIONS = ['gpt-image-2', 'gpt-image-1.5', 'gpt-image-1', 'gpt-image-1-mini', 'dall-e-3']
 
 export function AiSettingsHost() {
   const open = useAiSettingsStore(s => s.open)

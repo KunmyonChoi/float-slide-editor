@@ -11,7 +11,11 @@ const KEY_STORAGE = 'openai-api-key'
 const MODEL_STORAGE = 'openai-model'
 const IMAGE_MODEL_STORAGE = 'openai-image-model'
 const DEFAULT_MODEL = 'gpt-4o-mini'
-const DEFAULT_IMAGE_MODEL = 'gpt-image-1'
+const DEFAULT_IMAGE_MODEL = 'gpt-image-2'
+// 유연 해상도(정확한 종횡비)를 지원하는 생성 모델
+const FLEX_SIZE_MODELS = ['gpt-image-2', 'gpt-image-1.5']
+// images/edits 를 지원하는 모델(gpt-image-2는 edits 미지원)
+const EDIT_CAPABLE_MODELS = ['gpt-image-1.5', 'gpt-image-1', 'gpt-image-1-mini']
 const ENDPOINT = 'https://api.openai.com/v1/chat/completions'
 const IMAGE_ENDPOINT = 'https://api.openai.com/v1/images/generations'
 const IMAGE_EDIT_ENDPOINT = 'https://api.openai.com/v1/images/edits'
@@ -145,17 +149,23 @@ export async function generateImagePrompt(text, { model, style, signal } = {}) {
 }
 
 const INFOGRAPHIC_SYSTEM = `You are an expert information designer. You are given a screenshot of a presentation slide.
-Analyze its content, structure, hierarchy, and intent, then write ONE concise English image-generation prompt that recreates the SAME information as a clean, modern INFOGRAPHIC slide.
+Analyze it, then output a COMPACT JSON specification that an image model will use to render a clean, modern INFOGRAPHIC version of the slide.
+
+Output ONLY a single valid JSON object (no markdown, no commentary) with exactly these keys:
+{
+  "style": "clean flat vector infographic, cohesive palette, generous whitespace",
+  "language": "the language of the slide text, e.g. Korean",
+  "layout": "short description of how blocks/sections/flow are arranged",
+  "sections": [{ "heading": "exact short label copied verbatim from the slide", "points": ["exact short label"], "icon": "icon idea in English" }],
+  "texts_verbatim": ["EVERY on-image text string, copied EXACTLY from the slide in its ORIGINAL language"],
+  "palette": ["#hex", "#hex"],
+  "must": "Render every string in texts_verbatim EXACTLY as written, in the original language, with correct legible characters (e.g. Hangul); do not translate; no gibberish; no extra text."
+}
 
 Rules:
-- Output ONLY the prompt text. No preamble, no quotes, no markdown.
-- Preserve the key message, the main data points, and the visual hierarchy of the slide; reorganize them into a clear infographic layout (sections, simple icons, light charts, arrows/flow where appropriate).
-- Do NOT invent facts or numbers that are not in the slide.
-- Style: clean flat vector infographic, cohesive color palette, generous whitespace, balanced 16:9 composition.
-- Use only very short labels (a few words); avoid paragraphs of text in the image.
-- LANGUAGE: keep every on-image text label in the SAME language and EXACT wording/spelling as the slide (e.g. Korean). NEVER translate labels to English. Wrap each label in double quotes so it is rendered verbatim.
-- End the prompt with one explicit sentence: render all text in the image in the original language exactly as written, with correct, legible Hangul/characters and no gibberish.
-- Under 100 words.`
+- Preserve the key message, data points, and visual hierarchy. Do NOT invent facts or numbers.
+- Copy all labels/headings/points VERBATIM in the ORIGINAL language. NEVER translate to English.
+- Keep labels short and the JSON compact.`
 
 /**
  * 슬라이드 캡처(스크린샷) → 인포그래픽 이미지 생성 프롬프트(영어).
@@ -168,15 +178,34 @@ export async function analyzeImageForInfographic(imageDataUrl, { model, signal }
   if (!imageDataUrl) throw new Error('변환할 캡처 이미지가 없습니다.')
   return chat({
     system: INFOGRAPHIC_SYSTEM,
-    user: 'Here is a screenshot of the current slide. Produce the infographic image-generation prompt.',
+    user: 'Here is a screenshot of the slide. Output the infographic JSON spec.',
     images: [imageDataUrl],
     model,
-    temperature: 0.7,
+    temperature: 0.5,
+    responseFormat: { type: 'json_object' },
     signal,
   })
 }
 
-// 모델별 지원 사이즈 중 박스 종횡비에 가장 가까운 것 선택.
+// gpt-image-2/1.5: 유연 해상도 — 대상 종횡비를 16배수로 맞춤(최대변 3840, 종횡비 ≤3:1).
+export function flexSize(width, height, longEdge = 1536) {
+  const r = (width || 1) / (height || 1)
+  const round16 = v => Math.max(512, Math.min(3840, Math.round(v / 16) * 16))
+  let W, H
+  if (r >= 1) { W = longEdge; H = round16(longEdge / r) }
+  else { H = longEdge; W = round16(longEdge * r) }
+  W = round16(W); H = round16(H)
+  if (W / H > 3) H = round16(W / 3) // 종횡비 3:1 제한
+  if (H / W > 3) W = round16(H / 3)
+  return `${W}x${H}`
+}
+
+// 생성 모델별 size 선택: 유연 모델은 정확한 종횡비, 그 외는 프리셋.
+export function generationSize(model, width, height) {
+  return FLEX_SIZE_MODELS.includes(model) ? flexSize(width, height) : pickImageSize(model, width, height)
+}
+
+// 모델별 지원 사이즈 중 박스 종횡비에 가장 가까운 것 선택(프리셋).
 export function pickImageSize(model, width, height) {
   const ratio = (width || 1) / (height || 1)
   const landscape = ratio > 1.2
@@ -209,10 +238,10 @@ export async function generateImage(prompt, { model, width, height, size, signal
     model: m,
     prompt: p,
     n: 1,
-    size: size || pickImageSize(m, width, height),
+    size: size || generationSize(m, width, height),
   }
-  if (m === 'gpt-image-1') body.quality = 'medium'
-  else body.response_format = 'b64_json' // dall-e 계열은 명시해야 b64 반환
+  if (m.startsWith('gpt-image')) body.quality = 'medium' // gpt-image 계열은 b64 기본 반환
+  else body.response_format = 'b64_json' // dall-e 계열만 명시해야 b64 반환
 
   let res
   try {
@@ -268,12 +297,16 @@ export async function editImage(imageDataUrl, prompt, { width, height, size, sig
   const p = (prompt || '').trim()
   if (!p) throw new Error('이미지 편집 프롬프트가 비어 있습니다.')
 
+  // edits는 gpt-image-1.5/1/mini 지원(gpt-image-2·dall-e-3 미지원) → 설정값이 가능하면 사용, 아니면 1.5
+  const configured = getImageModel()
+  const editModel = EDIT_CAPABLE_MODELS.includes(configured) ? configured : 'gpt-image-1.5'
   const form = new FormData()
-  form.append('model', 'gpt-image-1') // edits는 gpt-image-1 전용(dall-e-3 미지원)
+  form.append('model', editModel)
   form.append('image', dataUrlToBlob(imageDataUrl), 'input.png')
   form.append('prompt', p)
-  form.append('size', size || pickImageSize('gpt-image-1', width, height))
+  form.append('size', size || pickImageSize(editModel, width, height))
   form.append('quality', 'medium')
+  form.append('input_fidelity', 'high') // 원본 이미지의 레이아웃/구도/글자를 최대한 유지
 
   let res
   try {

@@ -82,15 +82,20 @@ function buildImageEl(dataUrl, rect, zIndex) {
 
 const nextFrame = () => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))
 
+const METHOD_DESC = {
+  analyze: '슬라이드 내용을 분석해 인포그래픽을 새로 그립니다. 깔끔하게 재구성하지만 원본 구도와 달라질 수 있습니다.',
+  edit: '캡처를 입력으로 줘 원본 구도·위치·비율을 유지하며 변환합니다(gpt-image-1.5, input_fidelity high). 원문 텍스트 보존에 유리할 수 있습니다.',
+}
+
 function InfographicDialog() {
   const mode = useInfographicStore(s => s.mode)
   const ids = useInfographicStore(s => s.ids)
-  // 'capturing' | 'analyzing' | 'generating' | 'preview' | 'error'
-  const [phase, setPhase] = useState('capturing')
+  const [status, setStatus] = useState('idle') // 'idle'|'capturing'|'analyzing'|'generating'|'error'
   const [method, setMethod] = useState('analyze') // 'analyze'(분석→재생성) | 'edit'(이미지 편집)
   const [prompt, setPrompt] = useState('')
-  const [imageUrl, setImageUrl] = useState('')
+  const [results, setResults] = useState({ analyze: null, edit: null }) // 방법별 생성 이미지 캐시
   const [error, setError] = useState('')
+  const [zoom, setZoom] = useState(false) // 크게 보기
   const targetRef = useRef(null)  // 결과 이미지를 넣을 캔버스 좌표 사각형
   const captureRef = useRef(null) // 캡처(선택 모드면 bbox crop) — 1회만 만들고 재사용
   const abortRef = useRef(null)
@@ -98,7 +103,7 @@ function InfographicDialog() {
   // 현재 페이지/선택 영역을 캡처(필요 시 crop)해 captureRef에 보관(1회)
   const ensureCapture = useCallback(async (ctrl) => {
     if (captureRef.current) return captureRef.current
-    setPhase('capturing')
+    setStatus('capturing')
     const canvasNode = useFlatStore.getState()._canvasRef?.current
     if (!canvasNode) throw new Error('캔버스를 찾을 수 없습니다.')
     const cs = useFlatStore.getState().canvasSize
@@ -123,6 +128,7 @@ function InfographicDialog() {
   }, [mode, ids])
 
   // 통합 생성: useMethod로 분석-재생성/이미지-편집 선택. basePrompt 있으면 분석 생략.
+  // 결과는 results[useMethod]에 캐싱 — 탭 전환 시 재사용(자동 재생성 안 함).
   const generate = useCallback(async (useMethod, basePrompt) => {
     abortRef.current?.abort()
     const ctrl = new AbortController()
@@ -133,90 +139,87 @@ function InfographicDialog() {
       if (ctrl.signal.aborted) return
       let p = (basePrompt || '').trim()
       if (!p) {
-        setPhase('analyzing')
+        setStatus('analyzing')
         p = await analyzeImageForInfographic(cap, { signal: ctrl.signal })
         if (ctrl.signal.aborted) return
         setPrompt(p)
       }
-      setPhase('generating')
+      setStatus('generating')
       const t = targetRef.current
       const url = useMethod === 'edit'
         ? await editImage(cap, p, { width: t.w, height: t.h, signal: ctrl.signal })
         : await generateImage(p, { width: t.w, height: t.h, signal: ctrl.signal })
       if (ctrl.signal.aborted) return
-      setImageUrl(url)
-      setPhase('preview')
+      setResults(r => ({ ...r, [useMethod]: url }))
+      setStatus('idle')
     } catch (e) {
       if (e?.name === 'AbortError') return
       setError(e?.message || 'AI 변환에 실패했습니다.')
-      setPhase('error')
+      setStatus('error')
     }
   }, [ensureCapture])
 
-  const regenerate = useCallback(() => generate(method, prompt), [generate, method, prompt])
+  // 탭 전환 — 생성하지 않음(캐시된 이미지 있으면 표시, 없으면 설명)
+  const switchMethod = useCallback((m) => setMethod(m), [])
 
-  // 방법 전환 → 같은 프롬프트로 그 방법으로 재생성(비교)
-  const switchMethod = useCallback((m) => {
-    if (m === method) return
-    setMethod(m)
-    generate(m, prompt)
-  }, [method, prompt, generate])
-
-  useEffect(() => {
-    generate('analyze', '')
-    return () => abortRef.current?.abort()
-  }, [generate])
+  // 진행 중 작업 정리만(오픈 시 자동 생성 없음)
+  useEffect(() => () => abortRef.current?.abort(), [])
 
   const cancel = useCallback(() => {
     abortRef.current?.abort()
     closeInfographic()
   }, [])
 
-  // 대상 영역(targetRef) 위치·크기로 이미지 요소를 현재 페이지 맨 위에 삽입
+  // 대상 영역(targetRef) 위치·크기로 현재 탭 이미지를 현재 페이지 맨 위에 삽입
   const insertHere = useCallback(() => {
-    if (!imageUrl || !targetRef.current) return
+    const url = results[method]
+    if (!url || !targetRef.current) return
     const st = useFlatStore.getState()
     const maxZ = st.flatElements.length ? Math.max(...st.flatElements.map(e => e.zIndex)) : 0
-    const el = buildImageEl(imageUrl, targetRef.current, maxZ + 1)
+    const el = buildImageEl(url, targetRef.current, maxZ + 1)
     st.addFlatElement(el)
     st.setSelectedFlat(el.id)
     closeInfographic()
-  }, [imageUrl])
+  }, [results, method])
 
   // (page) 현재 페이지 바로 뒤에 빈 슬라이드 추가 후 인포그래픽 이미지 배치
   const addNextSlide = useCallback(() => {
-    if (!imageUrl) return
+    const url = results[method]
+    if (!url) return
     const st = useFlatStore.getState()
     st.addPage()
     const cs = useFlatStore.getState().canvasSize
-    useFlatStore.getState().addFlatElement(buildImageEl(imageUrl, { x: 0, y: 0, w: cs.w, h: cs.h }, 1))
+    useFlatStore.getState().addFlatElement(buildImageEl(url, { x: 0, y: 0, w: cs.w, h: cs.h }, 1))
     closeInfographic()
-  }, [imageUrl])
+  }, [results, method])
 
-  // (selection) 선택 원본 삭제 후 bbox 자리에 인포그래픽 이미지 삽입
+  // (selection) 선택 원본 삭제 후 bbox 자리에 현재 탭 이미지 삽입
   const replaceOriginals = useCallback(() => {
-    if (!imageUrl || !targetRef.current) return
+    const url = results[method]
+    if (!url || !targetRef.current) return
     const st = useFlatStore.getState()
     st.setSelectedFlats(ids)
     st.removeSelectedElements() // batch_remove (undo 1회)
     const after = useFlatStore.getState()
     const maxZ = after.flatElements.length ? Math.max(...after.flatElements.map(e => e.zIndex)) : 0
-    const el = buildImageEl(imageUrl, targetRef.current, maxZ + 1)
+    const el = buildImageEl(url, targetRef.current, maxZ + 1)
     after.addFlatElement(el)
     after.setSelectedFlat(el.id)
     closeInfographic()
-  }, [imageUrl, ids])
+  }, [results, method, ids])
 
-  const isLoading = phase === 'capturing' || phase === 'analyzing' || phase === 'generating'
-  const statusText = phase === 'capturing' ? (mode === 'selection' ? '선택 영역 캡처 중…' : '현재 페이지 캡처 중…')
-    : phase === 'analyzing' ? '내용 분석 중…'
-    : phase === 'generating' ? (method === 'edit' ? '이미지 편집 중… (수십 초 걸릴 수 있어요)' : '인포그래픽 이미지 생성 중… (수십 초 걸릴 수 있어요)')
+  const isLoading = status === 'capturing' || status === 'analyzing' || status === 'generating'
+  const statusText = status === 'capturing' ? (mode === 'selection' ? '선택 영역 캡처 중…' : '현재 페이지 캡처 중…')
+    : status === 'analyzing' ? '내용 분석 중…'
+    : status === 'generating' ? (method === 'edit' ? '이미지 편집 중… (수십 초 걸릴 수 있어요)' : '인포그래픽 이미지 생성 중… (수십 초 걸릴 수 있어요)')
     : ''
 
+  const activeUrl = results[method]
   const t = targetRef.current
   const aspect = t && t.w && t.h ? `${t.w} / ${t.h}` : '16 / 9'
 
   return createPortal(
+    <>
     <div
       onMouseDown={cancel}
       style={{
@@ -242,7 +245,7 @@ function InfographicDialog() {
           </span>
         </div>
 
-        {/* 생성 방법 토글 — 두 방법을 전환하며 비교 */}
+        {/* 생성 방법 토글 — 전환해도 재생성하지 않음(캐시 표시) */}
         <div style={{ display: 'flex', gap: 6 }}>
           {[
             { id: 'analyze', label: '분석→재생성', hint: '내용을 분석해 새로 그림' },
@@ -265,26 +268,34 @@ function InfographicDialog() {
           ))}
         </div>
 
-        {(phase === 'capturing' || phase === 'analyzing' || phase === 'generating') && (
+        {/* 본문: 진행 중 / 에러 / 이미지 / 설명 */}
+        {isLoading && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, color: '#94a3b8', padding: '24px 4px' }}>
             <Spinner /> {statusText}
           </div>
         )}
 
-        {phase === 'error' && (
-          <div style={{ fontSize: 13, color: '#fca5a5', lineHeight: 1.5, padding: '8px 2px' }}>{error}</div>
+        {!isLoading && status === 'error' && (
+          <div style={{ fontSize: 13, color: '#fca5a5', lineHeight: 1.5, padding: '8px 2px' }}>
+            {error}
+            <div style={{ color: '#64748b', marginTop: 6 }}>‘다시 생성’을 눌러 시도하세요.</div>
+          </div>
         )}
 
-        {phase === 'preview' && (
+        {!isLoading && status !== 'error' && activeUrl && (
           <>
-            <div style={{
-              width: '100%', aspectRatio: aspect, maxHeight: 320, borderRadius: 8, overflow: 'hidden',
-              background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-            }}>
-              {imageUrl && <img src={imageUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }} />}
+            <div
+              onClick={() => setZoom(true)}
+              title="클릭하여 크게 보기"
+              style={{
+                width: '100%', aspectRatio: aspect, maxHeight: 320, borderRadius: 8, overflow: 'hidden',
+                background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'zoom-in',
+              }}
+            >
+              <img src={activeUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }} />
             </div>
-            <div style={{ fontSize: 11, color: '#64748b' }}>프롬프트(편집 후 재생성 가능)</div>
+            <div style={{ fontSize: 11, color: '#64748b' }}>클릭하면 크게 볼 수 있어요 · 생성 스펙(JSON, 편집 후 재생성 가능)</div>
             <textarea
               value={prompt}
               onChange={e => setPrompt(e.target.value)}
@@ -300,26 +311,75 @@ function InfographicDialog() {
           </>
         )}
 
+        {!isLoading && status !== 'error' && !activeUrl && (
+          <>
+            <div style={{
+              fontSize: 13, color: '#cbd5e1', lineHeight: 1.6, padding: '14px',
+              background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 8,
+            }}>
+              {METHOD_DESC[method]}
+              <div style={{ color: '#64748b', marginTop: 8, fontSize: 12 }}>‘생성’을 누르면 시작합니다.</div>
+            </div>
+            {prompt && (
+              <textarea
+                value={prompt}
+                onChange={e => setPrompt(e.target.value)}
+                rows={3}
+                spellCheck={false}
+                title="생성 스펙(JSON) — 편집 후 생성"
+                style={{
+                  width: '100%', boxSizing: 'border-box', resize: 'vertical',
+                  padding: '8px 10px', fontSize: 12, lineHeight: 1.5,
+                  background: 'rgba(255,255,255,0.06)', color: '#f1f5f9',
+                  border: '1px solid rgba(255,255,255,0.16)', borderRadius: 8, outline: 'none',
+                }}
+              />
+            )}
+          </>
+        )}
+
+        {/* 푸터 버튼 */}
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap' }}>
           <button type="button" onClick={cancel} style={ghostBtnStyle}>취소</button>
-          {(phase === 'preview' || phase === 'error') && (
-            <button type="button" onClick={regenerate} style={ghostBtnStyle}>재생성</button>
+          {!isLoading && !activeUrl && (
+            <button type="button" onClick={() => generate(method, prompt)} style={primaryBtnStyle}>
+              {status === 'error' ? '다시 생성' : '생성'}
+            </button>
           )}
-          {phase === 'preview' && mode === 'selection' && (
+          {!isLoading && activeUrl && (
             <>
-              <button type="button" onClick={insertHere} style={ghostBtnStyle}>원본 위에 삽입</button>
-              <button type="button" onClick={replaceOriginals} style={primaryBtnStyle}>원본 교체</button>
-            </>
-          )}
-          {phase === 'preview' && mode !== 'selection' && (
-            <>
-              <button type="button" onClick={insertHere} style={ghostBtnStyle}>현재 페이지에 추가</button>
-              <button type="button" onClick={addNextSlide} style={primaryBtnStyle}>다음 슬라이드로 추가</button>
+              <button type="button" onClick={() => generate(method, prompt)} style={ghostBtnStyle}>재생성</button>
+              {mode === 'selection' ? (
+                <>
+                  <button type="button" onClick={insertHere} style={ghostBtnStyle}>원본 위에 삽입</button>
+                  <button type="button" onClick={replaceOriginals} style={primaryBtnStyle}>원본 교체</button>
+                </>
+              ) : (
+                <>
+                  <button type="button" onClick={insertHere} style={ghostBtnStyle}>현재 페이지에 추가</button>
+                  <button type="button" onClick={addNextSlide} style={primaryBtnStyle}>다음 슬라이드로 추가</button>
+                </>
+              )}
             </>
           )}
         </div>
       </div>
-    </div>,
+    </div>
+
+    {/* 크게 보기 라이트박스 */}
+    {zoom && activeUrl && (
+      <div
+        onMouseDown={e => { e.stopPropagation(); setZoom(false) }}
+        style={{
+          position: 'fixed', inset: 0, zIndex: 20010,
+          background: 'rgba(0,0,0,0.85)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'zoom-out',
+        }}
+      >
+        <img src={activeUrl} alt="" style={{ maxWidth: '92vw', maxHeight: '92vh', objectFit: 'contain' }} />
+      </div>
+    )}
+    </>,
     document.body
   )
 }
