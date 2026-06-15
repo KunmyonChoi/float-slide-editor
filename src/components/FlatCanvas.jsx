@@ -14,6 +14,7 @@ import ImageCropOverlay from './ImageCropOverlay'
 import { nextFlatId, isFontUrl } from '../core/FlatExtractor'
 import { pointsToBBox, absoluteToRelativePoints, pointsToSvgPath } from '../core/PolyShapeUtils'
 import { confirmDialog } from './ConfirmDialog'
+import { bumpFontSizePx } from '../core/TextStyleScope'
 
 /**
  * FlatCanvas
@@ -516,22 +517,15 @@ export default function FlatCanvas() {
               })))
               return
             }
-            // Ctrl+Shift+> (.) — 폰트 크기 +2px
-            if (e.shiftKey && (e.code === 'Period')) {
+            // Ctrl+Shift+>(.) / <(,) — 폰트 크기 상대 증감(±2px). 부분 수정분(인라인 font-size)도
+            // 함께 가감해 위계 유지 (전체적으로 현재 크기에서 ±N 하는 기대 동작)
+            if (e.shiftKey && (e.code === 'Period' || e.code === 'Comma')) {
               e.preventDefault()
-              batch(textEls.map(el => ({
-                id: el.id,
-                changes: { styles: { fontSize: `${parseFloat(el.styles?.fontSize || '16') + 2}px` } }
-              })))
-              return
-            }
-            // Ctrl+Shift+< (,) — 폰트 크기 -2px (최소 8px)
-            if (e.shiftKey && (e.code === 'Comma')) {
-              e.preventDefault()
-              batch(textEls.map(el => ({
-                id: el.id,
-                changes: { styles: { fontSize: `${Math.max(8, parseFloat(el.styles?.fontSize || '16') - 2)}px` } }
-              })))
+              const delta = e.code === 'Period' ? 2 : -2
+              batch(textEls.map(el => {
+                const r = bumpFontSizePx(el.content, el.isRich, parseFloat(el.styles?.fontSize || '16'), delta)
+                return { id: el.id, changes: { content: r.content, styles: { fontSize: r.fontSize } } }
+              }))
               return
             }
           }

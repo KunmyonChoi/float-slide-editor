@@ -367,9 +367,27 @@ export default function FlatInlineEditor({ element }) {
       }
       return
     }
+    // Ctrl/Cmd+Shift+>(.) / <(,) → 선택 범위 글자 크기 ±
+    if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.code === 'Period' || e.code === 'Comma')) {
+      e.preventDefault()
+      e.stopPropagation()
+      changeFontSize(e.code === 'Period' ? FONT_STEP : -FONT_STEP)
+      return
+    }
+    // Ctrl/Cmd+B/I/U → 선택 범위 굵게/이탤릭/밑줄
+    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey) {
+      const k = e.key.toLowerCase()
+      const cmd = k === 'b' ? 'bold' : k === 'i' ? 'italic' : k === 'u' ? 'underline' : null
+      if (cmd) {
+        e.preventDefault()
+        e.stopPropagation()
+        applyCmd(cmd)
+        return
+      }
+    }
     // 모든 키 이벤트를 캔버스로 전파하지 않음
     e.stopPropagation()
-  }, [commit, applyLink, toggleList, isCaretInList, refreshSelection])
+  }, [commit, applyLink, toggleList, isCaretInList, refreshSelection, changeFontSize, applyCmd])
 
   // 세로 정렬: 배경 색 유무와 무관(렌더러와 일치). 명시적 세로정렬·자체flex·병합·도형만 flex.
   const isShape = element.type === 'shape'
