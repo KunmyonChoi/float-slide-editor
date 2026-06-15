@@ -44,6 +44,7 @@ function wrapSelection(prop, value) {
  */
 export default function FlatInlineEditor({ element }) {
   const ref = useRef(null)
+  const touch = useIsTouch()
   const { commitTextEdit } = useFlatStore()
   const committedRef = useRef(false)
   const suppressCommitRef = useRef(false) // prompt 등 일시적 포커스 이탈 시 blur 커밋 차단
@@ -67,17 +68,13 @@ export default function FlatInlineEditor({ element }) {
     const range = s.getRangeAt(0)
     if (!el.contains(range.commonAncestorContainer)) { setSel(null); return }
     lastRangeRef.current = range.cloneRange() // caret/선택 보존 (collapsed 포함)
-    // 리스트 활성 상태 — caret만 있어도 갱신
+    // 리스트/서식 활성 상태 — caret만 있어도 갱신 (모바일 고정 서식바가 정확히 표시되도록)
     try {
       setListFmt({
         ul: document.queryCommandState('insertUnorderedList'),
         ol: document.queryCommandState('insertOrderedList'),
       })
     } catch { /* noop */ }
-    if (s.isCollapsed) { setSel(null); return }
-    const rect = range.getBoundingClientRect()
-    if (!rect || (rect.width === 0 && rect.height === 0)) { setSel(null); return }
-    setSel({ left: rect.left + rect.width / 2, top: rect.top, bottom: rect.bottom })
     try {
       setFmt({
         bold: document.queryCommandState('bold'),
@@ -85,6 +82,10 @@ export default function FlatInlineEditor({ element }) {
         underline: document.queryCommandState('underline'),
       })
     } catch { /* queryCommandState 미지원 무시 */ }
+    if (s.isCollapsed) { setSel(null); return }
+    const rect = range.getBoundingClientRect()
+    if (!rect || (rect.width === 0 && rect.height === 0)) { setSel(null); return }
+    setSel({ left: rect.left + rect.width / 2, top: rect.top, bottom: rect.bottom })
   }, [])
 
   // 마운트 시 innerHTML 설정 + 포커스 + 커밋 콜백 등록
@@ -449,8 +450,9 @@ export default function FlatInlineEditor({ element }) {
         />,
         document.body
       )}
-      {sel && createPortal(
-        <SelectionToolbar sel={sel} fmt={fmt} onCmd={applyCmd} onFontSize={changeFontSize} onLink={applyLink} />,
+      {/* 데스크톱: 선택 시 플로팅 / 모바일: 편집 중 항상 키보드 위 고정 (OS 선택 메뉴와 중첩 회피) */}
+      {(touch || sel) && createPortal(
+        <SelectionToolbar sel={sel} mobile={touch} fmt={fmt} onCmd={applyCmd} onFontSize={changeFontSize} onLink={applyLink} />,
         document.body
       )}
       {editorRect && createPortal(
@@ -497,10 +499,10 @@ function EditAccessory({ rect, sel, open, accessoryRef, listFmt, onToggleList, o
   if (top < 8) top = rect.bottom + 4
   let left = Math.min(window.innerWidth - CLUSTER_W - 8, Math.max(8, rect.right - CLUSTER_W))
 
-  if (touch && vp.isKeyboardOpen) {
-    // 터치 + 키보드 열림: 키보드 위 도킹. 선택바가 있으면 그 위에 한 단 더 올림.
-    const dockBottom = vp.offsetTop + vp.height - 8
-    top = sel ? dockBottom - SEL_TOOLBAR_H - 8 - CLUSTER_H : dockBottom - CLUSTER_H
+  if (touch) {
+    // 모바일: 항상 떠 있는 고정 서식바 위에 한 단 더 올려 우측 정렬 (키보드 위 / 없으면 화면 하단)
+    const dockBase = vp.isKeyboardOpen ? vp.offsetTop + vp.height : window.innerHeight
+    top = dockBase - SEL_TOOLBAR_H - 8 - CLUSTER_H - 6
     left = window.innerWidth - CLUSTER_W - 8
   } else if (sel) {
     // 선택 바가 동시에 보이고 겹치면 세로로 비켜서기 (선택 바가 우선, 도구 묶음이 양보)
@@ -550,23 +552,27 @@ function EditAccessory({ rect, sel, open, accessoryRef, listFmt, onToggleList, o
 
 // ── 선택 영역 부분 서식 툴바 ──────────────────────────
 
-function SelectionToolbar({ sel, fmt, onCmd, onFontSize, onLink }) {
+function SelectionToolbar({ sel, mobile, fmt, onCmd, onFontSize, onLink }) {
   const vp = useVisualViewport()
-  const touch = useIsTouch()
-  let { top, left } = computeSelToolbarPos(sel)
-  // 터치 + 키보드 열림: 선택 위치를 따라가지 않고 키보드 바로 위에 가로 중앙 도킹 → 글씨 안 가림
-  if (touch && vp.isKeyboardOpen) {
-    top = vp.offsetTop + vp.height - SEL_TOOLBAR_H - 8
+  let top, left
+  if (mobile) {
+    // 모바일: 선택 유무와 무관하게 키보드 바로 위(없으면 화면 하단)에 가로 중앙 고정
+    const dockBase = vp.isKeyboardOpen ? vp.offsetTop + vp.height : window.innerHeight
+    top = dockBase - SEL_TOOLBAR_H - 8
     left = window.innerWidth / 2
+  } else {
+    const p = computeSelToolbarPos(sel)
+    top = p.top; left = p.left
   }
 
-  // 툴바 영역 mousedown은 기본동작 차단 → 에디터 포커스/선택 유지 (blur 커밋 방지)
+  // 툴바 영역 pointerdown/mousedown 기본동작 차단 → 에디터 포커스/선택 유지 (blur 커밋 방지, 터치 포함)
   const keepSelection = (e) => e.preventDefault()
   const cmd = (c, v) => (e) => { e.preventDefault(); onCmd(c, v) }
 
   return (
     <div
       onMouseDown={keepSelection}
+      onPointerDown={keepSelection}
       style={{
         position: 'fixed',
         top,
@@ -577,6 +583,8 @@ function SelectionToolbar({ sel, fmt, onCmd, onFontSize, onLink }) {
         alignItems: 'center',
         gap: 5,
         padding: '5px 8px',
+        maxWidth: mobile ? 'calc(100vw - 16px)' : undefined,
+        overflowX: mobile ? 'auto' : undefined,
         background: 'rgba(15,23,42,0.97)',
         border: '1px solid rgba(255,255,255,0.12)',
         borderRadius: 8,
