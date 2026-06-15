@@ -533,16 +533,17 @@ function EditAccessory({ rect, sel, open, accessoryRef, listFmt, onToggleList, o
       }}
     >
       <button type="button" title="글머리 기호 (Ctrl+Shift+8)"
-        onMouseDown={(e) => { e.preventDefault(); onToggleList(false) }}
+        onPointerDown={(e) => { e.preventDefault(); onToggleList(false) }}
         style={toolBtn(listFmt.ul)}>•</button>
       <button type="button" title="번호 매기기 (Ctrl+Shift+7)"
-        onMouseDown={(e) => { e.preventDefault(); onToggleList(true) }}
+        onPointerDown={(e) => { e.preventDefault(); onToggleList(true) }}
         style={{ ...toolBtn(listFmt.ol), fontSize: 11 }}>1.</button>
       <button type="button" title="이모지·기호 삽입"
-        onMouseDown={(e) => { e.preventDefault(); onToggleEmoji() }}
+        onPointerDown={(e) => { e.preventDefault(); onToggleEmoji() }}
         style={{ ...toolBtn(open), fontSize: 16 }}>😊</button>
       {open && (
-        <div style={{ position: 'absolute', top: BTN + 8, right: 0 }}>
+        // 모바일: 키보드 위 도킹이라 위로 열어야 가려지지 않음
+        <div style={{ position: 'absolute', right: 0, ...(touch ? { bottom: 'calc(100% + 6px)' } : { top: BTN + 8 }) }}>
           <EmojiPicker onPick={onPick} />
         </div>
       )}
@@ -593,32 +594,32 @@ function SelectionToolbar({ sel, mobile, fmt, onCmd, onFontSize, onLink }) {
         fontFamily: 'system-ui, sans-serif',
       }}
     >
-      <FmtBtn active={fmt.bold} onMouseDown={cmd('bold')} title="굵게 (Ctrl+B)" style={{ fontWeight: 700 }}>B</FmtBtn>
-      <FmtBtn active={fmt.italic} onMouseDown={cmd('italic')} title="기울임 (Ctrl+I)" style={{ fontStyle: 'italic' }}>I</FmtBtn>
-      <FmtBtn active={fmt.underline} onMouseDown={cmd('underline')} title="밑줄 (Ctrl+U)" style={{ textDecoration: 'underline' }}>U</FmtBtn>
+      <FmtBtn active={fmt.bold} onPointerDown={cmd('bold')} title="굵게 (Ctrl+B)" style={{ fontWeight: 700 }}>B</FmtBtn>
+      <FmtBtn active={fmt.italic} onPointerDown={cmd('italic')} title="기울임 (Ctrl+I)" style={{ fontStyle: 'italic' }}>I</FmtBtn>
+      <FmtBtn active={fmt.underline} onPointerDown={cmd('underline')} title="밑줄 (Ctrl+U)" style={{ textDecoration: 'underline' }}>U</FmtBtn>
       <Sep />
-      <FmtBtn onMouseDown={(e) => { e.preventDefault(); onFontSize(-FONT_STEP) }} title="글자 작게" style={{ fontSize: 11 }}>A−</FmtBtn>
-      <FmtBtn onMouseDown={(e) => { e.preventDefault(); onFontSize(FONT_STEP) }} title="글자 크게" style={{ fontSize: 14 }}>A+</FmtBtn>
-      <FmtBtn onMouseDown={(e) => { e.preventDefault(); onLink() }} title="링크 (Ctrl+K)">🔗</FmtBtn>
+      <FmtBtn onPointerDown={(e) => { e.preventDefault(); onFontSize(-FONT_STEP) }} title="글자 작게" style={{ fontSize: 11 }}>A−</FmtBtn>
+      <FmtBtn onPointerDown={(e) => { e.preventDefault(); onFontSize(FONT_STEP) }} title="글자 크게" style={{ fontSize: 14 }}>A+</FmtBtn>
+      <FmtBtn onPointerDown={(e) => { e.preventDefault(); onLink() }} title="링크 (Ctrl+K)">🔗</FmtBtn>
       <Sep />
       <span style={{ fontSize: 10, color: '#94a3b8', marginRight: 1 }}>가</span>
       {TEXT_COLORS.map(c => (
-        <Swatch key={c} color={c} round onMouseDown={cmd('foreColor', c)} title={`글자색 ${c}`} />
+        <Swatch key={c} color={c} round onPointerDown={cmd('foreColor', c)} title={`글자색 ${c}`} />
       ))}
       <Sep />
       {HL_COLORS.map(c => (
-        <Swatch key={c} color={c} onMouseDown={cmd('hiliteColor', c)} title={`형광펜 ${c}`} />
+        <Swatch key={c} color={c} onPointerDown={cmd('hiliteColor', c)} title={`형광펜 ${c}`} />
       ))}
-      <FmtBtn onMouseDown={cmd('hiliteColor', 'transparent')} title="형광펜 지우기" style={{ fontSize: 11 }}>✕</FmtBtn>
+      <FmtBtn onPointerDown={cmd('hiliteColor', 'transparent')} title="형광펜 지우기" style={{ fontSize: 11 }}>✕</FmtBtn>
     </div>
   )
 }
 
-function FmtBtn({ children, active, onMouseDown, title, style }) {
+function FmtBtn({ children, active, onPointerDown, title, style }) {
   return (
     <button
       type="button"
-      onMouseDown={onMouseDown}
+      onPointerDown={onPointerDown}
       title={title}
       style={{
         minWidth: 24,
@@ -639,11 +640,11 @@ function FmtBtn({ children, active, onMouseDown, title, style }) {
   )
 }
 
-function Swatch({ color, round, onMouseDown, title }) {
+function Swatch({ color, round, onPointerDown, title }) {
   return (
     <button
       type="button"
-      onMouseDown={onMouseDown}
+      onPointerDown={onPointerDown}
       title={title}
       style={{
         width: 16,
