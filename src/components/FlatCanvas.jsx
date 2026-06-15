@@ -802,6 +802,9 @@ export default function FlatCanvas() {
 
   // 우클릭 컨텍스트 메뉴
   const handleContextMenu = useCallback((e) => {
+    // 편집 중에는 우리 메뉴를 열지 않고 브라우저 기본 동작도 막지 않음
+    // — 모바일 롱프레스로 텍스트 단어선택/네이티브 콜아웃을 보존
+    if (useFlatStore.getState().editingFlatId) return
     e.preventDefault()
     if (!stageRef.current) return
     const stageRect = stageRef.current.getBoundingClientRect()

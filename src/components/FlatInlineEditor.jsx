@@ -3,6 +3,8 @@ import { createPortal } from 'react-dom'
 import { useFlatStore } from '../store/flatStore'
 import EmojiPicker from './EmojiPicker'
 import { promptUrl } from './UrlPrompt'
+import { isCoarsePointer, useIsTouch } from '../core/pointerEnv'
+import { useVisualViewport } from './useVisualViewport'
 
 // 선택 툴바 팔레트
 const TEXT_COLORS = ['#0f172a', '#ffffff', '#ef4444', '#f59e0b', '#10b981', '#3b82f6', '#8b5cf6', '#ec4899']
@@ -42,6 +44,7 @@ function wrapSelection(prop, value) {
  */
 export default function FlatInlineEditor({ element }) {
   const ref = useRef(null)
+  const touch = useIsTouch()
   const { commitTextEdit } = useFlatStore()
   const committedRef = useRef(false)
   const suppressCommitRef = useRef(false) // prompt 등 일시적 포커스 이탈 시 blur 커밋 차단
@@ -65,17 +68,13 @@ export default function FlatInlineEditor({ element }) {
     const range = s.getRangeAt(0)
     if (!el.contains(range.commonAncestorContainer)) { setSel(null); return }
     lastRangeRef.current = range.cloneRange() // caret/선택 보존 (collapsed 포함)
-    // 리스트 활성 상태 — caret만 있어도 갱신
+    // 리스트/서식 활성 상태 — caret만 있어도 갱신 (모바일 고정 서식바가 정확히 표시되도록)
     try {
       setListFmt({
         ul: document.queryCommandState('insertUnorderedList'),
         ol: document.queryCommandState('insertOrderedList'),
       })
     } catch { /* noop */ }
-    if (s.isCollapsed) { setSel(null); return }
-    const rect = range.getBoundingClientRect()
-    if (!rect || (rect.width === 0 && rect.height === 0)) { setSel(null); return }
-    setSel({ left: rect.left + rect.width / 2, top: rect.top, bottom: rect.bottom })
     try {
       setFmt({
         bold: document.queryCommandState('bold'),
@@ -83,6 +82,10 @@ export default function FlatInlineEditor({ element }) {
         underline: document.queryCommandState('underline'),
       })
     } catch { /* queryCommandState 미지원 무시 */ }
+    if (s.isCollapsed) { setSel(null); return }
+    const rect = range.getBoundingClientRect()
+    if (!rect || (rect.width === 0 && rect.height === 0)) { setSel(null); return }
+    setSel({ left: rect.left + rect.width / 2, top: rect.top, bottom: rect.bottom })
   }, [])
 
   // 마운트 시 innerHTML 설정 + 포커스 + 커밋 콜백 등록
@@ -96,10 +99,11 @@ export default function FlatInlineEditor({ element }) {
       ref.current.innerHTML = displayContent
     }
     ref.current.focus()
-    // 전체 선택
+    // 데스크톱: 전체 선택 / 터치: 끝에 캐럿만 (진입 즉시 선택바·OS 메뉴가 글씨를 가리지 않도록)
     const sel = window.getSelection()
     const range = document.createRange()
     range.selectNodeContents(ref.current)
+    if (isCoarsePointer()) range.collapse(false)
     sel.removeAllRanges()
     sel.addRange(range)
     committedRef.current = false
@@ -446,8 +450,9 @@ export default function FlatInlineEditor({ element }) {
         />,
         document.body
       )}
-      {sel && createPortal(
-        <SelectionToolbar sel={sel} fmt={fmt} onCmd={applyCmd} onFontSize={changeFontSize} onLink={applyLink} />,
+      {/* 데스크톱: 선택 시 플로팅 / 모바일: 편집 중 항상 키보드 위 고정 (OS 선택 메뉴와 중첩 회피) */}
+      {(touch || sel) && createPortal(
+        <SelectionToolbar sel={sel} mobile={touch} fmt={fmt} onCmd={applyCmd} onFontSize={changeFontSize} onLink={applyLink} />,
         document.body
       )}
       {editorRect && createPortal(
@@ -485,15 +490,22 @@ const rectsOverlap = (a, b) => a.x0 < b.x1 && a.x1 > b.x0 && a.y0 < b.y1 && a.y1
 // ── 편집 도구 묶음: 글머리/번호 리스트 + 이모지 (편집 중 항상 노출) ──
 
 function EditAccessory({ rect, sel, open, accessoryRef, listFmt, onToggleList, onToggleEmoji, onPick }) {
+  const vp = useVisualViewport()
+  const touch = useIsTouch()
   const BTN = 28
   const CLUSTER_W = BTN * 3 + 4 * 2 + 8 // 버튼 3 + gap + padding
   const CLUSTER_H = BTN + 4 * 2
   let top = rect.top - CLUSTER_H - 6
   if (top < 8) top = rect.bottom + 4
-  const left = Math.min(window.innerWidth - CLUSTER_W - 8, Math.max(8, rect.right - CLUSTER_W))
+  let left = Math.min(window.innerWidth - CLUSTER_W - 8, Math.max(8, rect.right - CLUSTER_W))
 
-  // 선택 바가 동시에 보이고 겹치면 세로로 비켜서기 (선택 바가 우선, 도구 묶음이 양보)
-  if (sel) {
+  if (touch) {
+    // 모바일: 항상 떠 있는 고정 서식바 위에 한 단 더 올려 우측 정렬 (키보드 위 / 없으면 화면 하단)
+    const dockBase = vp.isKeyboardOpen ? vp.visibleBottom : window.innerHeight
+    top = dockBase - SEL_TOOLBAR_H - 8 - CLUSTER_H - 6
+    left = window.innerWidth - CLUSTER_W - 8
+  } else if (sel) {
+    // 선택 바가 동시에 보이고 겹치면 세로로 비켜서기 (선택 바가 우선, 도구 묶음이 양보)
     const st = computeSelToolbarPos(sel)
     const selBox = { x0: st.left - st.halfW, x1: st.left + st.halfW, y0: st.top, y1: st.top + st.height }
     const accBox = { x0: left, x1: left + CLUSTER_W, y0: top, y1: top + CLUSTER_H }
@@ -521,16 +533,17 @@ function EditAccessory({ rect, sel, open, accessoryRef, listFmt, onToggleList, o
       }}
     >
       <button type="button" title="글머리 기호 (Ctrl+Shift+8)"
-        onMouseDown={(e) => { e.preventDefault(); onToggleList(false) }}
+        onPointerDown={(e) => { e.preventDefault(); onToggleList(false) }}
         style={toolBtn(listFmt.ul)}>•</button>
       <button type="button" title="번호 매기기 (Ctrl+Shift+7)"
-        onMouseDown={(e) => { e.preventDefault(); onToggleList(true) }}
+        onPointerDown={(e) => { e.preventDefault(); onToggleList(true) }}
         style={{ ...toolBtn(listFmt.ol), fontSize: 11 }}>1.</button>
       <button type="button" title="이모지·기호 삽입"
-        onMouseDown={(e) => { e.preventDefault(); onToggleEmoji() }}
+        onPointerDown={(e) => { e.preventDefault(); onToggleEmoji() }}
         style={{ ...toolBtn(open), fontSize: 16 }}>😊</button>
       {open && (
-        <div style={{ position: 'absolute', top: BTN + 8, right: 0 }}>
+        // 모바일: 키보드 위 도킹이라 위로 열어야 가려지지 않음
+        <div style={{ position: 'absolute', right: 0, ...(touch ? { bottom: 'calc(100% + 6px)' } : { top: BTN + 8 }) }}>
           <EmojiPicker onPick={onPick} />
         </div>
       )}
@@ -540,16 +553,27 @@ function EditAccessory({ rect, sel, open, accessoryRef, listFmt, onToggleList, o
 
 // ── 선택 영역 부분 서식 툴바 ──────────────────────────
 
-function SelectionToolbar({ sel, fmt, onCmd, onFontSize, onLink }) {
-  const { top, left } = computeSelToolbarPos(sel)
+function SelectionToolbar({ sel, mobile, fmt, onCmd, onFontSize, onLink }) {
+  const vp = useVisualViewport()
+  let top, left
+  if (mobile) {
+    // 모바일: 선택 유무와 무관하게 키보드 바로 위(없으면 화면 하단)에 가로 중앙 고정
+    const dockBase = vp.isKeyboardOpen ? vp.visibleBottom : window.innerHeight
+    top = dockBase - SEL_TOOLBAR_H - 8
+    left = window.innerWidth / 2
+  } else {
+    const p = computeSelToolbarPos(sel)
+    top = p.top; left = p.left
+  }
 
-  // 툴바 영역 mousedown은 기본동작 차단 → 에디터 포커스/선택 유지 (blur 커밋 방지)
+  // 툴바 영역 pointerdown/mousedown 기본동작 차단 → 에디터 포커스/선택 유지 (blur 커밋 방지, 터치 포함)
   const keepSelection = (e) => e.preventDefault()
   const cmd = (c, v) => (e) => { e.preventDefault(); onCmd(c, v) }
 
   return (
     <div
       onMouseDown={keepSelection}
+      onPointerDown={keepSelection}
       style={{
         position: 'fixed',
         top,
@@ -560,6 +584,8 @@ function SelectionToolbar({ sel, fmt, onCmd, onFontSize, onLink }) {
         alignItems: 'center',
         gap: 5,
         padding: '5px 8px',
+        maxWidth: mobile ? 'calc(100vw - 16px)' : undefined,
+        overflowX: mobile ? 'auto' : undefined,
         background: 'rgba(15,23,42,0.97)',
         border: '1px solid rgba(255,255,255,0.12)',
         borderRadius: 8,
@@ -568,32 +594,32 @@ function SelectionToolbar({ sel, fmt, onCmd, onFontSize, onLink }) {
         fontFamily: 'system-ui, sans-serif',
       }}
     >
-      <FmtBtn active={fmt.bold} onMouseDown={cmd('bold')} title="굵게 (Ctrl+B)" style={{ fontWeight: 700 }}>B</FmtBtn>
-      <FmtBtn active={fmt.italic} onMouseDown={cmd('italic')} title="기울임 (Ctrl+I)" style={{ fontStyle: 'italic' }}>I</FmtBtn>
-      <FmtBtn active={fmt.underline} onMouseDown={cmd('underline')} title="밑줄 (Ctrl+U)" style={{ textDecoration: 'underline' }}>U</FmtBtn>
+      <FmtBtn active={fmt.bold} onPointerDown={cmd('bold')} title="굵게 (Ctrl+B)" style={{ fontWeight: 700 }}>B</FmtBtn>
+      <FmtBtn active={fmt.italic} onPointerDown={cmd('italic')} title="기울임 (Ctrl+I)" style={{ fontStyle: 'italic' }}>I</FmtBtn>
+      <FmtBtn active={fmt.underline} onPointerDown={cmd('underline')} title="밑줄 (Ctrl+U)" style={{ textDecoration: 'underline' }}>U</FmtBtn>
       <Sep />
-      <FmtBtn onMouseDown={(e) => { e.preventDefault(); onFontSize(-FONT_STEP) }} title="글자 작게" style={{ fontSize: 11 }}>A−</FmtBtn>
-      <FmtBtn onMouseDown={(e) => { e.preventDefault(); onFontSize(FONT_STEP) }} title="글자 크게" style={{ fontSize: 14 }}>A+</FmtBtn>
-      <FmtBtn onMouseDown={(e) => { e.preventDefault(); onLink() }} title="링크 (Ctrl+K)">🔗</FmtBtn>
+      <FmtBtn onPointerDown={(e) => { e.preventDefault(); onFontSize(-FONT_STEP) }} title="글자 작게" style={{ fontSize: 11 }}>A−</FmtBtn>
+      <FmtBtn onPointerDown={(e) => { e.preventDefault(); onFontSize(FONT_STEP) }} title="글자 크게" style={{ fontSize: 14 }}>A+</FmtBtn>
+      <FmtBtn onPointerDown={(e) => { e.preventDefault(); onLink() }} title="링크 (Ctrl+K)">🔗</FmtBtn>
       <Sep />
       <span style={{ fontSize: 10, color: '#94a3b8', marginRight: 1 }}>가</span>
       {TEXT_COLORS.map(c => (
-        <Swatch key={c} color={c} round onMouseDown={cmd('foreColor', c)} title={`글자색 ${c}`} />
+        <Swatch key={c} color={c} round onPointerDown={cmd('foreColor', c)} title={`글자색 ${c}`} />
       ))}
       <Sep />
       {HL_COLORS.map(c => (
-        <Swatch key={c} color={c} onMouseDown={cmd('hiliteColor', c)} title={`형광펜 ${c}`} />
+        <Swatch key={c} color={c} onPointerDown={cmd('hiliteColor', c)} title={`형광펜 ${c}`} />
       ))}
-      <FmtBtn onMouseDown={cmd('hiliteColor', 'transparent')} title="형광펜 지우기" style={{ fontSize: 11 }}>✕</FmtBtn>
+      <FmtBtn onPointerDown={cmd('hiliteColor', 'transparent')} title="형광펜 지우기" style={{ fontSize: 11 }}>✕</FmtBtn>
     </div>
   )
 }
 
-function FmtBtn({ children, active, onMouseDown, title, style }) {
+function FmtBtn({ children, active, onPointerDown, title, style }) {
   return (
     <button
       type="button"
-      onMouseDown={onMouseDown}
+      onPointerDown={onPointerDown}
       title={title}
       style={{
         minWidth: 24,
@@ -614,11 +640,11 @@ function FmtBtn({ children, active, onMouseDown, title, style }) {
   )
 }
 
-function Swatch({ color, round, onMouseDown, title }) {
+function Swatch({ color, round, onPointerDown, title }) {
   return (
     <button
       type="button"
-      onMouseDown={onMouseDown}
+      onPointerDown={onPointerDown}
       title={title}
       style={{
         width: 16,

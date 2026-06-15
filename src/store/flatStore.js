@@ -797,11 +797,13 @@ export const useFlatStore = create((set, get) => ({
   },
 
   setSelectedFlat(id) {
+    if (get().editingFlatId && get().editingFlatId !== id) get()._commitActiveEdit()
     set({ selectedFlatIds: id ? [id] : [] })
   },
 
   /** Shift+클릭용 — 토글 선택 */
   toggleSelectFlat(id) {
+    if (get().editingFlatId && get().editingFlatId !== id) get()._commitActiveEdit()
     const ids = get().selectedFlatIds
     if (ids.includes(id)) {
       set({ selectedFlatIds: ids.filter(i => i !== id) })
@@ -812,6 +814,8 @@ export const useFlatStore = create((set, get) => ({
 
   /** 마키 선택 결과 일괄 설정 */
   setSelectedFlats(ids) {
+    const ed = get().editingFlatId
+    if (ed && !ids.includes(ed)) get()._commitActiveEdit()
     set({ selectedFlatIds: ids })
   },
 
@@ -841,6 +845,7 @@ export const useFlatStore = create((set, get) => ({
 
   /** 그룹 인식 선택 — 그룹 요소를 선택하면 그룹 전체 선택. additive=Shift 토글 */
   selectFlatGroupAware(id, additive) {
+    if (get().editingFlatId && get().editingFlatId !== id) get()._commitActiveEdit()
     const els = get().flatElements
     const el = els.find(e => e.id === id)
     if (!el) return
@@ -866,8 +871,19 @@ export const useFlatStore = create((set, get) => ({
     return [...set2]
   },
 
+  /**
+   * 진행 중인 인라인 편집을 즉시 커밋하고 편집 모드 종료.
+   * 다른 요소 mousedown의 preventDefault가 contentEditable의 blur(=커밋)를 막아
+   * 편집 중 요소가 남은 채 새 요소가 선택되는(둘 다 선택된 것처럼 보이는) 문제 방지.
+   */
+  _commitActiveEdit() {
+    if (_pendingEditCommit) { _pendingEditCommit(); _pendingEditCommit = null }
+    if (get().editingFlatId) set({ editingFlatId: null })
+  },
+
   /** 인라인 텍스트 편집 시작/종료 */
   setEditingFlat(id) {
+    if (get().editingFlatId && get().editingFlatId !== id) get()._commitActiveEdit()
     set({ editingFlatId: id })
   },
 
