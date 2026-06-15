@@ -4,7 +4,9 @@ import { useFlatStore } from '../store/flatStore'
 import FlatElementRenderer from './FlatElementRenderer'
 
 const PANEL_W = 200
-const THUMB_W = 168
+// 패널 가용 폭에 맞춤: PANEL_W − px-2(16) − 번호 w-4(16) − gap-2(8) − 스크롤바 여유(≈12)
+// 이보다 크면 썸네일 오른쪽이 패널/스크롤바에 잘린다.
+const THUMB_W = PANEL_W - 52 // = 148
 
 /**
  * SlideListPanel — 좌측 슬라이드 목록(썸네일) 패널.
@@ -231,7 +233,7 @@ const SlideThumbnail = memo(function SlideThumbnail({ elements, canvasSize, widt
     <div style={{ width, height, position: 'relative', overflow: 'hidden', background: '#fff', pointerEvents: 'none' }}>
       <div style={{ position: 'absolute', top: 0, left: 0, width: cs.w, height: cs.h, transform: `scale(${scale})`, transformOrigin: 'top left' }}>
         {elements.map(el => (
-          <FlatElementRenderer key={el.id} element={el} isSelected={false} isEditing={false} scale={scale} />
+          <FlatElementRenderer key={el.id} element={el} isSelected={false} isEditing={false} scale={scale} canvasSize={cs} />
         ))}
       </div>
     </div>

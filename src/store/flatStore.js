@@ -69,6 +69,16 @@ function compareRouteIds(a, b) {
  * 정보가 없으면(reveal 아님/미보고) totalPages 기준 수평만 반환(기존 동작).
  * @returns {Array<{h:number, v:number, id:string}>}
  */
+// 추출 전 iframe의 웹폰트 로딩 대기 — 폴백 폰트 메트릭으로 박스가 캡처돼
+// 렌더 시 텍스트가 박스를 넘치는(썸네일/캔버스 오버플로) 문제 방지. 타임아웃 가드.
+async function _awaitIframeFonts(ref, timeoutMs = 2500) {
+  try {
+    const fonts = ref?.current?.contentDocument?.fonts
+    if (!fonts?.ready) return
+    await Promise.race([fonts.ready, new Promise(r => setTimeout(r, timeoutMs))])
+  } catch { /* 접근 불가 무시 */ }
+}
+
 export function buildRevealRoutes(editorState) {
   const vCounts = editorState && editorState.revealVCounts
   if (Array.isArray(vCounts) && vCounts.length) {
@@ -230,6 +240,15 @@ export const useFlatStore = create((set, get) => ({
    * 현재 페이지는 라이브 상태, 그 외는 _pageCache에서 읽는다.
    * @returns {Array<{ key, index, isCurrent, elements, canvasSize, htmlSlideIndex }>}
    */
+  /** 모든 페이지(+현재)의 fontImports 합집합 — 썸네일/발표가 어느 페이지든 동일 폰트로
+   *  렌더되도록(현재 페이지에 묶이지 않게) 전체 폰트를 한 번에 주입하기 위함. */
+  getAllFontImports() {
+    const set = new Set()
+    for (const k in _pageCache) for (const f of (_pageCache[k].fontImports || [])) set.add(f)
+    for (const f of (get().fontImports || [])) set.add(f)
+    return [...set]
+  },
+
   getFlatPageList() {
     const keys = _getSortedPageKeys()
     const curKey = _currentPageKey
@@ -457,15 +476,17 @@ export const useFlatStore = create((set, get) => ({
     const routes = buildRevealRoutes(es)
     const origH = currentPage, origV = revealV || 0
     set({ _preloading: true, preloadProgress: { current: 0, total: routes.length } })
+    const canonicalCs = es.isReveal && get().canvasSize?.w ? { ...get().canvasSize } : null
     const freshHtml = {}
     try {
+      await _awaitIframeFonts(ref) // 웹폰트 로드 후 재추출(오버플로 방지)
       for (let ri = 0; ri < routes.length; ri++) {
         const route = routes[ri]
         ref.current.contentWindow?.postMessage({ type: 'fe:navigate', page: route.h, v: route.v }, '*')
         await new Promise(r => setTimeout(r, 400))
         try {
           const { elements, canvasSize, fontImports } = extractFlatElementsFromIframe(ref)
-          freshHtml[route.id] = { elements, canvasSize, fontImports: fontImports || [], history: { stack: [], pointer: -1 } }
+          freshHtml[route.id] = { elements, canvasSize: canonicalCs || canvasSize, fontImports: fontImports || [], history: { stack: [], pointer: -1 } }
         } catch (e) {
           console.warn(`Regen page ${route.id} failed:`, e.message)
         }
@@ -550,6 +571,11 @@ export const useFlatStore = create((set, get) => ({
       }
 
       get()._saveCurrentPage()
+      await _awaitIframeFonts(iframeRef) // 웹폰트 로드 후 추출(오버플로 방지)
+      // reveal(균일 해상도) 덱은 전 페이지가 같은 크기. 프리로드 중 reveal scale 감지
+      // 타이밍으로 canvasSize가 좁게 잡히는 것을 방지하려, 현재 페이지(정착된 신뢰값)의
+      // canvasSize로 통일한다.
+      const canonicalCs = es.isReveal && get().canvasSize?.w ? { ...get().canvasSize } : null
       const origH = currentPage, origV = revealV || 0
       let done = Object.keys(_pageCache).length
 
@@ -565,7 +591,7 @@ export const useFlatStore = create((set, get) => ({
           const result = extractFlatElementsFromIframe(iframeRef)
           _pageCache[route.id] = {
             elements: result.elements,
-            canvasSize: result.canvasSize,
+            canvasSize: canonicalCs || result.canvasSize,
             fontImports: result.fontImports || [],
             history: { stack: [], pointer: -1 },
             htmlSlideIndex: route.id, // 출처 (h,v) 경로
@@ -1361,6 +1387,8 @@ export const useFlatStore = create((set, get) => ({
     }
 
     const origH = currentPage, origV = revealV || 0
+    await _awaitIframeFonts(iframeRef) // 웹폰트 로드 후 추출(오버플로 방지)
+    const canonicalCs = es.isReveal && get().canvasSize?.w ? { ...get().canvasSize } : null
     const pages = {}
 
     // 현재 캐시 내용 먼저 복사
@@ -1386,7 +1414,7 @@ export const useFlatStore = create((set, get) => ({
         const result = extractFlatElementsFromIframe(iframeRef)
         pages[route.id] = {
           elements: result.elements,
-          canvasSize: result.canvasSize,
+          canvasSize: canonicalCs || result.canvasSize,
           fontImports: result.fontImports || [],
           htmlSlideIndex: route.id,
         }
