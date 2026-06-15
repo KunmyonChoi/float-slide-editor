@@ -41,7 +41,7 @@ export default function FlatCanvas() {
   const [dragOver, setDragOver] = useState(false)
   const [drawPoints, setDrawPoints] = useState([])     // 그리기 중 확정된 점들
   const [drawPreview, setDrawPreview] = useState(null)  // 마우스 위치 (프리뷰용)
-  const { currentPage, revealV } = useEditorStore()
+  const { currentPage, revealV, mode } = useEditorStore()
 
   // 웹폰트를 부모 문서 <head>에 주입 — iframe 폰트와 동일하게 렌더링
   useEffect(() => {
@@ -843,16 +843,16 @@ export default function FlatCanvas() {
               <FlatSelectionOverlay element={selectedEl} scale={scale}
                 otherRects={otherRects} canvasSize={canvasSize} onSnapGuides={setSnapGuides} />
             )}
-            {/* 텍스트 박스 단일 선택 시 전용 AI 플로팅바 (편집 중에는 숨김) */}
-            {selectedEls.length === 1 && selectedEl && selectedEl.type === 'text' && !editingFlatId && (
+            {/* 텍스트 박스 단일 선택 시 전용 AI 플로팅바 (편집 중·발표 중에는 숨김) */}
+            {selectedEls.length === 1 && selectedEl && selectedEl.type === 'text' && !editingFlatId && mode !== 'present' && (
               <FlatAiBar element={selectedEl} scale={scale} canvasRef={canvasRef} />
             )}
             {selectedEls.length > 1 && (
               <FlatGroupOverlay elements={selectedEls} scale={scale}
                 otherRects={otherRects} canvasSize={canvasSize} onSnapGuides={setSnapGuides} />
             )}
-            {/* 다중 선택 시 전용 AI 플로팅바 (편집 중에는 숨김) */}
-            {selectedEls.length > 1 && !editingFlatId && (
+            {/* 다중 선택 시 전용 AI 플로팅바 (편집 중·발표 중에는 숨김) */}
+            {selectedEls.length > 1 && !editingFlatId && mode !== 'present' && (
               <FlatSelectionAiBar elements={selectedEls} scale={scale} canvasRef={canvasRef} />
             )}
             {/* 스냅 가이드 */}

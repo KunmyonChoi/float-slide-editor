@@ -1983,7 +1983,8 @@ function SlideBackgroundPanel() {
         <span className="text-xs text-slate-500 flex-1">{canvasSize.w} x {canvasSize.h}</span>
       </div>
 
-      <div className="p-3 space-y-3 overflow-y-auto" style={{ maxHeight: 'calc(100vh - 140px)' }}>
+      {/* 스크롤은 패널 셸(DockedShell/FloatingShell)이 담당 — 내부 overflow를 두면 스크롤바가 중첩됨 */}
+      <div className="p-3 space-y-3">
 
         {/* ── 레이어 목록 ── */}
         <div className="space-y-1.5">
