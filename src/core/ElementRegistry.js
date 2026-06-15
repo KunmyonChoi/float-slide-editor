@@ -176,6 +176,12 @@ const EDITOR_AGENT = `
       var currentSection = hSections[indices.h];
       var vSlides = currentSection ? currentSection.querySelectorAll(':scope > section') : [];
       var totalV = vSlides.length; /* 0이면 수직 슬라이드 없음 */
+      /* 수평 슬라이드별 수직 개수(전체) — 자식 section이 있으면 그 수, 없으면 1 */
+      var vCounts = [];
+      for (var __h = 0; __h < totalH; __h++) {
+        var __kids = hSections[__h].querySelectorAll(':scope > section');
+        vCounts.push(__kids.length > 0 ? __kids.length : 1);
+      }
       /* 전체 방향별 이동 가능 여부 */
       window.parent.postMessage({
         type: 'fe:pageChange',
@@ -187,6 +193,7 @@ const EDITOR_AGENT = `
         v: indices.v || 0,
         totalH: totalH,
         totalV: totalV,
+        vCounts: vCounts,
         canLeft: indices.h > 0,
         canRight: indices.h < totalH - 1,
         canUp: (indices.v || 0) > 0,
@@ -266,7 +273,7 @@ const EDITOR_AGENT = `
           var delta = e.data.delta;
           if (delta > 0) window.Reveal.next();
           else if (delta < 0) window.Reveal.prev();
-          else if (e.data.page != null) window.Reveal.slide(e.data.page, 0);
+          else if (e.data.page != null) window.Reveal.slide(e.data.page, e.data.v || 0);
         }
       } else {
         /* 기본 .slide 패턴: 직접 DOM 조작 */

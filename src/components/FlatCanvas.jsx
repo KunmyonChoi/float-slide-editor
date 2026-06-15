@@ -11,8 +11,9 @@ import FlatInlineEditor from './FlatInlineEditor'
 import FlatTableEditor from './FlatTableEditor'
 import FlatContextMenu from './FlatContextMenu'
 import ImageCropOverlay from './ImageCropOverlay'
-import { nextFlatId } from '../core/FlatExtractor'
+import { nextFlatId, isFontUrl } from '../core/FlatExtractor'
 import { pointsToBBox, absoluteToRelativePoints, pointsToSvgPath } from '../core/PolyShapeUtils'
+import { confirmDialog } from './ConfirmDialog'
 
 /**
  * FlatCanvas
@@ -43,16 +44,19 @@ export default function FlatCanvas() {
   const [drawPreview, setDrawPreview] = useState(null)  // 마우스 위치 (프리뷰용)
   const { currentPage, revealV, mode } = useEditorStore()
 
-  // 웹폰트를 부모 문서 <head>에 주입 — iframe 폰트와 동일하게 렌더링
+  // 웹폰트를 부모 문서 <head>에 주입 — iframe 폰트와 동일하게 렌더링.
+  // 내용(fontKey)이 바뀔 때만 재실행 → 페이지 이동/프리로드 시 참조만 바뀌어도
+  // 제거→재주입을 반복하던(reflow/FOUC, 레이아웃 깜빡임) 문제 방지.
+  const fontKey = (fontImports || []).join('\n')
   useEffect(() => {
     if (!fontImports || fontImports.length === 0) return
     const injected = []
     for (const imp of fontImports) {
       const urlMatch = imp.match(/@import\s+url\(['"]?([^'")\s]+)['"]?\)/)
       if (urlMatch) {
-        // 이미 동일한 href가 있으면 스킵
         const href = urlMatch[1]
-        if (document.querySelector(`link[href="${href}"]`)) continue
+        if (!isFontUrl(href)) continue // 폰트 URL만 — 비폰트(reset/reveal 등) 주입 차단
+        if (document.querySelector(`link[href="${href}"]`)) continue // 중복 스킵
         const link = document.createElement('link')
         link.rel = 'stylesheet'
         link.href = href
@@ -68,7 +72,8 @@ export default function FlatCanvas() {
       }
     }
     return () => { for (const el of injected) el.remove() }
-  }, [fontImports])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fontKey])
 
   // canvasRef를 store에 노출 (이미지 내보내기용)
   useEffect(() => {
@@ -167,6 +172,27 @@ export default function FlatCanvas() {
     e.preventDefault()
     setDragOver(false)
     const allFiles = [...e.dataTransfer.files]
+
+    // HTML 슬라이드 파일 드롭 → 덱 불러오기(가져오기와 동일)
+    const htmlFile = allFiles.find(f => f.type === 'text/html' || /\.html?$/i.test(f.name))
+    if (htmlFile) {
+      ;(async () => {
+        const hasContent = useFlatStore.getState().flatElements.length > 0 || useFlatStore.getState().flatPageCount > 1
+        if (hasContent) {
+          const ok = await confirmDialog({
+            title: 'HTML 슬라이드 불러오기',
+            message: '드롭한 HTML 슬라이드로 현재 작업이 대체됩니다.\n저장하지 않았다면 먼저 저장하세요. 계속할까요?',
+            confirmText: '불러오기', cancelText: '취소', danger: true,
+          })
+          if (!ok) return
+        }
+        const text = await htmlFile.text()
+        useFlatStore.getState().clearPageCache()
+        useEditorStore.getState().loadHtml(text)
+      })()
+      return
+    }
+
     const images = allFiles.filter(f => f.type.startsWith('image/'))
     const videos = allFiles.filter(f => f.type.startsWith('video/'))
     if (images.length === 0 && videos.length === 0) return
