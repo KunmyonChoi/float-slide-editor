@@ -10,6 +10,7 @@ import { nextFlatId } from '../core/FlatExtractor'
 import { BlobStore } from '../core/BlobStore'
 import { detectListType, applyListType } from '../core/TextListTransform'
 import { addRow, removeRow, addCol, removeCol, setHeaderRow, setBorder } from '../core/slideTable'
+import { useScrub } from './useScrub'
 
 // ── 글꼴 크기 프리셋 ────────────────────────────────
 
@@ -72,7 +73,7 @@ export default function FlatPropertyContent() {
       </div>
 
       <div className="p-3 space-y-3">
-        <PositionSection el={el} update={update} />
+        <PositionSection el={el} update={update} preview={(changes) => previewFlatElement(el.id, changes)} />
 
         <div className="pt-1 border-t border-white/5">
           <OrderSection el={el} />
@@ -81,7 +82,7 @@ export default function FlatPropertyContent() {
         {(el.type === 'text' || (el.type === 'shape' && el.content)) && (
           <div className="pt-1 border-t border-white/5">
             <FontSection
-              el={el} styles={el.styles} updateStyle={updateStyle}
+              el={el} styles={el.styles} updateStyle={updateStyle} previewStyle={previewStyle}
               isGradientText={el.styles.webkitBackgroundClip === 'text'}
               listType={detectListType(el.content, el.isRich)}
               onSetListType={editingFlatId === el.id ? undefined : (target) => update(applyListType(el.content, el.isRich, target))}
@@ -91,7 +92,7 @@ export default function FlatPropertyContent() {
 
         {el.type === 'image' && (
           <div className="pt-1 border-t border-white/5">
-            <ImageSection styles={el.styles} updateStyle={updateStyle} elementId={el.id} />
+            <ImageSection styles={el.styles} updateStyle={updateStyle} previewStyle={previewStyle} elementId={el.id} />
           </div>
         )}
 
@@ -111,14 +112,14 @@ export default function FlatPropertyContent() {
         {/* 포인트 기반 shape (선/폴리라인/폴리곤) — 전용 섹션만 표시 */}
         {el.shapeType && el.points && (
           <div className="pt-1 border-t border-white/5">
-            <PolyShapeSection el={el} update={update} updateStyle={updateStyle} />
+            <PolyShapeSection el={el} update={update} updateStyle={updateStyle} previewStyle={previewStyle} />
           </div>
         )}
 
         {/* 선 전용 편집 (가로/세로 얇은 shape — 구 방식) */}
         {!el.shapeType && el.type === 'shape' && (el.width <= 4 || el.height <= 4) && (
           <div className="pt-1 border-t border-white/5">
-            <ShapeLineSection el={el} update={update} updateStyle={updateStyle} />
+            <ShapeLineSection el={el} update={update} updateStyle={updateStyle} preview={(changes) => previewFlatElement(el.id, changes)} />
           </div>
         )}
 
@@ -132,7 +133,7 @@ export default function FlatPropertyContent() {
         {/* 테두리 — text, normal shape, image만 (poly shape는 stroke로 처리) */}
         {!el.shapeType && (el.type === 'text' || el.type === 'shape' || el.type === 'image') && (
           <div className="pt-1 border-t border-white/5">
-            <LineSection styles={el.styles} updateStyle={updateStyle} updateStyles={updateStyles} />
+            <LineSection styles={el.styles} updateStyle={updateStyle} updateStyles={updateStyles} previewStyle={previewStyle} />
           </div>
         )}
 
@@ -483,16 +484,16 @@ function OrderSection({ el }) {
   )
 }
 
-function PositionSection({ el, update }) {
+function PositionSection({ el, update, preview }) {
   return (
     <div>
       <SectionTitle>크기 및 위치</SectionTitle>
       <div className="grid grid-cols-2 gap-1.5">
-        <NumInput label="X" value={el.x} onChange={v => update({ x: v })} />
-        <NumInput label="Y" value={el.y} onChange={v => update({ y: v })} />
-        <NumInput label="W" value={el.width} onChange={v => update({ width: v })} min={1} />
-        <NumInput label="H" value={el.height} onChange={v => update({ height: v })} min={1} />
-        <NumInput label="회전" value={el.rotation || 0} onChange={v => update({ rotation: v })} unit="°" />
+        <NumInput label="X" value={el.x} onChange={v => update({ x: v })} onPreview={preview && (v => preview({ x: v }))} />
+        <NumInput label="Y" value={el.y} onChange={v => update({ y: v })} onPreview={preview && (v => preview({ y: v }))} />
+        <NumInput label="W" value={el.width} onChange={v => update({ width: v })} onPreview={preview && (v => preview({ width: v }))} min={1} />
+        <NumInput label="H" value={el.height} onChange={v => update({ height: v })} onPreview={preview && (v => preview({ height: v }))} min={1} />
+        <NumInput label="회전" value={el.rotation || 0} onChange={v => update({ rotation: v })} onPreview={preview && (v => preview({ rotation: v }))} unit="°" />
       </div>
     </div>
   )
@@ -551,7 +552,7 @@ function detectTextMixed(el) {
   return { bold: mixed(seen.bold), italic: mixed(seen.italic), underline: mixed(seen.underline), strike: mixed(seen.strike) }
 }
 
-function FontSection({ el, styles, updateStyle, isGradientText, listType, onSetListType }) {
+function FontSection({ el, styles, updateStyle, previewStyle, isGradientText, listType, onSetListType }) {
   const parseFontSize = (v) => parseFloat(v) || 16
   const isBold = parseInt(styles.fontWeight) >= 700
   const isItalic = styles.fontStyle === 'italic'
@@ -573,6 +574,7 @@ function FontSection({ el, styles, updateStyle, isGradientText, listType, onSetL
         <FontSizeInput
           value={parseFontSize(styles.fontSize)}
           onChange={v => updateStyle('fontSize', v + 'px')}
+          onPreview={previewStyle && (v => previewStyle('fontSize', v + 'px'))}
         />
         <SelectInput
           label="굵기"
@@ -692,13 +694,15 @@ function FontSection({ el, styles, updateStyle, isGradientText, listType, onSetL
           label="줄 간격"
           value={parseFloat(styles.lineHeight) || 1.5}
           onChange={v => updateStyle('lineHeight', String(v))}
-          min={0.5} max={5}
+          onPreview={previewStyle && (v => previewStyle('lineHeight', String(v)))}
+          min={0.5} max={5} step={0.1}
         />
         <NumInput
           label="문자 간격"
           value={parseFloat(styles.letterSpacing) || 0}
           onChange={v => updateStyle('letterSpacing', v + 'px')}
-          unit="px"
+          onPreview={previewStyle && (v => previewStyle('letterSpacing', v + 'px'))}
+          unit="px" step={0.5}
         />
       </div>
 
@@ -706,6 +710,7 @@ function FontSection({ el, styles, updateStyle, isGradientText, listType, onSetL
         label="내부 여백"
         value={parseFloat(styles.padding) || 0}
         onChange={v => updateStyle('padding', v + 'px')}
+        onPreview={previewStyle && (v => previewStyle('padding', v + 'px'))}
         min={0} unit="px"
       />
     </div>
@@ -813,7 +818,7 @@ function FillSection({ styles, updateStyle, updateStyles, previewStyle, isText }
   )
 }
 
-function LineSection({ styles, updateStyle, updateStyles }) {
+function LineSection({ styles, updateStyle, updateStyles, previewStyle }) {
   const parseBorder = (border) => {
     if (!border || border === 'none' || border === '0px none' || border.startsWith('0px')) {
       return { width: 0, style: 'none', color: '#000000' }
@@ -1068,13 +1073,14 @@ function LineSection({ styles, updateStyle, updateStyles }) {
         label="모서리 둥글기"
         value={parseFloat(styles.borderRadius) || 0}
         onChange={v => updateStyle('borderRadius', v + 'px')}
+        onPreview={previewStyle && (v => previewStyle('borderRadius', v + 'px'))}
         min={0} unit="px"
       />
     </div>
   )
 }
 
-function ImageSection({ styles, updateStyle, elementId }) {
+function ImageSection({ styles, updateStyle, previewStyle, elementId }) {
   const { setCroppingFlat } = useFlatStore()
   const objFit = styles.objectFit || 'contain'
   const objPos = styles.objectPosition || 'center center'
@@ -1131,23 +1137,19 @@ function ImageSection({ styles, updateStyle, elementId }) {
                 )
               })}
             </div>
-            <div className="flex-1 space-y-1">
-              <div className="flex items-center gap-1">
-                <span className={labelClass} style={{ fontSize: 9, width: 12 }}>X</span>
-                <input type="range" min="0" max="100" step="1" value={Math.round(px)}
-                  onChange={e => updateStyle('objectPosition', `${e.target.value}% ${Math.round(py)}%`)}
-                  className="flex-1" style={{ accentColor: '#6366f1' }}
-                />
-                <span className="text-xs text-slate-400 w-7 text-right">{Math.round(px)}%</span>
-              </div>
-              <div className="flex items-center gap-1">
-                <span className={labelClass} style={{ fontSize: 9, width: 12 }}>Y</span>
-                <input type="range" min="0" max="100" step="1" value={Math.round(py)}
-                  onChange={e => updateStyle('objectPosition', `${Math.round(px)}% ${e.target.value}%`)}
-                  className="flex-1" style={{ accentColor: '#6366f1' }}
-                />
-                <span className="text-xs text-slate-400 w-7 text-right">{Math.round(py)}%</span>
-              </div>
+            <div className="flex-1 grid grid-cols-2 gap-1">
+              <NumInput
+                label="X" unit="%" min={0} max={100}
+                value={Math.round(px)}
+                onChange={v => updateStyle('objectPosition', `${v}% ${Math.round(py)}%`)}
+                onPreview={previewStyle && (v => previewStyle('objectPosition', `${v}% ${Math.round(py)}%`))}
+              />
+              <NumInput
+                label="Y" unit="%" min={0} max={100}
+                value={Math.round(py)}
+                onChange={v => updateStyle('objectPosition', `${Math.round(px)}% ${v}%`)}
+                onPreview={previewStyle && (v => previewStyle('objectPosition', `${Math.round(px)}% ${v}%`))}
+              />
             </div>
           </div>
           <button
@@ -1188,7 +1190,7 @@ function EffectSection({ styles, updateStyle, isText }) {
 
 // ── 입력 헬퍼 ───────────────────────────────────────
 
-function NumInput({ label, value, onChange, unit = '', min, max }) {
+function NumInput({ label, value, onChange, onPreview, unit = '', min, max, step = 1 }) {
   const [local, setLocal] = useState(String(Math.round(value * 100) / 100))
   const prevValue = useRef(value)
 
@@ -1198,21 +1200,34 @@ function NumInput({ label, value, onChange, unit = '', min, max }) {
     if (local !== rounded) setLocal(rounded)
   }
 
+  const clampVal = (n) =>
+    min !== undefined && max !== undefined ? Math.min(max, Math.max(min, n))
+      : min !== undefined ? Math.max(min, n)
+      : max !== undefined ? Math.min(max, n) : n
+
   const commit = () => {
     const n = parseFloat(local)
     if (isNaN(n)) { setLocal(String(Math.round(value * 100) / 100)); return }
-    const clamped = min !== undefined && max !== undefined
-      ? Math.min(max, Math.max(min, n))
-      : min !== undefined ? Math.max(min, n) : n
-    onChange(clamped)
+    onChange(clampVal(n))
   }
+
+  const fmt = (v) => String(Math.round(v * 100) / 100)
+  const scrub = useScrub({
+    value, step, min, max,
+    onPreview: (v) => { setLocal(fmt(v)); onPreview && onPreview(v) },
+    onCommit: (v) => { setLocal(fmt(v)); onChange(v) },
+  })
 
   return (
     <div>
-      {label && <p className={`${labelClass} mb-0.5`}>{label}</p>}
+      {label && (
+        <p className={`${labelClass} mb-0.5 inline-block px-1.5 -ml-1.5 rounded hover:text-slate-200 hover:bg-white/5`}
+           title="드래그하여 조절" {...scrub}>{label}</p>
+      )}
       <div className="flex items-center">
         <input
           type="text"
+          inputMode="decimal"
           value={local}
           onChange={e => setLocal(e.target.value)}
           onBlur={commit}
@@ -1226,7 +1241,7 @@ function NumInput({ label, value, onChange, unit = '', min, max }) {
   )
 }
 
-function FontSizeInput({ value, onChange }) {
+function FontSizeInput({ value, onChange, onPreview }) {
   const [local, setLocal] = useState(String(Math.round(value)))
   const prevValue = useRef(value)
 
@@ -1242,9 +1257,16 @@ function FontSizeInput({ value, onChange }) {
     onChange(n)
   }
 
+  const scrub = useScrub({
+    value, step: 1, min: 1,
+    onPreview: (v) => { setLocal(String(Math.round(v))); onPreview && onPreview(v) },
+    onCommit: (v) => { setLocal(String(Math.round(v))); onChange(v) },
+  })
+
   return (
     <div>
-      <p className={`${labelClass} mb-0.5`}>크기</p>
+      <p className={`${labelClass} mb-0.5 inline-block px-1.5 -ml-1.5 rounded hover:text-slate-200 hover:bg-white/5`}
+         title="드래그하여 조절" {...scrub}>크기</p>
       <div className="flex items-center gap-1">
         <input
           type="text"
@@ -1495,7 +1517,7 @@ function OpacityOnlySection({ styles, updateStyle, previewStyle }) {
 
 // ── 포인트 기반 shape 섹션 (line, polyline, polygon) ──
 
-function PolyShapeSection({ el, update, updateStyle }) {
+function PolyShapeSection({ el, update, updateStyle, previewStyle }) {
   const isPolygon = el.closed || el.shapeType === 'polygon'
   const pointCount = el.points?.length || 0
 
@@ -1514,17 +1536,13 @@ function PolyShapeSection({ el, update, updateStyle }) {
             onChange={v => updateStyle('stroke', v)}
           />
         </div>
-        <div>
-          <p className={`${labelClass} mb-0.5`}>선 굵기</p>
-          <input
-            type="number"
-            value={parseFloat(el.styles?.strokeWidth || '2')}
-            onChange={e => updateStyle('strokeWidth', `${e.target.value}`)}
-            onKeyDown={e => e.stopPropagation()}
-            min="1" max="20" step="1"
-            className={inputClass}
-          />
-        </div>
+        <NumInput
+          label="선 굵기"
+          value={parseFloat(el.styles?.strokeWidth || '2')}
+          onChange={v => updateStyle('strokeWidth', `${v}`)}
+          onPreview={previewStyle && (v => previewStyle('strokeWidth', `${v}`))}
+          min={1} max={20}
+        />
       </div>
 
       {/* 선 스타일 */}
@@ -1629,23 +1647,19 @@ function ArrowSelect({ label, value, onChange }) {
 
 // ── 선 전용 섹션 (shape 중 width 또는 height가 4px 이하) ──
 
-function ShapeLineSection({ el, update, updateStyle }) {
+function ShapeLineSection({ el, update, updateStyle, preview }) {
   const isHorizontal = el.height <= 4
   const thickness = isHorizontal ? el.height : el.width
   const length = isHorizontal ? el.width : el.height
   const color = el.styles?.backgroundColor || '#94a3b8'
 
-  const setThickness = (v) => {
-    const val = Math.max(1, Math.min(20, Number(v) || 1))
-    if (isHorizontal) update({ height: val })
-    else update({ width: val })
-  }
+  const thicknessChange = (val, fn) => (isHorizontal ? fn({ height: val }) : fn({ width: val }))
+  const lengthChange = (val, fn) => (isHorizontal ? fn({ width: val }) : fn({ height: val }))
 
-  const setLength = (v) => {
-    const val = Math.max(10, Number(v) || 100)
-    if (isHorizontal) update({ width: val })
-    else update({ height: val })
-  }
+  const setThickness = (v) => thicknessChange(Math.max(1, Math.min(20, Number(v) || 1)), update)
+  const setLength = (v) => lengthChange(Math.max(10, Number(v) || 100), update)
+  const previewThickness = (v) => preview && thicknessChange(Math.max(1, Math.min(20, Number(v) || 1)), preview)
+  const previewLength = (v) => preview && lengthChange(Math.max(10, Number(v) || 100), preview)
 
   const setDash = (v) => {
     if (v === 'solid') {
@@ -1672,30 +1686,14 @@ function ShapeLineSection({ el, update, updateStyle }) {
     <div className="space-y-2">
       <SectionTitle>선</SectionTitle>
       <div className="grid grid-cols-2 gap-2">
-        <div>
-          <p className={`${labelClass} mb-0.5`}>두께</p>
-          <input
-            type="number"
-            value={thickness}
-            onChange={e => setThickness(e.target.value)}
-            onKeyDown={e => e.stopPropagation()}
-            min="1" max="20" step="1"
-            className={inputClass}
-            style={{ width: '100%' }}
-          />
-        </div>
-        <div>
-          <p className={`${labelClass} mb-0.5`}>길이</p>
-          <input
-            type="number"
-            value={Math.round(length)}
-            onChange={e => setLength(e.target.value)}
-            onKeyDown={e => e.stopPropagation()}
-            min="10"
-            className={inputClass}
-            style={{ width: '100%' }}
-          />
-        </div>
+        <NumInput
+          label="두께" value={thickness} min={1} max={20}
+          onChange={setThickness} onPreview={previewThickness}
+        />
+        <NumInput
+          label="길이" value={Math.round(length)} min={10}
+          onChange={setLength} onPreview={previewLength}
+        />
       </div>
       <div>
         <p className={`${labelClass} mb-0.5`}>색상</p>
