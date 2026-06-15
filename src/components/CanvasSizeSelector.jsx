@@ -25,6 +25,7 @@ export const CANVAS_PRESETS = [
  */
 export default function CanvasSizeSelector() {
   const { canvasSize, setCanvasSize } = useEditorStore()
+  const detectedCs = useFlatStore(s => s.canvasSize) // 자동 모드에서 실제 감지된 크기
   const [open, setOpen] = useState(false)
   const [customW, setCustomW] = useState('')
   const [customH, setCustomH] = useState('')
@@ -38,7 +39,7 @@ export default function CanvasSizeSelector() {
 
   const label = activePreset
     ? activePreset.id === 'auto'
-      ? '자동'
+      ? (detectedCs?.w ? `자동 · ${Math.round(detectedCs.w)}×${Math.round(detectedCs.h)}` : '자동')
       : `${activePreset.w} × ${activePreset.h}`
     : `${canvasSize.w} × ${canvasSize.h}`
 
