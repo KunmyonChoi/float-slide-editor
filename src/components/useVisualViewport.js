@@ -10,18 +10,21 @@ import { useState, useEffect } from 'react'
  */
 export function getViewportState() {
   if (typeof window === 'undefined') {
-    return { height: 0, offsetTop: 0, keyboardOverlap: 0, isKeyboardOpen: false }
+    return { height: 0, offsetTop: 0, visibleBottom: 0, keyboardHeight: 0, isKeyboardOpen: false }
   }
   const vv = window.visualViewport
   if (!vv) {
-    return { height: window.innerHeight, offsetTop: 0, keyboardOverlap: 0, isKeyboardOpen: false }
+    return { height: window.innerHeight, offsetTop: 0, visibleBottom: window.innerHeight, keyboardHeight: 0, isKeyboardOpen: false }
   }
-  const keyboardOverlap = Math.max(0, window.innerHeight - (vv.offsetTop + vv.height))
+  // 키보드 높이는 스크롤(offsetTop)과 무관하게 가시영역이 줄어든 양으로 판정.
+  // (offsetTop을 빼면 페이지가 스크롤될수록 작아져 키보드 열림을 오판함)
+  const keyboardHeight = Math.max(0, window.innerHeight - vv.height)
   return {
     height: vv.height,
     offsetTop: vv.offsetTop,
-    keyboardOverlap,
-    isKeyboardOpen: keyboardOverlap > 120,
+    visibleBottom: vv.offsetTop + vv.height, // 가시영역 하단(레이아웃 좌표) — 도킹 위치 기준
+    keyboardHeight,
+    isKeyboardOpen: keyboardHeight > 120,
   }
 }
 

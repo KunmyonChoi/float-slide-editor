@@ -501,7 +501,7 @@ function EditAccessory({ rect, sel, open, accessoryRef, listFmt, onToggleList, o
 
   if (touch) {
     // 모바일: 항상 떠 있는 고정 서식바 위에 한 단 더 올려 우측 정렬 (키보드 위 / 없으면 화면 하단)
-    const dockBase = vp.isKeyboardOpen ? vp.offsetTop + vp.height : window.innerHeight
+    const dockBase = vp.isKeyboardOpen ? vp.visibleBottom : window.innerHeight
     top = dockBase - SEL_TOOLBAR_H - 8 - CLUSTER_H - 6
     left = window.innerWidth - CLUSTER_W - 8
   } else if (sel) {
@@ -557,7 +557,7 @@ function SelectionToolbar({ sel, mobile, fmt, onCmd, onFontSize, onLink }) {
   let top, left
   if (mobile) {
     // 모바일: 선택 유무와 무관하게 키보드 바로 위(없으면 화면 하단)에 가로 중앙 고정
-    const dockBase = vp.isKeyboardOpen ? vp.offsetTop + vp.height : window.innerHeight
+    const dockBase = vp.isKeyboardOpen ? vp.visibleBottom : window.innerHeight
     top = dockBase - SEL_TOOLBAR_H - 8
     left = window.innerWidth / 2
   } else {
