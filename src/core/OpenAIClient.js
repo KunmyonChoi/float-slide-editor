@@ -165,7 +165,8 @@ Output ONLY a single valid JSON object (no markdown, no commentary) with exactly
 Rules:
 - Preserve the key message, data points, and visual hierarchy. Do NOT invent facts or numbers.
 - Copy all labels/headings/points VERBATIM in the ORIGINAL language. NEVER translate to English.
-- Keep labels short and the JSON compact.`
+- Keep labels short and the JSON compact.
+- If a required visual style is provided, set the "style" field to exactly that (keep all other rules: legible verbatim text, infographic layout).`
 
 /**
  * 슬라이드 캡처(스크린샷) → 인포그래픽 이미지 생성 프롬프트(영어).
@@ -174,11 +175,14 @@ Rules:
  * @param {{ model?: string, signal?: AbortSignal }} [opts]
  * @returns {Promise<string>}
  */
-export async function analyzeImageForInfographic(imageDataUrl, { model, signal } = {}) {
+export async function analyzeImageForInfographic(imageDataUrl, { model, style, signal } = {}) {
   if (!imageDataUrl) throw new Error('변환할 캡처 이미지가 없습니다.')
+  const styleClause = (style || '').trim()
+    ? `\n\nRequired visual style (use for the "style" field): ${style.trim()}`
+    : ''
   return chat({
     system: INFOGRAPHIC_SYSTEM,
-    user: 'Here is a screenshot of the slide. Output the infographic JSON spec.',
+    user: 'Here is a screenshot of the slide. Output the infographic JSON spec.' + styleClause,
     images: [imageDataUrl],
     model,
     temperature: 0.5,

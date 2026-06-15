@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { useFlatStore } from '../store/flatStore'
 import { hasApiKey, generateImagePrompt, generateImage } from '../core/OpenAIClient'
 import { openAiSettings } from './AiSettingsModal'
+import { IMAGE_STYLES } from '../core/aiImageStyles'
 
 /**
  * FlatAiBar — 텍스트 박스(요소)를 단일 선택했을 때 뜨는 전용 AI 플로팅바.
@@ -13,19 +14,6 @@ import { openAiSettings } from './AiSettingsModal'
  *
  * 캔버스 줌과 무관하게 읽기 좋게 하려고 document.body 포털 + 화면 좌표로 배치한다.
  */
-// 발표자료에 어울리는 이미지 화풍 — directive는 프롬프트에 주입되는 영어 지시문
-const STYLES = [
-  { id: 'auto', label: '자동 (내용에 맞게)', directive: '' },
-  { id: 'flat', label: '플랫 인포그래픽', directive: 'clean flat vector infographic illustration, simple geometric shapes, modern business style' },
-  { id: 'isometric', label: '아이소메트릭', directive: 'isometric 3D vector illustration, soft shadows, clean and modern' },
-  { id: 'line', label: '미니멀 라인아트', directive: 'minimal single-weight line art, outline illustration with lots of negative space' },
-  { id: '3d', label: '3D 렌더', directive: 'soft 3D render, rounded clay-like shapes, studio lighting, pastel palette' },
-  { id: 'photo', label: '사진 (실사)', directive: 'photorealistic editorial photograph, natural lighting, shallow depth of field' },
-  { id: 'geometric', label: '추상 지오메트릭', directive: 'abstract geometric composition, bold shapes and smooth gradients, corporate modern' },
-  { id: 'watercolor', label: '수채화', directive: 'soft watercolor illustration, gentle washes, hand-painted texture' },
-  { id: 'sketch', label: '손그림 스케치', directive: 'hand-drawn sketch, friendly pencil and ink doodle style' },
-]
-
 export default function FlatAiBar({ element, scale, canvasRef }) {
   // 'idle' | 'loading' | 'preview' | 'error'
   const [phase, setPhase] = useState('idle')
@@ -84,7 +72,7 @@ export default function FlatAiBar({ element, scale, canvasRef }) {
     setPhase('loading'); setError(''); setImageUrl('')
     try {
       setStatus('내용 분석 중…')
-      const directive = STYLES.find(s => s.id === styleId)?.directive || ''
+      const directive = IMAGE_STYLES.find(s => s.id === styleId)?.directive || ''
       const p = await generateImagePrompt(text, { style: directive, signal: ctrl.signal })
       if (ctrl.signal.aborted) return
       setPrompt(p)
@@ -185,7 +173,7 @@ export default function FlatAiBar({ element, scale, canvasRef }) {
             title="이미지 화풍"
             style={styleSelectStyle}
           >
-            {STYLES.map(s => <option key={s.id} value={s.id} style={{ background: '#1e293b', color: '#f1f5f9' }}>{s.label}</option>)}
+            {IMAGE_STYLES.map(s => <option key={s.id} value={s.id} style={{ background: '#1e293b', color: '#f1f5f9' }}>{s.label}</option>)}
           </select>
           <button
             type="button"
