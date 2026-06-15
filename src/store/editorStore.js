@@ -6,18 +6,31 @@ import { resolveAlignment, readCurrentAlignment } from '../core/AlignmentResolve
 const _history = new HistoryStack()
 
 /**
- * 로드된 덱 HTML에서 <link rel="stylesheet"> 를 추출해
+ * 폰트/아이콘 스타일시트인지 판별.
+ * reset/reveal/theme 등 레이아웃·전역 CSS는 메인 문서에 주입하면 앱 UI(Tailwind)를
+ * 덮어쓰므로 제외하고, 글리프 렌더에 필요한 폰트/아이콘 CSS만 허용한다.
+ */
+function _isFontStylesheet(href) {
+  return /fonts?\.googleapis\.com|fonts?\.gstatic\.com|pretendard|font-?awesome|material(icons|-symbols)|\bwebfont|\.woff2?(\?|$)|[/.]fonts?[/.]/i.test(href)
+}
+
+/**
+ * 로드된 덱 HTML에서 <link rel="stylesheet"> 중 **폰트/아이콘 CSS만** 추출해
  * 현재 document.head 에 (href 기준 중복 제거 후) 주입한다.
- * flat presenter가 외부 폰트/아이콘 CSS를 활용할 수 있도록 한다.
+ * flat presenter는 iframe이 아닌 메인 React 트리에 렌더되므로 동일 폰트가 로드돼야
+ * 글리프가 그려진다. 레이아웃/리셋/테마 CSS는 앱 UI를 깨뜨리므로 주입하지 않는다.
  */
 function _injectDeckStylesheets(fullHtml) {
   if (typeof document === 'undefined' || !fullHtml) return
+  // 이전 덱에서 주입한 스타일시트 제거(임포트 간 누적·잔존 방지)
+  for (const old of document.head.querySelectorAll('link[data-fe-deck-css]')) old.remove()
+  if (!fullHtml) return
   try {
     const doc = new DOMParser().parseFromString(fullHtml, 'text/html')
     const links = doc.querySelectorAll('link[rel~="stylesheet"][href]')
     for (const l of links) {
       const href = l.getAttribute('href')
-      if (!href) continue
+      if (!href || !_isFontStylesheet(href)) continue // 폰트/아이콘 CSS만
       const existing = document.head.querySelector(`link[data-fe-deck-css="${cssEscape(href)}"]`)
       if (existing) continue
       const el = document.createElement('link')

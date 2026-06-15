@@ -3,6 +3,11 @@ import { useFlatStore } from '../store/flatStore'
 import { useEditorStore } from '../store/editorStore'
 import { exportFlatHtml, exportFlatHtmlAllPages, downloadHtml } from '../core/FlatExporter'
 import { openAiSettings } from './AiSettingsModal'
+import { saveBlob, openFile } from '../core/FilePicker'
+import { confirmDialog } from './ConfirmDialog'
+
+const ACCEPT_FLATPROJ = { 'application/octet-stream': ['.flatproj'] }
+const ACCEPT_HTML = { 'text/html': ['.html', '.htm'] }
 
 // 새 프로젝트용 빈 슬라이드 1장 (1280×720 흰 배경)
 const BLANK_DECK = `<!DOCTYPE html>
@@ -24,10 +29,8 @@ export default function FileMenu({ fallbackSample }) {
   const [openSubmenu, setOpenSubmenu] = useState(null)
   const hoverTimeout = useRef(null)
   const menuRef = useRef(null)
-  const fileRef = useRef(null)       // .flatproj
-  const htmlFileRef = useRef(null)   // .html
 
-  const { flatElements, canvasSize, fontImports, viewMode,
+  const { flatElements, canvasSize, fontImports,
           setViewMode, loadAllPages, clearPageCache, debugMode, setDebugMode } = useFlatStore()
   const { loadHtml } = useEditorStore()
 
@@ -59,19 +62,14 @@ export default function FileMenu({ fallbackSample }) {
 
   // ── 액션들 ──
 
-  // HTML 열기
-  const handleOpenHtml = useCallback(() => {
+  // HTML 열기 — 확장자 필터(.html/.htm)
+  const handleOpenHtml = useCallback(async () => {
     setOpen(false)
-    htmlFileRef.current?.click()
-  }, [])
-
-  const handleHtmlFile = useCallback((e) => {
-    const file = e.target.files?.[0]
+    const file = await openFile({ description: 'HTML 슬라이드', accept: ACCEPT_HTML, acceptAttr: '.html,.htm' })
     if (!file) return
-    const reader = new FileReader()
-    reader.onload = (ev) => { clearPageCache(); loadHtml(ev.target.result) }
-    reader.readAsText(file)
-    e.target.value = ''
+    const text = await file.text()
+    clearPageCache()
+    loadHtml(text)
   }, [clearPageCache, loadHtml])
 
   // 샘플 슬라이드
@@ -82,31 +80,36 @@ export default function FileMenu({ fallbackSample }) {
   }, [clearPageCache, loadHtml, fallbackSample])
 
   // 새 프로젝트 — 현재 작업을 비우고 빈 슬라이드로 시작
-  const handleNewProject = useCallback(() => {
+  const handleNewProject = useCallback(async () => {
     setOpen(false)
-    if (hasContent && !confirm('새 프로젝트를 시작하면 현재 작업이 사라집니다. 계속할까요?')) return
+    if (hasContent) {
+      const ok = await confirmDialog({
+        title: '새 프로젝트 시작',
+        message: '현재 작업 내용이 모두 사라집니다.\n저장하지 않았다면 먼저 저장하세요. 계속할까요?',
+        confirmText: '새로 시작',
+        cancelText: '취소',
+        danger: true,
+      })
+      if (!ok) return
+    }
     // 빈 페이지 추출 후 '제목 슬라이드' 레이아웃을 자동 적용(PowerPoint 식 시작점)
     useFlatStore.getState().setPendingStarterLayout('title')
     clearPageCache()
     loadHtml(BLANK_DECK)
   }, [hasContent, clearPageCache, loadHtml])
 
-  // 프로젝트 저장 (ZIP 패키지)
+  // 프로젝트 저장 (ZIP 패키지) — 시스템 저장 팝업으로 파일명 선택
   const handleSaveProject = useCallback(async () => {
     setOpen(false)
-    const { serializeProject, downloadProject } = await import('../core/ProjectSerializer.js')
+    const { serializeProject } = await import('../core/ProjectSerializer.js')
     const blob = await serializeProject(useFlatStore.getState())
-    downloadProject(blob, 'project.flatproj')
+    await saveBlob(blob, { suggestedName: 'project.flatproj', description: 'Float 프로젝트', accept: ACCEPT_FLATPROJ })
   }, [])
 
-  // 프로젝트 열기
-  const handleOpenProject = useCallback(() => {
+  // 프로젝트 열기 — 확장자 필터(.flatproj)
+  const handleOpenProject = useCallback(async () => {
     setOpen(false)
-    fileRef.current?.click()
-  }, [])
-
-  const handleProjectFile = useCallback(async (e) => {
-    const file = e.target.files?.[0]
+    const file = await openFile({ description: 'Float 프로젝트', accept: ACCEPT_FLATPROJ, acceptAttr: '.flatproj' })
     if (!file) return
     const { loadProjectFile } = await import('../core/ProjectSerializer.js')
     try {
@@ -117,7 +120,6 @@ export default function FileMenu({ fallbackSample }) {
     } catch (err) {
       alert('프로젝트 파일을 열 수 없습니다: ' + err.message)
     }
-    e.target.value = ''
   }, [loadAllPages, setViewMode])
 
   // HTML 내보내기 (현재 페이지)
@@ -391,8 +393,6 @@ export default function FileMenu({ fallbackSample }) {
         </div>
       )}
 
-      <input ref={fileRef} type="file" accept=".flatproj" style={{ display: 'none' }} onChange={handleProjectFile} />
-      <input ref={htmlFileRef} type="file" accept=".html,.htm" style={{ display: 'none' }} onChange={handleHtmlFile} />
     </div>
   )
 }
