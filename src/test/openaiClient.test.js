@@ -3,7 +3,8 @@ import {
   getApiKey, setApiKey, hasApiKey, getModel, setModel,
   getImageModel, setImageModel, pickImageSize, flexSize, generationSize,
   generateImage, editImage,
-  chat, generateImagePrompt, analyzeImageForInfographic,
+  chat, generateImagePrompt, analyzeImageForInfographic, advisePresentation, applyAdviceToSlide,
+  regenerateSlideHtml,
   DEFAULT_MODEL, DEFAULT_IMAGE_MODEL,
 } from '../core/OpenAIClient'
 
@@ -154,6 +155,94 @@ describe('editImage (image-to-image edits)', () => {
     vi.stubGlobal('fetch', fetchMock)
     await editImage('data:image/png;base64,AAAA', 'x', { width: 500, height: 500 })
     expect(fetchMock.mock.calls[0][1].body.get('model')).toBe('gpt-image-1')
+  })
+})
+
+describe('advisePresentation (어드바이저)', () => {
+  beforeEach(() => { localStorage.clear(); setApiKey('sk-test') })
+  afterEach(() => { vi.restoreAllMocks() })
+
+  it('빈 슬라이드 배열은 호출 없이 에러', async () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    await expect(advisePresentation([])).rejects.toThrow(/슬라이드/)
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('목적·청중·슬라이드 텍스트를 user 메시지에 담고 JSON을 파싱', async () => {
+    const payload = { overall: { summary: 's', strengths: [], improvements: [] }, flow: 'f', slides: [{ index: 1, comment: 'c', suggestions: [] }] }
+    const fetchMock = vi.fn().mockResolvedValue(okResponse(JSON.stringify(payload)))
+    vi.stubGlobal('fetch', fetchMock)
+    const out = await advisePresentation(
+      [{ index: 1, text: '제목 슬라이드' }, { index: 2, text: '' }],
+      { purpose: '설득', audience: '경영진' },
+    )
+    expect(out).toEqual(payload)
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body)
+    expect(body.response_format).toEqual({ type: 'json_object' })
+    const user = body.messages[1].content
+    expect(user).toContain('설득')
+    expect(user).toContain('경영진')
+    expect(user).toContain('제목 슬라이드')
+    expect(user).toContain('(빈 슬라이드)') // 2번 빈 슬라이드 표기
+  })
+
+  it('잘못된 JSON 응답은 에러', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(okResponse('not json')))
+    await expect(advisePresentation([{ index: 1, text: 'x' }])).rejects.toThrow(/해석/)
+  })
+})
+
+describe('applyAdviceToSlide', () => {
+  beforeEach(() => { localStorage.clear(); setApiKey('sk-test') })
+  afterEach(() => { vi.restoreAllMocks() })
+
+  it('빈 요소는 호출 없이 에러', async () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    await expect(applyAdviceToSlide([])).rejects.toThrow(/텍스트/)
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('요소 id+텍스트와 조언을 담아 호출하고 updates 반환', async () => {
+    const payload = { updates: [{ id: 'el1', text: '개선된 제목' }], note: '' }
+    const fetchMock = vi.fn().mockResolvedValue(okResponse(JSON.stringify(payload)))
+    vi.stubGlobal('fetch', fetchMock)
+    const out = await applyAdviceToSlide(
+      [{ id: 'el1', text: '원래 제목' }],
+      { comment: '제목을 더 구체적으로', suggestions: ['수치 추가'], purpose: '설득' },
+    )
+    expect(out.updates).toEqual([{ id: 'el1', text: '개선된 제목' }])
+    const user = JSON.parse(fetchMock.mock.calls[0][1].body).messages[1].content
+    expect(user).toContain('[id:el1]')
+    expect(user).toContain('원래 제목')
+    expect(user).toContain('제목을 더 구체적으로')
+  })
+
+  it('updates 누락 시 빈 배열 보정', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(okResponse('{"note":"구조 변경 필요"}')))
+    const out = await applyAdviceToSlide([{ id: 'a', text: 't' }], {})
+    expect(out.updates).toEqual([])
+    expect(out.note).toBe('구조 변경 필요')
+  })
+})
+
+describe('regenerateSlideHtml', () => {
+  beforeEach(() => { localStorage.clear(); setApiKey('sk-test') })
+  afterEach(() => { vi.restoreAllMocks() })
+
+  it('캔버스 크기·조언·텍스트를 담아 호출하고 코드펜스를 제거해 HTML 반환', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(okResponse('```html\n<html><body>ok</body></html>\n```'))
+    vi.stubGlobal('fetch', fetchMock)
+    const html = await regenerateSlideHtml(
+      { text: '원본 텍스트' },
+      { comment: '여백 늘리기', suggestions: ['핵심 강조'], purpose: '설득', canvasSize: { w: 1280, h: 720 } },
+    )
+    expect(html).toBe('<html><body>ok</body></html>') // 코드펜스 제거됨
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body)
+    expect(body.messages[0].content).toContain('1280px') // 시스템에 캔버스 폭
+    expect(body.messages[1].content).toContain('여백 늘리기')
+    expect(body.messages[1].content).toContain('원본 텍스트')
   })
 })
 
