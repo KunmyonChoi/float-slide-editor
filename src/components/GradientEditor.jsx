@@ -125,19 +125,27 @@ export default function GradientEditor({ value, onChange }) {
 
 function StopRow({ stop, onUpdate, onRemove, canRemove }) {
   const colorRef = { current: null }
-  const { hex } = parseColor(stop.color)
+  const { hex, opacity } = parseColor(stop.color)
+  const alphaPct = Math.round((opacity ?? 1) * 100)
 
   const handleColorChange = (e) => {
     onUpdate({ color: hexToRgba(e.target.value, parseColor(stop.color).opacity) })
+  }
+  const handleAlphaChange = (e) => {
+    const pct = Math.max(0, Math.min(100, parseInt(e.target.value) || 0))
+    onUpdate({ color: hexToRgba(hex, pct / 100) })
   }
 
   return (
     <div className="flex items-center gap-1.5">
       <button
         onClick={() => colorRef.current?.click()}
+        title="색"
         style={{
           width: 18, height: 18, borderRadius: 3,
-          background: hex,
+          // 알파 반영: 체커보드 위에 실제 rgba 색을 올려 반투명도를 시각화
+          backgroundImage: `linear-gradient(${stop.color}, ${stop.color}), repeating-conic-gradient(#94a3b8 0% 25%, #475569 0% 50%)`,
+          backgroundSize: '100% 100%, 6px 6px',
           border: '1px solid rgba(255,255,255,0.15)',
           cursor: 'pointer', flexShrink: 0,
         }}
@@ -154,9 +162,19 @@ function StopRow({ stop, onUpdate, onRemove, canRemove }) {
         value={Math.round(stop.position)}
         onChange={e => onUpdate({ position: Math.max(0, Math.min(100, parseInt(e.target.value) || 0)) })}
         onKeyDown={e => e.stopPropagation()}
-        className="text-xs bg-white/5 rounded px-1.5 py-0.5 border border-white/10 text-slate-200 w-12 text-center"
+        title="위치 %"
+        className="text-xs bg-white/5 rounded px-1.5 py-0.5 border border-white/10 text-slate-200 w-11 text-center"
       />
-      <span className="text-xs text-slate-500">%</span>
+      <span className="text-xs text-slate-500" title="위치">%</span>
+      <input
+        type="number" min="0" max="100"
+        value={alphaPct}
+        onChange={handleAlphaChange}
+        onKeyDown={e => e.stopPropagation()}
+        title="불투명도 %"
+        className="text-xs bg-white/5 rounded px-1.5 py-0.5 border border-white/10 text-slate-200 w-11 text-center"
+      />
+      <span className="text-xs text-slate-500" title="불투명도">α</span>
       {canRemove && (
         <button
           onClick={onRemove}

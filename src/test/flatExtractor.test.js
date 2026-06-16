@@ -8,6 +8,7 @@ import {
   isEmbeddedInline,
   INLINE_TAGS,
   resetFlatCounter,
+  settleAnimations,
 } from '../core/FlatExtractor'
 
 // ── DOM 헬퍼 ─────────────────────────────────────────────────
@@ -307,5 +308,49 @@ describe('hasChildTextElements — 자식 텍스트 요소 판별', () => {
     }, '독립 텍스트')
     div.appendChild(span)
     expect(hasChildTextElements(div)).toBe(true)
+  })
+})
+
+describe('settleAnimations', () => {
+  function fakeAnim(iterations, { throwOnFinish = false } = {}) {
+    return {
+      finished: false,
+      effect: { getTiming: () => ({ iterations }) },
+      finish() {
+        if (throwOnFinish) throw new Error('InvalidStateError')
+        this.finished = true
+      },
+    }
+  }
+
+  it('getAnimations 미구현 환경(jsdom)에서 안전하게 no-op', () => {
+    const doc = {} // getAnimations 없음
+    expect(() => settleAnimations(doc)).not.toThrow()
+  })
+
+  it('유한 애니메이션은 finish() 호출', () => {
+    const a = fakeAnim(1)
+    const b = fakeAnim(3)
+    settleAnimations({ getAnimations: () => [a, b] })
+    expect(a.finished).toBe(true)
+    expect(b.finished).toBe(true)
+  })
+
+  it('무한 반복(iterations=Infinity)은 finish() 미호출', () => {
+    const inf = fakeAnim(Infinity)
+    settleAnimations({ getAnimations: () => [inf] })
+    expect(inf.finished).toBe(false)
+  })
+
+  it('finish()가 throw해도 다른 애니메이션 처리 계속', () => {
+    const bad = fakeAnim(1, { throwOnFinish: true })
+    const ok = fakeAnim(1)
+    expect(() => settleAnimations({ getAnimations: () => [bad, ok] })).not.toThrow()
+    expect(ok.finished).toBe(true)
+  })
+
+  it('getAnimations 자체가 throw해도 안전', () => {
+    const doc = { getAnimations: () => { throw new Error('boom') } }
+    expect(() => settleAnimations(doc)).not.toThrow()
   })
 })

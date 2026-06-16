@@ -399,6 +399,34 @@ function MultiElementPanel({ elements }) {
                 ))}
               </div>
             </div>
+            {/* 줄바꿈 — 자동(pre-wrap) / 안 함(nowrap) */}
+            <div className="mt-2">
+              <p className={`${labelClass} mb-0.5`}>줄바꿈</p>
+              <div className="flex gap-1.5">
+                {[
+                  { value: 'pre-wrap', label: '자동', title: '자동 줄바꿈' },
+                  { value: 'nowrap', label: '안 함', title: '줄바꿈 안 함 (한 줄 고정)' },
+                ].map(o => {
+                  const ws = getTextCommon('whiteSpace')
+                  const active = o.value === 'nowrap' ? ws === 'nowrap' : ws !== 'nowrap'
+                  return (
+                    <button
+                      key={o.value}
+                      onClick={() => updateTextStyle('whiteSpace', o.value)}
+                      title={o.title}
+                      className={[
+                        'flex-1 py-1.5 rounded-lg text-xs transition-colors border',
+                        active
+                          ? 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30'
+                          : 'bg-white/5 text-slate-400 border-white/10 hover:bg-white/10',
+                      ].join(' ')}
+                    >
+                      {o.label}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
             {/* 리스트 (선택된 모든 텍스트 박스에 적용) */}
             <div className="mt-2">
               <ListToggle value={commonListType} onChange={setListTypeAll} />
@@ -762,6 +790,36 @@ function FontSection({ el, styles, updateStyle, previewStyle, isGradientText, li
               {a.icon}
             </button>
           ))}
+        </div>
+      </div>
+
+      {/* 줄바꿈 — 자동(pre-wrap) / 안 함(nowrap) */}
+      <div>
+        <p className={`${labelClass} mb-0.5`}>줄바꿈</p>
+        <div className="flex gap-1.5">
+          {[
+            { value: 'pre-wrap', label: '자동', title: '자동 줄바꿈' },
+            { value: 'nowrap', label: '안 함', title: '줄바꿈 안 함 (한 줄 고정)' },
+          ].map(o => {
+            const active = o.value === 'nowrap'
+              ? styles.whiteSpace === 'nowrap'
+              : styles.whiteSpace !== 'nowrap'
+            return (
+              <button
+                key={o.value}
+                onClick={() => updateStyle('whiteSpace', o.value)}
+                title={o.title}
+                className={[
+                  'flex-1 py-1.5 rounded-lg text-xs transition-colors border',
+                  active
+                    ? 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30'
+                    : 'bg-white/5 text-slate-400 border-white/10 hover:bg-white/10',
+                ].join(' ')}
+              >
+                {o.label}
+              </button>
+            )
+          })}
         </div>
       </div>
 

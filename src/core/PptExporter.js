@@ -61,7 +61,7 @@ async function addElementToSlide(slide, el, canvasSize) {
 
   switch (el.type) {
     case 'text':
-      addText(slide, el, { x, y, w, h, rotate })
+      await addText(slide, el, { x, y, w, h, rotate })
       break
     case 'image':
       await addImage(slide, el, { x, y, w, h, rotate })
@@ -179,7 +179,7 @@ function applyListStructure(textRuns) {
   return out
 }
 
-function addText(slide, el, pos) {
+async function addText(slide, el, pos) {
   const s = el.styles || {}
 
   // 그라데이션 텍스트 감지: background-clip: text + gradient background
@@ -241,9 +241,22 @@ function addText(slide, el, pos) {
   else if (s.textAlign === 'right') textOpts.align = 'right'
   else textOpts.align = 'left'
 
-  // 배경색 (pptxgenjs는 solid fill만 지원)
+  // 배경: 그라데이션이면 PNG로 래스터화해 텍스트 뒤(먼저 추가)에 배치하고,
+  // 아니면 solid fill. (pptxgenjs 텍스트 fill은 solid만 지원하므로 그라데이션은 이미지로)
+  const hasGradientBg = s.backgroundImage && s.backgroundImage !== 'none' &&
+    parseGradient(s.backgroundImage).type !== 'none'
+  if (hasGradientBg) {
+    try {
+      const pngData = await cssGradientToPng(s.backgroundImage, el.width, el.height, s.borderRadius)
+      slide.addImage({
+        data: pngData,
+        x: pos.x, y: pos.y, w: pos.w, h: pos.h,
+        ...(pos.rotate ? { rotate: pos.rotate } : {}),
+      })
+    } catch { /* 래스터화 실패 시 아래 solid fill 시도 */ }
+  }
   const bgColor = parseSolidFill(s)
-  if (bgColor) textOpts.fill = bgColor
+  if (bgColor && !hasGradientBg) textOpts.fill = bgColor
 
   // 테두리
   const border = parseBorder(s)
@@ -350,6 +363,23 @@ async function addShape(slide, el, pos) {
   const solidFill = parseSolidFill(s)
 
   if (!hasGradient && !solidFill && !border && !shadow) return
+
+  // 부분 테두리(일부 변만 있는 장식, 예: .flow-step::after 꺾인 화살표는
+  // border-top+border-right + rotate(45deg))는 pptxgenjs 균일 테두리로 표현하면
+  // 사각형 외곽 → 회전 시 다이아몬드가 된다. 채움이 없으면 PNG로 래스터화해 정확히 그린다.
+  const sidePresent = (v) => v && v !== 'none' && !v.startsWith('0px')
+  const presentSides = [s.borderTop, s.borderRight, s.borderBottom, s.borderLeft].filter(sidePresent).length
+  if (!hasGradient && !solidFill && presentSides > 0 && presentSides < 4) {
+    try {
+      const pngData = await borderBoxToPng(s, el.width, el.height)
+      slide.addImage({
+        data: pngData,
+        x: pos.x, y: pos.y, w: pos.w, h: pos.h,
+        ...(pos.rotate ? { rotate: pos.rotate } : {}),
+      })
+      return
+    } catch { /* 실패 시 아래 균일 테두리 rect로 폴백 */ }
+  }
 
   // 그라데이션 배경은 pptxgenjs가 지원하지 않으므로 Canvas로 래스터라이즈
   if (hasGradient) {
@@ -495,6 +525,44 @@ function parseShadow(boxShadow) {
     color: color || '000000',
     opacity: 0.4,
   }
+}
+
+/** 일부 변만 있는 테두리(꺾인 화살표 등)를 투명 배경 PNG로 그린다.
+ *  각 변을 실제 색·두께로 선으로 그려, 회전은 호출부에서 pptx rotate로 적용한다. */
+function borderBoxToPng(s, width, height) {
+  return new Promise((resolve, reject) => {
+    const scale = 2
+    const canvas = document.createElement('canvas')
+    canvas.width = Math.max(1, Math.round(width * scale))
+    canvas.height = Math.max(1, Math.round(height * scale))
+    const ctx = canvas.getContext('2d')
+    const W = canvas.width, H = canvas.height
+    const sides = [
+      [s.borderTop, [0, 0, W, 0]],
+      [s.borderRight, [W, 0, W, H]],
+      [s.borderBottom, [0, H, W, H]],
+      [s.borderLeft, [0, 0, 0, H]],
+    ]
+    let drew = false
+    for (const [val, [x0, y0, x1, y1]] of sides) {
+      if (!val || val === 'none' || val.startsWith('0px')) continue
+      const m = val.match(/([\d.]+)px\s+\w+\s+(.+)/)
+      if (!m) continue
+      const lw = parseFloat(m[1]) * scale
+      ctx.strokeStyle = m[2].trim()
+      ctx.lineWidth = lw
+      // 모서리 선이 캔버스 밖으로 잘리지 않도록 두께의 절반만큼 안쪽으로
+      const off = lw / 2
+      const adj = (a, edge) => (a === 0 ? off : a === edge ? a - off : a)
+      ctx.beginPath()
+      ctx.moveTo(adj(x0, W), adj(y0, H))
+      ctx.lineTo(adj(x1, W), adj(y1, H))
+      ctx.stroke()
+      drew = true
+    }
+    if (!drew) { reject(new Error('no border to draw')); return }
+    resolve(canvas.toDataURL('image/png'))
+  })
 }
 
 function cssGradientToPng(cssGradient, width, height, borderRadius) {

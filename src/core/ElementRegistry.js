@@ -163,6 +163,18 @@ const EDITOR_AGENT = `
     }
   });
 
+  /* 슬라이드를 보이게 하되 display 타입을 강제하지 않는다.
+     인라인 display를 제거해 덱 CSS(.slide.active 등)의 자연 display를 복원하고,
+     그래도 none이면(JS로만 보이던 덱) block으로 폴백한다.
+     (과거엔 display:flex를 강제해 block 레이아웃 슬라이드의 자식이 가로로
+      찌부러지는 문제가 있었다 — 컬럼이 좁아져 텍스트가 비정상 줄바꿈됨) */
+  function __feShowSlide(el) {
+    el.style.display = '';
+    try {
+      if (getComputedStyle(el).display === 'none') el.style.display = 'block';
+    } catch (e) { el.style.display = 'block'; }
+  }
+
   /* ── 페이지 변경 감시 ── */
   var __feIsReveal = false;
 
@@ -293,7 +305,7 @@ const EDITOR_AGENT = `
         slides[curIdx].classList.remove('active');
         slides[curIdx].style.display = 'none';
         slides[targetIdx].classList.add('active');
-        slides[targetIdx].style.display = 'flex';
+        __feShowSlide(slides[targetIdx]);
         __feDetectPage();
       }
       return;
@@ -315,7 +327,7 @@ const EDITOR_AGENT = `
         slides[curIdx].classList.remove('active');
         slides[curIdx].style.display = 'none';
         slides[idx].classList.add('active');
-        slides[idx].style.display = 'flex';
+        __feShowSlide(slides[idx]);
         __feDetectPage();
       }
       return;

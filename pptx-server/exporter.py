@@ -316,9 +316,12 @@ def _apply_bg_fill_xml(parent_el, fill_info, tag_name='p:bgPr'):
         gs_lst = grad_fill.makeelement(qn('a:gsLst'), {})
         for stop in grad['stops']:
             gs = gs_lst.makeelement(qn('a:gs'), {'pos': str(int(stop['position'] * 1000))})
-            rgb = css_color_to_rgb(stop['color'])
-            if rgb:
-                srgb = gs.makeelement(qn('a:srgbClr'), {'val': f'{rgb[0]:02X}{rgb[1]:02X}{rgb[2]:02X}'})
+            rgba = css_color_to_rgba(stop['color'])
+            if rgba:
+                r, g, b, a = rgba
+                srgb = gs.makeelement(qn('a:srgbClr'), {'val': f'{r:02X}{g:02X}{b:02X}'})
+                if a < 1.0:
+                    srgb.append(srgb.makeelement(qn('a:alpha'), {'val': str(int(a * 100000))}))
                 gs.append(srgb)
                 gs_lst.append(gs)
         grad_fill.append(gs_lst)
@@ -667,7 +670,7 @@ def _add_text(slide, el: dict, x, y, w, h, rotation, font_name_map: dict = None,
     # border (uniform)
     _apply_border(txbox, s)
     # partial borders (1-2 sides) as separate line shapes
-    _add_partial_borders(slide, s, x, y, w, h)
+    _add_partial_borders(slide, s, x, y, w, h, rotation)
 
     # borderRadius (TextBox도 roundRect 적용)
     br = s.get('borderRadius', '0px')
@@ -916,7 +919,7 @@ def _add_shape(slide, el: dict, x, y, w, h, rotation, cs: dict):
     # border (uniform)
     _apply_border(shape, s)
     # partial borders (1-2 sides) as separate line shapes
-    _add_partial_borders(slide, s, x, y, w, h)
+    _add_partial_borders(slide, s, x, y, w, h, rotation)
 
     # shadow
     _apply_shadow(shape, s)
@@ -1139,9 +1142,14 @@ def _apply_gradient_fill_to_shape(shape, grad: dict):
 
     for stop in grad['stops']:
         gs = gs_lst.makeelement(qn('a:gs'), {'pos': str(int(stop['position'] * 1000))})
-        rgb = css_color_to_rgb(stop['color'])
-        if rgb:
-            srgb_clr = gs.makeelement(qn('a:srgbClr'), {'val': f'{rgb[0]:02X}{rgb[1]:02X}{rgb[2]:02X}'})
+        rgba = css_color_to_rgba(stop['color'])
+        if rgba:
+            r, g, b, a = rgba
+            srgb_clr = gs.makeelement(qn('a:srgbClr'), {'val': f'{r:02X}{g:02X}{b:02X}'})
+            # 알파(투명도) 보존 — 누락하면 rgba(..,.3)→(..,.12) 같은 반투명 그라데이션이
+            # 동일 RGB의 단색 불투명으로 변환되어 그라데이션이 안 보인다.
+            if a < 1.0:
+                srgb_clr.append(srgb_clr.makeelement(qn('a:alpha'), {'val': str(int(a * 100000))}))
             gs.append(srgb_clr)
             gs_lst.append(gs)
 
@@ -1211,12 +1219,27 @@ def _apply_line_dash(shape, style: str):
         ln_elem.append(prst_dash)
 
 
-def _add_partial_borders(slide, s: dict, x, y, w, h):
-    """Add individual line shapes for sides that have non-uniform borders."""
+def _add_partial_borders(slide, s: dict, x, y, w, h, rotation=0):
+    """Add individual line shapes for sides that have non-uniform borders.
+    rotation(도, 시계방향)이 있으면 각 선의 끝점을 박스 중심 기준으로 회전한다.
+    (예: .flow-step::after 꺾인 화살표 = border-top+border-right + rotate(45deg) → '>')"""
     partial = _parse_partial_borders(s)
     uniform = _parse_border_data(s)
     if uniform or not partial:
         return  # uniform border handled by _apply_border, or no borders at all
+
+    # 박스 중심 기준 회전 (스크린 y-down 좌표계 → +각도가 시계방향, CSS rotate와 일치)
+    cx, cy = x + w / 2.0, y + h / 2.0
+    ang = math.radians(rotation) if rotation else 0.0
+    cos_a, sin_a = math.cos(ang), math.sin(ang)
+
+    def _rot(px, py):
+        if not rotation:
+            return Emu(int(px)), Emu(int(py))
+        dx, dy = px - cx, py - cy
+        rx = cx + dx * cos_a - dy * sin_a
+        ry = cy + dx * sin_a + dy * cos_a
+        return Emu(int(rx)), Emu(int(ry))
 
     for side, data in partial.items():
         # data['pt'] is CSS px value of border width
@@ -1237,6 +1260,9 @@ def _add_partial_borders(slide, s: dict, x, y, w, h):
             x1, y1, x2, y2 = x + w, y, x + w, y + h
         else:
             continue
+
+        x1, y1 = _rot(x1, y1)
+        x2, y2 = _rot(x2, y2)
 
         connector = slide.shapes.add_connector(1, x1, y1, x2, y2)  # MSO_CONNECTOR.STRAIGHT = 1
         _clear_theme_style(connector)

@@ -66,9 +66,11 @@ export function isNavigationElement(el, cs) {
     parent = parent.parentElement
   }
 
-  // 슬라이드 카운터 패턴: "N / M" 형태의 짧은 텍스트
+  // 슬라이드 카운터 패턴: "N / M" 형태의 짧은 텍스트.
+  // 슬래시 양쪽에 공백을 요구해 "24/7"(24시간 연중무휴) 같은 콘텐츠 비율 표현이
+  // 페이지 카운터로 오인되지 않도록 한다. (실제 카운터는 보통 "01 / 10"처럼 공백 포함)
   const text = (el.textContent || '').trim()
-  if (/^\d+\s*\/\s*\d+$/.test(text)) return true
+  if (/^\d+\s+\/\s+\d+$/.test(text)) return true
 
   return false
 }
@@ -203,14 +205,16 @@ function getRichTextContent(el) {
         // embedded(주변에 텍스트 형제가 있는 경우, 예: <li>... <code>X</code> ...</li>)은
         // 텍스트 흐름의 일부로 유지해 위치 정합성을 보존해야 한다.
         if (hasVisualBoxStyle(node) && !isEmbeddedInline(node)) continue
-        // 인라인 + 고유 스타일 + embedded → outerHTML로 스타일 보존
-        if (hasDistinctStyle(node) && isEmbeddedInline(node)) {
+        // 시각 박스가 없는 고유 스타일 인라인(색/폰트만)은 텍스트 흐름의 일부이므로
+        // (예: <div><strong>A</strong><br><span style="color">B</span></div> 의 둘째 줄)
+        // embedded 여부와 무관하게 스타일을 보존해 인라인으로 유지한다.
+        // (배지=hasVisualBoxStyle만 독립 추출 — 그 외 스타일 인라인을 제외하면
+        //  <br> 뒤 styled span 같은 흐름 텍스트가 통째로 소실된다)
+        if (hasDistinctStyle(node)) {
           html += cleanInlineHtml(node)
           hasHtml = true
           continue
         }
-        // 인라인 + 고유 스타일 + 비embedded → 독립 추출 대상, 제외
-        if (hasDistinctStyle(node) && !isEmbeddedInline(node)) continue
       }
       // <li> 요소 → 부모(ul/ol)에 맞춰 리스트 마커 삽입
       // (CSS list-style 또는 li::before로 렌더링되어 textContent에 없으므로 직접 prefix)
@@ -742,6 +746,7 @@ function buildFlatElement(el, rect, cs, domOrder, forceType, transformScale = 1,
 
   let content = ''
   let isRich = false
+  let liMarkerFromBefore = false // <li> 마커가 ::before content에서 온 경우(중복 추출 방지)
   if (type === 'image') {
     content = el.getAttribute('src') || ''
   } else if (type === 'text') {
@@ -765,6 +770,12 @@ function buildFlatElement(el, rect, cs, domOrder, forceType, transformScale = 1,
         } else {
           content = m.plain + content
         }
+        // list-style:none + ::before content를 마커로 쓴 경우, 그 ::before는 이미
+        // 텍스트 마커로 포함됐으므로 별도 pseudo 요소로 추출하지 않는다(화살표 중복 방지).
+        const win = el.ownerDocument?.defaultView
+        if (win && win.getComputedStyle(el).listStyleType === 'none') {
+          liMarkerFromBefore = true
+        }
       }
     }
   }
@@ -784,7 +795,6 @@ function buildFlatElement(el, rect, cs, domOrder, forceType, transformScale = 1,
   // 단, 텍스트 없는 시각 요소(장식 라인 등)는 원본 높이 유지
   let height = rect.height
   let width = rect.width
-  let xAdjust = 0 // 경계값 너비 보정 시 center/right 정렬의 시각적 중심 유지를 위한 x 보정
   let flexParentX = null // flex 부모 가용 너비 사용 시 x 좌표 오버라이드
   const hasTextContent = type === 'text' && (el.textContent || '').trim().length > 0
   if (hasTextContent) {
@@ -846,8 +856,13 @@ function buildFlatElement(el, rect, cs, domOrder, forceType, transformScale = 1,
     // (monospace 폰트 사용 여부가 아닌, 실제 pre 태그 기반으로 판별)
     const elTag = el.tagName.toLowerCase()
     const isCodeBlock = elTag === 'pre' || elTag === 'code' || !!el.closest('pre')
+    // 원본이 이미 여러 줄이면(높이 기준) 의도된 줄바꿈이므로 nowrap 보정을 건너뛴다.
+    // 판단은 너비가 아닌 높이/lineHeight로 한다 — nowrap 측정 시 요소 자신의 max-width에
+    // 캡되어 단일행 너비가 실제보다 좁게(=현재 너비와 동일하게) 잡혀 단일행으로 오판되는
+    // 문제를 피하기 위함. (줄바꿈 판단에만 소폭 마진: 1.5줄)
+    const isOriginalSingleLine = lineHeight > 0 ? rect.height <= lineHeight * 1.5 : true
     // pre/code 블록 감지 (nowrap 보정 스킵용)
-    if (!isCodeBlock && intendedBreaks === 0) {
+    if (!isCodeBlock && intendedBreaks === 0 && isOriginalSingleLine) {
       // 부모 컨테이너가 너비를 제한하는지 확인:
       // 요소 너비가 부모 내부 너비(padding 제외)와 거의 같으면
       // 부모에 의한 의도된 줄바꿈이므로 보정하지 않는다.
@@ -917,9 +932,10 @@ function buildFlatElement(el, rect, cs, domOrder, forceType, transformScale = 1,
         el.style.wordBreak = origWB
         el.style.width = origW
         if (nowrapRect.width > width + 2) {
-          // nowrap 너비가 원래보다 넓음 → 줄바꿈이 있었음
-          // 단, 확장된 너비가 가장 가까운 editor 조상 컨테이너의 가용 너비를
-          // 초과하면 원래 레이아웃에서 의도된 줄바꿈이므로 확장하지 않음
+          // nowrap 너비가 원래보다 넓음 → 줄바꿈이 있었음 (원본이 단일행인 경우만
+          // 여기 도달 — 다중행은 상단 isOriginalSingleLine 게이트에서 제외됨).
+          // overflow:visible 등으로 높이엔 안 드러난 단일행 너비 부족을 교정한다.
+          // 단, 확장 너비가 가장 가까운 editor 조상 가용 너비를 초과하면 의도된 줄바꿈.
           let ancestorMaxW = Infinity
           const nWin = el.ownerDocument.defaultView
           if (nWin) {
@@ -938,8 +954,6 @@ function buildFlatElement(el, rect, cs, domOrder, forceType, transformScale = 1,
           }
           const expandedW = Math.ceil(nowrapRect.width) + 4
           if (expandedW <= ancestorMaxW + 2) {
-            // 조상 범위 내 → 확장 적용 + nowrap으로 재줄바꿈 방지
-            // (CJK는 글자 사이 어디서나 줄바꿈 가능 → px 버퍼만으론 불안정)
             width = expandedW
             height = Math.ceil(lineHeight) || Math.ceil(nowrapRect.height)
             styles.whiteSpace = 'nowrap'
@@ -956,23 +970,10 @@ function buildFlatElement(el, rect, cs, domOrder, forceType, transformScale = 1,
           const hasGradientText = styles.webkitBackgroundClip === 'text' ||
                                   (styles.backgroundImage && styles.backgroundImage !== 'none')
           if (!hasBg && !hasGradientText) {
-            const newWidth = Math.ceil(nowrapRect.width) + 4
-            const extra = newWidth - width
-            // 단일 줄 텍스트 → nowrap으로 고정해 CJK 글자중간 줄바꿈 방지
+            // 단일행 보존: 너비·위치는 그대로 두고 nowrap만 적용해 서브픽셀
+            // 재줄바꿈만 방지한다. (너비 버퍼를 더하면 center/right 정렬에서
+            // 시각적 중심이 이동하므로 사용하지 않는다 — 줄바꿈 판단에만 의존)
             styles.whiteSpace = 'nowrap'
-            const tAlign = styles.textAlign || 'start'
-            if (tAlign === 'center') {
-              // 가운데 정렬: 너비를 양쪽으로 균등 확장 → x를 좌측으로 절반 이동
-              width = newWidth
-              xAdjust -= extra / 2
-            } else if (tAlign === 'right' || tAlign === 'end') {
-              // 우측 정렬: 너비를 왼쪽으로 확장 → x를 왼쪽으로 전체 이동
-              width = newWidth
-              xAdjust -= extra
-            } else {
-              // 좌측 정렬(start/left): 오른쪽으로 확장, x 고정
-              width = newWidth
-            }
           }
         }
       }
@@ -983,8 +984,14 @@ function buildFlatElement(el, rect, cs, domOrder, forceType, transformScale = 1,
   // 비배지: padding이 있으면 서브픽셀 보정 (+2px)
   if (hasTextContent && styles.padding && styles.padding !== '0px') {
     if (isBadgeElement(styles, height, content)) {
+      // 배지(예: .take "TAKE 01"): padding 제거 후 박스 높이가 텍스트보다 크므로
+      // flex 가운데 정렬을 명시해 텍스트를 세로·가로 중앙에 둔다.
+      // (병합 컨테이너 배지 경로와 동일하게 처리 — 누락 시 텍스트가 위로 붙는다)
       styles.padding = '0px'
       styles.textAlign = 'center'
+      styles.isFlex = true
+      styles.justifyContent = 'center'
+      styles.alignItems = 'center'
     } else {
       const padParts = styles.padding.split(' ').map(p => parseFloat(p) || 0)
       const padH = padParts.length === 4 ? padParts[1] + padParts[3]
@@ -1042,7 +1049,7 @@ function buildFlatElement(el, rect, cs, domOrder, forceType, transformScale = 1,
     id: nextFlatId(),
     sourceId: el.getAttribute('data-editor-id'),
     type,
-    x: (flexParentX !== null ? flexParentX : rect.left) + xAdjust,
+    x: flexParentX !== null ? flexParentX : rect.left,
     y: rect.top,
     width,
     height,
@@ -1057,9 +1064,12 @@ function buildFlatElement(el, rect, cs, domOrder, forceType, transformScale = 1,
     originalRect: { x: rect.left, y: rect.top, w: rect.width, h: rect.height },
   }
 
-  // ::before 의사 요소 추출 — CSS로 렌더링되는 불릿, 장식 등
-  const pseudoBefore = extractPseudoElement(el, rect, '::before')
+  // ::before / ::after 의사 요소 추출 — CSS로 렌더링되는 불릿, 도트, 장식 등.
+  // 단, <li> 마커로 이미 텍스트에 포함된 ::before(화살표·불릿)는 중복이므로 제외.
+  const pseudoBefore = liMarkerFromBefore ? null : extractPseudoElement(el, rect, '::before')
   if (pseudoBefore) result._pseudoBefore = pseudoBefore
+  const pseudoAfter = extractPseudoElement(el, rect, '::after')
+  if (pseudoAfter) result._pseudoAfter = pseudoAfter
 
   return result
 }
@@ -1079,8 +1089,8 @@ function extractPseudoElement(el, parentRect, pseudo) {
   const content = pcs.content
   if (!content || content === 'none') return null
 
-  const w = parseFloat(pcs.width) || 0
-  const h = parseFloat(pcs.height) || 0
+  let w = parseFloat(pcs.width) || 0
+  let h = parseFloat(pcs.height) || 0
   const bg = pcs.backgroundColor
   const bgImage = pcs.backgroundImage
   const hasBg = (bg && bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent') ||
@@ -1090,16 +1100,69 @@ function extractPseudoElement(el, parentRect, pseudo) {
   const isEmptyContent = content === '""' || content === "''" || content === 'normal' || content === 'none'
   const textContent = isEmptyContent ? '' : content.replace(/^["']|["']$/g, '')
 
-  // 시각적 의미 없으면 무시 (빈 content + 배경 없음 + 크기 없음)
-  if (!hasBg && !textContent && (w < 1 || h < 1)) return null
+  // 텍스트 글리프인데 width/height가 0(auto)으로 잡히면 font-size 기준으로 보정
+  const fontSizePx = parseFloat(pcs.fontSize) || 0
+  if (textContent && fontSizePx > 0) {
+    if (w < 1) w = Math.ceil(fontSizePx * Math.max(1, textContent.length))
+    if (h < 1) h = Math.ceil(fontSizePx * 1.4)
+  }
 
-  // 위치 계산: position이 absolute면 부모 기준 left/top
-  const left = parseFloat(pcs.left) || 0
-  const top = parseFloat(pcs.top) || 0
+  // padding/border를 더해 border-box 크기로 확장한다.
+  // getComputedStyle().width/height는 content-box 값이라, padding 있는 배지(예:
+  // .clip.lip::before "AI" — padding:1px 4px)는 그대로 쓰면 박스가 텍스트만큼 작아진다.
+  // flat 렌더러는 box-sizing:border-box이므로 padding을 함께 보존하면 내부에 텍스트가 들어간다.
+  const padL = parseFloat(pcs.paddingLeft) || 0
+  const padR = parseFloat(pcs.paddingRight) || 0
+  const padT = parseFloat(pcs.paddingTop) || 0
+  const padB = parseFloat(pcs.paddingBottom) || 0
+  const bdL = parseFloat(pcs.borderLeftWidth) || 0
+  const bdR = parseFloat(pcs.borderRightWidth) || 0
+  const bdT = parseFloat(pcs.borderTopWidth) || 0
+  const bdB = parseFloat(pcs.borderBottomWidth) || 0
+  if (w > 0) w += padL + padR + bdL + bdR
+  if (h > 0) h += padT + padB + bdT + bdB
+  const hasPadding = (padL + padR + padT + padB) > 0
 
-  return {
-    x: parentRect.left + left,
-    y: parentRect.top + top,
+  // 테두리(border-only 장식: 예 .flow-step::after 화살표 — border-top/right + rotate)
+  const borderW = bdT + bdR + bdB + bdL
+  const hasBorder = borderW > 0
+
+  // 시각적 의미 없으면 무시 (content·배경·테두리 없고 크기도 없음)
+  if (!hasBg && !textContent && !hasBorder && (w < 1 || h < 1)) return null
+
+  // 위치 계산: absolute면 left/right, top/bottom 어느 쪽이든 지정된 기준으로.
+  // (예: ●  점이 top:3px;right:5px로 우상단에 위치 — right/bottom도 처리)
+  const elCs = win.getComputedStyle(el)
+  let x = parentRect.left
+  if (pcs.left && pcs.left !== 'auto') x = parentRect.left + (parseFloat(pcs.left) || 0)
+  else if (pcs.right && pcs.right !== 'auto') x = parentRect.left + parentRect.width - (parseFloat(pcs.right) || 0) - w
+  let y = parentRect.top
+  if (pcs.top && pcs.top !== 'auto') y = parentRect.top + (parseFloat(pcs.top) || 0)
+  else if (pcs.bottom && pcs.bottom !== 'auto') y = parentRect.top + parentRect.height - (parseFloat(pcs.bottom) || 0) - h
+  else if (elCs.display === 'flex' || elCs.display === 'inline-flex') {
+    // top/bottom 미지정 + flex 부모: 부모의 세로 정렬(align-items)을 반영한다.
+    // (정적 위치 의사요소는 flex 흐름에 참여해 세로 중앙/하단에 배치되는데,
+    //  CSS top/left가 auto라 기존엔 부모 top에 붙어 위로 떠 보였다 — 예: .kicker::before 불릿)
+    const ai = elCs.alignItems
+    if (ai === 'center') y = parentRect.top + (parentRect.height - h) / 2
+    else if (ai === 'flex-end' || ai === 'end') y = parentRect.top + parentRect.height - h
+  }
+
+  // transform: rotate() 추출 (회전 장식 — 꺾인 화살표 등)
+  let rotation = 0
+  const t = pcs.transform
+  if (t && t !== 'none') {
+    const m = t.match(/matrix\(([^)]+)\)/)
+    if (m) {
+      const v = m[1].split(',').map(Number)
+      const ang = Math.round(Math.atan2(v[1], v[0]) * 180 / Math.PI)
+      if (Math.abs(ang) > 0.5) rotation = ang
+    }
+  }
+
+  const out = {
+    x,
+    y,
     w,
     h,
     backgroundColor: bg,
@@ -1107,6 +1170,27 @@ function extractPseudoElement(el, parentRect, pseudo) {
     borderRadius: pcs.borderRadius || '0px',
     content: textContent,
   }
+  // 테두리로 그린 장식은 각 변 테두리 보존
+  if (hasBorder) {
+    out.borderTop = `${pcs.borderTopWidth} ${pcs.borderTopStyle} ${pcs.borderTopColor}`
+    out.borderRight = `${pcs.borderRightWidth} ${pcs.borderRightStyle} ${pcs.borderRightColor}`
+    out.borderBottom = `${pcs.borderBottomWidth} ${pcs.borderBottomStyle} ${pcs.borderBottomColor}`
+    out.borderLeft = `${pcs.borderLeftWidth} ${pcs.borderLeftStyle} ${pcs.borderLeftColor}`
+  }
+  if (rotation) out.rotation = rotation
+  // 텍스트 글리프(불릿/도트 등)는 색·폰트도 보존
+  if (textContent) {
+    out.color = pcs.color
+    out.fontSize = pcs.fontSize
+    out.fontFamily = pcs.fontFamily
+    // 배지(예: "AI" 라벨)의 padding 보존 — w/h를 border-box로 확장했으므로
+    // box-sizing:border-box인 flat 렌더러에서 텍스트가 안쪽에 배치된다.
+    if (hasPadding) {
+      out.padding = `${pcs.paddingTop} ${pcs.paddingRight} ${pcs.paddingBottom} ${pcs.paddingLeft}`
+      out.textAlign = 'center'
+    }
+  }
+  return out
 }
 
 /**
@@ -1348,8 +1432,12 @@ function tryMergeContainerText(containerEl, containerRect, containerCs, win) {
     }
   }
 
-  // Case B: 여러 인라인 자식 → getRichTextContent로 리치 텍스트 병합
-  if (allInlineChildren && childEditors.length > 1) {
+  // Case B: 여러 인라인 자식 → getRichTextContent로 리치 텍스트 병합.
+  //   단, flex 컨테이너는 자식들이 독립 위치를 가지므로 병합하지 않는다(null 반환 →
+  //   호출부에서 shape + 자식 독립 추출로 처리). 병합 시 getRichTextContent가
+  //   배지/도트(hasVisualBoxStyle) 자식을 제외해 텍스트에서 빠지는데, 컨테이너가
+  //   mergedContainerIds에 등록되면 그 자식들이 통째로 스킵되어 소실된다.
+  if (allInlineChildren && childEditors.length > 1 && !isFlex) {
     const rich = getRichTextContent(containerEl)
     const text = rich.text
     if (!text || text.replace(/<br\s*\/?>/gi, '').trim() === '') return null
@@ -1396,6 +1484,125 @@ function tryMergeContainerText(containerEl, containerRect, containerCs, win) {
 }
 
 /**
+ * flex 컨테이너의 "직접 텍스트 노드"(자식 요소가 아닌 bare 텍스트)를 각각 독립
+ * 텍스트 요소로 추출해 pushFn으로 전달한다. flex 자식 요소는 별도 위치를 가지므로
+ * 컨테이너를 병합하지 않고 bare 텍스트만 Range로 측정해 보존한다.
+ * 예: <div class="kicker"><span>기능 ④</span> 마스터 편집</div> → "마스터 편집"
+ *     <div class="live-flag"><span class="rec"></span>LIVE COMPOSITE</div> → "LIVE COMPOSITE"
+ */
+function extractFlexOwnTextNodes(el, cs, transformScale, originRect, pushFn) {
+  for (const node of el.childNodes) {
+    if (node.nodeType !== Node.TEXT_NODE || !node.textContent.trim()) continue
+    const text = node.textContent.trim()
+    // 텍스트 노드의 위치를 Range로 측정
+    const range = el.ownerDocument.createRange()
+    range.selectNodeContents(node)
+    const rangeRect = unscaleRect(range.getBoundingClientRect(), transformScale, originRect)
+    if (rangeRect.width < 1 || rangeRect.height < 1) continue
+    const styles = extractStyles(cs, el)
+    // 컨테이너의 박스 장식(배경/테두리/radius/그림자/padding)은 제거한다.
+    // flex 컨테이너 자체가 별도 shape로 추출되므로, bare 텍스트까지 같은 박스를
+    // 그리면 라운드 라벨(.pill 등)이 이중으로 겹쳐 보인다. 또 패딩은 이미 Range
+    // 좌표에 반영돼 있어 텍스트에 남기면 이중 오프셋이 된다. 텍스트 스타일만 유지.
+    styles.backgroundColor = 'rgba(0, 0, 0, 0)'
+    styles.backgroundImage = 'none'
+    styles.border = 'none'
+    styles.borderTop = 'none'
+    styles.borderRight = 'none'
+    styles.borderBottom = 'none'
+    styles.borderLeft = 'none'
+    styles.borderRadius = '0px'
+    styles.boxShadow = 'none'
+    styles.padding = '0px'
+    // 단일행일 때만 nowrap으로 서브픽셀 재줄바꿈을 방지한다.
+    // Range 높이가 lineHeight의 1.5배를 넘으면 원본이 여러 줄로 감긴 것이므로
+    // (의도된 줄바꿈) nowrap을 적용하지 않고 자연 줄바꿈을 유지한다.
+    const _fs = parseFloat(cs.fontSize) || 0
+    const _lh = cs.lineHeight === 'normal' ? _fs * 1.2 : (parseFloat(cs.lineHeight) || 0)
+    if (!(_lh > 0 && rangeRect.height > _lh * 1.5)) {
+      styles.whiteSpace = 'nowrap'
+    }
+    pushFn({
+      id: nextFlatId(),
+      sourceId: el.getAttribute('data-editor-id'),
+      type: 'text',
+      x: rangeRect.left,
+      y: rangeRect.top,
+      width: Math.ceil(rangeRect.width),
+      height: rangeRect.height,
+      rotation: 0,
+      zIndex: 0,
+      _originalZIndex: getEffectiveZIndex(el),
+      content: text,
+      isRich: false,
+      styles,
+      originalRect: { x: rangeRect.left, y: rangeRect.top, w: rangeRect.width, h: rangeRect.height },
+    })
+  }
+}
+
+/**
+ * extractPseudoElement 결과(pb)를 flat 요소로 변환한다.
+ * 배경/배경이미지/radius + (있으면) 테두리·회전·텍스트 색/폰트를 모두 반영.
+ * @param {object} pb extractPseudoElement 반환값
+ * @param {string|null} baseSourceId 호스트 sourceId (`${id}::before|after`로 접미)
+ * @param {'before'|'after'} which
+ */
+function pseudoToFlatElement(pb, baseSourceId, which, domOrder, originalZIndex) {
+  const styles = {
+    backgroundColor: pb.backgroundColor,
+    backgroundImage: pb.backgroundImage,
+    borderRadius: pb.borderRadius,
+  }
+  if (pb.borderTop) {
+    styles.borderTop = pb.borderTop
+    styles.borderRight = pb.borderRight
+    styles.borderBottom = pb.borderBottom
+    styles.borderLeft = pb.borderLeft
+  }
+  if (pb.content) {
+    if (pb.color) styles.color = pb.color
+    if (pb.fontSize) styles.fontSize = pb.fontSize
+    if (pb.fontFamily) styles.fontFamily = pb.fontFamily
+    if (pb.padding) styles.padding = pb.padding
+    if (pb.textAlign) styles.textAlign = pb.textAlign
+  }
+  return {
+    id: nextFlatId(),
+    sourceId: baseSourceId ? `${baseSourceId}::${which}` : null,
+    type: pb.content ? 'text' : 'shape',
+    x: pb.x,
+    y: pb.y,
+    width: pb.w,
+    height: pb.h,
+    rotation: pb.rotation || 0,
+    zIndex: 0,
+    _domOrder: domOrder,
+    _originalZIndex: originalZIndex,
+    content: pb.content || '',
+    isRich: false,
+    styles,
+    originalRect: { x: pb.x, y: pb.y, w: pb.w, h: pb.h },
+  }
+}
+
+/**
+ * 요소의 ::before/::after 의사 요소를 독립 flat 요소 배열로 변환(없으면 []).
+ * buildFlatElement/병합 경로를 거치지 않는 요소(예: 배경 없는 .kicker, .flow-step)의
+ * 불릿/도트/꺾인 화살표 같은 장식 pseudo를 보존하기 위해 사용한다.
+ */
+function buildPseudoFlatElements(el, rect, domOrder) {
+  const out = []
+  const sid = el.getAttribute('data-editor-id')
+  const z = getEffectiveZIndex(el)
+  for (const which of ['before', 'after']) {
+    const pb = extractPseudoElement(el, rect, `::${which}`)
+    if (pb) out.push(pseudoToFlatElement(pb, sid, which, domOrder, z))
+  }
+  return out
+}
+
+/**
  * iframe DOM에서 모든 시각적 요소를 추출한다.
  * @param {React.RefObject} iframeRef
  * @returns {{ elements: FlatElement[], canvasSize: { w: number, h: number } }}
@@ -1411,6 +1618,39 @@ export function extractFlatElementsFromIframe(iframeRef) {
 }
 
 /**
+ * 진행 중인 CSS 애니메이션/트랜지션을 추출 직전에 최종 상태로 고정(settle)한다.
+ *
+ * 배경: "순차 등장(reveal)" 패턴 덱은 `.r{opacity:0;transform:translateY(22px)}` +
+ * `animation-delay`(최대 ~0.7s)로 요소를 시차 등장시킨다. 추출은 슬라이드 전환 후
+ * 고정 대기(~400ms)만으로 실행되므로, 지연이 끝나지 않은 요소는 추출 시점에
+ *   - opacity:0  → 조상이면 isHiddenByAncestor에 걸려 자식이 통째로 누락되고,
+ *   - translateY(22px) → getBoundingClientRect가 아래로 밀린 좌표로 캡처된다.
+ * 유한(1회/N회) 애니메이션·트랜지션을 finish()로 끝 상태(opacity:1, transform:none)에
+ * 고정하면 이 두 문제가 모두 사라진다.
+ *
+ * 무한 반복 애니메이션(장식용 펄스/파형/캐럿 등)은 finish()가 InvalidStateError를
+ * 던지므로 건너뛴다(현 동작 유지 — 임의 프레임 캡처).
+ *
+ * jsdom 등 getAnimations 미구현 환경에서는 안전하게 no-op.
+ */
+export function settleAnimations(doc) {
+  if (!doc || typeof doc.getAnimations !== 'function') return
+  let anims
+  try { anims = doc.getAnimations() } catch { return }
+  for (const anim of anims) {
+    try {
+      const timing = anim.effect && typeof anim.effect.getTiming === 'function'
+        ? anim.effect.getTiming() : null
+      // 무한 반복(iterations === Infinity)은 finish 불가 → 스킵
+      if (timing && timing.iterations === Infinity) continue
+      anim.finish()
+    } catch {
+      // finish 불가(무한/비정상 효과 등) → 무시하고 현재 프레임 유지
+    }
+  }
+}
+
+/**
  * flat 변환 코어 — 렌더된 document/window를 받아 FlatElement[]를 추출.
  * 프레임워크/iframe 비의존(브라우저 레이아웃만 필요) → slide-flat 패키지의 공개 API.
  * iframe에서 쓰려면 extractFlatElementsFromIframe(ref)를 사용.
@@ -1418,6 +1658,9 @@ export function extractFlatElementsFromIframe(iframeRef) {
  */
 export function extractFlatElements(doc, win) {
   if (!doc || !win) return { elements: [], canvasSize: { w: 1280, h: 800 } }
+
+  // 좌표/가시성 측정 전에 진행 중인 등장 애니메이션을 최종 상태로 고정한다.
+  settleAnimations(doc)
 
   resetFlatCounter()
   const result = []
@@ -1603,10 +1846,12 @@ export function extractFlatElements(doc, win) {
           // embedded(주변에 텍스트 형제가 있는 inline code 등)는 텍스트 흐름의 일부로 두어
           // 부모 텍스트와 좌표가 겹치는 문제를 방지한다.
           const isVisualBadge = hasVisualBoxStyle(el) && !isEmbeddedInline(el)
-          // 부모가 flex이면 자식은 독립 위치 → 스킵하지 않고 독립 추출
+          // 부모가 flex이면 자식은 독립 위치 → 스킵하지 않고 독립 추출.
+          // 그 외에는 시각 배지가 아닌 인라인은 부모 텍스트(getRichTextContent)에
+          // 인라인으로 포함되므로 독립 추출하지 않는다(중복 방지). 시각 배지만 독립 추출.
           if (!parentIsFlex && !isVisualBadge) {
             if (parentType === 'text' || (parentType === 'container' && isEmbeddedInline(el))) {
-              if (!hasDistinctStyle(el) || isEmbeddedInline(el)) continue
+              continue
             }
           }
         }
@@ -1618,42 +1863,19 @@ export function extractFlatElements(doc, win) {
       if (isFlex) {
         const editorChildren = el.querySelectorAll(':scope > [data-editor-id]')
         if (editorChildren.length > 0) {
-          // 부모 자체의 배경/테두리가 있으면 shape로 추출
+          // 부모 자체의 배경/테두리가 있으면 shape로 추출(buildFlatElement가 ::before/::after 처리).
+          // 시각 속성이 없으면 shape는 없지만 ::before/::after 불릿·도트·화살표는 별도로 보존한다.
           if (isVisuallyMeaningful(cs)) {
             result.push(buildFlatElement(el, rect, cs, zCounter++, 'shape', transformScale, originRect))
+          } else {
+            for (const pe of buildPseudoFlatElements(el, rect, zCounter++)) result.push(pe)
           }
           // flex 부모의 고유 텍스트 노드(자식 요소가 아닌)를 별도 요소로 추출
           // 예: <h3 flex><span>①</span> Worker</h3> → "Worker"를 h3 스타일로 독립 추출
-          for (const node of el.childNodes) {
-            if (node.nodeType === Node.TEXT_NODE && node.textContent.trim()) {
-              const text = node.textContent.trim()
-              // 텍스트 노드의 위치를 Range로 측정
-              const range = el.ownerDocument.createRange()
-              range.selectNodeContents(node)
-              const rangeRect = unscaleRect(range.getBoundingClientRect(), transformScale, originRect)
-              if (rangeRect.width < 1 || rangeRect.height < 1) continue
-              const styles = extractStyles(cs, el)
-              // flex 부모에서 분리된 단일행 텍스트 → nowrap으로 줄바꿈 방지
-              styles.whiteSpace = 'nowrap'
-              result.push({
-                id: nextFlatId(),
-                sourceId: el.getAttribute('data-editor-id'),
-                type: 'text',
-                x: rangeRect.left,
-                y: rangeRect.top,
-                width: Math.ceil(rangeRect.width),
-                height: rangeRect.height,
-                rotation: 0,
-                zIndex: 0,
-                _domOrder: zCounter++,
-                _originalZIndex: getEffectiveZIndex(el),
-                content: text,
-                isRich: false,
-                styles,
-                originalRect: { x: rangeRect.left, y: rangeRect.top, w: rangeRect.width, h: rangeRect.height },
-              })
-            }
-          }
+          extractFlexOwnTextNodes(el, cs, transformScale, originRect, (elem) => {
+            elem._domOrder = zCounter++
+            result.push(elem)
+          })
           // 자식 요소는 메인 루프에서 독립 추출됨
           continue
         }
@@ -1674,6 +1896,24 @@ export function extractFlatElements(doc, win) {
     } else if (editorType === 'image') {
       result.push(buildFlatElement(el, rect, cs, zCounter++, undefined, transformScale, originRect))
     } else if (editorType === 'container') {
+      // flex 컨테이너(예: .win-bar, .live-flag, .kicker): 자식들이 독립 위치를
+      // 가지므로 병합하지 않는다. 컨테이너 시각 속성이 있으면 shape로, 컨테이너
+      // 직속 텍스트 노드는 독립 텍스트로 추출하고, 자식 요소는 메인 루프에서 독립
+      // 추출되도록 둔다(mergedContainerIds에 등록하지 않음 → 자식 소실 방지).
+      const containerIsFlex = cs.display === 'flex' || cs.display === 'inline-flex'
+      if (containerIsFlex && el.querySelector(':scope > [data-editor-id]')) {
+        if (isVisuallyMeaningful(cs)) {
+          result.push(buildFlatElement(el, rect, cs, zCounter++, 'shape', transformScale, originRect))
+        } else {
+          // 시각 박스가 없는 flex 컨테이너(.kicker 등)의 ::before/::after 불릿·장식 보존
+          for (const pe of buildPseudoFlatElements(el, rect, zCounter++)) result.push(pe)
+        }
+        extractFlexOwnTextNodes(el, cs, transformScale, originRect, (elem) => {
+          elem._domOrder = zCounter++
+          result.push(elem)
+        })
+        continue
+      }
       if (isVisuallyMeaningful(cs)) {
         // 시각적 컨테이너 + 단일 텍스트 자식 → 병합 텍스트 요소
         const merged = tryMergeContainerText(el, rect, cs, win)
@@ -1699,9 +1939,11 @@ export function extractFlatElements(doc, win) {
             if (padH > 0) merged.width = Math.ceil(merged.width) + 2
           }
           const mergedEl = { ...merged, id: nextFlatId(), zIndex: 0, _domOrder: zCounter++, _originalZIndex: getEffectiveZIndex(el) }
-          // 병합된 컨테이너에도 ::before 의사 요소 추출
+          // 병합된 컨테이너에도 ::before / ::after 의사 요소 추출
           const pseudoBefore = extractPseudoElement(el, rect, '::before')
           if (pseudoBefore) mergedEl._pseudoBefore = pseudoBefore
+          const pseudoAfter = extractPseudoElement(el, rect, '::after')
+          if (pseudoAfter) mergedEl._pseudoAfter = pseudoAfter
           result.push(mergedEl)
         } else {
           result.push(buildFlatElement(el, rect, cs, zCounter++, 'shape', transformScale, originRect))
@@ -1741,6 +1983,15 @@ export function extractFlatElements(doc, win) {
               // mergeContent가 비어있으면: 컨테이너 스킵, 자식들이 독립 추출됨
             }
             // flex인 경우: 컨테이너 스킵, 자식 span들이 독립 추출됨
+          } else {
+            // 블록 자식이 있어 병합 불가(예: <div class="lip-script">본문…<div class="cap">…</div></div>):
+            // 컨테이너 직속 bare 텍스트 노드를 독립 추출한다. (자식 요소는 메인 루프에서 추출)
+            extractFlexOwnTextNodes(el, cs, transformScale, originRect, (elem) => {
+              elem._domOrder = zCounter++
+              result.push(elem)
+            })
+            // 컨테이너의 ::before/::after 장식(예: .flow-step 사이 꺾인 화살표)도 보존
+            for (const pe of buildPseudoFlatElements(el, rect, zCounter++)) result.push(pe)
           }
         }
       }
@@ -1750,6 +2001,11 @@ export function extractFlatElements(doc, win) {
   // SVG 요소 추출 — data-editor-id가 없는 SVG를 별도 스캔
   const allSvgs = doc.querySelectorAll('svg')
   for (const svg of allSvgs) {
+    // 활성 슬라이드 밖 / 숨김(opacity:0·visibility:hidden) 조상 아래 SVG 스킵.
+    // (비활성 슬라이드는 opacity:0만 적용되고 display:none이 아니어서 레이아웃이
+    //  살아있다 → 이 가드가 없으면 다른 슬라이드의 SVG가 같은 위치/크기로 중복 추출됨)
+    if (revealPresent && !revealPresent.contains(svg)) continue
+    if (isHiddenByAncestor(svg)) continue
     const svgRect = unscaleRect(svg.getBoundingClientRect(), transformScale, originRect)
     if (svgRect.width < 1 || svgRect.height < 1) continue
     // display:none 체크
@@ -1851,35 +2107,18 @@ export function extractFlatElements(doc, win) {
     })
   }
 
-  // ::before 의사 요소를 별도 shape/text 요소로 변환하여 삽입
-  // 부모 요소 바로 앞에 위치 (같은 z-index, domOrder - 0.5)
+  // ::before / ::after 의사 요소를 별도 shape/text 요소로 변환하여 삽입.
+  // ::before는 부모 바로 앞(domOrder-0.5), ::after는 부모 바로 뒤(domOrder+0.5)에 둔다.
   const pseudoElements = []
   for (const el of result) {
     if (el._pseudoBefore) {
-      const pb = el._pseudoBefore
-      const pseudoEl = {
-        id: nextFlatId(),
-        sourceId: el.sourceId ? `${el.sourceId}::before` : null,
-        type: pb.content ? 'text' : 'shape',
-        x: pb.x,
-        y: pb.y,
-        width: pb.w,
-        height: pb.h,
-        zIndex: 0,
-        _domOrder: el._domOrder - 0.5, // 부모 바로 앞
-        _originalZIndex: el._originalZIndex,
-        content: pb.content || '',
-        isRich: false,
-        styles: {
-          backgroundColor: pb.backgroundColor,
-          backgroundImage: pb.backgroundImage,
-          borderRadius: pb.borderRadius,
-        },
-        originalRect: { x: pb.x, y: pb.y, w: pb.w, h: pb.h },
-      }
-      pseudoElements.push(pseudoEl)
+      pseudoElements.push(pseudoToFlatElement(el._pseudoBefore, el.sourceId, 'before', el._domOrder - 0.5, el._originalZIndex))
+    }
+    if (el._pseudoAfter) {
+      pseudoElements.push(pseudoToFlatElement(el._pseudoAfter, el.sourceId, 'after', el._domOrder + 0.5, el._originalZIndex))
     }
     delete el._pseudoBefore
+    delete el._pseudoAfter
   }
   result.push(...pseudoElements)
 
@@ -2139,7 +2378,49 @@ function detectTransformContext(doc) {
     }
   }
 
+  // 방법 0: JS로 scale()을 인라인 적용한 고정 크기 무대(stage) 감지.
+  //   fit() 류 스크립트가 `stage.style.transform = 'scale(s)'`로 무대를 축소/확대하는
+  //   패턴(예: 1600×900 고정 무대). 창이 무대보다 크면 scale이 정확히 1이 되는데,
+  //   이때 matrix 기반 방법 1은 sx≈1을 무시(Math.abs(sx-1)>0.005)하여 무대를 놓치고
+  //   캔버스가 body(iframe) 크기로 잘못 폴백된다.
+  //   → 인라인 transform에 'scale'이 있는 최외곽 조상을 무대로 보고,
+  //     scale = rect.width / offsetWidth 로 직접 계산(scale=1도 정상 처리),
+  //     offsetWidth/Height(미스케일 CSS 크기)를 캔버스로 사용한다.
+  {
+    let scaleStageEl = null
+    let node = testEl.parentElement
+    while (node && node !== doc.documentElement) {
+      const inlineT = node.style && node.style.transform
+      if (inlineT && inlineT.includes('scale')) scaleStageEl = node // 바깥쪽으로 갱신
+      node = node.parentElement
+    }
+    if (scaleStageEl) {
+      // 무대가 flex/grid 자식이면 창보다 좁을 때 flex-shrink로 offsetWidth가
+      // 의도된 크기(예: 1600)보다 작게 줄어든다. flex-shrink:0을 강제해 의도된
+      // 고정 크기를 복원한다(측정 후 복원하지 않음 → 이후 잎 요소 추출도 동일한
+      // 비축소 레이아웃에서 측정되어 캔버스·좌표가 일관됨).
+      scaleStageEl.style.flexShrink = '0'
+      const rect = scaleStageEl.getBoundingClientRect() // 강제 reflow + 측정
+      const offsetW = scaleStageEl.offsetWidth
+      const offsetH = scaleStageEl.offsetHeight
+      if (offsetW > 1 && offsetH > 1 && rect.width > 1) {
+        let scale = rect.width / offsetW
+        if (!(scale > 0.1 && scale < 10)) scale = 1
+        return {
+          transformScale: scale,
+          originRect: {
+            screenLeft: rect.left,
+            screenTop: rect.top,
+            cssWidth: offsetW,
+            cssHeight: offsetH,
+          },
+        }
+      }
+    }
+  }
+
   // 방법 1: 조상 체인에서 transform scale 추출 + 가장 바깥쪽 transform 컨테이너 기억
+  //   (CSS 클래스 등으로 transform이 적용되어 인라인에 'scale' 문자열이 없는 경우 폴백)
   let cumulativeScale = 1
   let outermostTransformEl = null
   let ancestor = testEl.parentElement

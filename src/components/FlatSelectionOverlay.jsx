@@ -6,7 +6,9 @@ import { pointsToBBox, closestPointOnSegments } from '../core/PolyShapeUtils'
 
 const HANDLE_SIZE = 8
 const ROTATE_HANDLE_OFFSET = 30
-const MIN_SIZE = 20
+// 리사이즈 최소 크기. 얇은 구분선/규칙선(높이 1~4px 등)으로 변환된 요소를
+// 다시 그 크기로 되돌릴 수 있도록 1px까지 허용한다(0/음수만 방지).
+const MIN_SIZE = 1
 const GROUP_HANDLE_SIZE = 8
 const RADIUS_HANDLE_MIN_INSET = 14 // 둥글기 0일 때도 잡을 수 있도록 핸들 최소 안쪽 거리
 const RADIUS_HANDLE_MAX_INSET = 18 // 핸들이 모서리 근처에 머물도록 상한(중앙 침범 방지)
