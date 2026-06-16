@@ -27,6 +27,21 @@ describe('snippets', () => {
     expect(el.styles.backgroundColor).toBe('#6366f1')
   })
 
+  it('콜아웃: 좌측 컬러바 + 옅은 배경 + 아이콘 본문', () => {
+    const [el] = getSnippet('calloutTip').build(cs, theme)
+    expect(el.type).toBe('text')
+    expect(el.content).toContain('💡')
+    expect(el.styles.borderLeft).toContain('solid')
+    expect(el.styles.backgroundColor).toContain('rgba')
+    expect(el.styles.textAlign).toBe('left')
+  })
+
+  it('콜아웃 4종(팁/주의/정보/성공) 모두 존재', () => {
+    for (const id of ['calloutTip', 'calloutWarn', 'calloutInfo', 'calloutSuccess']) {
+      expect(getSnippet(id)).toBeTruthy()
+    }
+  })
+
   it('모든 스니펫: 고유 id + build 함수', () => {
     const ids = new Set(SNIPPETS.map(s => s.id))
     expect(ids.size).toBe(SNIPPETS.length)
