@@ -187,6 +187,45 @@ SNIPPETS.push({
   },
 })
 
+// 코드 블록(맥 터미널) — 다크 윈도우 + 상단 3색 점 + 모노스페이스 코드. 복합(그룹).
+SNIPPETS.push({
+  id: 'codeBlock', group: '코드', label: '코드 블록(맥 터미널)', desc: '상단 3색 점 + 다크 라운드 + 모노 코드',
+  build: (cs) => {
+    const w = 560, h = 220
+    const x = Math.round((cs.w - w) / 2), y = Math.round((cs.h - h) / 2)
+    const win = {
+      type: 'shape', x, y, width: w, height: h, content: '', isRich: false, merged: false,
+      styles: {
+        backgroundColor: '#0f172a', backgroundImage: 'none', borderRadius: '12px',
+        border: '1px solid rgba(255,255,255,0.08)', boxShadow: '0 8px 28px rgba(0,0,0,0.35)', opacity: '1',
+      },
+    }
+    const dot = (c) => `<span style="color:${c}">●</span>`
+    const dots = {
+      type: 'text', x: x + 16, y: y + 12, width: 90, height: 18,
+      content: `${dot('#ff5f56')} ${dot('#ffbd2e')} ${dot('#27c93f')}`, isRich: true, merged: false, placeholder: '',
+      styles: {
+        backgroundColor: 'rgba(0,0,0,0)', backgroundImage: 'none', color: '#e2e8f0',
+        fontSize: '14px', fontFamily: 'inherit', fontWeight: '400', fontStyle: 'normal',
+        textAlign: 'left', letterSpacing: '2px', lineHeight: '1', textDecoration: 'none', textTransform: 'none',
+        borderRadius: '0px', border: '0px none', boxShadow: 'none', opacity: '1', padding: '0px',
+      },
+    }
+    const code = {
+      type: 'text', x: x + 20, y: y + 46, width: w - 40, height: h - 62,
+      content: 'function greet(name) {\n  return `Hello, ${name}!`\n}', isRich: false, merged: false, placeholder: '',
+      styles: {
+        backgroundColor: 'rgba(0,0,0,0)', backgroundImage: 'none', color: '#e2e8f0',
+        fontSize: '15px', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+        fontWeight: '400', fontStyle: 'normal',
+        textAlign: 'left', letterSpacing: 'normal', lineHeight: '1.6', textDecoration: 'none', textTransform: 'none',
+        borderRadius: '0px', border: '0px none', boxShadow: 'none', opacity: '1', padding: '0px', whiteSpace: 'pre-wrap',
+      },
+    }
+    return [win, dots, code]
+  },
+})
+
 export function getSnippet(id) {
   return SNIPPETS.find(s => s.id === id)
 }

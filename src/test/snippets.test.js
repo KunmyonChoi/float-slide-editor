@@ -88,6 +88,17 @@ describe('snippets', () => {
     expect(els[0].y).toBeLessThan(els[1].y)                // 뱃지가 제목 위
   })
 
+  it('코드 블록: 다크 윈도우 + 3색 점 + 모노스페이스 코드', () => {
+    const els = getSnippet('codeBlock').build(cs, theme)
+    expect(els.length).toBe(3)
+    expect(els[0].type).toBe('shape')                      // 윈도우
+    expect(els[0].styles.backgroundColor).toBe('#0f172a')  // 다크
+    expect(els[1].content).toContain('#ff5f56')            // 빨강 점
+    expect(els[2].styles.fontFamily).toContain('monospace')// 코드 모노
+    expect(els[2].content).toContain('function')
+    expect(els[2].styles.whiteSpace).toBe('pre-wrap')
+  })
+
   it('모든 스니펫: 고유 id + build 함수', () => {
     const ids = new Set(SNIPPETS.map(s => s.id))
     expect(ids.size).toBe(SNIPPETS.length)
