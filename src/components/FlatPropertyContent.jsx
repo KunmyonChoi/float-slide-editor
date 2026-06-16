@@ -33,6 +33,8 @@ const inputClass = 'w-full text-xs text-slate-200 bg-white/5 rounded-lg px-2.5 p
 const selectClass = 'w-full text-xs text-slate-200 rounded-lg px-2.5 py-1.5 border border-white/10 outline-none focus:border-indigo-500/50 transition-colors appearance-none cursor-pointer'
 const selectStyle = { backgroundColor: '#1e293b' }  // 불투명 배경 — 드롭다운 옵션 가독성
 const labelClass = 'text-xs text-slate-500'
+// 스크럽(드래그로 값 변경) 가능한 레이블 — 점선 밑줄로 일반 레이블과 시각 구분
+const scrubLabelClass = `${labelClass} w-fit mb-0.5 underline decoration-dotted decoration-slate-500 underline-offset-2 hover:text-slate-200 hover:decoration-slate-300`
 
 /**
  * FlatPropertyContent — Flat 모드 속성 패널 콘텐츠
@@ -1254,8 +1256,8 @@ function NumInput({ label, value, onChange, onPreview, unit = '', min, max, step
   return (
     <div>
       {label && (
-        // 일반 레이블과 동일한 블록 박스 유지(정렬 일치). 드래그 어포던스는 커서+hover 색만.
-        <p className={`${labelClass} mb-0.5 w-fit hover:text-slate-200`}
+        // 점선 밑줄 + ew-resize 커서로 드래그 가능함을 표시(일반 레이블과 구분)
+        <p className={scrubLabelClass}
            title="드래그하여 조절" {...scrub}>{label}</p>
       )}
       <div className="flex items-center">
@@ -1299,8 +1301,7 @@ function FontSizeInput({ value, onChange, onPreview }) {
 
   return (
     <div>
-      <p className={`${labelClass} mb-0.5 w-fit hover:text-slate-200`}
-         title="드래그하여 조절" {...scrub}>크기</p>
+      <p className={scrubLabelClass} title="드래그하여 조절" {...scrub}>크기</p>
       <div className="flex items-center gap-1">
         <input
           type="text"
