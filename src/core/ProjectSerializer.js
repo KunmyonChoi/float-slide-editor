@@ -71,6 +71,7 @@ export async function serializeProject(store) {
     version: CURRENT_VERSION,
     pages: pagesClone,
     currentPageKey,
+    themeId: store.themeId,
     metadata: {
       createdAt: new Date().toISOString(),
     },
@@ -144,6 +145,7 @@ async function _loadZipProject(file) {
   return {
     pages: data.pages,
     currentPageKey: data.currentPageKey || Object.keys(data.pages)[0],
+    themeId: data.themeId || null,
     metadata: data.metadata || {},
   }
 }
@@ -165,6 +167,7 @@ export function deserializeProject(jsonString) {
   return {
     pages: data.pages,
     currentPageKey: data.currentPageKey || Object.keys(data.pages)[0],
+    themeId: data.themeId || null,
     metadata: data.metadata || {},
   }
 }
