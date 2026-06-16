@@ -4,7 +4,7 @@ import { useFlatStore } from '../store/flatStore'
 import { nextFlatId } from '../core/FlatExtractor'
 import { SLIDE_LAYOUTS, carryLayoutContent } from '../core/slideLayouts'
 import ThemeMenu from './ThemeMenu'
-import { getTheme, themeRoleStyles } from '../core/themes'
+import { themeRoleStyles } from '../core/themes'
 import { createTableElement } from '../core/slideTable'
 import { BlobStore } from '../core/BlobStore'
 import { ToolBtn, Divider, UndoIcon, RedoIcon } from './FloatingToolbar'
@@ -147,8 +147,8 @@ export default function EditToolbar() {
     const existingLayoutEls = flatElements.filter(e => e.layoutRole)
     const specs = carryLayoutContent(existingLayoutEls, layout.build(canvasSize))
     const maxZ = flatElements.length > 0 ? Math.max(...flatElements.map(e => e.zIndex)) : 0
-    // 레이아웃의 하드코딩 색 대신 현재 테마의 역할색/굵기/그림자 적용
-    const theme = getTheme(useFlatStore.getState().themeId)
+    // 레이아웃의 하드코딩 색 대신 현재 테마(사용자정의 포함)의 역할색/굵기/그림자 적용
+    const theme = useFlatStore.getState()._currentTheme()
     const els = specs.map((s, i) => {
       const el = {
         sourceId: null, rotation: 0, merged: false, isRich: false,

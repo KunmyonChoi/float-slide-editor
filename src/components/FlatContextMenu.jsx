@@ -60,6 +60,7 @@ export default function FlatContextMenu({ x, y, canvasX, canvasY, onClose }) {
   const clipboardEmpty = !clipboard || clipboard.length === 0
   const selectedEls = flatElements.filter(e => selectedFlatIds.includes(e.id))
   const allLocked = selectedEls.length > 0 && selectedEls.every(e => e.locked)
+  const singleTextEl = selectedEls.length === 1 && selectedEls[0].type === 'text' ? selectedEls[0] : null
 
   // 배경 요소 찾기
   const bgElement = useMemo(() => flatElements.find(el =>
@@ -231,6 +232,26 @@ export default function FlatContextMenu({ x, y, canvasX, canvasY, onClose }) {
       case 'insertImage': fileInputRef.current?.click(); return // onClose 호출하지 않음
       case 'insertVideo': insertVideo(); break
       case 'formatBackground': if (bgElement) setSelectedFlat(bgElement.id); break
+      case 'setThemeTitle':
+        if (singleTextEl) useFlatStore.getState().updateCustomTheme({ role: 'title', style: { color: singleTextEl.styles.color } })
+        break
+      case 'setThemeBody':
+        if (singleTextEl) {
+          const c = singleTextEl.styles.color
+          const st = useFlatStore.getState()
+          st.updateCustomTheme({ role: 'body', style: { color: c } })
+          st.updateCustomTheme({ role: 'default', style: { color: c } })
+        }
+        break
+      case 'setThemeBg':
+        if (bgElement) {
+          const s = bgElement.styles || {}
+          const bg = (s.backgroundImage && s.backgroundImage !== 'none')
+            ? { type: 'gradient', value: s.backgroundImage }
+            : { type: 'color', value: s.backgroundColor || '#ffffff' }
+          useFlatStore.getState().updateCustomTheme({ bg })
+        }
+        break
       case 'aiInfographic': openInfographic(); break
       case 'convertToBg': {
         // 선택된 요소를 배경 레이어로 변환
@@ -297,7 +318,7 @@ export default function FlatContextMenu({ x, y, canvasX, canvasY, onClose }) {
       removeSelectedElements, selectAllFlats, bringForward, sendBackward,
       bringToFront, sendToBack, insertElement, insertVideo, onClose, allLocked,
       flatElements, selectedFlatIds, batchUpdateFlatElementsIndividual,
-      updateFlatElement, batchUpdateFlatElements, bgElement, setSelectedFlat])
+      updateFlatElement, batchUpdateFlatElements, bgElement, setSelectedFlat, singleTextEl])
 
   // 서브메뉴 hover
   const enterSubmenu = (key) => {
@@ -321,6 +342,12 @@ export default function FlatContextMenu({ x, y, canvasX, canvasY, onClose }) {
     { id: 'lock', label: allLocked ? '잠금 해제' : '잠금', action: 'lock' },
     { id: 'toBg', label: '배경으로 변환', action: 'convertToBg',
       disabled: selectedEls.every(e => e.type === 'text') },
+    ...(singleTextEl ? [{ id: 'themeColor', label: '사용자 테마 색 지정', submenu: 'themeColor',
+      children: [
+        { id: 'asTitle', label: '이 색을 제목색으로', action: 'setThemeTitle' },
+        { id: 'asBody', label: '이 색을 본문색으로', action: 'setThemeBody' },
+      ],
+    }] : []),
     { id: 'sep1', type: 'separator' },
     { id: 'zorder', label: '순서', submenu: 'zorder', disabled: !singleId,
       children: [
@@ -354,6 +381,7 @@ export default function FlatContextMenu({ x, y, canvasX, canvasY, onClose }) {
     { id: 'paste', label: '붙여넣기', shortcut: 'Ctrl+V', action: 'paste', disabled: clipboardEmpty },
     { id: 'sep1', type: 'separator' },
     ...(bgElement ? [{ id: 'formatBg', label: '배경 서식', action: 'formatBackground' }] : []),
+    ...(bgElement ? [{ id: 'bgToTheme', label: '현재 배경을 사용자 테마로', action: 'setThemeBg' }] : []),
     { id: 'insert', label: '요소 추가', submenu: 'insert',
       children: [
         { id: 'itext', label: '텍스트', action: 'insertText' },

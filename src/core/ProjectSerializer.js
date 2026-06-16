@@ -72,6 +72,7 @@ export async function serializeProject(store) {
     pages: pagesClone,
     currentPageKey,
     themeId: store.themeId,
+    customTheme: store.customTheme,
     metadata: {
       createdAt: new Date().toISOString(),
     },
@@ -146,6 +147,7 @@ async function _loadZipProject(file) {
     pages: data.pages,
     currentPageKey: data.currentPageKey || Object.keys(data.pages)[0],
     themeId: data.themeId || null,
+    customTheme: data.customTheme || null,
     metadata: data.metadata || {},
   }
 }
@@ -168,6 +170,7 @@ export function deserializeProject(jsonString) {
     pages: data.pages,
     currentPageKey: data.currentPageKey || Object.keys(data.pages)[0],
     themeId: data.themeId || null,
+    customTheme: data.customTheme || null,
     metadata: data.metadata || {},
   }
 }

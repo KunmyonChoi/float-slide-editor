@@ -175,7 +175,7 @@ function SlideContextMenu({ x, y, index, pageCount, onClose }) {
   const run = (fn) => () => { fn(); onClose() }
   const s = useFlatStore.getState()
   const items = [
-    { label: '새 슬라이드', shortcut: 'Ctrl+M', action: () => s.addPage() },
+    { label: '새 슬라이드', shortcut: 'Ctrl+M', action: () => s.addPage('titleContent') },
     { label: '슬라이드 복제', action: () => s.duplicatePage() },
     { type: 'sep' },
     { label: '앞으로 이동', action: () => s.movePageOrder(-1), disabled: index <= 0 },
