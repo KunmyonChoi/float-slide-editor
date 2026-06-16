@@ -164,6 +164,20 @@ describe('snippets', () => {
     expect(tl.filter(e => e.type === 'text').length).toBe(6)  // 날짜3 + 설명3
   })
 
+  it('묶음4: 터미널/파일칩/말풍선/리본/비교막대/아바타', () => {
+    expect(getSnippet('terminalOutput').build(cs, theme)[1].content).toContain('$')
+    expect(getSnippet('fileChip').build(cs, theme)[0].content).toContain('📄')
+    const bubble = getSnippet('speechBubble').build(cs, theme)
+    expect(bubble[1].rotation).toBe(45) // 꼬리
+    expect(getSnippet('cornerRibbon').build(cs, theme)[0].rotation).toBe(-45)
+    const cmp = getSnippet('comparisonBars').build(cs, theme)
+    expect(cmp.filter(e => e.type === 'shape').length).toBe(2)
+    expect(cmp[3].styles.backgroundColor).toBe('#ff0000') // After = accent
+    const av = getSnippet('avatarCard').build(cs, theme)
+    expect(av[0].styles.borderRadius).toBe('50%') // 원형 아바타
+    expect(av[1].content).toBe('👤')
+  })
+
   it('모든 스니펫: 고유 id + build 함수', () => {
     const ids = new Set(SNIPPETS.map(s => s.id))
     expect(ids.size).toBe(SNIPPETS.length)
