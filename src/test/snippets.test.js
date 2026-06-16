@@ -58,6 +58,15 @@ describe('snippets', () => {
     expect(el.styles.textAlign).toBe('left')
   })
 
+  it('KPI 카드: 복합(카드 shape + 숫자/라벨/추세 텍스트)', () => {
+    const els = getSnippet('kpiCard').build(cs, theme)
+    expect(els.length).toBe(4)
+    expect(els[0].type).toBe('shape')          // 카드 배경
+    expect(els.filter(e => e.type === 'text').length).toBe(3)
+    expect(els.some(e => e.content === '90%')).toBe(true)
+    expect(els[1].styles.color).toBe('#ff0000') // 숫자 = theme.accent
+  })
+
   it('모든 스니펫: 고유 id + build 함수', () => {
     const ids = new Set(SNIPPETS.map(s => s.id))
     expect(ids.size).toBe(SNIPPETS.length)
