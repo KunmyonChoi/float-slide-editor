@@ -13,6 +13,16 @@ const FONT_STEP = 2
 const FONT_MIN = 8
 const FONT_MAX = 200
 
+/** contentEditable → 원본 plain 텍스트 (코드 모드 커밋용, <br>/<div> → 줄바꿈) */
+function editorToPlain(el) {
+  if (!el) return ''
+  let html = el.innerHTML || ''
+  html = html.replace(/<div><br><\/div>/gi, '\n').replace(/<div>/gi, '\n').replace(/<\/div>/gi, '').replace(/<br\s*\/?>/gi, '\n')
+  const tmp = document.createElement('div')
+  tmp.innerHTML = html
+  return tmp.textContent || ''
+}
+
 /** 현재 선택 영역을 style 한 속성으로 감싼다 (execCommand가 px를 못 주는 fontSize 등에 사용) */
 function wrapSelection(prop, value) {
   const sel = window.getSelection()
@@ -91,12 +101,15 @@ export default function FlatInlineEditor({ element }) {
   // 마운트 시 innerHTML 설정 + 포커스 + 커밋 콜백 등록
   useEffect(() => {
     if (!ref.current) return
-    if (element.isRich) {
+    const escapePlain = (t) => (t || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>')
+    if (element.isCode) {
+      // 코드 모드: 색칠 content 대신 원본 code(plain)를 편집
+      ref.current.innerHTML = escapePlain(element.code || '')
+    } else if (element.isRich) {
       ref.current.innerHTML = content || ''
     } else {
       // plain text: escape 후 줄바꿈 변환
-      const displayContent = (content || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>')
-      ref.current.innerHTML = displayContent
+      ref.current.innerHTML = escapePlain(content)
     }
     ref.current.focus()
     // 데스크톱: 전체 선택 / 터치: 끝에 캐럿만 (진입 즉시 선택바·OS 메뉴가 글씨를 가리지 않도록)
@@ -116,6 +129,12 @@ export default function FlatInlineEditor({ element }) {
     const flushCommit = () => {
       if (committedRef.current || !ref.current) return
       committedRef.current = true
+      if (element.isCode) {
+        // 코드 모드: 편집기 → 원본 텍스트(줄바꿈 보존)로 추출 후 재색칠 커밋
+        const raw = editorToPlain(ref.current)
+        useFlatStore.getState().commitCodeEdit(element.id, raw)
+        return
+      }
       const html = (ref.current?.innerHTML || '').trim()
       const hasHtmlTags = /<[a-z][\s\S]*>/i.test(html)
       commitTextEdit(element.id, html, hasHtmlTags)
@@ -313,10 +332,14 @@ export default function FlatInlineEditor({ element }) {
   const commit = useCallback(() => {
     if (committedRef.current) return
     committedRef.current = true
+    if (element.isCode) {
+      useFlatStore.getState().commitCodeEdit(element.id, editorToPlain(ref.current))
+      return
+    }
     const html = (ref.current?.innerHTML || '').trim()
     const hasHtmlTags = /<[a-z][\s\S]*>/i.test(html)
     commitTextEdit(element.id, html, hasHtmlTags)
-  }, [element.id, commitTextEdit])
+  }, [element.id, element.isCode, commitTextEdit])
 
   const handleBlur = useCallback((e) => {
     if (suppressCommitRef.current) return

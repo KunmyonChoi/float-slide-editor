@@ -4,6 +4,7 @@ import { SLIDE_LAYOUTS } from '../core/slideLayouts'
 import { HistoryStack } from '../core/HistoryStack'
 import { isBackgroundElement } from '../core/SnapEngine'
 import { DEFAULT_THEME_ID, getTheme, themeBackgroundStyles, themeRoleStyles } from '../core/themes'
+import { highlightCode } from '../core/codeHighlight'
 
 // 배경 레이어 판정 — SnapEngine의 canonical 헬퍼 재노출(명시 플래그 + 전체캔버스 휴리스틱)
 export { isBackgroundElement as isBackgroundLayer }
@@ -1046,6 +1047,15 @@ export const useFlatStore = create((set, get) => ({
   /** 인라인 편집 완료 — content/isRich 업데이트 후 편집 모드 종료 */
   commitTextEdit(id, newContent, isRich) {
     get().updateFlatElement(id, { content: newContent, isRich })
+    set({ editingFlatId: null })
+  },
+
+  /** 코드 모드 요소 편집 커밋 — 원본(raw)을 저장하고 하이라이트 HTML 생성 */
+  commitCodeEdit(id, rawCode) {
+    const el = get().flatElements.find(e => e.id === id)
+    const reqLang = el?.lang || 'auto'
+    const { html, lang } = highlightCode(rawCode, reqLang)
+    get().updateFlatElement(id, { code: rawCode, content: html, isRich: true, lang: reqLang === 'auto' ? lang : reqLang })
     set({ editingFlatId: null })
   },
 

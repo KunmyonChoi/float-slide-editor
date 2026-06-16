@@ -5,6 +5,7 @@
  * 복합 스니펫은 여러 스펙을 반환(삽입 측에서 groupId로 묶음).
  * docs/snippet-elements.md 참고.
  */
+import { highlightCode, CODE_FONT } from './codeHighlight'
 
 const ACCENT_FALLBACK = '#6366f1'
 
@@ -229,12 +230,14 @@ SNIPPETS.push({
         borderRadius: '0px', border: '0px none', boxShadow: 'none', opacity: '1', padding: '0px',
       },
     }
+    const rawCode = 'function greet(name) {\n  return `Hello, ${name}!`\n}'
+    const { html: codeHtml, lang } = highlightCode(rawCode, 'auto')
     const code = {
       type: 'text', x: x + 20, y: y + 46, width: w - 40, height: h - 62,
-      content: 'function greet(name) {\n  return `Hello, ${name}!`\n}', isRich: false, merged: false, placeholder: '',
+      content: codeHtml, isRich: true, isCode: true, lang, code: rawCode, merged: false, placeholder: '',
       styles: {
-        backgroundColor: 'rgba(0,0,0,0)', backgroundImage: 'none', color: '#e2e8f0',
-        fontSize: '15px', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+        backgroundColor: 'rgba(0,0,0,0)', backgroundImage: 'none', color: '#c0caf5',
+        fontSize: '15px', fontFamily: CODE_FONT,
         fontWeight: '400', fontStyle: 'normal',
         textAlign: 'left', letterSpacing: 'normal', lineHeight: '1.6', textDecoration: 'none', textTransform: 'none',
         borderRadius: '0px', border: '0px none', boxShadow: 'none', opacity: '1', padding: '0px', whiteSpace: 'pre-wrap',
