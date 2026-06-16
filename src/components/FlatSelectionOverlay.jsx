@@ -9,6 +9,8 @@ const ROTATE_HANDLE_OFFSET = 30
 const MIN_SIZE = 20
 const GROUP_HANDLE_SIZE = 8
 const RADIUS_HANDLE_MIN_INSET = 14 // 둥글기 0일 때도 잡을 수 있도록 핸들 최소 안쪽 거리
+const RADIUS_HANDLE_MAX_INSET = 18 // 핸들이 모서리 근처에 머물도록 상한(중앙 침범 방지)
+const RADIUS_HANDLE_MIN_ELEM = 40 // 이보다 작은 요소는 핸들이 본체를 덮으므로 숨김
 
 const HANDLES = [
   { dir: 'nw', cursor: 'nwse-resize', x: 0, y: 0 },
@@ -288,10 +290,14 @@ export default function FlatSelectionOverlay({ element, scale, otherRects, canva
   const isBackground = element.type === 'shape' && !element.content
     && Math.abs(width - canvasSize.w) < 2 && Math.abs(height - canvasSize.h) < 2
     && Math.abs(x) < 2 && Math.abs(y) < 2
-  const showRadiusHandle = !locked && !element.points && !isBackground
   const maxR = Math.min(width, height) / 2
   const curR = parseFloat(element.styles?.borderRadius) || 0
-  const radiusInset = Math.min(Math.max(curR, RADIUS_HANDLE_MIN_INSET), maxR)
+  // 핸들은 모서리 근처에만(상한 적용) — 작은 요소에서 중앙을 덮어 이동을 막지 않도록.
+  const radiusInset = Math.min(Math.max(curR, RADIUS_HANDLE_MIN_INSET), maxR, RADIUS_HANDLE_MAX_INSET)
+  // 너무 작거나(본체를 덮음) 이미 완전 라운드(원형·필 — 둥글기 조절 무의미)면 숨김
+  const isFullyRound = curR >= maxR - 0.5
+  const showRadiusHandle = !locked && !element.points && !isBackground
+    && Math.min(width, height) >= RADIUS_HANDLE_MIN_ELEM && !isFullyRound
 
   return (
     <div
