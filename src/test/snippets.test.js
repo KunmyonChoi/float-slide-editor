@@ -99,6 +99,17 @@ describe('snippets', () => {
     expect(els[2].styles.whiteSpace).toBe('pre-wrap')
   })
 
+  it('프로그레스 바: 트랙 + 채움(accent, 더 좁음) + 라벨', () => {
+    const els = getSnippet('progressBar').build(cs, theme)
+    expect(els.length).toBe(3)
+    const [track, fill, label] = els
+    expect(track.type).toBe('shape')
+    expect(fill.styles.backgroundColor).toBe('#ff0000')   // accent
+    expect(fill.width).toBeLessThan(track.width)           // 채움 < 트랙
+    expect(track.styles.borderRadius).toBe('999px')
+    expect(label.content).toContain('%')
+  })
+
   it('모든 스니펫: 고유 id + build 함수', () => {
     const ids = new Set(SNIPPETS.map(s => s.id))
     expect(ids.size).toBe(SNIPPETS.length)

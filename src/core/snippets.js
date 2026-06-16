@@ -226,6 +226,26 @@ SNIPPETS.push({
   },
 })
 
+// 프로그레스 바 — 트랙(회색) + 채움(accent) + % 라벨. 복합(그룹).
+SNIPPETS.push({
+  id: 'progressBar', group: '데이터', label: '프로그레스 바', desc: '진행률 막대 + % 라벨',
+  build: (cs, theme) => {
+    const w = 400, barH = 14, h = 40
+    const x = Math.round((cs.w - w) / 2), y = Math.round((cs.h - h) / 2)
+    const accent = theme?.accent || ACCENT_FALLBACK
+    const labelColor = theme?.roles?.body?.color || '#475569'
+    const pct = 0.65
+    const barStyle = (bg) => ({
+      backgroundColor: bg, backgroundImage: 'none', borderRadius: '999px',
+      border: '0px none', boxShadow: 'none', opacity: '1',
+    })
+    const track = { type: 'shape', x, y, width: w, height: barH, content: '', isRich: false, merged: false, styles: barStyle('#e2e8f0') }
+    const fill = { type: 'shape', x, y, width: Math.round(w * pct), height: barH, content: '', isRich: false, merged: false, styles: barStyle(accent) }
+    const label = textSpec({ x, y: y + 22, w, h: 20, content: '65% 완료', bg: 'rgba(0,0,0,0)', color: labelColor, size: 14, weight: 600, align: 'left' })
+    return [track, fill, label]
+  },
+})
+
 export function getSnippet(id) {
   return SNIPPETS.find(s => s.id === id)
 }
