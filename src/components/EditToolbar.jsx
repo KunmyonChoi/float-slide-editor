@@ -6,6 +6,7 @@ import { SLIDE_LAYOUTS, carryLayoutContent } from '../core/slideLayouts'
 import ThemeMenu from './ThemeMenu'
 import { themeRoleStyles } from '../core/themes'
 import { SNIPPETS } from '../core/snippets'
+import SnippetMenu from './SnippetMenu'
 import { createTableElement } from '../core/slideTable'
 import { BlobStore } from '../core/BlobStore'
 import { ToolBtn, Divider, UndoIcon, RedoIcon } from './FloatingToolbar'
@@ -74,13 +75,11 @@ export default function EditToolbar() {
   const [videoOpen, setVideoOpen] = useState(false)
   const [layoutOpen, setLayoutOpen] = useState(false)
   const [tableOpen, setTableOpen] = useState(false)
-  const [snippetOpen, setSnippetOpen] = useState(false)
   const insertRef = useRef(null)
   const shapeRef = useRef(null)
   const videoRef = useRef(null)
   const layoutRef = useRef(null)
   const tableRef = useRef(null)
-  const snippetRef = useRef(null)
   const imageInputRef = useRef(null)
 
   const isFlatMode = viewMode === 'flat' || viewMode === 'split'
@@ -409,17 +408,8 @@ export default function EditToolbar() {
             }))}
           />
 
-          {/* 스니펫(데코 요소) 드롭다운 */}
-          <DropdownBtn
-            innerRef={snippetRef}
-            open={snippetOpen}
-            setOpen={setSnippetOpen}
-            icon={<SnippetIcon />}
-            label="스니펫"
-            items={SNIPPETS.map(s => ({
-              id: s.id, icon: <SnippetIcon />, label: s.label, action: () => insertSnippet(s.id),
-            }))}
-          />
+          {/* 스니펫(데코 요소) — 섹션 그룹 + 미리보기 + 설명 */}
+          <SnippetMenu onPick={insertSnippet} />
 
           {/* 테마 선택 — 레이아웃 오른쪽 */}
           <ThemeMenu />
@@ -641,15 +631,6 @@ function LayoutIcon() {
       <rect x="3" y="3" width="18" height="18" rx="2" />
       <line x1="3" y1="9" x2="21" y2="9" />
       <line x1="12" y1="9" x2="12" y2="21" />
-    </svg>
-  )
-}
-
-function SnippetIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <rect x="3" y="5" width="11" height="6" rx="3" />
-      <circle cx="18" cy="16" r="3.5" />
     </svg>
   )
 }

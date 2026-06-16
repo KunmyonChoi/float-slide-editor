@@ -225,7 +225,7 @@ function DropLine() {
 
 // 페이지 썸네일 — 요소를 작은 배율로 렌더(기존 FlatElementRenderer 재사용, 비대화형).
 // 같은 elements/canvasSize면 재렌더 스킵(현재 페이지만 라이브 갱신).
-const SlideThumbnail = memo(function SlideThumbnail({ elements, canvasSize, width }) {
+export const SlideThumbnail = memo(function SlideThumbnail({ elements, canvasSize, width }) {
   const cs = canvasSize && canvasSize.w ? canvasSize : { w: 1280, h: 720 }
   const scale = width / cs.w
   const height = Math.round(cs.h * scale)
