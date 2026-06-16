@@ -12,6 +12,18 @@ const RADIUS_HANDLE_MIN_INSET = 14 // 둥글기 0일 때도 잡을 수 있도록
 const RADIUS_HANDLE_MAX_INSET = 18 // 핸들이 모서리 근처에 머물도록 상한(중앙 침범 방지)
 const RADIUS_HANDLE_MIN_ELEM = 40 // 이보다 작은 요소는 핸들이 본체를 덮으므로 숨김
 
+// (x,y) 캔버스 좌표를 포함하는 최상위(zIndex) 텍스트/표 요소 — 그룹 내부 더블클릭 편집용 (순수)
+export function hitTopTextAt(elements, x, y) {
+  let best = null
+  for (const el of elements) {
+    if (el.type !== 'text' && el.type !== 'table') continue
+    if (x >= el.x && x <= el.x + el.width && y >= el.y && y <= el.y + el.height) {
+      if (!best || el.zIndex > best.zIndex) best = el
+    }
+  }
+  return best
+}
+
 const HANDLES = [
   { dir: 'nw', cursor: 'nwse-resize', x: 0, y: 0 },
   { dir: 'n',  cursor: 'ns-resize',   x: 0.5, y: 0 },
@@ -476,7 +488,7 @@ const GROUP_HANDLES = [
 ]
 
 export function FlatGroupOverlay({ elements, scale, otherRects, canvasSize, onSnapGuides }) {
-  const { batchPreviewFlatElements, batchUpdateFlatElementsIndividual } = useFlatStore()
+  const { batchPreviewFlatElements, batchUpdateFlatElementsIndividual, setEditingFlat } = useFlatStore()
   const dragRef = useRef(null)
 
   const bbox = useMemo(() => {
@@ -492,6 +504,15 @@ export function FlatGroupOverlay({ elements, scale, otherRects, canvasSize, onSn
 
   // 잠금되지 않은 요소만 조작 대상
   const movableElements = useMemo(() => elements.filter(el => !el.locked), [elements])
+
+  // 그룹 더블클릭 → 그 지점의 텍스트/표 요소를 인라인 편집 (그룹 유지)
+  const handleDoubleClick = useCallback((e) => {
+    const r = e.currentTarget.getBoundingClientRect()
+    const cx = bbox.x + (e.clientX - r.left) / scale
+    const cy = bbox.y + (e.clientY - r.top) / scale
+    const hit = hitTopTextAt(elements, cx, cy)
+    if (hit) { e.stopPropagation(); setEditingFlat(hit.id) }
+  }, [elements, bbox, scale, setEditingFlat])
 
   // 그룹 이동 시작
   const handleMoveStart = useCallback((e) => {
@@ -679,6 +700,7 @@ export function FlatGroupOverlay({ elements, scale, otherRects, canvasSize, onSn
         border: '2px dashed rgba(99,102,241,0.6)',
       }}
       onMouseDown={handleMoveStart}
+      onDoubleClick={handleDoubleClick}
     >
       {movableElements.length > 0 && GROUP_HANDLES.map(h => (
         <div
