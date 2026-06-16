@@ -170,6 +170,23 @@ SNIPPETS.push({
   },
 })
 
+// 세로 단계 카드 — 뱃지(위) + 제목 + 설명, 가운데 정렬. 가로로 여러 개 나열하기 좋음.
+SNIPPETS.push({
+  id: 'stepCardV', group: '프로세스', label: '단계 카드(세로)', desc: '뱃지 위 → 제목 → 설명(가운데)',
+  build: (cs, theme) => {
+    const w = 220, h = 150
+    const x = Math.round((cs.w - w) / 2), y = Math.round((cs.h - h) / 2)
+    const accent = theme?.accent || ACCENT_FALLBACK
+    const titleColor = theme?.roles?.title?.color || '#1e293b'
+    const descColor = theme?.roles?.muted?.color || '#64748b'
+    const d = 48
+    const badge = textSpec({ x: x + (w - d) / 2, y, w: d, h: d, content: '1', bg: accent, color: '#ffffff', radius: '50%', size: 22, weight: 800, shadow: '0 2px 8px rgba(0,0,0,0.22)' })
+    const title = textSpec({ x, y: y + 60, w, h: 28, content: '단계 제목', bg: 'rgba(0,0,0,0)', color: titleColor, size: 17, weight: 700, align: 'center' })
+    const desc = textSpec({ x, y: y + 90, w, h: 50, content: '설명을 입력하세요.', bg: 'rgba(0,0,0,0)', color: descColor, size: 13, weight: 400, align: 'center' })
+    return [badge, title, desc]
+  },
+})
+
 export function getSnippet(id) {
   return SNIPPETS.find(s => s.id === id)
 }
