@@ -130,6 +130,27 @@ export const SNIPPETS = [
   },
 ]
 
+// KPI 카드 — 카드 배경(shape) + 큰 숫자 + 라벨 + 추세. 복합(그룹) 스니펫.
+SNIPPETS.push({
+  id: 'kpiCard', group: '데이터', label: 'KPI 카드', desc: '큰 숫자 + 라벨 + 추세 (지표 강조)',
+  build: (cs, theme) => {
+    const w = 240, h = 164
+    const x = Math.round((cs.w - w) / 2), y = Math.round((cs.h - h) / 2)
+    const accent = theme?.accent || ACCENT_FALLBACK
+    const card = {
+      type: 'shape', x, y, width: w, height: h, content: '', isRich: false, merged: false,
+      styles: {
+        backgroundColor: '#ffffff', backgroundImage: 'none', borderRadius: '14px',
+        border: '1px solid rgba(0,0,0,0.06)', boxShadow: '0 4px 14px rgba(0,0,0,0.10)', opacity: '1',
+      },
+    }
+    const number = textSpec({ x, y: y + 30, w, h: 58, content: '90%', bg: 'rgba(0,0,0,0)', color: accent, size: 46, weight: 800 })
+    const label = textSpec({ x, y: y + 92, w, h: 26, content: '전환율', bg: 'rgba(0,0,0,0)', color: '#475569', size: 15, weight: 500 })
+    const trend = textSpec({ x, y: y + 120, w, h: 22, content: '▲ 12% 증가', bg: 'rgba(0,0,0,0)', color: '#10b981', size: 13, weight: 600 })
+    return [card, number, label, trend]
+  },
+})
+
 export function getSnippet(id) {
   return SNIPPETS.find(s => s.id === id)
 }
