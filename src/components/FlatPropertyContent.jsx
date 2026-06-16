@@ -1935,6 +1935,15 @@ function AiBackgroundSection({ onApply }) {
   const [prompt, setPrompt] = useState('')
   const [status, setStatus] = useState('idle')
   const [error, setError] = useState('')
+  const [pickOpen, setPickOpen] = useState(false)
+  const pickRef = useRef(null)
+
+  useEffect(() => {
+    if (!pickOpen) return
+    const onDown = (e) => { if (pickRef.current && !pickRef.current.contains(e.target)) setPickOpen(false) }
+    document.addEventListener('pointerdown', onDown)
+    return () => document.removeEventListener('pointerdown', onDown)
+  }, [pickOpen])
 
   const generate = async () => {
     if (!hasApiKey()) { openAiSettings(); return }
@@ -1955,16 +1964,45 @@ function AiBackgroundSection({ onApply }) {
   return (
     <div className="border-t border-white/5 pt-3 space-y-2">
       <SectionTitle>AI 배경 생성</SectionTitle>
-      <select value={styleId} onChange={e => setStyleId(e.target.value)} className={selectClass} style={selectStyle} disabled={loading}>
-        {BACKGROUND_GROUPS.map(g => (
-          <optgroup key={g} label={g}>
-            {BACKGROUND_STYLES.filter(s => s.group === g).map(s => (
-              <option key={s.id} value={s.id}>{s.label}</option>
+      {/* 커스텀 드롭다운 — 섹션 구분 + 항목별 설명 + 기존 thin-scrollbar 적용 */}
+      <div ref={pickRef} className="relative">
+        <button
+          type="button"
+          onClick={() => !loading && setPickOpen(o => !o)}
+          disabled={loading}
+          className={`${selectClass} flex items-center justify-between text-left`}
+          style={selectStyle}
+        >
+          <span className="truncate">{sel.label}</span>
+          <span className="text-slate-500 ml-1 shrink-0">▾</span>
+        </button>
+        {pickOpen && (
+          <div
+            className="thin-scrollbar absolute left-0 right-0 mt-1 z-[10060] rounded-lg border border-white/10 shadow-xl overflow-y-auto"
+            style={{ maxHeight: 260, backgroundColor: '#1e293b' }}
+          >
+            {BACKGROUND_GROUPS.map(g => (
+              <div key={g}>
+                <p className="px-2.5 pt-2 pb-1 text-[9px] uppercase tracking-wide text-slate-500">{g}</p>
+                {BACKGROUND_STYLES.filter(s => s.group === g).map(s => (
+                  <button
+                    key={s.id}
+                    type="button"
+                    onClick={() => { setStyleId(s.id); setPickOpen(false) }}
+                    className={`w-full text-left px-2.5 py-1.5 transition-colors ${
+                      s.id === styleId ? 'bg-indigo-500/20' : 'hover:bg-white/5'
+                    }`}
+                  >
+                    <span className={`block text-xs ${s.id === styleId ? 'text-indigo-200' : 'text-slate-200'}`}>{s.label}</span>
+                    <span className="block text-[10px] text-slate-500">{s.desc}</span>
+                  </button>
+                ))}
+              </div>
             ))}
-          </optgroup>
-        ))}
-      </select>
-      {/* 이름만으론 상상이 어려우니 선택한 스타일 설명 표시 */}
+          </div>
+        )}
+      </div>
+      {/* 닫혀 있을 때도 선택 스타일 설명 노출 */}
       <p className="text-[10px] text-slate-500">{sel.desc}</p>
       <input
         value={prompt}
