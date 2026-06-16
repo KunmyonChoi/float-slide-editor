@@ -395,6 +395,9 @@ export default function EditToolbar() {
             onChange={handleVideoFile}
           />
 
+          {/* 스니펫(데코 요소) — 섹션 그룹 + 미리보기 + 설명. 레이아웃 왼쪽 */}
+          <SnippetMenu onPick={insertSnippet} />
+
           {/* 레이아웃 드롭다운 — 백지 시작 스캐폴딩 */}
           <DropdownBtn
             innerRef={layoutRef}
@@ -408,10 +411,7 @@ export default function EditToolbar() {
             }))}
           />
 
-          {/* 스니펫(데코 요소) — 섹션 그룹 + 미리보기 + 설명 */}
-          <SnippetMenu onPick={insertSnippet} />
-
-          {/* 테마 선택 — 레이아웃 오른쪽 */}
+          {/* 테마 선택 */}
           <ThemeMenu />
         </>
       ) : (
