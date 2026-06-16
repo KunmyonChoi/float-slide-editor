@@ -49,7 +49,7 @@ export default function PageBar() {
           const fc = useFlatStore.getState().flatPageCount
           if (fc > 1) useFlatStore.getState().deletePage() // 복구 토스트 제공 → 확인창 불필요
         } else {
-          useFlatStore.getState().addPage()
+          useFlatStore.getState().addPage('titleContent')
         }
         return
       }
@@ -142,7 +142,7 @@ export default function PageBar() {
         <span style={pageLabel}>{flatCurrentPage + 1} / {flatPageCount}</span>
         <button onClick={() => useFlatStore.getState().navigateFlatPage(1)} disabled={!canNext} style={btnStyle(canNext)}>&#8250;</button>
         <span style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.1)', margin: '0 4px' }} />
-        <button onClick={() => useFlatStore.getState().addPage()} style={{ ...btnStyle(true), fontSize: 14, width: 24, height: 24 }} title="페이지 추가 (Ctrl+M)">+</button>
+        <button onClick={() => useFlatStore.getState().addPage('titleContent')} style={{ ...btnStyle(true), fontSize: 14, width: 24, height: 24 }} title="페이지 추가 (Ctrl+M)">+</button>
         <button
           onClick={() => { if (flatPageCount > 1) useFlatStore.getState().deletePage() }}
           disabled={flatPageCount <= 1}

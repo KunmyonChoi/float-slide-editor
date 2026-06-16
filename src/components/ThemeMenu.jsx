@@ -1,7 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { useFlatStore } from '../store/flatStore'
 import { THEMES, getTheme } from '../core/themes'
-import ColorPicker from './ColorPicker'
 
 // 테마 배경 → 미리보기 타일 배경 스타일
 function tileBg(theme) {
@@ -10,27 +9,18 @@ function tileBg(theme) {
     : { backgroundColor: theme.bg.value }
 }
 
-// 화면 픽셀 스포이드 (지원 브라우저만)
-async function pickScreenColor() {
-  if (typeof window === 'undefined' || !window.EyeDropper) return null
-  try {
-    const { sRGBHex } = await new window.EyeDropper().open()
-    return sRGBHex
-  } catch { return null }
-}
-
-/** 상단 툴바의 테마 선택 드롭다운 — 프리셋 + 사용자정의(스포이드) */
+/**
+ * 상단 툴바의 테마 선택 드롭다운 — 프리셋 + 사용자정의.
+ * 사용자정의 색은 캔버스에서 텍스트/배경 우클릭 → "사용자 테마 색 지정"으로 채취.
+ */
 export default function ThemeMenu() {
   const themeId = useFlatStore(s => s.themeId)
   const customTheme = useFlatStore(s => s.customTheme)
   const setTheme = useFlatStore(s => s.setTheme)
-  const updateCustomTheme = useFlatStore(s => s.updateCustomTheme)
   const applyThemeToDeck = useFlatStore(s => s.applyThemeToDeck)
-  const applyThemeToCurrentPage = useFlatStore(s => s.applyThemeToCurrentPage)
   const [open, setOpen] = useState(false)
   const ref = useRef(null)
   const current = themeId === 'custom' ? customTheme : getTheme(themeId)
-  const hasEyeDropper = typeof window !== 'undefined' && !!window.EyeDropper
 
   useEffect(() => {
     if (!open) return
@@ -38,22 +28,6 @@ export default function ThemeMenu() {
     document.addEventListener('pointerdown', onDown)
     return () => document.removeEventListener('pointerdown', onDown)
   }, [open])
-
-  // 사용자정의 토큰 편집 — 변경 후 현재 테마가 custom이면 즉시 재적용(라이브)
-  const editRole = (role, color) => {
-    updateCustomTheme({ role, style: { color } })
-    if (themeId === 'custom') applyThemeToCurrentPage()
-  }
-  const editBg = (value) => {
-    updateCustomTheme({ bg: { type: 'color', value } })
-    if (themeId === 'custom') applyThemeToCurrentPage()
-  }
-
-  const SLOTS = [
-    { key: 'bg', label: '배경', value: customTheme.bg?.value || '#ffffff', onChange: editBg },
-    { key: 'title', label: '제목', value: customTheme.roles.title.color, onChange: (c) => editRole('title', c) },
-    { key: 'body', label: '본문', value: customTheme.roles.body.color, onChange: (c) => editRole('body', c) },
-  ]
 
   return (
     <div ref={ref} className="relative">
@@ -80,34 +54,9 @@ export default function ThemeMenu() {
             <ThemeTile theme={customTheme} active={themeId === 'custom'} onClick={() => { setTheme('custom'); setOpen(false) }} />
           </div>
 
-          {/* 사용자정의 — 스포이드로 채취 */}
-          <div className="mt-2 pt-2 border-t border-white/10">
-            <div className="flex items-center justify-between mb-1.5">
-              <p className="text-[10px] text-slate-500 px-0.5">사용자정의 — import 색을 채취</p>
-              <button
-                onClick={() => { setTheme('custom'); }}
-                className="text-[10px] text-indigo-300 hover:text-indigo-200"
-              >적용</button>
-            </div>
-            <div className="space-y-1">
-              {SLOTS.map(slot => (
-                <div key={slot.key} className="flex items-center gap-2">
-                  <span className="text-[10px] text-slate-400 w-7 shrink-0">{slot.label}</span>
-                  <div className="flex-1 min-w-0"><ColorPicker value={slot.value} onChange={slot.onChange} /></div>
-                  {hasEyeDropper && (
-                    <button
-                      title="스포이드로 화면 색 채취"
-                      onClick={async () => { const c = await pickScreenColor(); if (c) slot.onChange(c) }}
-                      className="shrink-0 w-7 h-7 rounded-md border border-white/10 bg-white/5 hover:bg-white/10 text-sm"
-                    >💧</button>
-                  )}
-                </div>
-              ))}
-            </div>
-            {!hasEyeDropper && (
-              <p className="text-[9px] text-slate-600 mt-1 px-0.5">이 브라우저는 화면 스포이드 미지원 — 색상 칸으로 직접 지정</p>
-            )}
-          </div>
+          <p className="text-[9px] text-slate-600 mt-1.5 px-0.5">
+            사용자정의: 캔버스에서 텍스트/배경 우클릭 → "사용자 테마 색 지정"으로 색을 채취하세요.
+          </p>
 
           <button
             onClick={() => { applyThemeToDeck(); setOpen(false) }}
