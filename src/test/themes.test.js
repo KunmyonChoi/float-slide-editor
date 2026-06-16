@@ -1,6 +1,24 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { THEMES, getTheme, themeBackgroundStyles, themeRoleStyles, DEFAULT_THEME_ID } from '../core/themes'
 import { useFlatStore } from '../store/flatStore'
+import { deserializeProject } from '../core/ProjectSerializer'
+
+describe('themeId 직렬화 복원', () => {
+  it('deserializeProject가 themeId를 반환', () => {
+    const json = JSON.stringify({
+      version: 2, themeId: 'ocean', currentPageKey: '0-0',
+      pages: { '0-0': { elements: [], canvasSize: { w: 1280, h: 720 } } },
+    })
+    expect(deserializeProject(json).themeId).toBe('ocean')
+  })
+  it('themeId 없으면 null', () => {
+    const json = JSON.stringify({
+      version: 2, currentPageKey: '0-0',
+      pages: { '0-0': { elements: [], canvasSize: { w: 1280, h: 720 } } },
+    })
+    expect(deserializeProject(json).themeId).toBeNull()
+  })
+})
 
 describe('themes 정의', () => {
   it('16개 테마, 모두 고유 id/필수 필드', () => {
@@ -67,6 +85,51 @@ describe('applyThemeToCurrentPage', () => {
     // 역할 없는 텍스트는 사용자 색 보존
     const free = els.find(e => e.id === 'free')
     expect(free.styles.color).toBe('#ff0000')
+  })
+
+  it('addPage: 새 슬라이드에 현재 테마 배경 자동 생성', () => {
+    useFlatStore.getState().loadAllPages(
+      { '0-0': { elements: [], canvasSize: cs, fontImports: [], htmlSlideIndex: null } }, '0-0')
+    useFlatStore.setState({ themeId: 'aurora' })
+    useFlatStore.getState().addPage()
+    const els = useFlatStore.getState().flatElements
+    const bg = els.find(e => e.type === 'shape' && !e.content && e.width === cs.w && e.height === cs.h)
+    expect(bg).toBeTruthy()
+    expect(bg.styles.backgroundImage).toContain('gradient')
+  })
+
+  it("addPage('titleContent'): 테마 배경 + 제목/본문 레이아웃 텍스트", () => {
+    useFlatStore.getState().loadAllPages(
+      { '0-0': { elements: [], canvasSize: cs, fontImports: [], htmlSlideIndex: null } }, '0-0')
+    useFlatStore.setState({ themeId: 'midnight' })
+    useFlatStore.getState().addPage('titleContent')
+    const els = useFlatStore.getState().flatElements
+    expect(els.some(e => e.type === 'shape' && !e.content)).toBe(true) // 배경
+    const roles = els.filter(e => e.type === 'text' && e.layoutRole).map(e => e.layoutRole)
+    expect(roles).toContain('title')
+    expect(roles.length).toBeGreaterThanOrEqual(2) // 제목 + 본문
+    const title = els.find(e => e.layoutRole === 'title')
+    expect(title.styles.color).toBe(getTheme('midnight').roles.title.color)
+  })
+
+  it('applyThemeToDeck: 모든 페이지에 배경+역할색 적용', () => {
+    const mkPage = () => ({
+      elements: [
+        { id: 'bg' + Math.random(), type: 'shape', content: '', isRich: false, x: 0, y: 0, width: 1280, height: 720, zIndex: 1, locked: true, styles: { backgroundColor: '#fff', backgroundImage: 'none' } },
+        { id: 't' + Math.random(), type: 'text', layoutRole: 'title', content: 'x', isRich: false, x: 0, y: 0, width: 200, height: 40, zIndex: 2, styles: { color: '#000', fontWeight: '400', textShadow: 'none' } },
+      ],
+      canvasSize: cs, fontImports: [], htmlSlideIndex: null,
+    })
+    useFlatStore.getState().loadAllPages({ '0-0': mkPage(), '1-0': mkPage() }, '0-0')
+    useFlatStore.setState({ themeId: 'midnight' })
+    useFlatStore.getState().applyThemeToDeck()
+    const theme = getTheme('midnight')
+    for (const p of useFlatStore.getState().getFlatPageList()) {
+      const title = p.elements.find(e => e.layoutRole === 'title')
+      expect(title.styles.color).toBe(theme.roles.title.color)
+      const bg = p.elements.find(e => e.type === 'shape')
+      expect(bg.styles.backgroundColor).toBe(theme.bg.value)
+    }
   })
 
   it('배경 레이어가 없으면 새로 생성', () => {

@@ -73,15 +73,17 @@ describe('reorderPage', () => {
 })
 
 describe('startScratchProject (최초 빈 실행 시작 레이아웃)', () => {
-  it("'title' → 1페이지 + 제목/부제 플레이스홀더 요소", () => {
+  it("'title' → 1페이지 + 테마 배경 + 제목/부제 플레이스홀더 텍스트", () => {
     useFlatStore.getState().startScratchProject('title')
     expect(useFlatStore.getState().flatPageCount).toBe(1)
     const els = useFlatStore.getState().flatElements
-    expect(els.length).toBe(2)
-    expect(els.every(e => e.type === 'text')).toBe(true)
-    expect(els[0].placeholder).toBeTruthy()   // 흐린 안내문
-    expect(els[0].content).toBe('')           // 빈 내용으로 시작
-    expect(els[0].id).toBeTruthy()
+    const texts = els.filter(e => e.type === 'text')
+    const shapes = els.filter(e => e.type === 'shape')
+    expect(texts.length).toBe(2)              // 제목 + 부제
+    expect(shapes.length).toBe(1)             // 테마 배경 레이어
+    expect(texts[0].placeholder).toBeTruthy() // 흐린 안내문
+    expect(texts[0].content).toBe('')         // 빈 내용으로 시작
+    expect(texts[0].id).toBeTruthy()
   })
 })
 

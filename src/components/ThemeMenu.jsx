@@ -13,6 +13,7 @@ function tileBg(theme) {
 export default function ThemeMenu() {
   const themeId = useFlatStore(s => s.themeId)
   const setTheme = useFlatStore(s => s.setTheme)
+  const applyThemeToDeck = useFlatStore(s => s.applyThemeToDeck)
   const [open, setOpen] = useState(false)
   const ref = useRef(null)
   const current = getTheme(themeId)
@@ -63,6 +64,12 @@ export default function ThemeMenu() {
               </button>
             ))}
           </div>
+          <button
+            onClick={() => { applyThemeToDeck(); setOpen(false) }}
+            className="mt-2 w-full text-xs text-indigo-300 bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/20 rounded-lg py-1.5 transition-colors"
+          >
+            현재 테마를 모든 슬라이드에 적용
+          </button>
         </div>
       )}
     </div>

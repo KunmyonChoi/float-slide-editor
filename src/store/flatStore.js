@@ -159,6 +159,42 @@ function _buildStarterLayout(layoutId, cs) {
     ...s, id: nextFlatId(), zIndex: i + 1,
   }))
 }
+
+/** 현재 테마 배경을 가진 잠긴 전체-캔버스 배경 레이어 요소 생성 */
+function _buildThemeBgElement(themeId, cs) {
+  const theme = getTheme(themeId)
+  return {
+    id: nextFlatId(), sourceId: null, type: 'shape', content: '', isRich: false, merged: false,
+    x: 0, y: 0, width: cs.w, height: cs.h, zIndex: 0, locked: true,
+    styles: {
+      backgroundColor: 'rgba(0,0,0,0)', backgroundImage: 'none', borderRadius: '0px',
+      border: '0px none', boxShadow: 'none', opacity: '1', ...themeBackgroundStyles(theme),
+    },
+  }
+}
+
+/** 텍스트 요소 배열에 테마 역할색을 입힘(layoutRole 보유분만) */
+function _applyThemeRoles(elements, themeId) {
+  const theme = getTheme(themeId)
+  return elements.map(el => {
+    if (el.type === 'text' && el.layoutRole) {
+      const rs = themeRoleStyles(theme, el.layoutRole)
+      if (rs) return { ...el, styles: { ...el.styles, color: rs.color, fontWeight: rs.fontWeight, textShadow: rs.textShadow } }
+    }
+    return el
+  })
+}
+
+/** 한 페이지의 요소 배열에 테마 적용(배경 보장/교체 + 역할 텍스트색) — 순수 함수 */
+function _applyThemeToElements(elements, themeId, cs) {
+  const theme = getTheme(themeId)
+  const bgStyles = themeBackgroundStyles(theme)
+  let out = (elements || []).map(e => ({ ...e, styles: { ...e.styles } }))
+  const bgIdx = out.findIndex(e => isBackgroundElement(e, cs))
+  if (bgIdx >= 0) out[bgIdx].styles = { ...out[bgIdx].styles, ...bgStyles }
+  else out = [_buildThemeBgElement(themeId, cs), ...out]
+  return _applyThemeRoles(out, themeId)
+}
 let _expectIframeTimer = null
 function _expectIframeNav(idx) {
   _expectIframePage = idx
@@ -393,7 +429,9 @@ export const useFlatStore = create((set, get) => ({
   /** iframe 없이 1페이지(시작 레이아웃) flat 프로젝트 생성 — 최초 빈 실행 시 사용 */
   startScratchProject(layoutId = 'title') {
     const cs = { w: 1280, h: 720 }
-    const elements = _buildStarterLayout(layoutId, cs)
+    const themeId = get().themeId
+    const layoutEls = _applyThemeRoles(_buildStarterLayout(layoutId, cs), themeId)
+    const elements = [_buildThemeBgElement(themeId, cs), ...layoutEls] // 테마 배경 + 테마색 텍스트
     for (const key in _pageCache) delete _pageCache[key] // 기존 캐시 비우고 단일 페이지로
     get().loadAllPages({ '0-0': { elements, canvasSize: cs, fontImports: [], htmlSlideIndex: null } }, '0-0')
     get()._syncPageInfo()
@@ -623,7 +661,7 @@ export const useFlatStore = create((set, get) => ({
   // ── Flat 모드 페이지 관리 ──
 
   /** 현재 페이지 뒤에 빈 페이지 추가 */
-  addPage() {
+  addPage(layoutId = null) {
     get()._saveCurrentPage()
     const keys = _getSortedPageKeys()
     const currentIdx = _currentPageKey ? keys.indexOf(_currentPageKey) : keys.length - 1
@@ -642,8 +680,14 @@ export const useFlatStore = create((set, get) => ({
     // 새 페이지 생성
     const newKey = `${insertAt}-0`
     const cs = get().canvasSize
+    const themeId = get().themeId
+    // 테마 배경 + (layoutId 있으면 그 레이아웃의 테마색 텍스트)
+    const elements = [
+      _buildThemeBgElement(themeId, cs),
+      ...(layoutId ? _applyThemeRoles(_buildStarterLayout(layoutId, cs), themeId) : []),
+    ]
     _pageCache[newKey] = {
-      elements: [],
+      elements,
       canvasSize: { ...cs },
       fontImports: [],
       history: { stack: [], pointer: -1 },
@@ -890,6 +934,11 @@ export const useFlatStore = create((set, get) => ({
     get().applyThemeToCurrentPage()
   },
 
+  /** 테마 id만 설정(적용 없음) — 프로젝트 로드 시 복원용 */
+  setThemeId(id) {
+    if (id) set({ themeId: id })
+  },
+
   /** 신규 텍스트 요소의 기본 서식(현재 테마 default 역할) */
   getThemeTextDefault() {
     const d = getTheme(get().themeId)?.roles?.default
@@ -929,6 +978,18 @@ export const useFlatStore = create((set, get) => ({
       changes.push({ id: e.id, changes: { styles: { color: rs.color, fontWeight: rs.fontWeight, textShadow: rs.textShadow } } })
     }
     if (changes.length) get().batchUpdateFlatElementsIndividual(changes)
+  },
+
+  /** 현재 테마를 모든 슬라이드에 일괄 적용 (배경 + 역할 텍스트). 벌크 작업이라 페이지별 히스토리는 없음 */
+  applyThemeToDeck() {
+    const themeId = get().themeId
+    get()._saveCurrentPage()
+    for (const key in _pageCache) {
+      const page = _pageCache[key]
+      page.elements = _applyThemeToElements(page.elements, themeId, page.canvasSize || get().canvasSize)
+    }
+    if (_currentPageKey) get()._restoreFromCache(_currentPageKey)
+    get()._syncPageInfo()
   },
 
   /** 인라인 텍스트 편집 시작/종료 */
