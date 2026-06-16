@@ -58,29 +58,30 @@ export default function SnippetMenu({ onPick }) {
       {open && (
         <div
           className="thin-scrollbar absolute left-0 mt-1 z-[10060] rounded-xl border border-white/10 shadow-xl overflow-y-auto"
-          style={{ width: 300, maxHeight: 420, backgroundColor: '#1e293b' }}
+          style={{ width: 372, maxHeight: 440, backgroundColor: '#1e293b' }}
         >
           {GROUPS.map(g => (
             <div key={g}>
-              <p className="px-3 pt-2.5 pb-1 text-[9px] uppercase tracking-wide text-slate-500 sticky top-0 bg-slate-800/95">{g}</p>
-              {SNIPPETS.filter(s => s.group === g).map(s => {
-                const p = previews[s.id]
-                return (
-                  <button
-                    key={s.id}
-                    onClick={() => { onPick(s.id); setOpen(false) }}
-                    className="w-full flex items-center gap-2.5 px-3 py-1.5 hover:bg-white/5 transition-colors text-left"
-                  >
-                    <span className="shrink-0 rounded border border-white/10 overflow-hidden" style={{ width: 84 }}>
-                      <SlideThumbnail elements={p.els} canvasSize={p.cs} width={84} />
-                    </span>
-                    <span className="min-w-0">
-                      <span className="block text-xs text-slate-200 truncate">{s.label}</span>
-                      <span className="block text-[10px] text-slate-500 truncate">{s.desc}</span>
-                    </span>
-                  </button>
-                )
-              })}
+              <p className="px-3 pt-2.5 pb-1 text-[9px] uppercase tracking-wide text-slate-500 sticky top-0 bg-slate-800/95 z-10">{g}</p>
+              <div className="grid grid-cols-2 gap-1.5 px-2 pb-1">
+                {SNIPPETS.filter(s => s.group === g).map(s => {
+                  const p = previews[s.id]
+                  return (
+                    <button
+                      key={s.id}
+                      onClick={() => { onPick(s.id); setOpen(false) }}
+                      title={s.desc}
+                      className="flex flex-col text-left rounded-lg p-1.5 border border-transparent hover:bg-white/5 hover:border-white/10 transition-colors"
+                    >
+                      <span className="rounded border border-white/10 overflow-hidden">
+                        <SlideThumbnail elements={p.els} canvasSize={p.cs} width={158} />
+                      </span>
+                      <span className="block text-[11px] text-slate-200 truncate mt-1">{s.label}</span>
+                      <span className="block text-[9px] text-slate-500 truncate">{s.desc}</span>
+                    </button>
+                  )
+                })}
+              </div>
             </div>
           ))}
         </div>
