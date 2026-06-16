@@ -151,6 +151,19 @@ describe('snippets', () => {
     expect(code.styles.fontFamily).toContain('monospace')
   })
 
+  it('복합 묶음: 화살표 프로세스/ProsCons/타임라인', () => {
+    const ap = getSnippet('arrowProcess').build(cs, theme)
+    expect(ap.length).toBe(5)                       // 칩3 + 화살표2
+    expect(ap.filter(e => e.content === '→').length).toBe(2)
+    const pc = getSnippet('prosCons').build(cs, theme)
+    expect(pc.length).toBe(2)
+    expect(pc[0].content).toContain('장점')
+    expect(pc[1].styles.borderLeft).toContain('#ef4444')
+    const tl = getSnippet('timeline').build(cs, theme)
+    expect(tl.filter(e => e.type === 'shape').length).toBe(4) // 선1 + 점3
+    expect(tl.filter(e => e.type === 'text').length).toBe(6)  // 날짜3 + 설명3
+  })
+
   it('모든 스니펫: 고유 id + build 함수', () => {
     const ids = new Set(SNIPPETS.map(s => s.id))
     expect(ids.size).toBe(SNIPPETS.length)

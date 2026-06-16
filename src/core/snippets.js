@@ -35,6 +35,18 @@ function textSpec({ x, y, w, h, content, bg, color = '#ffffff', radius = 0, size
 // 캔버스 중앙 좌표
 const center = (cs, w, h) => ({ x: Math.round((cs.w - w) / 2), y: Math.round((cs.h - h) / 2) })
 
+// 도형 스펙 생성기
+function shapeSpec({ x, y, w, h, bg, radius = 0, shadow = 'none', border = '0px none' }) {
+  return {
+    type: 'shape', x: Math.round(x), y: Math.round(y), width: w, height: h, content: '', isRich: false, merged: false,
+    styles: {
+      backgroundColor: bg, backgroundImage: 'none',
+      borderRadius: radius === '50%' ? '50%' : `${radius}px`,
+      border, boxShadow: shadow, opacity: '1',
+    },
+  }
+}
+
 // 콜아웃 박스 스펙 — 좌측 컬러바 + 옅은 배경 + 아이콘(이모지) + 본문(상단 정렬, 다중행)
 function calloutSpec(cs, { content, bar, tint }) {
   const w = 540, h = 96
@@ -423,6 +435,66 @@ SNIPPETS.push({
       radius: 6, size: 14, weight: 500, align: 'center', padding: '0 10px',
       fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
     })]
+  },
+})
+
+// 화살표 프로세스 — 칩 → 칩 → 칩 (복합)
+SNIPPETS.push({
+  id: 'arrowProcess', group: '프로세스', label: '화살표 프로세스', desc: '칩 → 칩 → 칩 (워크플로우)',
+  build: (cs, theme) => {
+    const chipW = 104, chipH = 44, arrowW = 34
+    const totalW = chipW * 3 + arrowW * 2
+    const { x, y } = center(cs, totalW, chipH)
+    const accent = theme?.accent || ACCENT_FALLBACK
+    const arrowColor = theme?.roles?.muted?.color || '#94a3b8'
+    const chip = (i, cx) => textSpec({ x: cx, y, w: chipW, h: chipH, content: `${i}단계`, bg: accent, color: '#ffffff', radius: 999, size: 15, weight: 700, align: 'center', shadow: '0 2px 6px rgba(0,0,0,0.15)' })
+    const arrow = (ax) => textSpec({ x: ax, y, w: arrowW, h: chipH, content: '→', bg: 'rgba(0,0,0,0)', color: arrowColor, size: 22, weight: 700, align: 'center' })
+    let cx = x
+    const els = [chip(1, cx)]
+    cx += chipW; els.push(arrow(cx)); cx += arrowW
+    els.push(chip(2, cx)); cx += chipW; els.push(arrow(cx)); cx += arrowW
+    els.push(chip(3, cx))
+    return els
+  },
+})
+
+// Pros/Cons — 장점/단점 2분할 박스 (복합)
+SNIPPETS.push({
+  id: 'prosCons', group: '비교', label: 'Pros / Cons', desc: '장점(녹)/단점(적) 2분할',
+  build: (cs) => {
+    const bw = 240, bh = 140, gap = 16
+    const { x, y } = center(cs, bw * 2 + gap, bh)
+    const boxStyle = (tint, color, bar) => ({
+      backgroundColor: tint, backgroundImage: 'none', color,
+      fontSize: '15px', fontFamily: 'inherit', fontWeight: '500', fontStyle: 'normal',
+      textAlign: 'left', letterSpacing: 'normal', lineHeight: '1.6', textDecoration: 'none', textTransform: 'none',
+      borderRadius: '10px', border: '0px none', borderLeft: `4px solid ${bar}`,
+      boxShadow: 'none', opacity: '1', padding: '12px 16px',
+    })
+    const pro = { type: 'text', x, y, width: bw, height: bh, content: '✓ 장점\n• 항목 1\n• 항목 2', isRich: false, merged: false, placeholder: '', styles: boxStyle('rgba(16,185,129,0.10)', '#065f46', '#10b981') }
+    const con = { type: 'text', x: x + bw + gap, y, width: bw, height: bh, content: '✗ 단점\n• 항목 1\n• 항목 2', isRich: false, merged: false, placeholder: '', styles: boxStyle('rgba(239,68,68,0.10)', '#991b1b', '#ef4444') }
+    return [pro, con]
+  },
+})
+
+// 타임라인 — 세로선 + 점 3 + 날짜/내용 3 (복합)
+SNIPPETS.push({
+  id: 'timeline', group: '프로세스', label: '타임라인', desc: '점 + 세로선 + 날짜/내용 (3개)',
+  build: (cs, theme) => {
+    const w = 360, h = 160, rowH = 52, dotD = 12
+    const { x, y } = center(cs, w, h)
+    const accent = theme?.accent || ACCENT_FALLBACK
+    const titleC = theme?.roles?.title?.color || '#1e293b'
+    const muteC = theme?.roles?.muted?.color || '#64748b'
+    const lineX = x + 5
+    const els = [shapeSpec({ x: lineX, y: y + dotD / 2, w: 2, h: rowH * 2, bg: 'rgba(148,163,184,0.5)' })]
+    for (let i = 0; i < 3; i++) {
+      const ry = y + i * rowH
+      els.push(shapeSpec({ x: lineX - dotD / 2 + 1, y: ry, w: dotD, h: dotD, bg: accent, radius: '50%' }))
+      els.push(textSpec({ x: x + 24, y: ry - 4, w: w - 24, h: 20, content: `2024.0${i + 1} · 제목`, bg: 'rgba(0,0,0,0)', color: titleC, size: 14, weight: 700, align: 'left' }))
+      els.push(textSpec({ x: x + 24, y: ry + 16, w: w - 24, h: 18, content: '간단한 설명', bg: 'rgba(0,0,0,0)', color: muteC, size: 12, weight: 400, align: 'left' }))
+    }
+    return els
   },
 })
 
