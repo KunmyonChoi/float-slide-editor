@@ -4,6 +4,12 @@
   box-sizing: border-box;
 }
 
+html, body {
+  /* 모바일 '당겨서 새로고침'(pull-to-refresh) + 오버스크롤 바운스 차단 — 편집 중 오작동 방지 */
+  overscroll-behavior: none;
+  height: 100%;
+}
+
 body {
   margin: 0;
   font-family: system-ui, sans-serif;
@@ -15,6 +21,7 @@ body {
   height: 100vh;
   display: flex;
   flex-direction: column;
+  overscroll-behavior: none;
 }
 
 /* ── flat 텍스트 리스트 (글머리/번호) — 렌더 + 인라인 편집 공통 ──
