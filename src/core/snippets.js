@@ -510,9 +510,11 @@ SNIPPETS.push({
     const w = 520, h = 120
     const { x, y } = center(cs, w, h)
     const win = shapeSpec({ x, y, w, h, bg: '#0a0e14', radius: 10, shadow: '0 6px 20px rgba(0,0,0,0.35)' })
+    // 오토핏: 출력이 길어지면 창이 신축(시스템바 없음 → top 패딩=텍스트 인셋)
+    win.afContainer = true; win.afPad = { top: 14, right: 16, bottom: 14, left: 16 }; win.afGap = 0
     const text = {
       type: 'text', x: x + 16, y: y + 14, width: w - 32, height: h - 28,
-      content: '$ npm run build\n✓ built in 320ms', isRich: false, merged: false, placeholder: '',
+      content: '$ npm run build\n✓ built in 320ms', isRich: false, afContent: true, autoHeight: true, merged: false, placeholder: '',
       styles: {
         backgroundColor: 'rgba(0,0,0,0)', backgroundImage: 'none', color: '#86efac',
         fontSize: '14px', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',

@@ -1049,6 +1049,7 @@ export const useFlatStore = create((set, get) => ({
   commitTextEdit(id, newContent, isRich) {
     get().updateFlatElement(id, { content: newContent, isRich })
     set({ editingFlatId: null })
+    get().reflowAutoFit() // 오토핏 컨테이너 안 텍스트면 높이 재계산(없으면 no-op)
   },
 
   /** 코드 모드 요소 편집 커밋 — 원본(raw) 저장 + 하이라이트 + 오토핏 reflow */

@@ -45,4 +45,14 @@ describe('applyAutoFit', () => {
     const els = [{ id: 'a', groupId: 'g', x: 0, y: 0, width: 10, height: 10 }]
     expect(applyAutoFit(els)).toBe(els)
   })
+
+  it('비-코드 콘텐츠도 <br> 줄바꿈을 줄 수로 인식해 신축', () => {
+    const els = [
+      { id: 'win', afContainer: true, afPad: { top: 14, right: 16, bottom: 14, left: 16 }, afGap: 0, groupId: 'g', x: 0, y: 0, width: 300, height: 60, type: 'shape' },
+      { id: 'txt', afContent: true, autoHeight: true, isRich: true, content: 'a<br>b<br>c<br>d<br>e', groupId: 'g', x: 16, y: 14, width: 268, height: 30, type: 'text', styles: { fontSize: '14px', lineHeight: '1.6' } },
+    ]
+    const out = applyAutoFit(els)
+    const txt = out.find(e => e.id === 'txt')
+    expect(txt.height).toBeGreaterThan(30) // 5줄
+  })
 })
