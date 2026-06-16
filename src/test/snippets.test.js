@@ -42,6 +42,22 @@ describe('snippets', () => {
     }
   })
 
+  it('풀쿼트: 큰 따옴표 포함 리치 텍스트, 가운데 정렬', () => {
+    const [el] = getSnippet('pullQuote').build(cs, theme)
+    expect(el.isRich).toBe(true)
+    expect(el.content).toContain('“')
+    expect(el.content).toContain('”')
+    expect(el.styles.textAlign).toBe('center')
+    expect(el.styles.fontStyle).toBe('italic')
+  })
+
+  it('좌측바 인용: 좌측 컬러바(테마 accent) + 투명 배경', () => {
+    const [el] = getSnippet('leftBarQuote').build(cs, theme)
+    expect(el.styles.borderLeft).toContain('#ff0000') // theme.accent
+    expect(el.styles.backgroundColor).toBe('rgba(0,0,0,0)')
+    expect(el.styles.textAlign).toBe('left')
+  })
+
   it('모든 스니펫: 고유 id + build 함수', () => {
     const ids = new Set(SNIPPETS.map(s => s.id))
     expect(ids.size).toBe(SNIPPETS.length)
