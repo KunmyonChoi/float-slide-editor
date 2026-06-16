@@ -214,6 +214,8 @@ SNIPPETS.push({
     const x = Math.round((cs.w - w) / 2), y = Math.round((cs.h - h) / 2)
     const win = {
       type: 'shape', x, y, width: w, height: h, content: '', isRich: false, merged: false,
+      // 오토핏 컨테이너: 코드(콘텐츠)를 감싸도록 높이 신축. top 패딩=시스템바 영역.
+      afContainer: true, afPad: { top: 46, right: 20, bottom: 14, left: 20 }, afGap: 0,
       styles: {
         backgroundColor: '#0f172a', backgroundImage: 'none', borderRadius: '12px',
         border: '1px solid rgba(255,255,255,0.08)', boxShadow: '0 8px 28px rgba(0,0,0,0.35)', opacity: '1',
@@ -234,7 +236,7 @@ SNIPPETS.push({
     const { html: codeHtml, lang } = highlightCode(rawCode, 'auto')
     const code = {
       type: 'text', x: x + 20, y: y + 46, width: w - 40, height: h - 62,
-      content: codeHtml, isRich: true, isCode: true, lang, code: rawCode, merged: false, placeholder: '',
+      content: codeHtml, isRich: true, isCode: true, lang, code: rawCode, afContent: true, autoHeight: true, merged: false, placeholder: '',
       styles: {
         backgroundColor: 'rgba(0,0,0,0)', backgroundImage: 'none', color: '#c0caf5',
         fontSize: '15px', fontFamily: CODE_FONT,

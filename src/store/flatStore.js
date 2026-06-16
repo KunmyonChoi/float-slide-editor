@@ -5,6 +5,7 @@ import { HistoryStack } from '../core/HistoryStack'
 import { isBackgroundElement } from '../core/SnapEngine'
 import { DEFAULT_THEME_ID, getTheme, themeBackgroundStyles, themeRoleStyles } from '../core/themes'
 import { highlightCode } from '../core/codeHighlight'
+import { applyAutoFit } from '../core/autoFit'
 
 // 배경 레이어 판정 — SnapEngine의 canonical 헬퍼 재노출(명시 플래그 + 전체캔버스 휴리스틱)
 export { isBackgroundElement as isBackgroundLayer }
@@ -1050,13 +1051,21 @@ export const useFlatStore = create((set, get) => ({
     set({ editingFlatId: null })
   },
 
-  /** 코드 모드 요소 편집 커밋 — 원본(raw)을 저장하고 하이라이트 HTML 생성 */
+  /** 코드 모드 요소 편집 커밋 — 원본(raw) 저장 + 하이라이트 + 오토핏 reflow */
   commitCodeEdit(id, rawCode) {
     const el = get().flatElements.find(e => e.id === id)
     const reqLang = el?.lang || 'auto'
     const { html, lang } = highlightCode(rawCode, reqLang)
     get().updateFlatElement(id, { code: rawCode, content: html, isRich: true, lang: reqLang === 'auto' ? lang : reqLang })
     set({ editingFlatId: null })
+    get().reflowAutoFit()
+  },
+
+  /** 오토핏 reflow — 컨테이너가 콘텐츠를 감싸도록 geometry 재계산(히스토리 없는 레이아웃 보정) */
+  reflowAutoFit() {
+    const cur = get().flatElements
+    const next = applyAutoFit(cur)
+    if (next !== cur) set({ flatElements: next })
   },
 
   /** flat 요소 부분 업데이트 (히스토리에 기록) */
