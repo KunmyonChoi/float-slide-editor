@@ -123,6 +123,20 @@ describe('snippets', () => {
     expect(hash.styles.color).toBe('#ff0000') // accent
   })
 
+  it('묶음2: 평점/결론박스/섹션헤더/CTA 특성', () => {
+    expect(getSnippet('rating').build(cs, theme)[0].content).toContain('★')
+    const box = getSnippet('conclusionBox').build(cs, theme)[0]
+    expect(box.styles.border).toContain('#ff0000') // accent 테두리
+    expect(box.styles.boxShadow).not.toBe('none')
+    const bar = getSnippet('sectionHeaderBar').build(cs, theme)[0]
+    expect(bar.styles.backgroundColor).toBe('#ff0000')
+    expect(bar.styles.textAlign).toBe('left')
+    expect(bar.width).toBeGreaterThan(cs.w * 0.8)
+    const cta = getSnippet('ctaButton').build(cs, theme)[0]
+    expect(cta.styles.borderRadius).toBe('999px')
+    expect(cta.styles.backgroundColor).toBe('#ff0000')
+  })
+
   it('모든 스니펫: 고유 id + build 함수', () => {
     const ids = new Set(SNIPPETS.map(s => s.id))
     expect(ids.size).toBe(SNIPPETS.length)
