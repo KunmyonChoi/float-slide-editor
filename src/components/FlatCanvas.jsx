@@ -871,7 +871,7 @@ export default function FlatCanvas() {
             {selectedEls.length === 1 && selectedEl && selectedEl.type === 'text' && !editingFlatId && mode !== 'present' && (
               <FlatAiBar element={selectedEl} scale={scale} canvasRef={canvasRef} />
             )}
-            {selectedEls.length > 1 && (
+            {selectedEls.length > 1 && !editingFlatId && (
               <FlatGroupOverlay elements={selectedEls} scale={scale}
                 otherRects={otherRects} canvasSize={canvasSize} onSnapGuides={setSnapGuides} />
             )}
