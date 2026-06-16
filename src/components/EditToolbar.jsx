@@ -3,6 +3,8 @@ import { useEditorStore } from '../store/editorStore'
 import { useFlatStore } from '../store/flatStore'
 import { nextFlatId } from '../core/FlatExtractor'
 import { SLIDE_LAYOUTS, carryLayoutContent } from '../core/slideLayouts'
+import ThemeMenu from './ThemeMenu'
+import { getTheme, themeRoleStyles } from '../core/themes'
 import { createTableElement } from '../core/slideTable'
 import { BlobStore } from '../core/BlobStore'
 import { ToolBtn, Divider, UndoIcon, RedoIcon } from './FloatingToolbar'
@@ -107,11 +109,12 @@ export default function EditToolbar() {
     const maxZ = flatElements.length > 0
       ? Math.max(...flatElements.map(e => e.zIndex))
       : 0
+    const themeText = p.type === 'text' ? useFlatStore.getState().getThemeTextDefault() : null
     const el = {
       id: nextFlatId(),
       sourceId: null,
       ...p,
-      styles: { ...p.styles },
+      styles: { ...p.styles, ...(themeText ? { color: themeText.color, fontWeight: themeText.fontWeight, textShadow: themeText.textShadow } : {}) },
       x: Math.round((canvasSize.w - p.width) / 2),
       y: Math.round((canvasSize.h - p.height) / 2),
       zIndex: maxZ + 1,
@@ -144,12 +147,21 @@ export default function EditToolbar() {
     const existingLayoutEls = flatElements.filter(e => e.layoutRole)
     const specs = carryLayoutContent(existingLayoutEls, layout.build(canvasSize))
     const maxZ = flatElements.length > 0 ? Math.max(...flatElements.map(e => e.zIndex)) : 0
-    const els = specs.map((s, i) => ({
-      sourceId: null, rotation: 0, merged: false, isRich: false,
-      ...s,
-      id: nextFlatId(),
-      zIndex: maxZ + 1 + i,
-    }))
+    // 레이아웃의 하드코딩 색 대신 현재 테마의 역할색/굵기/그림자 적용
+    const theme = getTheme(useFlatStore.getState().themeId)
+    const els = specs.map((s, i) => {
+      const el = {
+        sourceId: null, rotation: 0, merged: false, isRich: false,
+        ...s,
+        id: nextFlatId(),
+        zIndex: maxZ + 1 + i,
+      }
+      if (el.type === 'text' && el.layoutRole) {
+        const rs = themeRoleStyles(theme, el.layoutRole)
+        if (rs) el.styles = { ...el.styles, color: rs.color, fontWeight: rs.fontWeight, textShadow: rs.textShadow }
+      }
+      return el
+    })
     if (existingLayoutEls.length > 0) {
       // 변환: 기존 레이아웃 요소 제거 + 새 레이아웃 추가 (빈 슬라이드면 제거만)
       applyLayoutElements(existingLayoutEls.map(e => e.id), els)
@@ -366,10 +378,14 @@ export default function EditToolbar() {
             setOpen={setLayoutOpen}
             icon={<LayoutIcon />}
             label="레이아웃"
-            items={SLIDE_LAYOUTS.map(l => ({
+            // '빈 슬라이드'는 사실상 전체 삭제(복구 불가)라 메뉴에서 제외 — 전체선택→삭제로 대체
+            items={SLIDE_LAYOUTS.filter(l => l.id !== 'blank').map(l => ({
               id: l.id, icon: <LayoutIcon />, label: l.name, action: () => insertLayout(l.id),
             }))}
           />
+
+          {/* 테마 선택 — 레이아웃 오른쪽 */}
+          <ThemeMenu />
         </>
       ) : (
         /* ── HTML 모드: 기존 삽입 드롭다운 ── */

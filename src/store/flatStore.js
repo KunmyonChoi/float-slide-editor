@@ -3,6 +3,7 @@ import { extractFlatElementsFromIframe, nextFlatId } from '../core/FlatExtractor
 import { SLIDE_LAYOUTS } from '../core/slideLayouts'
 import { HistoryStack } from '../core/HistoryStack'
 import { isBackgroundElement } from '../core/SnapEngine'
+import { DEFAULT_THEME_ID, getTheme, themeBackgroundStyles, themeRoleStyles } from '../core/themes'
 
 // 배경 레이어 판정 — SnapEngine의 canonical 헬퍼 재노출(명시 플래그 + 전체캔버스 휴리스틱)
 export { isBackgroundElement as isBackgroundLayer }
@@ -176,6 +177,8 @@ export const useFlatStore = create((set, get) => ({
   selectedFlatIds: [],
   /** 인라인 편집 중인 flat 요소 ID */
   editingFlatId: null,
+  /** 현재 테마 id (신규 요소/슬라이드 기본값 + 테마 적용용) */
+  themeId: DEFAULT_THEME_ID,
   /** 뷰 모드: 'html' | 'flat' | 'split' */
   viewMode: 'flat',
   /** 캔버스 크기 */
@@ -879,6 +882,53 @@ export const useFlatStore = create((set, get) => ({
   _commitActiveEdit() {
     if (_pendingEditCommit) { _pendingEditCommit(); _pendingEditCommit = null }
     if (get().editingFlatId) set({ editingFlatId: null })
+  },
+
+  /** 테마 선택 — id 저장 후 현재 페이지에 적용 (배경 + 역할 텍스트 서식) */
+  setTheme(id) {
+    set({ themeId: id })
+    get().applyThemeToCurrentPage()
+  },
+
+  /** 신규 텍스트 요소의 기본 서식(현재 테마 default 역할) */
+  getThemeTextDefault() {
+    const d = getTheme(get().themeId)?.roles?.default
+    return d || { color: '#334155', fontWeight: '400', textShadow: 'none' }
+  },
+
+  /**
+   * 현재 테마를 현재 페이지에 적용.
+   *  - 배경 레이어가 있으면 배경 스타일 교체, 없으면 맨 아래에 생성
+   *  - layoutRole 있는 텍스트만 color/fontWeight/textShadow 교체(수동 색 보존)
+   */
+  applyThemeToCurrentPage() {
+    const theme = getTheme(get().themeId)
+    const cs = get().canvasSize
+    const els = get().flatElements
+    const bgStyles = themeBackgroundStyles(theme)
+
+    const changes = []
+    const bgEl = els.find(e => isBackgroundElement(e, cs))
+    if (bgEl) {
+      changes.push({ id: bgEl.id, changes: { styles: bgStyles } })
+    } else {
+      const minZ = els.length ? Math.min(...els.map(e => e.zIndex)) : 1
+      get().addFlatElement({
+        id: nextFlatId(), sourceId: null, type: 'shape', content: '', isRich: false, merged: false,
+        x: 0, y: 0, width: cs.w, height: cs.h, zIndex: minZ - 1, locked: true,
+        styles: {
+          backgroundColor: 'rgba(0,0,0,0)', backgroundImage: 'none', borderRadius: '0px',
+          border: '0px none', boxShadow: 'none', opacity: '1', ...bgStyles,
+        },
+      })
+    }
+    for (const e of els) {
+      if (e.type !== 'text' || !e.layoutRole) continue
+      const rs = themeRoleStyles(theme, e.layoutRole)
+      if (!rs) continue
+      changes.push({ id: e.id, changes: { styles: { color: rs.color, fontWeight: rs.fontWeight, textShadow: rs.textShadow } } })
+    }
+    if (changes.length) get().batchUpdateFlatElementsIndividual(changes)
   },
 
   /** 인라인 텍스트 편집 시작/종료 */
