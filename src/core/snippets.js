@@ -11,7 +11,7 @@ const ACCENT_FALLBACK = '#6366f1'
 // 텍스트형 데코 요소 스펙 생성기 (배경/라운드/그림자/중앙정렬 포함)
 function textSpec({ x, y, w, h, content, bg, color = '#ffffff', radius = 0, size = 14, weight = 600,
   shadow = 'none', letter = 'normal', align = 'center', isRich = false, border = '0px none',
-  fontFamily = 'inherit', padding = '0px', lineHeight = '1' }) {
+  fontFamily = 'inherit', padding = '0px', lineHeight = '1', valign = 'center' }) {
   return {
     type: 'text', x: Math.round(x), y: Math.round(y), width: w, height: h,
     content, isRich, merged: false, placeholder: '',
@@ -24,8 +24,9 @@ function textSpec({ x, y, w, h, content, bg, color = '#ffffff', radius = 0, size
       borderRadius: radius === '50%' ? '50%' : `${radius}px`,
       border, boxShadow: shadow, opacity: '1',
       padding,
-      // 세로 중앙 정렬 + 가로 정렬은 align에 맞춤 (renderer가 alignItems로 flex 전환)
-      display: 'flex', alignItems: 'center',
+      // 세로(valign)·가로(align) 정렬 (renderer가 alignItems로 flex 전환)
+      display: 'flex',
+      alignItems: valign === 'top' ? 'flex-start' : valign === 'bottom' ? 'flex-end' : 'center',
       justifyContent: align === 'left' ? 'flex-start' : align === 'right' ? 'flex-end' : 'center',
     },
   }
@@ -360,6 +361,67 @@ SNIPPETS.push({
     return [textSpec({
       x, y, w, h, content: '자세히 보기 →', bg: accent, color: '#ffffff',
       radius: 999, size: 16, weight: 700, align: 'center', shadow: '0 4px 12px rgba(0,0,0,0.18)',
+    })]
+  },
+})
+
+// 대형 스탯 — 큰 숫자 + 캡션 (복합)
+SNIPPETS.push({
+  id: 'bigStat', group: '데이터', label: '대형 스탯', desc: '큰 숫자 + 캡션',
+  build: (cs, theme) => {
+    const w = 260, h = 110
+    const { x, y } = center(cs, w, h)
+    const accent = theme?.accent || ACCENT_FALLBACK
+    const cap = theme?.roles?.muted?.color || '#64748b'
+    return [
+      textSpec({ x, y, w, h: 64, content: '90%', bg: 'rgba(0,0,0,0)', color: accent, size: 56, weight: 800, align: 'center' }),
+      textSpec({ x, y: y + 70, w, h: 28, content: '전환율 증가', bg: 'rgba(0,0,0,0)', color: cap, size: 16, weight: 500, align: 'center' }),
+    ]
+  },
+})
+
+// 스티키 노트 — 포스트잇(기울임 + 그림자), 좌상단 텍스트
+SNIPPETS.push({
+  id: 'stickyNote', group: '노트', label: '스티키 노트', desc: '포스트잇 메모(기울임+그림자)',
+  build: (cs) => {
+    const w = 180, h = 160
+    const { x, y } = center(cs, w, h)
+    const s = textSpec({
+      x, y, w, h, content: '메모를 입력하세요', bg: '#fde68a', color: '#78350f',
+      size: 16, weight: 500, align: 'left', valign: 'top', padding: '14px', radius: 3,
+      shadow: '0 6px 16px rgba(0,0,0,0.18)', lineHeight: '1.4',
+    })
+    s.rotation = -3
+    return [s]
+  },
+})
+
+// 카드 — 라운드 + 그림자 컨테이너 (단일 shape)
+SNIPPETS.push({
+  id: 'card', group: '구조', label: '카드', desc: '라운드 + 그림자 콘텐츠 카드',
+  build: (cs) => {
+    const w = 280, h = 180
+    const { x, y } = center(cs, w, h)
+    return [{
+      type: 'shape', x, y, width: w, height: h, content: '', isRich: false, merged: false,
+      styles: {
+        backgroundColor: '#ffffff', backgroundImage: 'none', borderRadius: '14px',
+        border: '1px solid rgba(0,0,0,0.06)', boxShadow: '0 6px 18px rgba(0,0,0,0.10)', opacity: '1',
+      },
+    }]
+  },
+})
+
+// 인라인 코드칩 — 모노 + 회색 배경 (단일)
+SNIPPETS.push({
+  id: 'inlineCode', group: '코드', label: '인라인 코드칩', desc: '모노 + 회색 배경 (명령어/변수)',
+  build: (cs) => {
+    const w = 110, h = 30
+    const { x, y } = center(cs, w, h)
+    return [textSpec({
+      x, y, w, h, content: 'code', bg: '#e2e8f0', color: '#334155',
+      radius: 6, size: 14, weight: 500, align: 'center', padding: '0 10px',
+      fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
     })]
   },
 })
