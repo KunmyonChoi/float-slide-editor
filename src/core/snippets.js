@@ -310,6 +310,60 @@ SNIPPETS.push({
   },
 })
 
+// 평점 — ★★★★☆ (단일)
+SNIPPETS.push({
+  id: 'rating', group: '데이터', label: '평점(별)', desc: '★★★★☆ 만족도/리뷰',
+  build: (cs) => {
+    const w = 170, h = 40
+    const { x, y } = center(cs, w, h)
+    return [textSpec({ x, y, w, h, content: '★★★★☆', bg: 'rgba(0,0,0,0)', color: '#f59e0b', size: 26, weight: 400, align: 'center', letter: '2px' })]
+  },
+})
+
+// 강조 결론 박스 — 테두리 + 흰 배경 + 그림자 (단일, 자체 카드)
+SNIPPETS.push({
+  id: 'conclusionBox', group: '구조', label: '강조 결론 박스', desc: '테두리 + 그림자 강조 박스',
+  build: (cs, theme) => {
+    const w = 520, h = 96
+    const { x, y } = center(cs, w, h)
+    const accent = theme?.accent || ACCENT_FALLBACK
+    return [textSpec({
+      x, y, w, h, content: '핵심 결론을 입력하세요', bg: '#ffffff', color: '#1e293b',
+      radius: 12, size: 18, weight: 600, align: 'center', lineHeight: '1.4',
+      border: `2px solid ${accent}`, shadow: '0 4px 14px rgba(0,0,0,0.10)', padding: '12px 20px',
+    })]
+  },
+})
+
+// 섹션 헤더 바 — 풀폭 컬러 띠 + 제목 (단일)
+SNIPPETS.push({
+  id: 'sectionHeaderBar', group: '구조', label: '섹션 헤더 바', desc: '풀폭 컬러 띠 + 제목',
+  build: (cs, theme) => {
+    const w = Math.round(cs.w * 0.86), h = 64
+    const { x, y } = center(cs, w, h)
+    const accent = theme?.accent || ACCENT_FALLBACK
+    return [textSpec({
+      x, y, w, h, content: '섹션 제목', bg: accent, color: '#ffffff',
+      radius: 8, size: 26, weight: 700, align: 'left', padding: '0 24px',
+      shadow: '0 2px 8px rgba(0,0,0,0.15)',
+    })]
+  },
+})
+
+// CTA 버튼 — 라운드 강조색 버튼 (단일)
+SNIPPETS.push({
+  id: 'ctaButton', group: '구조', label: 'CTA 버튼', desc: '라운드 강조색 버튼',
+  build: (cs, theme) => {
+    const w = 190, h = 50
+    const { x, y } = center(cs, w, h)
+    const accent = theme?.accent || ACCENT_FALLBACK
+    return [textSpec({
+      x, y, w, h, content: '자세히 보기 →', bg: accent, color: '#ffffff',
+      radius: 999, size: 16, weight: 700, align: 'center', shadow: '0 4px 12px rgba(0,0,0,0.18)',
+    })]
+  },
+})
+
 export function getSnippet(id) {
   return SNIPPETS.find(s => s.id === id)
 }
