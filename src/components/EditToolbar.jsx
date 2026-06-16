@@ -3,6 +3,7 @@ import { useEditorStore } from '../store/editorStore'
 import { useFlatStore } from '../store/flatStore'
 import { nextFlatId } from '../core/FlatExtractor'
 import { SLIDE_LAYOUTS, carryLayoutContent } from '../core/slideLayouts'
+import ThemeMenu from './ThemeMenu'
 import { createTableElement } from '../core/slideTable'
 import { BlobStore } from '../core/BlobStore'
 import { ToolBtn, Divider, UndoIcon, RedoIcon } from './FloatingToolbar'
@@ -371,6 +372,9 @@ export default function EditToolbar() {
               id: l.id, icon: <LayoutIcon />, label: l.name, action: () => insertLayout(l.id),
             }))}
           />
+
+          {/* 테마 선택 — 레이아웃 오른쪽 */}
+          <ThemeMenu />
         </>
       ) : (
         /* ── HTML 모드: 기존 삽입 드롭다운 ── */
