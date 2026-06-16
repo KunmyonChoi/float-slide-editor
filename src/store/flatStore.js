@@ -695,9 +695,15 @@ export const useFlatStore = create((set, get) => ({
     const newKey = `${insertAt}-0`
     const cs = get().canvasSize
     const theme = get()._currentTheme()
-    // 테마 배경 + (layoutId 있으면 그 레이아웃의 테마색 텍스트)
+    // 배경: 현재 슬라이드에 배경 레이어(이미지 포함)가 있으면 그대로 복제, 없으면 테마 배경
+    const curBgLayers = get().flatElements
+      .filter(e => isBackgroundElement(e, cs))
+      .sort((a, b) => a.zIndex - b.zIndex)
+    const bgEls = curBgLayers.length
+      ? curBgLayers.map(b => ({ ...structuredClone(b), id: nextFlatId() }))
+      : [_buildThemeBgElement(theme, cs)]
     const elements = [
-      _buildThemeBgElement(theme, cs),
+      ...bgEls,
       ...(layoutId ? _applyThemeRoles(_buildStarterLayout(layoutId, cs), theme) : []),
     ]
     _pageCache[newKey] = {

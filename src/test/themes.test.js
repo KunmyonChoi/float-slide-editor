@@ -148,6 +148,24 @@ describe('applyThemeToCurrentPage', () => {
     expect(bg.styles.backgroundImage).toContain('gradient')
   })
 
+  it('addPage: 현재 슬라이드에 배경 레이어(이미지)가 있으면 새 슬라이드로 복제', () => {
+    const bgImg = 'url(data:image/png;base64,AAAA)'
+    useFlatStore.getState().loadAllPages({
+      '0-0': {
+        elements: [
+          { id: 'bg', type: 'shape', content: '', isRich: false, x: 0, y: 0, width: cs.w, height: cs.h, zIndex: 0, locked: true, styles: { backgroundColor: 'rgba(0,0,0,0)', backgroundImage: bgImg, backgroundSize: 'cover' } },
+        ],
+        canvasSize: cs, fontImports: [], htmlSlideIndex: null,
+      },
+    }, '0-0')
+    useFlatStore.getState().addPage('titleContent')
+    const els = useFlatStore.getState().flatElements
+    const bg = els.find(e => e.type === 'shape' && !e.content)
+    expect(bg).toBeTruthy()
+    expect(bg.styles.backgroundImage).toBe(bgImg) // 현재 배경 복제됨
+    expect(bg.id).not.toBe('bg')                   // 새 id
+  })
+
   it("addPage('titleContent'): 테마 배경 + 제목/본문 레이아웃 텍스트", () => {
     useFlatStore.getState().loadAllPages(
       { '0-0': { elements: [], canvasSize: cs, fontImports: [], htmlSlideIndex: null } }, '0-0')
