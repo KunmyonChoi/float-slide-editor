@@ -67,6 +67,18 @@ describe('snippets', () => {
     expect(els[1].styles.color).toBe('#ff0000') // 숫자 = theme.accent
   })
 
+  it('단계 카드: 뱃지 + 제목(좌측정렬) + 설명, 테마색 사용', () => {
+    const t = { accent: '#ff0000', roles: { title: { color: '#111' }, muted: { color: '#999' }, body: {}, default: {} } }
+    const els = getSnippet('stepCard').build(cs, t)
+    expect(els.length).toBe(3)
+    expect(els[0].styles.backgroundColor).toBe('#ff0000') // 뱃지 accent
+    expect(els[0].styles.borderRadius).toBe('50%')
+    expect(els[1].styles.color).toBe('#111')               // 제목 = theme title
+    expect(els[1].styles.textAlign).toBe('left')
+    expect(els[1].styles.justifyContent).toBe('flex-start')
+    expect(els[2].styles.color).toBe('#999')               // 설명 = theme muted
+  })
+
   it('모든 스니펫: 고유 id + build 함수', () => {
     const ids = new Set(SNIPPETS.map(s => s.id))
     expect(ids.size).toBe(SNIPPETS.length)
