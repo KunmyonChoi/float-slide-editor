@@ -107,11 +107,12 @@ export default function EditToolbar() {
     const maxZ = flatElements.length > 0
       ? Math.max(...flatElements.map(e => e.zIndex))
       : 0
+    const themeText = p.type === 'text' ? useFlatStore.getState().getThemeTextDefault() : null
     const el = {
       id: nextFlatId(),
       sourceId: null,
       ...p,
-      styles: { ...p.styles },
+      styles: { ...p.styles, ...(themeText ? { color: themeText.color, fontWeight: themeText.fontWeight, textShadow: themeText.textShadow } : {}) },
       x: Math.round((canvasSize.w - p.width) / 2),
       y: Math.round((canvasSize.h - p.height) / 2),
       zIndex: maxZ + 1,

@@ -114,11 +114,13 @@ export default function FlatContextMenu({ x, y, canvasX, canvasY, onClose }) {
     const maxZ = flatElements.length > 0
       ? Math.max(...flatElements.map(e => e.zIndex))
       : 0
+    // 텍스트는 현재 테마 기본 서식(글자색/굵기/그림자) 적용
+    const themeText = p.type === 'text' ? useFlatStore.getState().getThemeTextDefault() : null
     const el = {
       id: nextFlatId(),
       sourceId: null,
       ...p,
-      styles: { ...p.styles },
+      styles: { ...p.styles, ...(themeText ? { color: themeText.color, fontWeight: themeText.fontWeight, textShadow: themeText.textShadow } : {}) },
       x: ex, y: ey,
       zIndex: maxZ + 1,
     }

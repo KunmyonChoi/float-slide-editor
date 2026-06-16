@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useEditorStore } from '../store/editorStore'
 import { useFlatStore } from '../store/flatStore'
 import CanvasSizeSelector from './CanvasSizeSelector'
+import ThemeMenu from './ThemeMenu'
 import QualityDashboard from './QualityDashboard'
 import FileMenu from './ExportMenu'
 import PptExportButton from './PptExportButton'
@@ -201,6 +202,11 @@ export default function FloatingToolbar() {
 
       {/* 캔버스 크기 선택 */}
       <CanvasSizeSelector />
+
+      <Divider />
+
+      {/* 테마 선택 */}
+      <ThemeMenu />
 
       <Divider />
 
