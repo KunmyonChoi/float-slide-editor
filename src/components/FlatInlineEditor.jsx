@@ -121,6 +121,8 @@ export default function FlatInlineEditor({ element }) {
     sel.addRange(range)
     committedRef.current = false
     setEditorRect(ref.current.getBoundingClientRect()) // 이모지 버튼 앵커
+    // 오토핏 요소: 진입 즉시 실제 높이로 컨테이너 동기화
+    if (element.autoHeight) useFlatStore.getState().reflowAutoFit({ [element.id]: ref.current.scrollHeight })
     // 인라인 서식이 <span style>로 생성되도록 (export 파서가 인라인 스타일을 읽음)
     try { document.execCommand('styleWithCSS', false, true) } catch { /* noop */ }
     document.addEventListener('selectionchange', refreshSelection)
@@ -341,6 +343,12 @@ export default function FlatInlineEditor({ element }) {
     commitTextEdit(element.id, html, hasHtmlTags)
   }, [element.id, element.isCode, commitTextEdit])
 
+  // 오토핏 요소: 입력마다 에디터 실제 높이로 컨테이너 라이브 신축(히스토리 없이, 캐럿 안전)
+  const handleInput = useCallback(() => {
+    if (!element.autoHeight || !ref.current) return
+    useFlatStore.getState().reflowAutoFit({ [element.id]: ref.current.scrollHeight })
+  }, [element.autoHeight, element.id])
+
   const handleBlur = useCallback((e) => {
     if (suppressCommitRef.current) return
     // 포커스가 이모지 버튼/픽커 등 부속 UI로 이동하면 커밋 보류 (편집 유지)
@@ -423,7 +431,8 @@ export default function FlatInlineEditor({ element }) {
     left: x,
     top: y,
     width,
-    minHeight: height,
+    // 오토핏(autoHeight) 요소는 내용에 따라 줄고 늘게 minHeight를 한 줄로 — 편집 중 라이브 신축
+    minHeight: element.autoHeight ? (parseFloat(styles.fontSize) || 15) * (parseFloat(styles.lineHeight) || 1.4) : height,
     zIndex: 10001,
     boxSizing: 'border-box',
     // 텍스트 스타일 복제
@@ -473,6 +482,7 @@ export default function FlatInlineEditor({ element }) {
         data-placeholder={element.placeholder || ''}
         style={editorStyle}
         onBlur={handleBlur}
+        onInput={handleInput}
         onKeyDown={handleKeyDown}
         onMouseDown={(e) => e.stopPropagation()}
         onMouseOver={handleEditorMouseOver}

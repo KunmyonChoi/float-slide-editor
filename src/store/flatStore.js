@@ -1062,10 +1062,11 @@ export const useFlatStore = create((set, get) => ({
     get().reflowAutoFit()
   },
 
-  /** 오토핏 reflow — 컨테이너가 콘텐츠를 감싸도록 geometry 재계산(히스토리 없는 레이아웃 보정) */
-  reflowAutoFit() {
+  /** 오토핏 reflow — 컨테이너가 콘텐츠를 감싸도록 geometry 재계산(히스토리 없는 레이아웃 보정).
+   * measured: 편집 중 실제 측정 높이 { [contentId]: px } (없으면 추정) */
+  reflowAutoFit(measured) {
     const cur = get().flatElements
-    const next = applyAutoFit(cur)
+    const next = applyAutoFit(cur, measured)
     if (next !== cur) set({ flatElements: next })
   },
 

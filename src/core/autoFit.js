@@ -32,7 +32,7 @@ function plainOf(el) {
  * 오토핏 적용 — afContainer 그룹마다 콘텐츠 높이를 재계산하고 컨테이너를 Hug.
  * 순수 함수: 변경 없으면 같은 배열 반환, 변경 시 새 배열 반환.
  */
-export function applyAutoFit(elements) {
+export function applyAutoFit(elements, measured = {}) {
   const byGroup = {}
   for (const el of elements) if (el.groupId) (byGroup[el.groupId] = byGroup[el.groupId] || []).push(el)
 
@@ -61,7 +61,7 @@ export function applyAutoFit(elements) {
       const fs = parseFloat(c.styles?.fontSize) || 15
       const lh = parseFloat(c.styles?.lineHeight) || 1.6
       const h = c.autoHeight
-        ? estimateCodeHeight(plainOf(c), { width: cw, fontSizePx: fs, lineHeightRatio: lh })
+        ? (measured[c.id] != null ? Math.round(measured[c.id]) : estimateCodeHeight(plainOf(c), { width: cw, fontSizePx: fs, lineHeightRatio: lh }))
         : c.height
       if (c.x !== container.x + pad.left || c.width !== cw || Math.round(c.y) !== Math.round(cursorY) || c.height !== h) {
         patch(c.id, { x: container.x + pad.left, y: Math.round(cursorY), width: cw, height: h })
