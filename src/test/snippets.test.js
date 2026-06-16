@@ -110,6 +110,19 @@ describe('snippets', () => {
     expect(label.content).toContain('%')
   })
 
+  it('간단 묶음: 체크리스트/상태칩/키캡/해시칩 존재 + 특성', () => {
+    expect(getSnippet('checklistItem').build(cs, theme)[0].content).toContain('✓')
+    const chip = getSnippet('statusChip').build(cs, theme)[0]
+    expect(chip.styles.borderRadius).toBe('999px')
+    expect(chip.content).toContain('●')
+    const key = getSnippet('keycap').build(cs, theme)[0]
+    expect(key.styles.fontFamily).toContain('monospace')
+    expect(key.styles.border).toContain('solid')
+    const hash = getSnippet('hashChip').build(cs, theme)[0]
+    expect(hash.content).toContain('#')
+    expect(hash.styles.color).toBe('#ff0000') // accent
+  })
+
   it('모든 스니펫: 고유 id + build 함수', () => {
     const ids = new Set(SNIPPETS.map(s => s.id))
     expect(ids.size).toBe(SNIPPETS.length)
