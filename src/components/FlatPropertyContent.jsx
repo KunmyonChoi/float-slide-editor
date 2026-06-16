@@ -15,6 +15,7 @@ import { setFontSizeUniformPx, stripInlineFormatting, FORMAT_STRIP } from '../co
 import { generateImage, hasApiKey } from '../core/OpenAIClient'
 import { openAiSettings } from './AiSettingsModal'
 import { BACKGROUND_STYLES, BACKGROUND_GROUPS, DEFAULT_BACKGROUND_STYLE_ID, getBackgroundStyle, buildBackgroundPrompt } from '../core/backgroundStyles'
+import { detectBgColor, applyChromaKey } from '../core/chromaKey'
 
 // ── 글꼴 크기 프리셋 ────────────────────────────────
 
@@ -1198,6 +1199,90 @@ function ImageSection({ styles, updateStyle, previewStyle, elementId }) {
           </button>
         </div>
       )}
+
+      <ImageChromaKey elementId={elementId} />
+    </div>
+  )
+}
+
+// 모듈 세션 동안 크로마키 원본 보존 (재조정/되돌리기용)
+const _chromaOriginals = {}
+
+// 이미지 배경 지우기(크로마키) — 색 기준 투명화
+function ImageChromaKey({ elementId }) {
+  const [keyColor, setKeyColor] = useState(null) // {r,g,b} | null(자동)
+  const [tol, setTol] = useState(18)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+
+  const resolveSrc = async (content) =>
+    BlobStore.isIdbRef(content) ? await BlobStore.getUrl(BlobStore.parseRef(content)) : content
+
+  const apply = async () => {
+    const el = useFlatStore.getState().flatElements.find(e => e.id === elementId)
+    if (!el) return
+    if (!_chromaOriginals[elementId]) _chromaOriginals[elementId] = el.content // 최초 원본 보존
+    setBusy(true); setError('')
+    try {
+      const src = await resolveSrc(_chromaOriginals[elementId])
+      const key = keyColor || await detectBgColor(src)
+      setKeyColor(key)
+      const out = await applyChromaKey(src, key, tol)
+      useFlatStore.getState().updateFlatElement(elementId, { content: out })
+    } catch (e) {
+      setError(e?.message || '처리 실패 (외부 이미지는 불가)')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const revert = () => {
+    const orig = _chromaOriginals[elementId]
+    if (!orig) return
+    useFlatStore.getState().updateFlatElement(elementId, { content: orig })
+    delete _chromaOriginals[elementId]
+    setKeyColor(null)
+  }
+
+  const pickColor = async () => {
+    if (!window.EyeDropper) return
+    try {
+      const { sRGBHex } = await new window.EyeDropper().open()
+      const m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(sRGBHex)
+      if (m) setKeyColor({ r: parseInt(m[1], 16), g: parseInt(m[2], 16), b: parseInt(m[3], 16) })
+    } catch { /* 취소 */ }
+  }
+
+  const keyHex = keyColor ? `rgb(${keyColor.r},${keyColor.g},${keyColor.b})` : 'transparent'
+  return (
+    <div className="border-t border-white/5 pt-2 space-y-1.5">
+      <p className={labelClass}>배경 지우기 (크로마키)</p>
+      <div className="flex items-center gap-2">
+        <span className="text-[10px] text-slate-400 w-9 shrink-0">제거색</span>
+        <span className="w-5 h-5 rounded border border-white/20 shrink-0"
+          style={{ background: keyColor ? keyHex : 'repeating-conic-gradient(#64748b 0% 25%, #334155 0% 50%) 50%/8px 8px' }}
+          title={keyColor ? keyHex : '자동(모서리 색)'} />
+        <button onClick={() => setKeyColor(null)} className="text-[10px] text-slate-400 hover:text-slate-200 px-1 py-0.5 rounded border border-white/10">자동</button>
+        {window.EyeDropper && (
+          <button onClick={pickColor} title="스포이드로 제거색 지정" className="text-sm px-1 rounded border border-white/10 hover:bg-white/10">💧</button>
+        )}
+      </div>
+      <div className="flex items-center gap-2">
+        <span className="text-[10px] text-slate-400 w-9 shrink-0">허용</span>
+        <input type="range" min="2" max="60" step="1" value={tol}
+          onChange={e => setTol(Number(e.target.value))} className="flex-1" style={{ accentColor: '#6366f1' }} />
+        <span className="text-[10px] text-slate-500 w-5 text-right">{tol}</span>
+      </div>
+      <div className="flex gap-1.5">
+        <button onClick={apply} disabled={busy}
+          className={`flex-1 py-1.5 rounded-lg text-xs border transition-colors ${
+            busy ? 'bg-white/5 text-slate-500 border-white/10'
+              : 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30 hover:bg-indigo-500/30'
+          }`}>{busy ? '처리 중…' : '배경 지우기 적용'}</button>
+        <button onClick={revert} disabled={busy || !_chromaOriginals[elementId]}
+          className="px-2.5 py-1.5 rounded-lg text-xs text-slate-400 border border-white/10 hover:bg-white/10 disabled:opacity-40">되돌리기</button>
+      </div>
+      {error && <p className="text-[10px] text-red-400">{error}</p>}
     </div>
   )
 }
