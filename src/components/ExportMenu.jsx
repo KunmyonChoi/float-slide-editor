@@ -106,6 +106,7 @@ export default function FileMenu({ fallbackSample }) {
     try {
       const data = await loadProjectFile(file)
       loadAllPages(data.pages, data.currentPageKey)
+      useFlatStore.getState().setCustomTheme(data.customTheme) // 사용자정의 테마 복원
       useFlatStore.getState().setThemeId(data.themeId) // 저장된 테마 선택 복원
       // flat 프로젝트는 원본 HTML이 없으므로 'Flat 재생성' 게이트를 닫는다.
       useEditorStore.getState().setHtmlImported(false)

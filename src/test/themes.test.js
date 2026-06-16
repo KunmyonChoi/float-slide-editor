@@ -3,7 +3,57 @@ import { THEMES, getTheme, themeBackgroundStyles, themeRoleStyles, DEFAULT_THEME
 import { useFlatStore } from '../store/flatStore'
 import { deserializeProject } from '../core/ProjectSerializer'
 
+describe('사용자정의 테마', () => {
+  beforeEach(() => {
+    useFlatStore.setState({ themeId: 'white', customTheme: undefined })
+    useFlatStore.getState().setCustomTheme(undefined) // 무시됨(null/없음)
+  })
+
+  it('updateCustomTheme: 역할색/배경 토큰 갱신', () => {
+    useFlatStore.setState({ customTheme: { id: 'custom', name: '사용자정의', bg: { type: 'color', value: '#fff' }, roles: { title: { color: '#000', fontWeight: '800', textShadow: 'none' }, body: { color: '#333', fontWeight: '400', textShadow: 'none' }, muted: { color: '#666', fontWeight: '400', textShadow: 'none' }, default: { color: '#333', fontWeight: '400', textShadow: 'none' } }, swatch: ['#fff', '#000'] } })
+    useFlatStore.getState().updateCustomTheme({ role: 'title', style: { color: '#ff0000' } })
+    useFlatStore.getState().updateCustomTheme({ bg: { type: 'color', value: '#101010' } })
+    const ct = useFlatStore.getState().customTheme
+    expect(ct.roles.title.color).toBe('#ff0000')
+    expect(ct.bg.value).toBe('#101010')
+  })
+
+  it('_currentTheme: themeId가 custom이면 customTheme 반환', () => {
+    const ct = { id: 'custom', name: '사용자정의', bg: { type: 'color', value: '#123456' }, roles: { title: { color: '#fff', fontWeight: '800', textShadow: 'none' }, body: { color: '#eee', fontWeight: '400', textShadow: 'none' }, muted: { color: '#ccc', fontWeight: '400', textShadow: 'none' }, default: { color: '#eee', fontWeight: '400', textShadow: 'none' } }, swatch: ['#123456', '#fff'] }
+    useFlatStore.setState({ themeId: 'custom', customTheme: ct })
+    expect(useFlatStore.getState()._currentTheme().bg.value).toBe('#123456')
+    useFlatStore.setState({ themeId: 'ocean' })
+    expect(useFlatStore.getState()._currentTheme().id).toBe('ocean')
+  })
+
+  it('custom 테마 적용 → 배경/제목색이 custom 토큰으로', () => {
+    const cs = { w: 1280, h: 720 }
+    const ct = { id: 'custom', name: '사용자정의', bg: { type: 'color', value: '#222233' }, roles: { title: { color: '#ffcc00', fontWeight: '800', textShadow: 'none' }, body: { color: '#dddddd', fontWeight: '400', textShadow: 'none' }, muted: { color: '#aaa', fontWeight: '400', textShadow: 'none' }, default: { color: '#ddd', fontWeight: '400', textShadow: 'none' } }, swatch: ['#222233', '#ffcc00'] }
+    useFlatStore.setState({
+      canvasSize: cs, customTheme: ct, themeId: 'white', selectedFlatIds: [], editingFlatId: null,
+      flatElements: [
+        { id: 'bg', type: 'shape', content: '', isRich: false, x: 0, y: 0, width: 1280, height: 720, zIndex: 1, locked: true, styles: { backgroundColor: '#fff', backgroundImage: 'none' } },
+        { id: 'title', type: 'text', layoutRole: 'title', content: 'T', isRich: false, x: 0, y: 0, width: 200, height: 40, zIndex: 2, styles: { color: '#000', fontWeight: '400', textShadow: 'none' } },
+      ],
+    })
+    useFlatStore.getState().clearHistory()
+    useFlatStore.getState().setTheme('custom')
+    const els = useFlatStore.getState().flatElements
+    expect(els.find(e => e.id === 'bg').styles.backgroundColor).toBe('#222233')
+    expect(els.find(e => e.id === 'title').styles.color).toBe('#ffcc00')
+  })
+})
+
 describe('themeId 직렬화 복원', () => {
+  it('deserializeProject가 themeId/customTheme를 반환', () => {
+    const json = JSON.stringify({
+      version: 2, themeId: 'custom', customTheme: { id: 'custom', roles: {}, bg: { type: 'color', value: '#1a1a1a' } }, currentPageKey: '0-0',
+      pages: { '0-0': { elements: [], canvasSize: { w: 1280, h: 720 } } },
+    })
+    const r = deserializeProject(json)
+    expect(r.themeId).toBe('custom')
+    expect(r.customTheme.bg.value).toBe('#1a1a1a')
+  })
   it('deserializeProject가 themeId를 반환', () => {
     const json = JSON.stringify({
       version: 2, themeId: 'ocean', currentPageKey: '0-0',
