@@ -9,25 +9,30 @@
 const ACCENT_FALLBACK = '#6366f1'
 
 // 텍스트형 데코 요소 스펙 생성기 (배경/라운드/그림자/중앙정렬 포함)
-function textSpec({ x, y, w, h, content, bg, color = '#ffffff', radius = 0, size = 14, weight = 600, shadow = 'none', letter = 'normal', align = 'center' }) {
+function textSpec({ x, y, w, h, content, bg, color = '#ffffff', radius = 0, size = 14, weight = 600,
+  shadow = 'none', letter = 'normal', align = 'center', isRich = false, border = '0px none',
+  fontFamily = 'inherit', padding = '0px', lineHeight = '1' }) {
   return {
     type: 'text', x: Math.round(x), y: Math.round(y), width: w, height: h,
-    content, isRich: false, merged: false, placeholder: '',
+    content, isRich, merged: false, placeholder: '',
     styles: {
       backgroundColor: bg, backgroundImage: 'none',
       color,
-      fontSize: `${size}px`, fontFamily: 'inherit', fontWeight: String(weight),
-      fontStyle: 'normal', textAlign: align, letterSpacing: letter, lineHeight: '1',
+      fontSize: `${size}px`, fontFamily, fontWeight: String(weight),
+      fontStyle: 'normal', textAlign: align, letterSpacing: letter, lineHeight,
       textDecoration: 'none', textTransform: 'none',
       borderRadius: radius === '50%' ? '50%' : `${radius}px`,
-      border: '0px none', boxShadow: shadow, opacity: '1',
-      padding: '0px',
+      border, boxShadow: shadow, opacity: '1',
+      padding,
       // 세로 중앙 정렬 + 가로 정렬은 align에 맞춤 (renderer가 alignItems로 flex 전환)
       display: 'flex', alignItems: 'center',
       justifyContent: align === 'left' ? 'flex-start' : align === 'right' ? 'flex-end' : 'center',
     },
   }
 }
+
+// 캔버스 중앙 좌표
+const center = (cs, w, h) => ({ x: Math.round((cs.w - w) / 2), y: Math.round((cs.h - h) / 2) })
 
 // 콜아웃 박스 스펙 — 좌측 컬러바 + 옅은 배경 + 아이콘(이모지) + 본문(상단 정렬, 다중행)
 function calloutSpec(cs, { content, bar, tint }) {
@@ -243,6 +248,65 @@ SNIPPETS.push({
     const fill = { type: 'shape', x, y, width: Math.round(w * pct), height: barH, content: '', isRich: false, merged: false, styles: barStyle(accent) }
     const label = textSpec({ x, y: y + 22, w, h: 20, content: '65% 완료', bg: 'rgba(0,0,0,0)', color: labelColor, size: 14, weight: 600, align: 'left' })
     return [track, fill, label]
+  },
+})
+
+// 체크리스트 항목 — 녹색 ✓ + 텍스트 (단일)
+SNIPPETS.push({
+  id: 'checklistItem', group: '리스트', label: '체크리스트 항목', desc: '✓ + 항목 텍스트',
+  build: (cs, theme) => {
+    const w = 360, h = 34
+    const { x, y } = center(cs, w, h)
+    const tc = theme?.roles?.body?.color || '#334155'
+    return [textSpec({
+      x, y, w, h, isRich: true,
+      content: '<span style="color:#10b981;font-weight:700">✓</span> 할 일 항목을 입력하세요',
+      bg: 'rgba(0,0,0,0)', color: tc, size: 16, weight: 500, align: 'left', lineHeight: '1.4',
+    })]
+  },
+})
+
+// 상태 칩 — 색 점(●) + 라벨, 옅은 회색 필
+SNIPPETS.push({
+  id: 'statusChip', group: '라벨·뱃지', label: '상태 칩', desc: '● + 상태 텍스트 (진행중/완료)',
+  build: (cs) => {
+    const w = 120, h = 30
+    const { x, y } = center(cs, w, h)
+    return [textSpec({
+      x, y, w, h, isRich: true,
+      content: '<span style="color:#f59e0b">●</span> 진행중',
+      bg: 'rgba(148,163,184,0.18)', color: '#334155', radius: 999, size: 13, weight: 600,
+      align: 'center', padding: '0 12px',
+    })]
+  },
+})
+
+// 키캡 — 단축키 표기 (입체 테두리 + 모노)
+SNIPPETS.push({
+  id: 'keycap', group: '라벨·뱃지', label: '키캡', desc: '단축키 표기 (⌘K)',
+  build: (cs) => {
+    const w = 54, h = 32
+    const { x, y } = center(cs, w, h)
+    return [textSpec({
+      x, y, w, h, content: '⌘K', bg: '#f1f5f9', color: '#334155',
+      radius: 6, size: 13, weight: 600, align: 'center', padding: '0 8px',
+      border: '1px solid #cbd5e1', shadow: '0 2px 0 #cbd5e1',
+      fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+    })]
+  },
+})
+
+// 해시 칩 — #키워드 (accent 텍스트 + 옅은 필)
+SNIPPETS.push({
+  id: 'hashChip', group: '라벨·뱃지', label: '해시 칩', desc: '#키워드 태그',
+  build: (cs, theme) => {
+    const w = 120, h = 28
+    const { x, y } = center(cs, w, h)
+    const accent = theme?.accent || ACCENT_FALLBACK
+    return [textSpec({
+      x, y, w, h, content: '#키워드', bg: 'rgba(148,163,184,0.18)', color: accent,
+      radius: 999, size: 14, weight: 600, align: 'center', padding: '0 12px',
+    })]
   },
 })
 
