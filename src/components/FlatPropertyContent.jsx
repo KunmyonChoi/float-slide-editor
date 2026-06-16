@@ -12,6 +12,9 @@ import { detectListType, applyListType } from '../core/TextListTransform'
 import { addRow, removeRow, addCol, removeCol, setHeaderRow, setBorder } from '../core/slideTable'
 import { useScrub } from './useScrub'
 import { setFontSizeUniformPx, stripInlineFormatting, FORMAT_STRIP } from '../core/TextStyleScope'
+import { generateImage, hasApiKey } from '../core/OpenAIClient'
+import { openAiSettings } from './AiSettingsModal'
+import { BACKGROUND_STYLES, BACKGROUND_GROUPS, DEFAULT_BACKGROUND_STYLE_ID, getBackgroundStyle, buildBackgroundPrompt } from '../core/backgroundStyles'
 
 // ── 글꼴 크기 프리셋 ────────────────────────────────
 
@@ -1926,6 +1929,103 @@ const BG_DEFAULT_STYLES = {
   boxShadow: 'none', opacity: '1', padding: '0px',
 }
 
+// AI 슬라이드 배경 생성 — 스타일 프리셋 + 주제 → generateImage(16:9) → 배경 적용
+function AiBackgroundSection({ onApply }) {
+  const [styleId, setStyleId] = useState(DEFAULT_BACKGROUND_STYLE_ID)
+  const [prompt, setPrompt] = useState('')
+  const [status, setStatus] = useState('idle')
+  const [error, setError] = useState('')
+  const [pickOpen, setPickOpen] = useState(false)
+  const pickRef = useRef(null)
+
+  useEffect(() => {
+    if (!pickOpen) return
+    const onDown = (e) => { if (pickRef.current && !pickRef.current.contains(e.target)) setPickOpen(false) }
+    document.addEventListener('pointerdown', onDown)
+    return () => document.removeEventListener('pointerdown', onDown)
+  }, [pickOpen])
+
+  const generate = async () => {
+    if (!hasApiKey()) { openAiSettings(); return }
+    const style = BACKGROUND_STYLES.find(s => s.id === styleId)
+    setStatus('loading'); setError('')
+    try {
+      const dataUrl = await generateImage(buildBackgroundPrompt(style, prompt), { width: 1280, height: 720 })
+      onApply(dataUrl)
+      setStatus('idle')
+    } catch (e) {
+      setError(e?.message || '생성 실패')
+      setStatus('idle')
+    }
+  }
+
+  const loading = status === 'loading'
+  const sel = getBackgroundStyle(styleId)
+  return (
+    <div className="border-t border-white/5 pt-3 space-y-2">
+      <SectionTitle>AI 배경 생성</SectionTitle>
+      {/* 커스텀 드롭다운 — 섹션 구분 + 항목별 설명 + 기존 thin-scrollbar 적용 */}
+      <div ref={pickRef} className="relative">
+        <button
+          type="button"
+          onClick={() => !loading && setPickOpen(o => !o)}
+          disabled={loading}
+          className={`${selectClass} flex items-center justify-between text-left`}
+          style={selectStyle}
+        >
+          <span className="truncate">{sel.label}</span>
+          <span className="text-slate-500 ml-1 shrink-0">▾</span>
+        </button>
+        {pickOpen && (
+          <div
+            className="thin-scrollbar absolute left-0 right-0 mt-1 z-[10060] rounded-lg border border-white/10 shadow-xl overflow-y-auto"
+            style={{ maxHeight: 260, backgroundColor: '#1e293b' }}
+          >
+            {BACKGROUND_GROUPS.map(g => (
+              <div key={g}>
+                <p className="px-2.5 pt-2 pb-1 text-[9px] uppercase tracking-wide text-slate-500">{g}</p>
+                {BACKGROUND_STYLES.filter(s => s.group === g).map(s => (
+                  <button
+                    key={s.id}
+                    type="button"
+                    onClick={() => { setStyleId(s.id); setPickOpen(false) }}
+                    className={`w-full text-left px-2.5 py-1.5 transition-colors ${
+                      s.id === styleId ? 'bg-indigo-500/20' : 'hover:bg-white/5'
+                    }`}
+                  >
+                    <span className={`block text-xs ${s.id === styleId ? 'text-indigo-200' : 'text-slate-200'}`}>{s.label}</span>
+                    <span className="block text-[10px] text-slate-500">{s.desc}</span>
+                  </button>
+                ))}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+      {/* 닫혀 있을 때도 선택 스타일 설명 노출 */}
+      <p className="text-[10px] text-slate-500">{sel.desc}</p>
+      <input
+        value={prompt}
+        onChange={e => setPrompt(e.target.value)}
+        onKeyDown={e => e.stopPropagation()}
+        placeholder="주제(선택): 예) 우주, 핀테크, 봄"
+        className={inputClass}
+        disabled={loading}
+      />
+      <button
+        onClick={generate}
+        disabled={loading}
+        className={`w-full py-1.5 rounded-lg text-xs border transition-colors ${
+          loading ? 'bg-white/5 text-slate-500 border-white/10'
+            : 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30 hover:bg-indigo-500/30'
+        }`}
+      >{loading ? '생성 중…' : '✨ AI 배경 생성'}</button>
+      {error && <p className="text-[10px] text-red-400">{error}</p>}
+      <p className="text-[9px] text-slate-600">한 장 생성(비용 발생). 텍스트 자리를 비운 16:9 배경입니다.</p>
+    </div>
+  )
+}
+
 function SlideBackgroundPanel() {
   const { flatElements, canvasSize, updateFlatElement, previewFlatElement,
           addFlatElement, removeFlatElement } = useFlatStore()
@@ -1980,6 +2080,24 @@ function SlideBackgroundPanel() {
     if (!currentBg) return
     previewFlatElement(currentBg.id, { styles: { [key]: value } })
   }, [currentBg, previewFlatElement])
+
+  // AI 생성 배경 이미지를 현재 배경 레이어에 적용(없으면 생성)
+  const applyBgImage = useCallback((dataUrl) => {
+    const imgStyles = {
+      backgroundImage: `url(${dataUrl})`, backgroundColor: 'rgba(0,0,0,0)',
+      backgroundSize: 'cover', backgroundPosition: 'center', backgroundRepeat: 'no-repeat',
+    }
+    if (currentBg) {
+      updateFlatElement(currentBg.id, { styles: imgStyles })
+    } else {
+      const minZ = flatElements.length > 0 ? Math.min(...flatElements.map(e => e.zIndex)) - 1 : 0
+      addFlatElement({
+        id: nextFlatId(), sourceId: null, type: 'shape', content: '', isRich: false, merged: false,
+        x: 0, y: 0, width: canvasSize.w, height: canvasSize.h, zIndex: minZ, locked: true,
+        styles: { ...BG_DEFAULT_STYLES, ...imgStyles },
+      })
+    }
+  }, [currentBg, updateFlatElement, flatElements, canvasSize, addFlatElement])
 
   // 레이어 미리보기 색상 (썸네일용)
   const layerPreviewStyle = (el) => {
@@ -2069,6 +2187,9 @@ function SlideBackgroundPanel() {
             >배경 레이어 추가</button>
           )}
         </div>
+
+        {/* ── AI 배경 생성 ── */}
+        <AiBackgroundSection onApply={applyBgImage} />
 
         {/* ── 선택된 레이어 편집 ── */}
         {currentBg && (
