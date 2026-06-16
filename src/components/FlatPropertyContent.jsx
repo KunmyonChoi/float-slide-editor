@@ -16,6 +16,7 @@ import { generateImage, hasApiKey } from '../core/OpenAIClient'
 import { openAiSettings } from './AiSettingsModal'
 import { BACKGROUND_STYLES, BACKGROUND_GROUPS, DEFAULT_BACKGROUND_STYLE_ID, getBackgroundStyle, buildBackgroundPrompt } from '../core/backgroundStyles'
 import { detectBgColor, applyChromaKey } from '../core/chromaKey'
+import { highlightCode, CODE_FONT } from '../core/codeHighlight'
 
 // ── 글꼴 크기 프리셋 ────────────────────────────────
 
@@ -94,6 +95,12 @@ export default function FlatPropertyContent() {
               listType={detectListType(el.content, el.isRich)}
               onSetListType={editingFlatId === el.id ? undefined : (target) => update(applyListType(el.content, el.isRich, target))}
             />
+          </div>
+        )}
+
+        {el.type === 'text' && (
+          <div className="pt-1 border-t border-white/5">
+            <CodeSection el={el} update={update} />
           </div>
         )}
 
@@ -557,6 +564,59 @@ function detectTextMixed(el) {
   walk(doc.body, base)
   const mixed = (set) => set.size > 1
   return { bold: mixed(seen.bold), italic: mixed(seen.italic), underline: mixed(seen.underline), strike: mixed(seen.strike) }
+}
+
+const CODE_LANGS = [
+  { id: 'auto', label: '자동 감지' }, { id: 'js', label: 'JavaScript' }, { id: 'ts', label: 'TypeScript' },
+  { id: 'python', label: 'Python' }, { id: 'bash', label: 'Bash' }, { id: 'json', label: 'JSON' },
+]
+
+// 코드 모드 — 텍스트 박스를 코드 하이라이트로(편집=원본, 표시=색칠, 커밋 시 재색칠)
+function CodeSection({ el }) {
+  const isCode = !!el.isCode
+  const update = (changes) => useFlatStore.getState().updateFlatElement(el.id, changes)
+  // 현재 텍스트를 원본 코드(plain)로 추출
+  const rawText = () => {
+    if (el.isRich && el.content) {
+      try { return new DOMParser().parseFromString(`<body>${el.content}</body>`, 'text/html').body.textContent || '' }
+      catch { return '' }
+    }
+    return el.content || ''
+  }
+  const enable = () => {
+    const raw = rawText()
+    const { html, lang } = highlightCode(raw, 'auto')
+    update({ isCode: true, code: raw, content: html, isRich: true, lang, styles: { fontFamily: CODE_FONT, whiteSpace: 'pre-wrap' } })
+  }
+  const disable = () => {
+    update({ isCode: false, content: el.code || rawText(), isRich: false })
+  }
+  const setLang = (lang) => {
+    update({ lang, content: highlightCode(el.code || '', lang).html })
+  }
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <SectionTitle>코드 모드</SectionTitle>
+        <button
+          onClick={isCode ? disable : enable}
+          className={`text-xs px-2 py-0.5 rounded border transition-colors ${
+            isCode ? 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30'
+              : 'bg-white/5 text-slate-400 border-white/10 hover:bg-white/10'
+          }`}
+        >{isCode ? 'ON' : 'OFF'}</button>
+      </div>
+      {isCode && (
+        <div>
+          <p className={`${labelClass} mb-0.5`}>언어</p>
+          <select value={el.lang || 'auto'} onChange={e => setLang(e.target.value)} className={selectClass} style={selectStyle}>
+            {CODE_LANGS.map(l => <option key={l.id} value={l.id}>{l.label}</option>)}
+          </select>
+          <p className="text-[10px] text-slate-600 mt-1">더블클릭하면 원본 코드로 편집, 끝내면 자동 색칠됩니다.</p>
+        </div>
+      )}
+    </div>
+  )
 }
 
 function FontSection({ el, styles, updateStyle, previewStyle, isGradientText, listType, onSetListType }) {

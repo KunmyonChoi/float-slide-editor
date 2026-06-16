@@ -13,6 +13,16 @@ const FONT_STEP = 2
 const FONT_MIN = 8
 const FONT_MAX = 200
 
+/** contentEditable → 원본 plain 텍스트 (코드 모드 커밋용, <br>/<div> → 줄바꿈) */
+function editorToPlain(el) {
+  if (!el) return ''
+  let html = el.innerHTML || ''
+  html = html.replace(/<div><br><\/div>/gi, '\n').replace(/<div>/gi, '\n').replace(/<\/div>/gi, '').replace(/<br\s*\/?>/gi, '\n')
+  const tmp = document.createElement('div')
+  tmp.innerHTML = html
+  return tmp.textContent || ''
+}
+
 /** 현재 선택 영역을 style 한 속성으로 감싼다 (execCommand가 px를 못 주는 fontSize 등에 사용) */
 function wrapSelection(prop, value) {
   const sel = window.getSelection()
@@ -91,12 +101,15 @@ export default function FlatInlineEditor({ element }) {
   // 마운트 시 innerHTML 설정 + 포커스 + 커밋 콜백 등록
   useEffect(() => {
     if (!ref.current) return
-    if (element.isRich) {
+    const escapePlain = (t) => (t || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>')
+    if (element.isCode) {
+      // 코드 모드: 색칠 content 대신 원본 code(plain)를 편집
+      ref.current.innerHTML = escapePlain(element.code || '')
+    } else if (element.isRich) {
       ref.current.innerHTML = content || ''
     } else {
       // plain text: escape 후 줄바꿈 변환
-      const displayContent = (content || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>')
-      ref.current.innerHTML = displayContent
+      ref.current.innerHTML = escapePlain(content)
     }
     ref.current.focus()
     // 데스크톱: 전체 선택 / 터치: 끝에 캐럿만 (진입 즉시 선택바·OS 메뉴가 글씨를 가리지 않도록)
@@ -108,6 +121,8 @@ export default function FlatInlineEditor({ element }) {
     sel.addRange(range)
     committedRef.current = false
     setEditorRect(ref.current.getBoundingClientRect()) // 이모지 버튼 앵커
+    // 오토핏 요소: 진입 즉시 실제 높이로 컨테이너 동기화
+    if (element.autoHeight) useFlatStore.getState().reflowAutoFit({ [element.id]: ref.current.scrollHeight })
     // 인라인 서식이 <span style>로 생성되도록 (export 파서가 인라인 스타일을 읽음)
     try { document.execCommand('styleWithCSS', false, true) } catch { /* noop */ }
     document.addEventListener('selectionchange', refreshSelection)
@@ -116,6 +131,12 @@ export default function FlatInlineEditor({ element }) {
     const flushCommit = () => {
       if (committedRef.current || !ref.current) return
       committedRef.current = true
+      if (element.isCode) {
+        // 코드 모드: 편집기 → 원본 텍스트(줄바꿈 보존)로 추출 후 재색칠 커밋
+        const raw = editorToPlain(ref.current)
+        useFlatStore.getState().commitCodeEdit(element.id, raw)
+        return
+      }
       const html = (ref.current?.innerHTML || '').trim()
       const hasHtmlTags = /<[a-z][\s\S]*>/i.test(html)
       commitTextEdit(element.id, html, hasHtmlTags)
@@ -313,10 +334,20 @@ export default function FlatInlineEditor({ element }) {
   const commit = useCallback(() => {
     if (committedRef.current) return
     committedRef.current = true
+    if (element.isCode) {
+      useFlatStore.getState().commitCodeEdit(element.id, editorToPlain(ref.current))
+      return
+    }
     const html = (ref.current?.innerHTML || '').trim()
     const hasHtmlTags = /<[a-z][\s\S]*>/i.test(html)
     commitTextEdit(element.id, html, hasHtmlTags)
-  }, [element.id, commitTextEdit])
+  }, [element.id, element.isCode, commitTextEdit])
+
+  // 오토핏 요소: 입력마다 에디터 실제 높이로 컨테이너 라이브 신축(히스토리 없이, 캐럿 안전)
+  const handleInput = useCallback(() => {
+    if (!element.autoHeight || !ref.current) return
+    useFlatStore.getState().reflowAutoFit({ [element.id]: ref.current.scrollHeight })
+  }, [element.autoHeight, element.id])
 
   const handleBlur = useCallback((e) => {
     if (suppressCommitRef.current) return
@@ -400,7 +431,8 @@ export default function FlatInlineEditor({ element }) {
     left: x,
     top: y,
     width,
-    minHeight: height,
+    // 오토핏(autoHeight) 요소는 내용에 따라 줄고 늘게 minHeight를 한 줄로 — 편집 중 라이브 신축
+    minHeight: element.autoHeight ? (parseFloat(styles.fontSize) || 15) * (parseFloat(styles.lineHeight) || 1.4) : height,
     zIndex: 10001,
     boxSizing: 'border-box',
     // 텍스트 스타일 복제
@@ -450,6 +482,7 @@ export default function FlatInlineEditor({ element }) {
         data-placeholder={element.placeholder || ''}
         style={editorStyle}
         onBlur={handleBlur}
+        onInput={handleInput}
         onKeyDown={handleKeyDown}
         onMouseDown={(e) => e.stopPropagation()}
         onMouseOver={handleEditorMouseOver}

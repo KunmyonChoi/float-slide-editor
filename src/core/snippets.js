@@ -5,6 +5,7 @@
  * 복합 스니펫은 여러 스펙을 반환(삽입 측에서 groupId로 묶음).
  * docs/snippet-elements.md 참고.
  */
+import { highlightCode, CODE_FONT } from './codeHighlight'
 
 const ACCENT_FALLBACK = '#6366f1'
 
@@ -213,6 +214,8 @@ SNIPPETS.push({
     const x = Math.round((cs.w - w) / 2), y = Math.round((cs.h - h) / 2)
     const win = {
       type: 'shape', x, y, width: w, height: h, content: '', isRich: false, merged: false,
+      // 오토핏 컨테이너: 코드(콘텐츠)를 감싸도록 높이 신축. top 패딩=시스템바 영역.
+      afContainer: true, afPad: { top: 46, right: 20, bottom: 14, left: 20 }, afGap: 0,
       styles: {
         backgroundColor: '#0f172a', backgroundImage: 'none', borderRadius: '12px',
         border: '1px solid rgba(255,255,255,0.08)', boxShadow: '0 8px 28px rgba(0,0,0,0.35)', opacity: '1',
@@ -229,12 +232,14 @@ SNIPPETS.push({
         borderRadius: '0px', border: '0px none', boxShadow: 'none', opacity: '1', padding: '0px',
       },
     }
+    const rawCode = 'function greet(name) {\n  return `Hello, ${name}!`\n}'
+    const { html: codeHtml, lang } = highlightCode(rawCode, 'auto')
     const code = {
       type: 'text', x: x + 20, y: y + 46, width: w - 40, height: h - 62,
-      content: 'function greet(name) {\n  return `Hello, ${name}!`\n}', isRich: false, merged: false, placeholder: '',
+      content: codeHtml, isRich: true, isCode: true, lang, code: rawCode, afContent: true, autoHeight: true, merged: false, placeholder: '',
       styles: {
-        backgroundColor: 'rgba(0,0,0,0)', backgroundImage: 'none', color: '#e2e8f0',
-        fontSize: '15px', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+        backgroundColor: 'rgba(0,0,0,0)', backgroundImage: 'none', color: '#c0caf5',
+        fontSize: '15px', fontFamily: CODE_FONT,
         fontWeight: '400', fontStyle: 'normal',
         textAlign: 'left', letterSpacing: 'normal', lineHeight: '1.6', textDecoration: 'none', textTransform: 'none',
         borderRadius: '0px', border: '0px none', boxShadow: 'none', opacity: '1', padding: '0px', whiteSpace: 'pre-wrap',
@@ -505,9 +510,11 @@ SNIPPETS.push({
     const w = 520, h = 120
     const { x, y } = center(cs, w, h)
     const win = shapeSpec({ x, y, w, h, bg: '#0a0e14', radius: 10, shadow: '0 6px 20px rgba(0,0,0,0.35)' })
+    // 오토핏: 출력이 길어지면 창이 신축(시스템바 없음 → top 패딩=텍스트 인셋)
+    win.afContainer = true; win.afPad = { top: 14, right: 16, bottom: 14, left: 16 }; win.afGap = 0
     const text = {
       type: 'text', x: x + 16, y: y + 14, width: w - 32, height: h - 28,
-      content: '$ npm run build\n✓ built in 320ms', isRich: false, merged: false, placeholder: '',
+      content: '$ npm run build\n✓ built in 320ms', isRich: false, afContent: true, autoHeight: true, merged: false, placeholder: '',
       styles: {
         backgroundColor: 'rgba(0,0,0,0)', backgroundImage: 'none', color: '#86efac',
         fontSize: '14px', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',

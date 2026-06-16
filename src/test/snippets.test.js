@@ -97,6 +97,9 @@ describe('snippets', () => {
     expect(els[2].styles.fontFamily).toContain('monospace')// 코드 모노
     expect(els[2].content).toContain('function')
     expect(els[2].styles.whiteSpace).toBe('pre-wrap')
+    expect(els[2].isCode).toBe(true)                       // 코드 모드 활성
+    expect(els[2].code).toContain('function greet')        // 원본 보존
+    expect(els[2].content).toContain('<span style="color:')// 하이라이트(인라인 색)
   })
 
   it('프로그레스 바: 트랙 + 채움(accent, 더 좁음) + 라벨', () => {

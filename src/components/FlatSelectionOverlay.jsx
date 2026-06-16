@@ -673,6 +673,8 @@ export function FlatGroupOverlay({ elements, scale, otherRects, canvasSize, onSn
           }))
           batchPreviewFlatElements(revertMap)
           batchUpdateFlatElementsIndividual(newChanges)
+          // 폭 변경 → 코드 재줄바꿈 → 오토핏 컨테이너 높이 재계산
+          useFlatStore.getState().reflowAutoFit()
         }
       }
     }
