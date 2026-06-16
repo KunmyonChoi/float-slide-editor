@@ -1254,7 +1254,8 @@ function NumInput({ label, value, onChange, onPreview, unit = '', min, max, step
   return (
     <div>
       {label && (
-        <p className={`${labelClass} mb-0.5 inline-block px-1.5 -ml-1.5 rounded hover:text-slate-200 hover:bg-white/5`}
+        // 일반 레이블과 동일한 블록 박스 유지(정렬 일치). 드래그 어포던스는 커서+hover 색만.
+        <p className={`${labelClass} mb-0.5 w-fit hover:text-slate-200`}
            title="드래그하여 조절" {...scrub}>{label}</p>
       )}
       <div className="flex items-center">
@@ -1298,7 +1299,7 @@ function FontSizeInput({ value, onChange, onPreview }) {
 
   return (
     <div>
-      <p className={`${labelClass} mb-0.5 inline-block px-1.5 -ml-1.5 rounded hover:text-slate-200 hover:bg-white/5`}
+      <p className={`${labelClass} mb-0.5 w-fit hover:text-slate-200`}
          title="드래그하여 조절" {...scrub}>크기</p>
       <div className="flex items-center gap-1">
         <input
