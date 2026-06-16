@@ -378,7 +378,8 @@ export default function EditToolbar() {
             setOpen={setLayoutOpen}
             icon={<LayoutIcon />}
             label="레이아웃"
-            items={SLIDE_LAYOUTS.map(l => ({
+            // '빈 슬라이드'는 사실상 전체 삭제(복구 불가)라 메뉴에서 제외 — 전체선택→삭제로 대체
+            items={SLIDE_LAYOUTS.filter(l => l.id !== 'blank').map(l => ({
               id: l.id, icon: <LayoutIcon />, label: l.name, action: () => insertLayout(l.id),
             }))}
           />
