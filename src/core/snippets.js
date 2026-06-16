@@ -88,6 +88,46 @@ export const SNIPPETS = [
     id: 'calloutSuccess', group: '콜아웃', label: '콜아웃: 성공', desc: '✅ 성공/완료 강조 박스',
     build: (cs) => [calloutSpec(cs, { content: '✅ 성공 포인트를 입력하세요.', bar: '#10b981', tint: 'rgba(16,185,129,0.12)' })],
   },
+  {
+    id: 'pullQuote', group: '인용', label: '풀쿼트(인용)', desc: '큰 따옴표로 강조한 인용/명언',
+    build: (cs) => {
+      const w = 620, h = 150
+      const q = "font-size:52px;line-height:0;vertical-align:-0.35em;color:#cbd5e1;font-family:Georgia,'Times New Roman',serif"
+      return [{
+        type: 'text', x: Math.round((cs.w - w) / 2), y: Math.round((cs.h - h) / 2), width: w, height: h,
+        content: `<span style="${q}">“</span> 인상 깊은 인용문을 입력하세요 <span style="${q}">”</span>`,
+        isRich: true, merged: false, placeholder: '',
+        styles: {
+          backgroundColor: 'rgba(0,0,0,0)', backgroundImage: 'none', color: '#334155',
+          fontSize: '24px', fontFamily: 'inherit', fontWeight: '500', fontStyle: 'italic',
+          textAlign: 'center', lineHeight: '1.5', letterSpacing: 'normal',
+          textDecoration: 'none', textTransform: 'none',
+          borderRadius: '0px', border: '0px none', boxShadow: 'none', opacity: '1', padding: '8px 16px',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        },
+      }]
+    },
+  },
+  {
+    id: 'leftBarQuote', group: '인용', label: '좌측바 인용/소제목', desc: '왼쪽 얇은 컬러 바 + 텍스트',
+    build: (cs, theme) => {
+      const w = 520, h = 64
+      const accent = theme?.accent || ACCENT_FALLBACK
+      return [{
+        type: 'text', x: Math.round((cs.w - w) / 2), y: Math.round((cs.h - h) / 2), width: w, height: h,
+        content: '인용 또는 소제목 텍스트', isRich: false, merged: false, placeholder: '',
+        styles: {
+          backgroundColor: 'rgba(0,0,0,0)', backgroundImage: 'none', color: '#475569',
+          fontSize: '18px', fontFamily: 'inherit', fontWeight: '500', fontStyle: 'italic',
+          textAlign: 'left', lineHeight: '1.5', letterSpacing: 'normal',
+          textDecoration: 'none', textTransform: 'none',
+          borderRadius: '0px', border: '0px none', borderLeft: `4px solid ${accent}`,
+          boxShadow: 'none', opacity: '1', padding: '4px 16px',
+          display: 'flex', alignItems: 'center', justifyContent: 'flex-start',
+        },
+      }]
+    },
+  },
 ]
 
 export function getSnippet(id) {
