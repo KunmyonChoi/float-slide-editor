@@ -137,6 +137,20 @@ describe('snippets', () => {
     expect(cta.styles.backgroundColor).toBe('#ff0000')
   })
 
+  it('묶음3: 대형스탯/스티키/카드/인라인코드 특성', () => {
+    const stat = getSnippet('bigStat').build(cs, theme)
+    expect(stat.length).toBe(2)
+    expect(stat[0].styles.color).toBe('#ff0000') // 숫자 accent
+    const sticky = getSnippet('stickyNote').build(cs, theme)[0]
+    expect(sticky.rotation).toBe(-3)
+    expect(sticky.styles.alignItems).toBe('flex-start') // valign top
+    const card = getSnippet('card').build(cs, theme)[0]
+    expect(card.type).toBe('shape')
+    expect(card.styles.boxShadow).not.toBe('none')
+    const code = getSnippet('inlineCode').build(cs, theme)[0]
+    expect(code.styles.fontFamily).toContain('monospace')
+  })
+
   it('모든 스니펫: 고유 id + build 함수', () => {
     const ids = new Set(SNIPPETS.map(s => s.id))
     expect(ids.size).toBe(SNIPPETS.length)
