@@ -14,7 +14,7 @@ import { useScrub } from './useScrub'
 import { setFontSizeUniformPx, stripInlineFormatting, FORMAT_STRIP } from '../core/TextStyleScope'
 import { generateImage, hasApiKey } from '../core/OpenAIClient'
 import { openAiSettings } from './AiSettingsModal'
-import { BACKGROUND_STYLES, DEFAULT_BACKGROUND_STYLE_ID, buildBackgroundPrompt } from '../core/backgroundStyles'
+import { BACKGROUND_STYLES, BACKGROUND_GROUPS, DEFAULT_BACKGROUND_STYLE_ID, getBackgroundStyle, buildBackgroundPrompt } from '../core/backgroundStyles'
 
 // ── 글꼴 크기 프리셋 ────────────────────────────────
 
@@ -1951,12 +1951,21 @@ function AiBackgroundSection({ onApply }) {
   }
 
   const loading = status === 'loading'
+  const sel = getBackgroundStyle(styleId)
   return (
     <div className="border-t border-white/5 pt-3 space-y-2">
       <SectionTitle>AI 배경 생성</SectionTitle>
       <select value={styleId} onChange={e => setStyleId(e.target.value)} className={selectClass} style={selectStyle} disabled={loading}>
-        {BACKGROUND_STYLES.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
+        {BACKGROUND_GROUPS.map(g => (
+          <optgroup key={g} label={g}>
+            {BACKGROUND_STYLES.filter(s => s.group === g).map(s => (
+              <option key={s.id} value={s.id}>{s.label}</option>
+            ))}
+          </optgroup>
+        ))}
       </select>
+      {/* 이름만으론 상상이 어려우니 선택한 스타일 설명 표시 */}
+      <p className="text-[10px] text-slate-500">{sel.desc}</p>
       <input
         value={prompt}
         onChange={e => setPrompt(e.target.value)}

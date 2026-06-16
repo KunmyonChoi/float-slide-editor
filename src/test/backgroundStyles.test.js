@@ -1,16 +1,28 @@
 import { describe, it, expect } from 'vitest'
-import { BACKGROUND_STYLES, DEFAULT_BACKGROUND_STYLE_ID, buildBackgroundPrompt } from '../core/backgroundStyles'
+import { BACKGROUND_STYLES, BACKGROUND_GROUPS, DEFAULT_BACKGROUND_STYLE_ID, getBackgroundStyle, buildBackgroundPrompt } from '../core/backgroundStyles'
 
 describe('backgroundStyles', () => {
-  it('시작 5종, 고유 id + directive 보유', () => {
-    expect(BACKGROUND_STYLES.length).toBe(5)
+  it('17종, 고유 id + label/desc/directive + 유효한 group', () => {
+    expect(BACKGROUND_STYLES.length).toBe(17)
     const ids = new Set(BACKGROUND_STYLES.map(s => s.id))
-    expect(ids.size).toBe(5)
+    expect(ids.size).toBe(17)
     expect(ids.has(DEFAULT_BACKGROUND_STYLE_ID)).toBe(true)
     for (const s of BACKGROUND_STYLES) {
       expect(s.label).toBeTruthy()
+      expect(s.desc).toBeTruthy()
       expect(s.directive.length).toBeGreaterThan(10)
+      expect(BACKGROUND_GROUPS).toContain(s.group)
     }
+  })
+
+  it('모든 섹션에 1개 이상 스타일', () => {
+    for (const g of BACKGROUND_GROUPS) {
+      expect(BACKGROUND_STYLES.some(s => s.group === g)).toBe(true)
+    }
+  })
+
+  it('getBackgroundStyle: 알 수 없는 id면 첫 스타일 폴백', () => {
+    expect(getBackgroundStyle('nope').id).toBe(BACKGROUND_STYLES[0].id)
   })
 
   it('buildBackgroundPrompt: 무텍스트/세이프존/16:9 규칙 + 스타일 directive 포함', () => {
