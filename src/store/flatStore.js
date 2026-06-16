@@ -661,7 +661,7 @@ export const useFlatStore = create((set, get) => ({
   // ── Flat 모드 페이지 관리 ──
 
   /** 현재 페이지 뒤에 빈 페이지 추가 */
-  addPage() {
+  addPage(layoutId = null) {
     get()._saveCurrentPage()
     const keys = _getSortedPageKeys()
     const currentIdx = _currentPageKey ? keys.indexOf(_currentPageKey) : keys.length - 1
@@ -680,8 +680,14 @@ export const useFlatStore = create((set, get) => ({
     // 새 페이지 생성
     const newKey = `${insertAt}-0`
     const cs = get().canvasSize
+    const themeId = get().themeId
+    // 테마 배경 + (layoutId 있으면 그 레이아웃의 테마색 텍스트)
+    const elements = [
+      _buildThemeBgElement(themeId, cs),
+      ...(layoutId ? _applyThemeRoles(_buildStarterLayout(layoutId, cs), themeId) : []),
+    ]
     _pageCache[newKey] = {
-      elements: [_buildThemeBgElement(get().themeId, cs)], // 새 슬라이드는 현재 테마 배경부터
+      elements,
       canvasSize: { ...cs },
       fontImports: [],
       history: { stack: [], pointer: -1 },

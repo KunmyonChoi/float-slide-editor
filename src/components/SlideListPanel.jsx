@@ -28,11 +28,11 @@ export default function SlideListPanel() {
   const currentRef = useRef(null)
   const listRef = useRef(null)
 
-  // 목록에 포커스가 있을 때 Enter → 현재 슬라이드 뒤에 새 페이지 추가
+  // 목록에 포커스가 있을 때 Enter → 현재 슬라이드 뒤에 제목+내용 레이아웃 페이지 추가(현재 테마)
   const onListKeyDown = (e) => {
     if (e.key === 'Enter') {
       e.preventDefault(); e.stopPropagation()
-      useFlatStore.getState().addPage()
+      useFlatStore.getState().addPage('titleContent')
     }
   }
 

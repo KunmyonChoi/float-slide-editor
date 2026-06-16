@@ -98,6 +98,20 @@ describe('applyThemeToCurrentPage', () => {
     expect(bg.styles.backgroundImage).toContain('gradient')
   })
 
+  it("addPage('titleContent'): 테마 배경 + 제목/본문 레이아웃 텍스트", () => {
+    useFlatStore.getState().loadAllPages(
+      { '0-0': { elements: [], canvasSize: cs, fontImports: [], htmlSlideIndex: null } }, '0-0')
+    useFlatStore.setState({ themeId: 'midnight' })
+    useFlatStore.getState().addPage('titleContent')
+    const els = useFlatStore.getState().flatElements
+    expect(els.some(e => e.type === 'shape' && !e.content)).toBe(true) // 배경
+    const roles = els.filter(e => e.type === 'text' && e.layoutRole).map(e => e.layoutRole)
+    expect(roles).toContain('title')
+    expect(roles.length).toBeGreaterThanOrEqual(2) // 제목 + 본문
+    const title = els.find(e => e.layoutRole === 'title')
+    expect(title.styles.color).toBe(getTheme('midnight').roles.title.color)
+  })
+
   it('applyThemeToDeck: 모든 페이지에 배경+역할색 적용', () => {
     const mkPage = () => ({
       elements: [
