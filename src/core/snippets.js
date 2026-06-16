@@ -498,6 +498,101 @@ SNIPPETS.push({
   },
 })
 
+// 터미널 출력 — 다크 박스 + $ 프롬프트 + 모노 (복합)
+SNIPPETS.push({
+  id: 'terminalOutput', group: '코드', label: '터미널 출력', desc: '$ 프롬프트 + 다크 모노',
+  build: (cs) => {
+    const w = 520, h = 120
+    const { x, y } = center(cs, w, h)
+    const win = shapeSpec({ x, y, w, h, bg: '#0a0e14', radius: 10, shadow: '0 6px 20px rgba(0,0,0,0.35)' })
+    const text = {
+      type: 'text', x: x + 16, y: y + 14, width: w - 32, height: h - 28,
+      content: '$ npm run build\n✓ built in 320ms', isRich: false, merged: false, placeholder: '',
+      styles: {
+        backgroundColor: 'rgba(0,0,0,0)', backgroundImage: 'none', color: '#86efac',
+        fontSize: '14px', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+        fontWeight: '400', fontStyle: 'normal', textAlign: 'left', letterSpacing: 'normal',
+        lineHeight: '1.6', textDecoration: 'none', textTransform: 'none',
+        borderRadius: '0px', border: '0px none', boxShadow: 'none', opacity: '1', padding: '0px', whiteSpace: 'pre-wrap',
+      },
+    }
+    return [win, text]
+  },
+})
+
+// 파일 칩 — 📄 경로 (단일)
+SNIPPETS.push({
+  id: 'fileChip', group: '코드', label: '파일 칩', desc: '📄 파일 경로',
+  build: (cs) => {
+    const w = 200, h = 30
+    const { x, y } = center(cs, w, h)
+    return [textSpec({ x, y, w, h, content: '📄 src/App.jsx', bg: 'rgba(148,163,184,0.18)', color: '#334155', radius: 6, size: 13, weight: 500, align: 'center', padding: '0 12px', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' })]
+  },
+})
+
+// 말풍선 — 버블 + 꼬리 (복합)
+SNIPPETS.push({
+  id: 'speechBubble', group: '노트', label: '말풍선', desc: '꼬리 달린 대화 버블',
+  build: (cs, theme) => {
+    const w = 240, h = 90
+    const { x, y } = center(cs, w, h)
+    const accent = theme?.accent || ACCENT_FALLBACK
+    const bubble = textSpec({ x, y, w, h, content: '대화를 입력하세요', bg: accent, color: '#ffffff', radius: 16, size: 16, weight: 500, align: 'center', shadow: '0 4px 12px rgba(0,0,0,0.15)', padding: '10px 16px' })
+    const tail = shapeSpec({ x: x + 30, y: y + h - 7, w: 18, h: 18, bg: accent, radius: 2 })
+    tail.rotation = 45
+    return [bubble, tail]
+  },
+})
+
+// 코너 리본 — 기울인 강조 배너 (단일)
+SNIPPETS.push({
+  id: 'cornerRibbon', group: '구조', label: '코너 리본', desc: '추천/한정 강조 배너(기울임)',
+  build: (cs, theme) => {
+    const w = 160, h = 34
+    const { x, y } = center(cs, w, h)
+    const accent = theme?.accent || ACCENT_FALLBACK
+    const s = textSpec({ x, y, w, h, content: '추천', bg: accent, color: '#ffffff', radius: 0, size: 15, weight: 800, align: 'center', letter: '2px', shadow: '0 2px 6px rgba(0,0,0,0.2)' })
+    s.rotation = -45
+    return [s]
+  },
+})
+
+// 비교 막대(전/후) — 라벨 + 막대 2행 (복합)
+SNIPPETS.push({
+  id: 'comparisonBars', group: '데이터', label: '비교 막대(전/후)', desc: 'Before/After 막대 비교',
+  build: (cs, theme) => {
+    const w = 380, h = 90
+    const { x, y } = center(cs, w, h)
+    const accent = theme?.accent || ACCENT_FALLBACK
+    const muteC = theme?.roles?.body?.color || '#475569'
+    const labelW = 70, barX = x + labelW, barMax = w - labelW, barH = 22
+    return [
+      textSpec({ x, y, w: labelW, h: barH, content: 'Before', bg: 'rgba(0,0,0,0)', color: muteC, size: 13, weight: 600, align: 'left' }),
+      shapeSpec({ x: barX, y, w: Math.round(barMax * 0.4), h: barH, bg: '#cbd5e1', radius: 6 }),
+      textSpec({ x, y: y + 44, w: labelW, h: barH, content: 'After', bg: 'rgba(0,0,0,0)', color: muteC, size: 13, weight: 600, align: 'left' }),
+      shapeSpec({ x: barX, y: y + 44, w: Math.round(barMax * 0.85), h: barH, bg: accent, radius: 6 }),
+    ]
+  },
+})
+
+// 아바타 + 이름/직함 (복합)
+SNIPPETS.push({
+  id: 'avatarCard', group: '인물', label: '아바타 + 이름', desc: '원형 아바타 + 이름/직함',
+  build: (cs, theme) => {
+    const w = 240, h = 64
+    const { x, y } = center(cs, w, h)
+    const titleC = theme?.roles?.title?.color || '#1e293b'
+    const muteC = theme?.roles?.muted?.color || '#64748b'
+    const d = 56, tx = x + d + 14, tw = w - d - 14, cy = y + (h - d) / 2
+    return [
+      shapeSpec({ x, y: cy, w: d, h: d, bg: 'rgba(148,163,184,0.25)', radius: '50%' }),
+      textSpec({ x, y: cy, w: d, h: d, content: '👤', bg: 'rgba(0,0,0,0)', color: '#ffffff', size: 26, align: 'center' }),
+      textSpec({ x: tx, y: y + 8, w: tw, h: 26, content: '이름', bg: 'rgba(0,0,0,0)', color: titleC, size: 17, weight: 700, align: 'left' }),
+      textSpec({ x: tx, y: y + 36, w: tw, h: 22, content: '직함 · 회사', bg: 'rgba(0,0,0,0)', color: muteC, size: 13, weight: 400, align: 'left' }),
+    ]
+  },
+})
+
 export function getSnippet(id) {
   return SNIPPETS.find(s => s.id === id)
 }
