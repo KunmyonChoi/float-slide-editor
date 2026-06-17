@@ -6,6 +6,7 @@ import { nextFlatId } from '../core/FlatExtractor'
 import { hasApiKey, analyzeImageForInfographic, generateImage, editImage } from '../core/OpenAIClient'
 import { openAiSettings } from './AiSettingsModal'
 import { INFOGRAPHIC_STYLES } from '../core/aiImageStyles'
+import { captureElementRegion } from '../core/captureCanvasRegion'
 
 /**
  * AI 인포그래픽 변환.
@@ -44,27 +45,6 @@ function bboxOf(ids) {
   return { x: minX, y: minY, w: maxX - minX, h: maxY - minY }
 }
 
-// 전체 캡처 data URL에서 캔버스 좌표 bbox 영역만 잘라낸다(캡처 스케일 자동 보정).
-function cropToBBox(dataUrl, bbox, canvasSize) {
-  return new Promise((resolve, reject) => {
-    const img = new Image()
-    img.onload = () => {
-      const k = img.naturalWidth / canvasSize.w // 캡처:캔버스 배율
-      const sx = Math.max(0, Math.round(bbox.x * k))
-      const sy = Math.max(0, Math.round(bbox.y * k))
-      const sw = Math.round(bbox.w * k)
-      const sh = Math.round(bbox.h * k)
-      const c = document.createElement('canvas')
-      c.width = sw; c.height = sh
-      const ctx = c.getContext('2d')
-      ctx.drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh)
-      resolve(c.toDataURL('image/png'))
-    }
-    img.onerror = () => reject(new Error('캡처 이미지를 처리하지 못했습니다.'))
-    img.src = dataUrl
-  })
-}
-
 function buildImageEl(dataUrl, rect, zIndex) {
   return {
     id: nextFlatId(), sourceId: null,
@@ -80,8 +60,6 @@ function buildImageEl(dataUrl, rect, zIndex) {
     x: rect.x, y: rect.y, zIndex,
   }
 }
-
-const nextFrame = () => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))
 
 const METHOD_DESC = {
   analyze: '슬라이드 내용을 분석해 인포그래픽을 새로 그립니다. 깔끔하게 재구성하지만 원본 구도와 달라질 수 있습니다.',
@@ -106,22 +84,17 @@ function InfographicDialog() {
   const ensureCapture = useCallback(async (ctrl) => {
     if (captureRef.current) return captureRef.current
     setStatus('capturing')
-    const canvasNode = useFlatStore.getState()._canvasRef?.current
-    if (!canvasNode) throw new Error('캔버스를 찾을 수 없습니다.')
-    const cs = useFlatStore.getState().canvasSize
-    const { exportAsImage } = await import('../core/ImageExporter.js')
     let input
     if (mode === 'selection') {
       const bbox = bboxOf(ids)
       if (!bbox || bbox.w < 2 || bbox.h < 2) throw new Error('선택된 요소를 찾을 수 없습니다.')
       targetRef.current = bbox
-      useFlatStore.getState().setSelectedFlat(null) // 선택 테두리 제외
-      await nextFrame()
-      if (ctrl.signal.aborted) throw new DOMException('aborted', 'AbortError')
-      const full = await exportAsImage(canvasNode, { format: 'png', scale: 2 })
-      useFlatStore.getState().setSelectedFlats(ids)
-      input = await cropToBBox(full, bbox, cs)
+      input = await captureElementRegion(bbox, { signal: ctrl.signal })
     } else {
+      const canvasNode = useFlatStore.getState()._canvasRef?.current
+      if (!canvasNode) throw new Error('캔버스를 찾을 수 없습니다.')
+      const cs = useFlatStore.getState().canvasSize
+      const { exportAsImage } = await import('../core/ImageExporter.js')
       targetRef.current = { x: 0, y: 0, w: cs.w, h: cs.h }
       input = await exportAsImage(canvasNode, { format: 'png', scale: 2 })
     }

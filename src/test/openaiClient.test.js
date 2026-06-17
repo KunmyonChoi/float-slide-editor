@@ -3,7 +3,8 @@ import {
   getApiKey, setApiKey, hasApiKey, getModel, setModel,
   getImageModel, setImageModel, pickImageSize, flexSize, generationSize,
   generateImage, editImage,
-  chat, generateImagePrompt, analyzeImageForInfographic,
+  chat, generateImagePrompt, analyzeImageForInfographic, analyzeImageForRedesign,
+  buildImageEnhancePrompt,
   DEFAULT_MODEL, DEFAULT_IMAGE_MODEL,
 } from '../core/OpenAIClient'
 
@@ -141,7 +142,7 @@ describe('editImage (image-to-image edits)', () => {
     expect(init.body instanceof FormData).toBe(true)
     expect(init.body.get('model')).toBe('gpt-image-1.5')
     expect(init.body.get('input_fidelity')).toBe('high')
-    expect(init.body.get('size')).toBe('1536x1024')
+    expect(init.body.get('size')).toBe('1536x1024') // edits는 프리셋만 지원 → 가장 가까운 가로 프리셋
     expect(init.body.get('prompt')).toBe('make infographic')
     expect(init.headers.Authorization).toBe('Bearer sk-test')
   })
@@ -198,6 +199,69 @@ describe('analyzeImageForInfographic (vision)', () => {
     await analyzeImageForInfographic('data:image/png;base64,AAA')
     const text = JSON.parse(fetchMock.mock.calls[0][1].body).messages[1].content[0].text
     expect(text).not.toContain('Required visual style')
+  })
+})
+
+describe('analyzeImageForRedesign (도식/표 내용 재구성)', () => {
+  beforeEach(() => { localStorage.clear(); setApiKey('sk-test') })
+  afterEach(() => { vi.restoreAllMocks() })
+
+  it('빈 캡처는 호출 없이 에러', async () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    await expect(analyzeImageForRedesign('')).rejects.toThrow(/캡처/)
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('캡처 이미지를 vision content(image_url)로 첨부하고 프롬프트 텍스트 반환', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(okResponse('clean redrawn pipeline diagram'))
+    vi.stubGlobal('fetch', fetchMock)
+    const out = await analyzeImageForRedesign('data:image/png;base64,AAA')
+    expect(out).toBe('clean redrawn pipeline diagram')
+
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body)
+    const userMsg = body.messages[1]
+    expect(userMsg.content[1].type).toBe('image_url')
+    expect(userMsg.content[1].image_url.url).toBe('data:image/png;base64,AAA')
+    // JSON 모드가 아니라 평문 프롬프트
+    expect(body.response_format).toBeUndefined()
+  })
+
+  it('화풍(style) directive를 user 텍스트에 주입', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(okResponse('x'))
+    vi.stubGlobal('fetch', fetchMock)
+    await analyzeImageForRedesign('data:image/png;base64,AAA', { style: 'isometric 3D vector illustration' })
+    const text = JSON.parse(fetchMock.mock.calls[0][1].body).messages[1].content[0].text
+    expect(text).toContain('Required visual style')
+    expect(text).toContain('isometric 3D vector illustration')
+  })
+
+  it('style 미지정이면 directive 절을 넣지 않음', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(okResponse('x'))
+    vi.stubGlobal('fetch', fetchMock)
+    await analyzeImageForRedesign('data:image/png;base64,AAA')
+    const text = JSON.parse(fetchMock.mock.calls[0][1].body).messages[1].content[0].text
+    expect(text).not.toContain('Required visual style')
+  })
+})
+
+describe('buildImageEnhancePrompt (이미지 디자인 향상)', () => {
+  it('텍스트·요소 위치 보존 지시를 포함한다', () => {
+    const p = buildImageEnhancePrompt('')
+    expect(p).toMatch(/verbatim/i)        // 텍스트 원문 유지
+    expect(p).toMatch(/position/i)        // 위치 유지
+    expect(p).toMatch(/do not move|do not redraw/i)
+  })
+
+  it('directive가 있으면 Style 절을 덧붙인다', () => {
+    const p = buildImageEnhancePrompt('soft watercolor illustration')
+    expect(p).toContain('Style: soft watercolor illustration')
+  })
+
+  it('directive가 없으면 Style 절을 넣지 않는다', () => {
+    expect(buildImageEnhancePrompt('')).not.toContain('Style:')
+    expect(buildImageEnhancePrompt('   ')).not.toContain('Style:')
+    expect(buildImageEnhancePrompt()).not.toContain('Style:')
   })
 })
 
