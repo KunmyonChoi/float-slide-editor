@@ -191,57 +191,6 @@ export async function analyzeImageForInfographic(imageDataUrl, { model, style, s
   })
 }
 
-const DIAGRAM_SYSTEM =`You are an information architect. You are given an image of a figure/diagram/flow/table from a document.
-Extract its underlying structure as a NODE-AND-EDGE GRAPH and output a COMPACT JSON object (no markdown, no commentary) that an editor will render as editable cards connected by arrows.
-
-Output ONLY a single valid JSON object with exactly these keys:
-{
-  "title": "overall title copied VERBATIM from the figure, or empty string if none",
-  "layout": "horizontal | vertical | grid",
-  "cols": <integer number of grid columns>,
-  "rows": <integer number of grid rows>,
-  "nodes": [
-    { "id": "n1", "text": "node label copied VERBATIM in its ORIGINAL language", "role": "primary|secondary|muted", "col": <0-based int>, "row": <0-based int> }
-  ],
-  "edges": [
-    { "from": "n1", "to": "n2", "label": "edge label verbatim or empty string", "dashed": false }
-  ],
-  "palette": ["#hex", "#hex"]
-}
-
-Rules:
-- Identify the real boxes/steps/components as nodes and the real arrows/connections as edges. Preserve flow DIRECTION (from → to) and groupings. Do NOT invent or drop nodes/edges.
-- Copy ALL text (node labels, edge labels, title) EXACTLY as in the image, in the ORIGINAL language (e.g. Korean Hangul). Never translate, summarize or alter wording.
-- Place nodes on an integer grid (col,row) that matches the flow: left→right for horizontal, top→bottom for vertical. No two nodes share the same (col,row). Set cols/rows to fit all nodes.
-- role: "primary" for the most important/start nodes, "muted" for minor/auxiliary, else "secondary".
-- Keep labels short; pick a small cohesive palette (2-3 hex colors).`
-
-/**
- * 도식/플로우/표 캡처 → 노드+간선 그래프 JSON(편집 가능한 카드+화살표 재구성용).
- * vision + JSON 모드. 결과 문자열은 호출측에서 JSON.parse 한다.
- * @param {string} imageDataUrl  대상 캡처 data URL
- * @param {{ model?: string, style?: string, direction?: string, signal?: AbortSignal }} [opts]
- * @returns {Promise<string>}  JSON 문자열
- */
-export async function analyzeImageForDiagram(imageDataUrl, { model, style, direction, signal } = {}) {
-  if (!imageDataUrl) throw new Error('분석할 캡처 이미지가 없습니다.')
-  const styleClause = (style || '').trim()
-    ? `\n\nPreferred palette/style hint (optional, keep structure & verbatim text): ${style.trim()}`
-    : ''
-  const directionClause = (direction || '').trim()
-    ? `\n\nEmphasize this when choosing roles/layout (keep ALL nodes, edges and verbatim text — only steer emphasis): ${direction.trim()}`
-    : ''
-  return chat({
-    system: DIAGRAM_SYSTEM,
-    user: 'Here is the figure. Output the node-and-edge graph JSON.' + styleClause + directionClause,
-    images: [imageDataUrl],
-    model,
-    temperature: 0.4,
-    responseFormat: { type: 'json_object' },
-    signal,
-  })
-}
-
 // gpt-image-2/1.5: 유연 해상도 — 대상 종횡비를 16배수로 맞춤(최대변 3840, 종횡비 ≤3:1).
 export function flexSize(width, height, longEdge = 1536) {
   const r = (width || 1) / (height || 1)
