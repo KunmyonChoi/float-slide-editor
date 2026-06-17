@@ -61,21 +61,23 @@ export default function TextStrokeEditor({ value, onChange }) {
         <div className="bg-white/5 rounded-lg p-2 space-y-1.5 border border-white/5">
           {/* 색 */}
           <div className="flex items-center gap-1.5">
-            <button
-              onClick={() => colorRef.current?.click()}
-              style={{
-                width: 18, height: 18, borderRadius: 3,
-                background: hex, border: '1px solid rgba(255,255,255,0.15)',
-                cursor: 'pointer', flexShrink: 0,
-              }}
-              title="외곽선 색"
-            />
-            <input
-              ref={colorRef}
-              type="color" value={hex}
-              onChange={e => commit(st.width, hexToRgba(e.target.value, opacity === 0 ? 1 : opacity))}
-              style={{ position: 'absolute', opacity: 0, pointerEvents: 'none', width: 0, height: 0 }}
-            />
+            <span style={{ position: 'relative', width: 18, height: 18, flexShrink: 0 }}>
+              <button
+                onClick={() => colorRef.current?.click()}
+                style={{
+                  width: 18, height: 18, borderRadius: 3,
+                  background: hex, border: '1px solid rgba(255,255,255,0.15)',
+                  cursor: 'pointer',
+                }}
+                title="외곽선 색"
+              />
+              <input
+                ref={colorRef}
+                type="color" value={hex}
+                onChange={e => commit(st.width, hexToRgba(e.target.value, opacity === 0 ? 1 : opacity))}
+                style={{ position: 'absolute', left: 0, bottom: 0, opacity: 0, pointerEvents: 'none', width: 0, height: 0 }}
+              />
+            </span>
             <span className={labelClass}>외곽선 색</span>
           </div>
 

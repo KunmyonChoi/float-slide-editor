@@ -116,26 +116,29 @@ export default function ColorPicker({ value, onChange, showOpacity = false }) {
 
   return (
     <div className="flex items-center gap-1.5">
-      {/* 색상 프리뷰 + native picker */}
-      <button
-        onClick={() => colorRef.current?.click()}
-        style={{
-          width: 22, height: 22,
-          borderRadius: 4,
-          background: localHex,
-          border: '1px solid rgba(255,255,255,0.15)',
-          cursor: 'pointer',
-          flexShrink: 0,
-        }}
-        title="색상 선택"
-      />
-      <input
-        ref={colorRef}
-        type="color"
-        value={localHex}
-        onChange={handleColorInput}
-        style={{ position: 'absolute', opacity: 0, pointerEvents: 'none', width: 0, height: 0 }}
-      />
+      {/* 색상 프리뷰 + native picker.
+          숨김 input을 스와치를 감싼 relative 래퍼에 앵커 → OS 팔레트가 항상 스와치 위치에 열린다
+          (position:absolute에 top/left가 없으면 멀리 떨어진 positioned 조상 기준으로 열리는 문제 방지). */}
+      <span style={{ position: 'relative', width: 22, height: 22, flexShrink: 0 }}>
+        <button
+          onClick={() => colorRef.current?.click()}
+          style={{
+            width: 22, height: 22,
+            borderRadius: 4,
+            background: localHex,
+            border: '1px solid rgba(255,255,255,0.15)',
+            cursor: 'pointer',
+          }}
+          title="색상 선택"
+        />
+        <input
+          ref={colorRef}
+          type="color"
+          value={localHex}
+          onChange={handleColorInput}
+          style={{ position: 'absolute', left: 0, bottom: 0, opacity: 0, pointerEvents: 'none', width: 0, height: 0 }}
+        />
+      </span>
 
       {/* hex 텍스트 입력 */}
       <input
