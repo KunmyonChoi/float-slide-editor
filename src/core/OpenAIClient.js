@@ -207,17 +207,21 @@ Rules:
  * 도식/다이어그램/표 캡처 → 같은 정보를 더 명확히 재구성하는 영어 이미지 생성 프롬프트.
  * vision 가능한 텍스트 모델로 구조·데이터를 분석한다. 결과는 generateImage에 그대로 전달.
  * @param {string} imageDataUrl  대상 도식 캡처 data URL
- * @param {{ model?: string, style?: string, signal?: AbortSignal }} [opts]
+ * @param {{ model?: string, style?: string, direction?: string, signal?: AbortSignal }} [opts]
+ *   direction: 사용자가 강조하고 싶은 방향(예: "데이터 흐름을 단계별로 강조"). 구조·원문은 유지하되 강조점만 반영.
  * @returns {Promise<string>}
  */
-export async function analyzeImageForRedesign(imageDataUrl, { model, style, signal } = {}) {
+export async function analyzeImageForRedesign(imageDataUrl, { model, style, direction, signal } = {}) {
   if (!imageDataUrl) throw new Error('분석할 캡처 이미지가 없습니다.')
   const styleClause = (style || '').trim()
     ? `\n\nRequired visual style (apply while preserving structure and verbatim text): ${style.trim()}`
     : ''
+  const directionClause = (direction || '').trim()
+    ? `\n\nThe user wants the re-creation to EMPHASIZE this (honor it while keeping ALL original structure, data and verbatim text — do not drop or change information, just steer focus/visual emphasis accordingly): ${direction.trim()}`
+    : ''
   return chat({
     system: REDESIGN_SYSTEM,
-    user: 'Here is the figure/diagram/table. Output the re-creation image prompt.' + styleClause,
+    user: 'Here is the figure/diagram/table. Output the re-creation image prompt.' + styleClause + directionClause,
     images: [imageDataUrl],
     model,
     temperature: 0.5,

@@ -20,11 +20,13 @@ import { INFOGRAPHIC_STYLES } from '../core/aiImageStyles'
  * 구조는 텍스트용 FlatAiBar와 동일(포털 + 화면 좌표 배치).
  */
 export default function FlatImageAiBar({ element, scale, canvasRef }) {
-  // 'idle' | 'loading' | 'preview' | 'error'
+  // 'idle' | 'compose' | 'loading' | 'preview' | 'error'
+  // compose: 내용 재구성 전 '강조 방향' 입력 단계
   const [phase, setPhase] = useState('idle')
   // 'enhance'(디자인 향상) | 'reconstruct'(내용 재구성) — 마지막 실행 모드(재생성/표시에 사용)
   const [method, setMethod] = useState('enhance')
   const [styleId, setStyleId] = useState('original')
+  const [emphasis, setEmphasis] = useState('') // 내용 재구성 강조 방향(선택)
   const [status, setStatus] = useState('')
   const [prompt, setPrompt] = useState('')
   const [imageUrl, setImageUrl] = useState('')
@@ -62,14 +64,16 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
     })
   }, [canvasRef, element.x, element.y, element.height, scale, tick])
 
-  // 선택 요소가 바뀌면 진행 중 작업 취소 + 캡처 무효화
+  // 선택 요소가 바뀌면 진행 중 작업 취소 + 캡처/강조 입력 무효화
   useEffect(() => {
     captureRef.current = ''
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setEmphasis('')
     return () => { abortRef.current?.abort() }
   }, [element.id])
 
   // 전체 파이프라인: 영역 캡처 → (enhance) 디자인 향상 / (reconstruct) 분석→재생성
-  const run = useCallback(async (useMethod) => {
+  const run = useCallback(async (useMethod, directionText = '') => {
     if (!hasApiKey()) { openAiSettings(); return }
     setMethod(useMethod)
     abortRef.current?.abort()
@@ -88,7 +92,7 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
       let p, url
       if (useMethod === 'reconstruct') {
         setStatus('내용 분석 중…')
-        p = await analyzeImageForRedesign(cap, { style: directive, signal: ctrl.signal })
+        p = await analyzeImageForRedesign(cap, { style: directive, direction: directionText, signal: ctrl.signal })
         if (ctrl.signal.aborted) return
         setPrompt(p)
         setStatus('AI 이미지 생성 중… (수십 초 걸릴 수 있어요)')
@@ -142,12 +146,12 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
       isRich: false,
       styles: { objectFit: 'contain' },
     })
-    setPhase('idle'); setImageUrl(''); setZoom(false)
+    setPhase('idle'); setImageUrl(''); setZoom(false); setEmphasis('')
   }, [imageUrl, element.id])
 
   const cancel = useCallback(() => {
     abortRef.current?.abort()
-    setPhase('idle'); setError(''); setImageUrl(''); setZoom(false)
+    setPhase('idle'); setError(''); setImageUrl(''); setZoom(false); setEmphasis('')
   }, [])
 
   // 화면 좌표 (layout effect에서 계산됨)
@@ -207,8 +211,8 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
           </button>
           <button
             type="button"
-            onClick={() => run('reconstruct')}
-            title="도식/표 등의 내용을 분석해 같은 정보를 더 명확히 표현하도록 재구성한 이미지를 새로 생성합니다"
+            onClick={() => { setMethod('reconstruct'); setPhase('compose') }}
+            title="도식/표 등의 내용을 분석해 같은 정보를 더 명확히 표현하도록 재구성한 이미지를 새로 생성합니다. 강조할 방향을 입력할 수 있어요."
             style={aiBtnStyle}
           >
             <DiagramIcon />
@@ -233,6 +237,30 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 600 }}>
             <SparkleIcon /> {methodLabel}
           </div>
+
+          {phase === 'compose' && (
+            <>
+              <div style={{ fontSize: 11, color: '#64748b' }}>어떤 점을 강조해 재구성할까요? (선택)</div>
+              <textarea
+                value={emphasis}
+                onChange={e => setEmphasis(e.target.value)}
+                rows={3}
+                autoFocus
+                spellCheck={false}
+                placeholder="예: 데이터 흐름을 단계별로 강조 · 핵심 수치를 크게 · 항목 간 비교를 명확히"
+                onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); run('reconstruct', emphasis) } }}
+                style={{
+                  width: '100%', boxSizing: 'border-box', resize: 'vertical',
+                  padding: '8px 10px', fontSize: 12, lineHeight: 1.5,
+                  background: 'rgba(255,255,255,0.06)', color: '#f1f5f9',
+                  border: '1px solid rgba(255,255,255,0.16)', borderRadius: 8, outline: 'none',
+                }}
+              />
+              <div style={{ fontSize: 11, color: '#64748b' }}>
+                비워두면 원본 구조를 그대로 더 명확히 재구성합니다. 원문 텍스트·데이터는 항상 유지됩니다.
+              </div>
+            </>
+          )}
 
           {phase === 'loading' && (
             <div style={{ fontSize: 13, color: '#94a3b8', padding: '10px 2px', display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -281,6 +309,9 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
 
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
             <button type="button" onClick={cancel} style={ghostBtnStyle}>취소</button>
+            {phase === 'compose' && (
+              <button type="button" onClick={() => run('reconstruct', emphasis)} style={primaryBtnStyle}>재구성 생성</button>
+            )}
             {(phase === 'preview' || phase === 'error') && (
               <button type="button" onClick={regenerate} style={ghostBtnStyle}>재생성</button>
             )}
