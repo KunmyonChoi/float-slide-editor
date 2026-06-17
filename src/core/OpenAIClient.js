@@ -191,40 +191,53 @@ export async function analyzeImageForInfographic(imageDataUrl, { model, style, s
   })
 }
 
-const REDESIGN_SYSTEM = `You are an expert information designer for academic papers and technical reports, specializing in figures, diagrams, flowcharts, architecture/pipeline schematics and data tables.
+const DIAGRAM_SYSTEM =`You are an information architect. You are given an image of a figure/diagram/flow/table from a document.
+Extract its underlying structure as a NODE-AND-EDGE GRAPH and output a COMPACT JSON object (no markdown, no commentary) that an editor will render as editable cards connected by arrows.
 
-You are given an image of ONE such figure. Analyze its real structure — the components/nodes/rows/columns, their order, the connections/arrows/flow, and the data — then write ONE English image-generation prompt that RE-CREATES the SAME figure as a clean, modern, well-organized version that communicates the same information more clearly.
+Output ONLY a single valid JSON object with exactly these keys:
+{
+  "title": "overall title copied VERBATIM from the figure, or empty string if none",
+  "layout": "horizontal | vertical | grid",
+  "cols": <integer number of grid columns>,
+  "rows": <integer number of grid rows>,
+  "nodes": [
+    { "id": "n1", "text": "node label copied VERBATIM in its ORIGINAL language", "role": "primary|secondary|muted", "col": <0-based int>, "row": <0-based int> }
+  ],
+  "edges": [
+    { "from": "n1", "to": "n2", "label": "edge label verbatim or empty string", "dashed": false }
+  ],
+  "palette": ["#hex", "#hex"]
+}
 
 Rules:
-- Output ONLY the prompt text. No preamble, no labels, no markdown.
-- Write the instruction in English, but keep EVERY label, heading, axis title, cell value and number EXACTLY as in the original, in its ORIGINAL language (e.g. Korean). Wrap each text string in double quotes inside the prompt so the renderer reproduces it verbatim. Do NOT translate, invent, drop or change any value.
-- Explicitly instruct that all text must be rendered in crisp, correct, fully legible characters in the original script — including Korean Hangul (e.g. 한글) — with high contrast and clean typography; never garble, distort or replace glyphs.
-- Reproduce the real structure faithfully: same boxes/nodes/rows/columns, same arrows/flow direction, same groupings and hierarchy. Improve clarity (alignment, spacing, consistent shapes, readable type, a coherent limited palette, clear legend) — do NOT add fictional content.
-- Keep it a precise schematic / diagram / chart / table — flat vector, infographic quality, NOT decorative illustration or photo.
-- If a required visual style is provided, apply it while keeping the structure and verbatim text. Keep it under ~150 words.`
+- Identify the real boxes/steps/components as nodes and the real arrows/connections as edges. Preserve flow DIRECTION (from → to) and groupings. Do NOT invent or drop nodes/edges.
+- Copy ALL text (node labels, edge labels, title) EXACTLY as in the image, in the ORIGINAL language (e.g. Korean Hangul). Never translate, summarize or alter wording.
+- Place nodes on an integer grid (col,row) that matches the flow: left→right for horizontal, top→bottom for vertical. No two nodes share the same (col,row). Set cols/rows to fit all nodes.
+- role: "primary" for the most important/start nodes, "muted" for minor/auxiliary, else "secondary".
+- Keep labels short; pick a small cohesive palette (2-3 hex colors).`
 
 /**
- * 도식/다이어그램/표 캡처 → 같은 정보를 더 명확히 재구성하는 영어 이미지 생성 프롬프트.
- * vision 가능한 텍스트 모델로 구조·데이터를 분석한다. 결과는 generateImage에 그대로 전달.
- * @param {string} imageDataUrl  대상 도식 캡처 data URL
+ * 도식/플로우/표 캡처 → 노드+간선 그래프 JSON(편집 가능한 카드+화살표 재구성용).
+ * vision + JSON 모드. 결과 문자열은 호출측에서 JSON.parse 한다.
+ * @param {string} imageDataUrl  대상 캡처 data URL
  * @param {{ model?: string, style?: string, direction?: string, signal?: AbortSignal }} [opts]
- *   direction: 사용자가 강조하고 싶은 방향(예: "데이터 흐름을 단계별로 강조"). 구조·원문은 유지하되 강조점만 반영.
- * @returns {Promise<string>}
+ * @returns {Promise<string>}  JSON 문자열
  */
-export async function analyzeImageForRedesign(imageDataUrl, { model, style, direction, signal } = {}) {
+export async function analyzeImageForDiagram(imageDataUrl, { model, style, direction, signal } = {}) {
   if (!imageDataUrl) throw new Error('분석할 캡처 이미지가 없습니다.')
   const styleClause = (style || '').trim()
-    ? `\n\nRequired visual style (apply while preserving structure and verbatim text): ${style.trim()}`
+    ? `\n\nPreferred palette/style hint (optional, keep structure & verbatim text): ${style.trim()}`
     : ''
   const directionClause = (direction || '').trim()
-    ? `\n\nThe user wants the re-creation to EMPHASIZE this (honor it while keeping ALL original structure, data and verbatim text — do not drop or change information, just steer focus/visual emphasis accordingly): ${direction.trim()}`
+    ? `\n\nEmphasize this when choosing roles/layout (keep ALL nodes, edges and verbatim text — only steer emphasis): ${direction.trim()}`
     : ''
   return chat({
-    system: REDESIGN_SYSTEM,
-    user: 'Here is the figure/diagram/table. Output the re-creation image prompt.' + styleClause + directionClause,
+    system: DIAGRAM_SYSTEM,
+    user: 'Here is the figure. Output the node-and-edge graph JSON.' + styleClause + directionClause,
     images: [imageDataUrl],
     model,
-    temperature: 0.5,
+    temperature: 0.4,
+    responseFormat: { type: 'json_object' },
     signal,
   })
 }

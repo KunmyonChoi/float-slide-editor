@@ -3,7 +3,7 @@ import {
   getApiKey, setApiKey, hasApiKey, getModel, setModel,
   getImageModel, setImageModel, pickImageSize, flexSize, generationSize,
   generateImage, editImage,
-  chat, generateImagePrompt, analyzeImageForInfographic, analyzeImageForRedesign,
+  chat, generateImagePrompt, analyzeImageForInfographic, analyzeImageForDiagram,
   buildImageEnhancePrompt,
   DEFAULT_MODEL, DEFAULT_IMAGE_MODEL,
 } from '../core/OpenAIClient'
@@ -227,60 +227,43 @@ describe('analyzeImageForInfographic (vision)', () => {
   })
 })
 
-describe('analyzeImageForRedesign (도식/표 내용 재구성)', () => {
+describe('analyzeImageForDiagram (노드+간선 그래프 JSON)', () => {
   beforeEach(() => { localStorage.clear(); setApiKey('sk-test') })
   afterEach(() => { vi.restoreAllMocks() })
 
   it('빈 캡처는 호출 없이 에러', async () => {
     const fetchMock = vi.fn()
     vi.stubGlobal('fetch', fetchMock)
-    await expect(analyzeImageForRedesign('')).rejects.toThrow(/캡처/)
+    await expect(analyzeImageForDiagram('')).rejects.toThrow(/캡처/)
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
-  it('캡처 이미지를 vision content(image_url)로 첨부하고 프롬프트 텍스트 반환', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(okResponse('clean redrawn pipeline diagram'))
+  it('JSON 모드 + 이미지 첨부로 호출하고 JSON 문자열 반환', async () => {
+    const json = '{"title":"흐름","nodes":[],"edges":[]}'
+    const fetchMock = vi.fn().mockResolvedValue(okResponse(json))
     vi.stubGlobal('fetch', fetchMock)
-    const out = await analyzeImageForRedesign('data:image/png;base64,AAA')
-    expect(out).toBe('clean redrawn pipeline diagram')
+    const out = await analyzeImageForDiagram('data:image/png;base64,AAA')
+    expect(out).toBe(json)
 
     const body = JSON.parse(fetchMock.mock.calls[0][1].body)
+    expect(body.response_format).toEqual({ type: 'json_object' })
     const userMsg = body.messages[1]
     expect(userMsg.content[1].type).toBe('image_url')
     expect(userMsg.content[1].image_url.url).toBe('data:image/png;base64,AAA')
-    // JSON 모드가 아니라 평문 프롬프트
-    expect(body.response_format).toBeUndefined()
   })
 
-  it('화풍(style) directive를 user 텍스트에 주입', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(okResponse('x'))
+  it('direction을 user 텍스트에 주입(미지정이면 생략)', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(okResponse('{}'))
     vi.stubGlobal('fetch', fetchMock)
-    await analyzeImageForRedesign('data:image/png;base64,AAA', { style: 'isometric 3D vector illustration' })
-    const text = JSON.parse(fetchMock.mock.calls[0][1].body).messages[1].content[0].text
-    expect(text).toContain('Required visual style')
-    expect(text).toContain('isometric 3D vector illustration')
-  })
-
-  it('style 미지정이면 directive 절을 넣지 않음', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(okResponse('x'))
-    vi.stubGlobal('fetch', fetchMock)
-    await analyzeImageForRedesign('data:image/png;base64,AAA')
-    const text = JSON.parse(fetchMock.mock.calls[0][1].body).messages[1].content[0].text
-    expect(text).not.toContain('Required visual style')
-  })
-
-  it('강조 방향(direction)을 user 텍스트에 주입(미지정이면 생략)', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(okResponse('x'))
-    vi.stubGlobal('fetch', fetchMock)
-    await analyzeImageForRedesign('data:image/png;base64,AAA', { direction: '데이터 흐름을 단계별로 강조' })
+    await analyzeImageForDiagram('data:image/png;base64,AAA', { direction: '단계 흐름 강조' })
     let text = JSON.parse(fetchMock.mock.calls[0][1].body).messages[1].content[0].text
-    expect(text).toContain('EMPHASIZE')
-    expect(text).toContain('데이터 흐름을 단계별로 강조')
+    expect(text).toContain('Emphasize')
+    expect(text).toContain('단계 흐름 강조')
 
     fetchMock.mockClear()
-    await analyzeImageForRedesign('data:image/png;base64,AAA')
+    await analyzeImageForDiagram('data:image/png;base64,AAA')
     text = JSON.parse(fetchMock.mock.calls[0][1].body).messages[1].content[0].text
-    expect(text).not.toContain('EMPHASIZE')
+    expect(text).not.toContain('Emphasize')
   })
 })
 
