@@ -156,6 +156,7 @@ export default function FlatCanvas() {
       type: 'video', width: w, height: h,
       content: BlobStore.toRef(key),
       isRich: false, merged: false,
+      autoplay: true, loop: false, muted: false, // 기본: 자동재생 on, 반복·음소거 off
       x: Math.round(x), y: Math.round(y),
       zIndex: maxZ + 1,
       styles: { backgroundColor: 'rgba(0,0,0,0)', borderRadius: '8px', opacity: '1' },
@@ -714,11 +715,17 @@ export default function FlatCanvas() {
   // 마키 선택: mousedown → mousemove → mouseup
   // 배경 요소는 stopPropagation 안 하므로 여기까지 버블링됨
   // 선택 해제는 mouseup에서 판단 (드래그 없고 배경도 안 눌렸으면 해제)
+  // stageRef(바깥 여백 포함)의 mousedown에서 마키 시작.
+  // 요소는 mousedown에서 stopPropagation 하므로 배경/빈 영역/여백에서만 여기까지 버블링된다
+  // → 캔버스 바깥 여백에서 시작한 드래그로도 멀티 선택 가능.
   const handleStageMouseDown = useCallback((e) => {
     if (e.button === 2) return // 우클릭은 컨텍스트 메뉴가 처리
     setContextMenu(null) // 좌클릭 시 컨텍스트 메뉴 닫기
     if (panDragRef.current) return // 팬 진행 중이면 마키 무시
-    if (useFlatStore.getState().editingFlatId || useFlatStore.getState().croppingFlatId) return
+    const st = useFlatStore.getState()
+    if (st.editingFlatId) return
+    if (st.croppingFlatId) { setCroppingFlat(null); return } // 크롭 중 바깥 클릭 → 크롭 종료
+    if (st.drawMode) return // 그리기 모드는 자체 처리
     if (!canvasRef.current) return
     const rect = canvasRef.current.getBoundingClientRect()
     const sx = (e.clientX - rect.left) / scale
@@ -727,7 +734,7 @@ export default function FlatCanvas() {
     e.preventDefault() // 브라우저 텍스트 선택 방지
     marqueeRef.current = { startX: sx, startY: sy, rect, shiftKey: e.shiftKey }
     setMarquee({ startX: sx, startY: sy, endX: sx, endY: sy })
-  }, [scale])
+  }, [scale, setCroppingFlat])
 
   useEffect(() => {
     const onMove = (e) => {
@@ -788,20 +795,6 @@ export default function FlatCanvas() {
     }
   }, [scale])
 
-  // 캔버스 바깥 (회색 영역) 클릭 시 선택 해제
-  const handleOuterClick = useCallback((e) => {
-    if (e.button === 2) return // 우클릭은 컨텍스트 메뉴가 처리
-    setContextMenu(null) // 좌클릭 시 컨텍스트 메뉴 닫기
-    // canvasRef 내부 클릭이면 무시 (마키 핸들러가 처리)
-    if (canvasRef.current && canvasRef.current.contains(e.target)) return
-    if (useFlatStore.getState().editingFlatId) return
-    if (useFlatStore.getState().croppingFlatId) {
-      setCroppingFlat(null)
-      return
-    }
-    setSelectedFlat(null)
-  }, [setSelectedFlat, setCroppingFlat])
-
   // 우클릭 컨텍스트 메뉴
   const handleContextMenu = useCallback((e) => {
     // 편집 중에는 우리 메뉴를 열지 않고 브라우저 기본 동작도 막지 않음
@@ -830,7 +823,7 @@ export default function FlatCanvas() {
         overflow: 'hidden',
         background: '#0f172a',
       }}
-      onMouseDown={handleOuterClick}
+      onMouseDown={handleStageMouseDown}
       onContextMenu={handleContextMenu}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
@@ -850,7 +843,6 @@ export default function FlatCanvas() {
             boxShadow: '0 20px 80px rgba(0,0,0,0.7)',
             background: '#fff',
           }}
-          onMouseDown={handleStageMouseDown}
         >
           <div
             data-flat-canvas="true"

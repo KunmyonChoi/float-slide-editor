@@ -802,6 +802,36 @@ function FontSection({ el, styles, updateStyle, previewStyle, isGradientText, li
         <ColorPicker value={styles.color} onChange={v => updateStyle('color', v)} />
       </div>
 
+      {/* 외곽선(텍스트 스트로크) — 토글 + 굵기 + 색 */}
+      {(() => {
+        const m = (styles.textStroke || '').match(/^([\d.]+)px\s+(.+)$/)
+        const on = !!m
+        const w = m ? parseFloat(m[1]) : 2
+        const c = m ? m[2].trim() : '#000000'
+        return (
+          <div>
+            <label className="flex items-center justify-between cursor-pointer mb-0.5">
+              <span className={labelClass}>외곽선</span>
+              <input
+                type="checkbox"
+                checked={on}
+                onChange={e => updateStyle('textStroke', e.target.checked ? `${w}px ${c}` : '')}
+              />
+            </label>
+            {on && (
+              <div className="space-y-1.5">
+                <NumInput
+                  label="굵기" value={w} unit="px" min={0} max={20} step={0.5}
+                  onChange={v => updateStyle('textStroke', `${v}px ${c}`)}
+                  onPreview={previewStyle && (v => previewStyle('textStroke', `${v}px ${c}`))}
+                />
+                <ColorPicker value={c} onChange={v => updateStyle('textStroke', `${w}px ${v}`)} />
+              </div>
+            )}
+          </div>
+        )
+      })()}
+
       <div>
         <p className={`${labelClass} mb-0.5`}>맞춤</p>
         <div className="flex gap-1.5">

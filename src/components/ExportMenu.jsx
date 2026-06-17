@@ -250,9 +250,9 @@ export default function FileMenu({ fallbackSample }) {
   const ITEMS = [
     { id: 'newProject', label: '새 프로젝트', action: handleNewProject },
     { id: 'sepNew', type: 'separator' },
+    { id: 'openProject', label: '프로젝트 열기', action: handleOpenProject },
     { id: 'saveProject', label: '프로젝트 저장', shortcut: 'Ctrl+S', action: handleSaveProject, disabled: !hasContent },
     { id: 'saveProjectAs', label: '다른 이름으로 저장', action: handleSaveProjectAs, disabled: !hasContent },
-    { id: 'openProject', label: '프로젝트 열기', action: handleOpenProject },
     { id: 'sep1', type: 'separator' },
     { id: 'export', label: '내보내기', submenu: 'export', disabled: !hasContent,
       children: [

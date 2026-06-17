@@ -263,6 +263,7 @@ export default function EditToolbar() {
       type: 'video', width: w, height: h,
       content: embedUrl,
       isRich: false, merged: false,
+      autoplay: true, loop: false, muted: false, // 기본: 자동재생 on, 반복·음소거 off
       x: Math.round((canvasSize.w - w) / 2),
       y: Math.round((canvasSize.h - h) / 2),
       zIndex: maxZ + 1,
@@ -300,6 +301,7 @@ export default function EditToolbar() {
       type: 'video', width: w, height: h,
       content: BlobStore.toRef(key),
       isRich: false, merged: false,
+      autoplay: true, loop: false, muted: false, // 기본: 자동재생 on, 반복·음소거 off
       x: Math.round((canvasSize.w - w) / 2),
       y: Math.round((canvasSize.h - h) / 2),
       zIndex: maxZ + 1,

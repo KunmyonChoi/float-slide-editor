@@ -28,6 +28,7 @@ export function makeDefaultCustomTheme() {
 const _history = new HistoryStack()
 const _pageCache = {}   // { [pageKey]: { elements, canvasSize, fontImports, history } }
 let _currentPageKey = null
+let _clipboardPageKey = null // 복사 시점의 페이지 — 붙여넣기 위치(오프셋 여부) 판단용
 
 
 /**
@@ -1152,7 +1153,10 @@ export const useFlatStore = create((set, get) => ({
   copyElement() {
     const { selectedFlatIds, flatElements } = get()
     const copied = flatElements.filter(e => selectedFlatIds.includes(e.id))
-    if (copied.length > 0) set({ clipboard: structuredClone(copied) })
+    if (copied.length > 0) {
+      set({ clipboard: structuredClone(copied) })
+      _clipboardPageKey = _currentPageKey // 복사한 페이지 기억
+    }
   },
 
   /** 현재 프로젝트 파일(핸들/이름) 기억 — 열기·저장 시 호출. null이면 초기화. */
@@ -1208,6 +1212,8 @@ export const useFlatStore = create((set, get) => ({
   pasteElement() {
     const { clipboard, flatElements } = get()
     if (!clipboard || clipboard.length === 0) return
+    // 같은 페이지에 붙여넣으면 빗겨나게(+20), 다른 페이지면 같은 위치에.
+    const off = (_currentPageKey === _clipboardPageKey) ? 20 : 0
     // 그룹ID 재매핑 — 복제본끼리 새 그룹을 이루되 원본 그룹과는 분리
     const groupMap = {}
     const newEls = clipboard.map(e => {
@@ -1215,8 +1221,8 @@ export const useFlatStore = create((set, get) => ({
         ...structuredClone(e),
         id: nextFlatId(),
         sourceId: null,
-        x: e.x + 20,
-        y: e.y + 20,
+        x: e.x + off,
+        y: e.y + off,
       }
       if (clone.groupId) {
         if (!groupMap[clone.groupId]) {
