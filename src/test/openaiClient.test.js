@@ -3,7 +3,7 @@ import {
   getApiKey, setApiKey, hasApiKey, getModel, setModel,
   getImageModel, setImageModel, pickImageSize, flexSize, generationSize,
   generateImage, editImage,
-  chat, generateImagePrompt, analyzeImageForInfographic, analyzeImageForDiagram,
+  chat, generateImagePrompt, analyzeImageForInfographic,
   buildImageEnhancePrompt,
   DEFAULT_MODEL, DEFAULT_IMAGE_MODEL,
 } from '../core/OpenAIClient'
@@ -224,46 +224,6 @@ describe('analyzeImageForInfographic (vision)', () => {
     await analyzeImageForInfographic('data:image/png;base64,AAA')
     const text = JSON.parse(fetchMock.mock.calls[0][1].body).messages[1].content[0].text
     expect(text).not.toContain('Required visual style')
-  })
-})
-
-describe('analyzeImageForDiagram (노드+간선 그래프 JSON)', () => {
-  beforeEach(() => { localStorage.clear(); setApiKey('sk-test') })
-  afterEach(() => { vi.restoreAllMocks() })
-
-  it('빈 캡처는 호출 없이 에러', async () => {
-    const fetchMock = vi.fn()
-    vi.stubGlobal('fetch', fetchMock)
-    await expect(analyzeImageForDiagram('')).rejects.toThrow(/캡처/)
-    expect(fetchMock).not.toHaveBeenCalled()
-  })
-
-  it('JSON 모드 + 이미지 첨부로 호출하고 JSON 문자열 반환', async () => {
-    const json = '{"title":"흐름","nodes":[],"edges":[]}'
-    const fetchMock = vi.fn().mockResolvedValue(okResponse(json))
-    vi.stubGlobal('fetch', fetchMock)
-    const out = await analyzeImageForDiagram('data:image/png;base64,AAA')
-    expect(out).toBe(json)
-
-    const body = JSON.parse(fetchMock.mock.calls[0][1].body)
-    expect(body.response_format).toEqual({ type: 'json_object' })
-    const userMsg = body.messages[1]
-    expect(userMsg.content[1].type).toBe('image_url')
-    expect(userMsg.content[1].image_url.url).toBe('data:image/png;base64,AAA')
-  })
-
-  it('direction을 user 텍스트에 주입(미지정이면 생략)', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(okResponse('{}'))
-    vi.stubGlobal('fetch', fetchMock)
-    await analyzeImageForDiagram('data:image/png;base64,AAA', { direction: '단계 흐름 강조' })
-    let text = JSON.parse(fetchMock.mock.calls[0][1].body).messages[1].content[0].text
-    expect(text).toContain('Emphasize')
-    expect(text).toContain('단계 흐름 강조')
-
-    fetchMock.mockClear()
-    await analyzeImageForDiagram('data:image/png;base64,AAA')
-    text = JSON.parse(fetchMock.mock.calls[0][1].body).messages[1].content[0].text
-    expect(text).not.toContain('Emphasize')
   })
 })
 
