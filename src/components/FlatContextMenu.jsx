@@ -61,6 +61,7 @@ export default function FlatContextMenu({ x, y, canvasX, canvasY, onClose }) {
   const selectedEls = flatElements.filter(e => selectedFlatIds.includes(e.id))
   const allLocked = selectedEls.length > 0 && selectedEls.every(e => e.locked)
   const singleTextEl = selectedEls.length === 1 && selectedEls[0].type === 'text' ? selectedEls[0] : null
+  const singleImageEl = selectedEls.length === 1 && selectedEls[0].type === 'image' ? selectedEls[0] : null
 
   // 배경 요소 찾기
   const bgElement = useMemo(() => flatElements.find(el =>
@@ -208,6 +209,26 @@ export default function FlatContextMenu({ x, y, canvasX, canvasY, onClose }) {
     })
   }, [canvasSize, insertCustomElement])
 
+  // 선택한 이미지 다운로드 (data URL / idb:// / 외부 URL 모두 처리)
+  const downloadSelectedImage = useCallback(async () => {
+    const el = flatElements.find(e => e.id === singleId)
+    if (!el || el.type !== 'image' || !el.content) return
+    let src = el.content
+    if (BlobStore.isIdbRef(src)) src = await BlobStore.getUrl(BlobStore.parseRef(src))
+    let url = src, revoke = false, ext = 'png'
+    try {
+      const resp = await fetch(src)
+      const blob = await resp.blob()
+      if (blob.type.startsWith('image/')) ext = (blob.type.split('/')[1] || 'png').split('+')[0]
+      url = URL.createObjectURL(blob); revoke = true
+    } catch { /* fetch 실패 시 원본 src로 직접 시도 */ }
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `image.${ext}`
+    document.body.appendChild(a); a.click(); a.remove()
+    if (revoke) setTimeout(() => URL.revokeObjectURL(url), 1000)
+  }, [flatElements, singleId])
+
   // 액션 디스패치
   const handleAction = useCallback((action) => {
     switch (action) {
@@ -252,6 +273,7 @@ export default function FlatContextMenu({ x, y, canvasX, canvasY, onClose }) {
           useFlatStore.getState().updateCustomTheme({ bg })
         }
         break
+      case 'downloadImage': downloadSelectedImage(); break
       case 'aiInfographic': openInfographic(); break
       case 'convertToBg': {
         // 선택된 요소를 배경 레이어로 변환
@@ -318,7 +340,7 @@ export default function FlatContextMenu({ x, y, canvasX, canvasY, onClose }) {
       removeSelectedElements, selectAllFlats, bringForward, sendBackward,
       bringToFront, sendToBack, insertElement, insertVideo, onClose, allLocked,
       flatElements, selectedFlatIds, batchUpdateFlatElementsIndividual,
-      updateFlatElement, batchUpdateFlatElements, bgElement, setSelectedFlat, singleTextEl])
+      updateFlatElement, batchUpdateFlatElements, bgElement, setSelectedFlat, singleTextEl, downloadSelectedImage])
 
   // 서브메뉴 hover
   const enterSubmenu = (key) => {
@@ -338,6 +360,7 @@ export default function FlatContextMenu({ x, y, canvasX, canvasY, onClose }) {
     { id: 'pasteStyle', label: '서식 붙여넣기', shortcut: 'Ctrl+Shift+V', action: 'pasteStyle',
       disabled: !useFlatStore.getState().styleClipboard },
     { id: 'dup', label: '복제', shortcut: 'Ctrl+D', action: 'duplicate' },
+    ...(singleImageEl ? [{ id: 'dlImage', label: '이미지 다운로드', action: 'downloadImage' }] : []),
     { id: 'del', label: '삭제', shortcut: 'Delete', action: 'delete' },
     { id: 'lock', label: allLocked ? '잠금 해제' : '잠금', action: 'lock' },
     { id: 'toBg', label: '배경으로 변환', action: 'convertToBg',
