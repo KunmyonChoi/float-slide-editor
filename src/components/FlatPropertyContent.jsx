@@ -828,22 +828,22 @@ function FontSection({ el, styles, updateStyle, previewStyle, isGradientText, li
         </div>
       </div>
 
-      {/* 수직 맞춤 — 수평 맞춤과 동일 컨셉(버튼 그룹) */}
+      {/* 텍스트 세로 정렬 — 박스 안에서 텍스트의 상/중/하 위치 */}
       <div>
-        <p className={`${labelClass} mb-0.5`}>수직 맞춤</p>
+        <p className={`${labelClass} mb-0.5`}>텍스트 세로 정렬</p>
         <div className="flex gap-1.5">
           {[
-            { value: 'flex-start', label: '위', icon: <AlignTopIcon /> },
-            { value: 'center', label: '중간', icon: <AlignMiddleVIcon /> },
-            { value: 'flex-end', label: '아래', icon: <AlignBottomIcon /> },
+            { value: 'flex-start', label: '위', icon: <TextVAlignTopIcon /> },
+            { value: 'center', label: '중간', icon: <TextVAlignMiddleIcon /> },
+            { value: 'flex-end', label: '아래', icon: <TextVAlignBottomIcon /> },
           ].map(a => (
             <button
               key={a.value}
               onClick={() => updateStyle('alignItems', a.value)}
-              title={a.label + ' 맞춤'}
+              title={'텍스트 ' + a.label + ' 정렬'}
               className={[
                 'flex-1 py-1.5 rounded-lg text-xs transition-colors flex items-center justify-center border',
-                (styles.alignItems || 'center') === a.value
+                (styles.alignItems || 'flex-start') === a.value
                   ? 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30'
                   : 'bg-white/5 text-slate-400 border-white/10 hover:bg-white/10',
               ].join(' ')}
@@ -917,15 +917,38 @@ function FontSection({ el, styles, updateStyle, previewStyle, isGradientText, li
         />
       </div>
 
-      <NumInput
-        label="내부 여백"
-        value={parseFloat(styles.padding) || 0}
-        onChange={v => updateStyle('padding', v + 'px')}
-        onPreview={previewStyle && (v => previewStyle('padding', v + 'px'))}
-        min={0} unit="px"
-      />
+      {/* 내부 여백 — 상/하/좌/우 개별 설정(padding 4값 shorthand로 저장) */}
+      {(() => {
+        const pad = parsePadding4(styles.padding)
+        const setPad = (next) => updateStyle('padding', `${next.t}px ${next.r}px ${next.b}px ${next.l}px`)
+        const prevPad = (next) => previewStyle('padding', `${next.t}px ${next.r}px ${next.b}px ${next.l}px`)
+        return (
+          <div>
+            <p className={`${labelClass} mb-0.5`}>내부 여백</p>
+            <div className="grid grid-cols-2 gap-1.5">
+              <NumInput label="위" value={pad.t} unit="px" min={0}
+                onChange={v => setPad({ ...pad, t: v })} onPreview={previewStyle && (v => prevPad({ ...pad, t: v }))} />
+              <NumInput label="아래" value={pad.b} unit="px" min={0}
+                onChange={v => setPad({ ...pad, b: v })} onPreview={previewStyle && (v => prevPad({ ...pad, b: v }))} />
+              <NumInput label="왼쪽" value={pad.l} unit="px" min={0}
+                onChange={v => setPad({ ...pad, l: v })} onPreview={previewStyle && (v => prevPad({ ...pad, l: v }))} />
+              <NumInput label="오른쪽" value={pad.r} unit="px" min={0}
+                onChange={v => setPad({ ...pad, r: v })} onPreview={previewStyle && (v => prevPad({ ...pad, r: v }))} />
+            </div>
+          </div>
+        )
+      })()}
     </div>
   )
+}
+
+// CSS padding shorthand → {t,r,b,l}
+function parsePadding4(p) {
+  const parts = String(p || '0').trim().split(/\s+/).map(v => parseFloat(v) || 0)
+  if (parts.length <= 1) { const a = parts[0] || 0; return { t: a, r: a, b: a, l: a } }
+  if (parts.length === 2) return { t: parts[0], r: parts[1], b: parts[0], l: parts[1] }
+  if (parts.length === 3) return { t: parts[0], r: parts[1], b: parts[2], l: parts[1] }
+  return { t: parts[0], r: parts[1], b: parts[2], l: parts[3] }
 }
 
 function FillSection({ styles, updateStyle, updateStyles, previewStyle, isText }) {
@@ -1733,6 +1756,35 @@ function AlignTopIcon() {
       <line x1="1" y1="1" x2="15" y2="1" strokeWidth="2" />
       <rect x="3" y="3" width="4" height="8" rx="0.5" fill="currentColor" opacity="0.4" stroke="none" />
       <rect x="9" y="3" width="4" height="5" rx="0.5" fill="currentColor" opacity="0.4" stroke="none" />
+    </svg>
+  )
+}
+
+// 텍스트 세로 정렬 아이콘 — 박스(프레임) 안의 텍스트 줄 위치(상/중/하)
+function TextVAlignTopIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.2">
+      <rect x="2" y="2" width="12" height="12" rx="1.5" opacity="0.45" />
+      <line x1="4.5" y1="5" x2="11.5" y2="5" strokeWidth="1.6" />
+      <line x1="4.5" y1="7.3" x2="9" y2="7.3" strokeWidth="1.6" />
+    </svg>
+  )
+}
+function TextVAlignMiddleIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.2">
+      <rect x="2" y="2" width="12" height="12" rx="1.5" opacity="0.45" />
+      <line x1="4.5" y1="6.85" x2="11.5" y2="6.85" strokeWidth="1.6" />
+      <line x1="4.5" y1="9.15" x2="9" y2="9.15" strokeWidth="1.6" />
+    </svg>
+  )
+}
+function TextVAlignBottomIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.2">
+      <rect x="2" y="2" width="12" height="12" rx="1.5" opacity="0.45" />
+      <line x1="4.5" y1="8.7" x2="11.5" y2="8.7" strokeWidth="1.6" />
+      <line x1="4.5" y1="11" x2="9" y2="11" strokeWidth="1.6" />
     </svg>
   )
 }

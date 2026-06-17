@@ -173,7 +173,9 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
           ...(() => {
             const isSelfFlex = styles.display === 'flex' || styles.display === 'inline-flex'
             const vAlign = styles.alignItems // 'flex-start' | 'center' | 'flex-end' | undefined
-            const hasVAlign = vAlign === 'center' || vAlign === 'flex-end'
+            // 명시적 수직정렬(위/중/아래)이면 셋 다 flex로 통일 — 위만 block-flow로 빠지면
+            // border 등과 겹칠 때 정렬이 어긋나 보인다. 미설정(undefined)일 때만 블록 흐름(위).
+            const hasVAlign = vAlign === 'center' || vAlign === 'flex-end' || vAlign === 'flex-start'
             if (!isSelfFlex && !merged && !hasVAlign) return {} // 기본: 위(블록 흐름)
             return {
               display: 'flex',
