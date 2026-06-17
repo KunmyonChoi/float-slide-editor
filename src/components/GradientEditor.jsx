@@ -138,25 +138,27 @@ function StopRow({ stop, onUpdate, onRemove, canRemove }) {
 
   return (
     <div className="flex items-center gap-1.5">
-      <button
-        onClick={() => colorRef.current?.click()}
-        title="색"
-        style={{
-          width: 18, height: 18, borderRadius: 3,
-          // 알파 반영: 체커보드 위에 실제 rgba 색을 올려 반투명도를 시각화
-          backgroundImage: `linear-gradient(${stop.color}, ${stop.color}), repeating-conic-gradient(#94a3b8 0% 25%, #475569 0% 50%)`,
-          backgroundSize: '100% 100%, 6px 6px',
-          border: '1px solid rgba(255,255,255,0.15)',
-          cursor: 'pointer', flexShrink: 0,
-        }}
-      />
-      <input
-        ref={el => colorRef.current = el}
-        type="color"
-        value={hex}
-        onChange={handleColorChange}
-        style={{ position: 'absolute', opacity: 0, pointerEvents: 'none', width: 0, height: 0 }}
-      />
+      <span style={{ position: 'relative', width: 18, height: 18, flexShrink: 0 }}>
+        <button
+          onClick={() => colorRef.current?.click()}
+          title="색"
+          style={{
+            width: 18, height: 18, borderRadius: 3,
+            // 알파 반영: 체커보드 위에 실제 rgba 색을 올려 반투명도를 시각화
+            backgroundImage: `linear-gradient(${stop.color}, ${stop.color}), repeating-conic-gradient(#94a3b8 0% 25%, #475569 0% 50%)`,
+            backgroundSize: '100% 100%, 6px 6px',
+            border: '1px solid rgba(255,255,255,0.15)',
+            cursor: 'pointer',
+          }}
+        />
+        <input
+          ref={el => colorRef.current = el}
+          type="color"
+          value={hex}
+          onChange={handleColorChange}
+          style={{ position: 'absolute', left: 0, bottom: 0, opacity: 0, pointerEvents: 'none', width: 0, height: 0 }}
+        />
+      </span>
       <input
         type="number" min="0" max="100"
         value={Math.round(stop.position)}
