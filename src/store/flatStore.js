@@ -1179,7 +1179,7 @@ export const useFlatStore = create((set, get) => ({
     const used = await saveBlob(blob, {
       suggestedName: st.projectFileName || 'project.flatproj',
       description: 'Genitor 프로젝트',
-      accept: { 'application/octet-stream': ['.flatproj'] },
+      accept: { 'application/zip': ['.flatproj'] }, // .flatproj는 ZIP — 콘텐츠 타입 일치
       handle,
     })
     if (used) {

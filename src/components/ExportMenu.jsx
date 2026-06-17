@@ -6,7 +6,9 @@ import { openAiSettings } from './AiSettingsModal'
 import { openFile } from '../core/FilePicker'
 import { confirmDialog } from './ConfirmDialog'
 
-const ACCEPT_FLATPROJ = { 'application/octet-stream': ['.flatproj'] }
+// .flatproj는 실제로 ZIP 패키지 → MIME을 application/zip으로 맞춰야 OS 열기 패널에서
+// 콘텐츠 타입 매칭으로 회색(선택 불가) 처리되지 않는다.
+const ACCEPT_FLATPROJ = { 'application/zip': ['.flatproj'] }
 const ACCEPT_HTML = { 'text/html': ['.html', '.htm'] }
 
 // 새 프로젝트용 빈 슬라이드 1장 (1280×720 흰 배경)
@@ -131,7 +133,7 @@ export default function FileMenu({ fallbackSample }) {
   // 프로젝트 열기 — 확장자 필터(.flatproj). 파일명/핸들을 기억해 재저장에 사용.
   const handleOpenProject = useCallback(async () => {
     setOpen(false)
-    const { file, handle } = await openFile({ description: 'Genitor 프로젝트', accept: ACCEPT_FLATPROJ, acceptAttr: '.flatproj', withHandle: true })
+    const { file, handle } = await openFile({ description: 'Genitor 프로젝트', accept: ACCEPT_FLATPROJ, acceptAttr: '.flatproj', withHandle: true, excludeAll: false })
     if (!file) return
     try {
       await loadProjectFromFile(file, handle)
