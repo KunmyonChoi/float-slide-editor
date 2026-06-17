@@ -128,7 +128,7 @@ describe('editImage (image-to-image edits)', () => {
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
-  it('edits: 설정 모델(gpt-image-2)을 우선 사용 + 프리셋 size + input_fidelity:high', async () => {
+  it('edits: gpt-image-2는 유연 크기(정확 종횡비) + input_fidelity 미전송', async () => {
     setImageModel('gpt-image-2')
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true, status: 200, json: async () => ({ data: [{ b64_json: 'RURJVA==' }] }),
@@ -142,13 +142,14 @@ describe('editImage (image-to-image edits)', () => {
     expect(url).toContain('images/edits')
     expect(init.body instanceof FormData).toBe(true)
     expect(init.body.get('model')).toBe('gpt-image-2')
-    expect(init.body.get('input_fidelity')).toBe('high')
-    expect(init.body.get('size')).toBe('1536x1024') // edits는 프리셋만 지원 → 가장 가까운 가로 프리셋
+    expect(init.body.get('size')).toBe('1536x864') // gpt-image-2 edits는 유연 크기(16:9 정확)
+    expect(init.body.get('input_fidelity')).toBeNull() // gpt-image-2엔 보내지 않음(자동 high)
+    expect(init.body.get('quality')).toBe('high')
     expect(init.body.get('prompt')).toBe('make infographic')
     expect(init.headers.Authorization).toBe('Bearer sk-test')
   })
 
-  it('edits: 설정 모델이 edits 미지원이면 gpt-image-1.5로 폴백', async () => {
+  it('edits: gpt-image-2가 모델 미지원이면 gpt-image-1.5(프리셋+input_fidelity)로 폴백', async () => {
     setImageModel('gpt-image-2')
     const fetchMock = vi.fn()
       .mockResolvedValueOnce({ // 1차: 모델 미지원 오류
@@ -162,8 +163,13 @@ describe('editImage (image-to-image edits)', () => {
     const out = await editImage('data:image/png;base64,AAAA', 'x', { width: 500, height: 500 })
     expect(out).toBe('data:image/png;base64,RkInfA==')
     expect(fetchMock).toHaveBeenCalledTimes(2)
+    // 1차: gpt-image-2 (유연 크기, input_fidelity 없음)
     expect(fetchMock.mock.calls[0][1].body.get('model')).toBe('gpt-image-2')
+    expect(fetchMock.mock.calls[0][1].body.get('input_fidelity')).toBeNull()
+    // 2차: 폴백 gpt-image-1.5 (프리셋 크기 + input_fidelity high)
     expect(fetchMock.mock.calls[1][1].body.get('model')).toBe('gpt-image-1.5')
+    expect(fetchMock.mock.calls[1][1].body.get('size')).toBe('1024x1024')
+    expect(fetchMock.mock.calls[1][1].body.get('input_fidelity')).toBe('high')
   })
 
   it('edits: 모델 무관 오류(권한 등)는 폴백 없이 즉시 전파', async () => {
