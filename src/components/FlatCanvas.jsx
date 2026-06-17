@@ -156,7 +156,7 @@ export default function FlatCanvas() {
       type: 'video', width: w, height: h,
       content: BlobStore.toRef(key),
       isRich: false, merged: false,
-      autoplay: true, loop: false, muted: false, // 기본: 자동재생 on, 반복·음소거 off
+      autoplay: true, loop: false, muted: false, hideControls: true, // 기본: 자동재생 on, 반복·음소거 off, 컨트롤 숨김
       x: Math.round(x), y: Math.round(y),
       zIndex: maxZ + 1,
       styles: { backgroundColor: 'rgba(0,0,0,0)', borderRadius: '8px', opacity: '1' },

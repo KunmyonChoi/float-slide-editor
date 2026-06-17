@@ -66,17 +66,19 @@ export async function saveBlob(blob, { suggestedName, description = '파일', ac
 
 /**
  * 파일 열기 — 시스템 열기 팝업에 확장자 필터 적용(미지원 시 임시 input).
- * @param {{ description?: string, accept?: Record<string,string[]>, acceptAttr?: string, withHandle?: boolean }} opts
+ * @param {{ description?: string, accept?: Record<string,string[]>, acceptAttr?: string, withHandle?: boolean, excludeAll?: boolean }} opts
  *   accept: FS Access API용({'text/html': ['.html']}), acceptAttr: input[accept] 폴백용('.html,.htm')
  *   withHandle: true면 { file, handle } 반환(handle은 미지원/폴백 시 null) — 같은 파일 재저장용.
+ *   excludeAll: '모든 파일' 옵션 제외 여부. 기본은 accept 유무. false면 커스텀 확장자가
+ *     OS 타입 매칭으로 회색 처리돼도 사용자가 직접 선택할 수 있는 탈출구를 남긴다.
  * @returns {Promise<File|null|{file:File|null, handle:FileSystemFileHandle|null}>}
  */
-export async function openFile({ description = '파일', accept, acceptAttr, withHandle = false } = {}) {
+export async function openFile({ description = '파일', accept, acceptAttr, withHandle = false, excludeAll } = {}) {
   if (window.showOpenFilePicker) {
     try {
       const [handle] = await window.showOpenFilePicker({
         types: accept ? [{ description, accept }] : undefined,
-        excludeAcceptAllOption: !!accept, // 필터를 확실히 적용(모든 파일 옵션 제거)
+        excludeAcceptAllOption: excludeAll === undefined ? !!accept : excludeAll,
         multiple: false,
       })
       const file = await handle.getFile()
