@@ -1182,7 +1182,13 @@ export const useFlatStore = create((set, get) => ({
       accept: { 'application/octet-stream': ['.flatproj'] },
       handle,
     })
-    if (used) set({ projectFileHandle: used, projectFileName: used.name || st.projectFileName })
+    if (used) {
+      set({ projectFileHandle: used, projectFileName: used.name || st.projectFileName })
+      try {
+        const { addRecent } = await import('../core/RecentProjects.js')
+        await addRecent(used, used.name || st.projectFileName)
+      } catch { /* 최근목록 실패는 무시 */ }
+    }
     return !!used
   },
 
