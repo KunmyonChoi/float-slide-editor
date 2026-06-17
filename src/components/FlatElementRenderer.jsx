@@ -125,7 +125,7 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
       WebkitTextFillColor: styles.webkitTextFillColor || 'transparent',
       filter: textShadowToDropShadow(styles.textShadow),
       // 외곽선(텍스트 스트로크) — 그래디언트 텍스트는 내부 span에 적용
-      ...(styles.textStroke ? { WebkitTextStroke: styles.textStroke, paintOrder: 'stroke fill' } : {}),
+      ...(styles.textStroke && styles.textStroke !== 'none' ? { WebkitTextStroke: styles.textStroke, paintOrder: 'stroke fill' } : {}),
     } : null
 
     // 빈 레이아웃 텍스트: 흐린 안내문(placeholder) 표시 — 입력 시작하면 사라짐
@@ -160,7 +160,7 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
           // 그래디언트 텍스트: textShadow는 내부 span의 drop-shadow로 처리
           textShadow: isGradientText ? undefined : styles.textShadow,
           // 외곽선(텍스트 스트로크) — 그래디언트가 아니면 div에 직접 적용
-          ...(!isGradientText && styles.textStroke ? { WebkitTextStroke: styles.textStroke, paintOrder: 'stroke fill' } : {}),
+          ...(!isGradientText && styles.textStroke && styles.textStroke !== 'none' ? { WebkitTextStroke: styles.textStroke, paintOrder: 'stroke fill' } : {}),
           opacity: styles.opacity,
           padding: styles.padding,
           overflow: (styles.overflow === 'hidden' || styles.overflow === 'auto' || styles.overflow === 'scroll' ||

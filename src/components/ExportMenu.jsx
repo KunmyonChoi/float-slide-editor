@@ -17,6 +17,7 @@ const ACCEPT_HTML = { 'text/html': ['.html', '.htm'] }
 export default function FileMenu({ fallbackSample }) {
   const [open, setOpen] = useState(false)
   const [openSubmenu, setOpenSubmenu] = useState(null)
+  const [recents, setRecents] = useState([]) // 최근 프로젝트 목록
   const hoverTimeout = useRef(null)
   const menuRef = useRef(null)
 
@@ -25,6 +26,16 @@ export default function FileMenu({ fallbackSample }) {
   const { loadHtml, htmlImported } = useEditorStore()
 
   const hasContent = flatElements.length > 0
+
+  // 메뉴 열릴 때 최근 프로젝트 목록 로드
+  useEffect(() => {
+    if (!open) return
+    let alive = true
+    import('../core/RecentProjects.js').then(({ getRecents }) => getRecents()).then(list => {
+      if (alive) setRecents(list)
+    }).catch(() => {})
+    return () => { alive = false }
+  }, [open])
 
   // 외부 클릭 닫기
   useEffect(() => {
@@ -103,26 +114,51 @@ export default function FileMenu({ fallbackSample }) {
     await useFlatStore.getState().saveProject({ saveAs: true })
   }, [])
 
+  // 프로젝트 파일(File) + 핸들을 로드해 적용 + 최근목록 기록 (열기/최근열기 공용)
+  const loadProjectFromFile = useCallback(async (file, handle) => {
+    const { loadProjectFile } = await import('../core/ProjectSerializer.js')
+    const data = await loadProjectFile(file)
+    loadAllPages(data.pages, data.currentPageKey)
+    useFlatStore.getState().setCustomTheme(data.customTheme)
+    useFlatStore.getState().setThemeId(data.themeId)
+    useFlatStore.getState().setProjectFile(handle, file.name)
+    useEditorStore.getState().setHtmlImported(false)
+    if (useFlatStore.getState().viewMode === 'html') setViewMode('flat')
+    const { addRecent } = await import('../core/RecentProjects.js')
+    await addRecent(handle, file.name) // 핸들 있으면 최근목록에 기록
+  }, [loadAllPages, setViewMode])
+
   // 프로젝트 열기 — 확장자 필터(.flatproj). 파일명/핸들을 기억해 재저장에 사용.
   const handleOpenProject = useCallback(async () => {
     setOpen(false)
     const { file, handle } = await openFile({ description: 'Genitor 프로젝트', accept: ACCEPT_FLATPROJ, acceptAttr: '.flatproj', withHandle: true })
     if (!file) return
-    const { loadProjectFile } = await import('../core/ProjectSerializer.js')
     try {
-      const data = await loadProjectFile(file)
-      loadAllPages(data.pages, data.currentPageKey)
-      useFlatStore.getState().setCustomTheme(data.customTheme) // 사용자정의 테마 복원
-      useFlatStore.getState().setThemeId(data.themeId) // 저장된 테마 선택 복원
-      useFlatStore.getState().setProjectFile(handle, file.name) // 같은 파일에 재저장하도록 기억
-      // flat 프로젝트는 원본 HTML이 없으므로 'Flat 재생성' 게이트를 닫는다.
-      useEditorStore.getState().setHtmlImported(false)
-      const { viewMode } = useFlatStore.getState()
-      if (viewMode === 'html') setViewMode('flat')
+      await loadProjectFromFile(file, handle)
     } catch (err) {
       alert('프로젝트 파일을 열 수 없습니다: ' + err.message)
     }
-  }, [loadAllPages, setViewMode])
+  }, [loadProjectFromFile])
+
+  // 최근 프로젝트 열기 — 저장된 핸들로 권한 재요청 후 로드
+  const openRecent = useCallback(async (entry) => {
+    setOpen(false)
+    const h = entry?.handle
+    const { removeRecent } = await import('../core/RecentProjects.js')
+    if (!h) return
+    try {
+      if (h.queryPermission) {
+        let p = await h.queryPermission({ mode: 'read' })
+        if (p !== 'granted') p = await h.requestPermission({ mode: 'read' })
+        if (p !== 'granted') { alert('파일 접근 권한이 필요합니다.'); return }
+      }
+      const file = await h.getFile()
+      await loadProjectFromFile(file, h)
+    } catch {
+      alert('파일을 열 수 없습니다(이동/삭제되었을 수 있어요). 최근 목록에서 제거합니다.')
+      await removeRecent(entry.name)
+    }
+  }, [loadProjectFromFile])
 
   // 원본으로 되돌리기 — 처음 가져온 HTML 슬라이드 상태로 전체 페이지를 다시 변환(편집 내용 삭제)
   const handleRevertToOriginal = useCallback(async () => {
@@ -251,6 +287,8 @@ export default function FileMenu({ fallbackSample }) {
     { id: 'newProject', label: '새 프로젝트', action: handleNewProject },
     { id: 'sepNew', type: 'separator' },
     { id: 'openProject', label: '프로젝트 열기', action: handleOpenProject },
+    { id: 'recent', label: '최근 프로젝트', submenu: 'recent', disabled: recents.length === 0,
+      children: recents.map((e, i) => ({ id: 'recent-' + i, label: e.name, action: () => openRecent(e) })) },
     { id: 'saveProject', label: '프로젝트 저장', shortcut: 'Ctrl+S', action: handleSaveProject, disabled: !hasContent },
     { id: 'saveProjectAs', label: '다른 이름으로 저장', action: handleSaveProjectAs, disabled: !hasContent },
     { id: 'sep1', type: 'separator' },
