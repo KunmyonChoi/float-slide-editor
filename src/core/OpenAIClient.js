@@ -14,8 +14,8 @@ const DEFAULT_MODEL = 'gpt-4o-mini'
 const DEFAULT_IMAGE_MODEL = 'gpt-image-2'
 // 유연 해상도(정확한 종횡비)를 지원하는 생성 모델
 const FLEX_SIZE_MODELS = ['gpt-image-2', 'gpt-image-1.5']
-// images/edits 를 지원하는 모델(gpt-image-2는 edits 미지원)
-const EDIT_CAPABLE_MODELS = ['gpt-image-1.5', 'gpt-image-1', 'gpt-image-1-mini']
+// edits(image-to-image) 폴백 모델 — 설정 모델이 edits를 지원하지 않을 때 사용(지원 확실).
+const EDIT_FALLBACK_MODEL = 'gpt-image-1.5'
 const ENDPOINT = 'https://api.openai.com/v1/chat/completions'
 const IMAGE_ENDPOINT = 'https://api.openai.com/v1/images/generations'
 const IMAGE_EDIT_ENDPOINT = 'https://api.openai.com/v1/images/edits'
@@ -301,13 +301,26 @@ export async function generateImage(prompt, { model, width, height, size, signal
   return `data:image/png;base64,${b64}`
 }
 
+async function readImageErrorDetail(res) {
+  try { return (await res.json())?.error?.message || '' } catch { return '' }
+}
+
+function throwImageErrorWith(status, detail, label) {
+  if (status === 401) throw new Error('API 키가 유효하지 않습니다. 키를 다시 확인하세요.')
+  if (status === 403) throw new Error(`이미지 모델 사용 권한이 없습니다(조직 인증 필요할 수 있음)${detail ? ': ' + detail : ''}`)
+  if (status === 429) throw new Error('요청이 너무 많거나 사용 한도를 초과했습니다. 잠시 후 다시 시도하세요.')
+  throw new Error(`${label} 오류 (${status})${detail ? ': ' + detail : ''}`)
+}
+
 async function throwImageError(res, label) {
-  let detail = ''
-  try { detail = (await res.json())?.error?.message || '' } catch { /* 무시 */ }
-  if (res.status === 401) throw new Error('API 키가 유효하지 않습니다. 키를 다시 확인하세요.')
-  if (res.status === 403) throw new Error(`이미지 모델 사용 권한이 없습니다(조직 인증 필요할 수 있음)${detail ? ': ' + detail : ''}`)
-  if (res.status === 429) throw new Error('요청이 너무 많거나 사용 한도를 초과했습니다. 잠시 후 다시 시도하세요.')
-  throw new Error(`${label} 오류 (${res.status})${detail ? ': ' + detail : ''}`)
+  throwImageErrorWith(res.status, await readImageErrorDetail(res), label)
+}
+
+// edits 호출이 '모델 미지원'류로 실패했는지(다른 모델로 폴백할지) 판단.
+function isModelUnsupportedError(status, detail) {
+  if (status !== 400 && status !== 404) return false
+  const d = (detail || '').toLowerCase()
+  return /model/.test(d) || /unsupported/.test(d) || /not.*support/.test(d) || /does not exist/.test(d)
 }
 
 function dataUrlToBlob(dataUrl) {
@@ -351,36 +364,49 @@ export async function editImage(imageDataUrl, prompt, { width, height, size, sig
   const p = (prompt || '').trim()
   if (!p) throw new Error('이미지 편집 프롬프트가 비어 있습니다.')
 
-  // edits는 gpt-image-1.5/1/mini 지원(gpt-image-2·dall-e-3 미지원) → 설정값이 가능하면 사용, 아니면 1.5
+  // 설정 모델(예: gpt-image-2)로 먼저 edits를 시도하고, '모델 미지원'류 오류면
+  // edits 지원이 확실한 gpt-image-1.5로 1회 폴백한다(품질은 설정 모델 우선).
+  const blob = dataUrlToBlob(imageDataUrl)
   const configured = getImageModel()
-  const editModel = EDIT_CAPABLE_MODELS.includes(configured) ? configured : 'gpt-image-1.5'
-  const form = new FormData()
-  form.append('model', editModel)
-  form.append('image', dataUrlToBlob(imageDataUrl), 'input.png')
-  form.append('prompt', p)
-  // images/edits는 generations와 달리 유연 크기를 지원하지 않고 프리셋만 받는다
-  // (1024x1024 / 1536x1024 / 1024x1536). 대상 종횡비에 가장 가까운 프리셋을 고른다.
-  // 박스와 정확히 안 맞아도 적용 측 objectFit:contain이 잘림을 막는다(레터박스만).
-  form.append('size', size || pickImageSize(editModel, width, height))
-  form.append('quality', 'medium')
-  form.append('input_fidelity', 'high') // 원본 이미지의 레이아웃/구도/글자를 최대한 유지
+  const candidates = configured === EDIT_FALLBACK_MODEL ? [configured] : [configured, EDIT_FALLBACK_MODEL]
 
-  let res
-  try {
-    res = await fetch(IMAGE_EDIT_ENDPOINT, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${apiKey}` }, // multipart: Content-Type은 브라우저가 설정
-      body: form,
-      signal,
-    })
-  } catch (e) {
-    if (e?.name === 'AbortError') throw e
-    throw new Error('OpenAI에 연결할 수 없습니다. 네트워크 연결을 확인하세요.')
+  for (let i = 0; i < candidates.length; i++) {
+    const model = candidates[i]
+    const isLast = i === candidates.length - 1
+    const form = new FormData()
+    form.append('model', model)
+    form.append('image', blob, 'input.png')
+    form.append('prompt', p)
+    // images/edits는 generations와 달리 유연 크기를 지원하지 않고 프리셋만 받는다
+    // (1024x1024 / 1536x1024 / 1024x1536). 대상 종횡비에 가장 가까운 프리셋을 고른다.
+    // 박스와 정확히 안 맞아도 적용 측 objectFit:contain이 잘림을 막는다(레터박스만).
+    form.append('size', size || pickImageSize(model, width, height))
+    form.append('quality', 'medium')
+    form.append('input_fidelity', 'high') // 원본 이미지의 레이아웃/구도/글자를 최대한 유지
+
+    let res
+    try {
+      res = await fetch(IMAGE_EDIT_ENDPOINT, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${apiKey}` }, // multipart: Content-Type은 브라우저가 설정
+        body: form,
+        signal,
+      })
+    } catch (e) {
+      if (e?.name === 'AbortError') throw e
+      throw new Error('OpenAI에 연결할 수 없습니다. 네트워크 연결을 확인하세요.')
+    }
+
+    if (res.ok) {
+      const data = await res.json()
+      const b64 = data?.data?.[0]?.b64_json
+      if (!b64) throw new Error('이미지 응답이 비어 있습니다.')
+      return `data:image/png;base64,${b64}`
+    }
+
+    const detail = await readImageErrorDetail(res)
+    // 모델 미지원류이고 폴백 후보가 남았으면 다음 모델로 재시도, 아니면 오류 전파
+    if (!isLast && isModelUnsupportedError(res.status, detail)) continue
+    throwImageErrorWith(res.status, detail, '이미지 편집')
   }
-  if (!res.ok) await throwImageError(res, '이미지 편집')
-
-  const data = await res.json()
-  const b64 = data?.data?.[0]?.b64_json
-  if (!b64) throw new Error('이미지 응답이 비어 있습니다.')
-  return `data:image/png;base64,${b64}`
 }

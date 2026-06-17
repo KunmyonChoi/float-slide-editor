@@ -21,7 +21,8 @@ function closeAiSettings() {
 }
 
 const MODEL_OPTIONS = ['gpt-4o-mini', 'gpt-4o', 'gpt-4.1-mini', 'gpt-4.1']
-const IMAGE_MODEL_OPTIONS = ['gpt-image-2', 'gpt-image-1.5', 'gpt-image-1', 'gpt-image-1-mini', 'dall-e-3']
+// 품질 차이가 커서 image-2 계통만 노출(생성=gpt-image-2; 편집은 미지원 시 1.5로 자동 폴백)
+const IMAGE_MODEL_OPTIONS = ['gpt-image-2']
 
 export function AiSettingsHost() {
   const open = useAiSettingsStore(s => s.open)
