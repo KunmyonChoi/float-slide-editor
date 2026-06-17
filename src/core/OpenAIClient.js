@@ -191,6 +191,39 @@ export async function analyzeImageForInfographic(imageDataUrl, { model, style, s
   })
 }
 
+const REDESIGN_SYSTEM = `You are an expert information designer for academic papers and technical reports, specializing in figures, diagrams, flowcharts, architecture/pipeline schematics and data tables.
+
+You are given an image of ONE such figure. Analyze its real structure — the components/nodes/rows/columns, their order, the connections/arrows/flow, and the data — then write ONE English image-generation prompt that RE-CREATES the SAME figure as a clean, modern, well-organized version that communicates the same information more clearly.
+
+Rules:
+- Output ONLY the prompt text. No preamble, no quotes, no labels, no markdown.
+- Write the instruction in English, but keep EVERY label, heading, axis title, cell value and number EXACTLY as in the original, in its ORIGINAL language (e.g. Korean). Quote them literally inside the prompt. Do NOT translate, invent, drop or change any value.
+- Reproduce the real structure faithfully: same boxes/nodes/rows/columns, same arrows/flow direction, same groupings and hierarchy. Improve clarity (alignment, spacing, consistent shapes, readable type, a coherent limited palette, clear legend) — do NOT add fictional content.
+- Keep it a precise schematic / diagram / chart / table — flat vector, infographic quality, NOT decorative illustration or photo.
+- If a required visual style is provided, apply it while keeping the structure and verbatim text. Keep it under ~140 words.`
+
+/**
+ * 도식/다이어그램/표 캡처 → 같은 정보를 더 명확히 재구성하는 영어 이미지 생성 프롬프트.
+ * vision 가능한 텍스트 모델로 구조·데이터를 분석한다. 결과는 generateImage에 그대로 전달.
+ * @param {string} imageDataUrl  대상 도식 캡처 data URL
+ * @param {{ model?: string, style?: string, signal?: AbortSignal }} [opts]
+ * @returns {Promise<string>}
+ */
+export async function analyzeImageForRedesign(imageDataUrl, { model, style, signal } = {}) {
+  if (!imageDataUrl) throw new Error('분석할 캡처 이미지가 없습니다.')
+  const styleClause = (style || '').trim()
+    ? `\n\nRequired visual style (apply while preserving structure and verbatim text): ${style.trim()}`
+    : ''
+  return chat({
+    system: REDESIGN_SYSTEM,
+    user: 'Here is the figure/diagram/table. Output the re-creation image prompt.' + styleClause,
+    images: [imageDataUrl],
+    model,
+    temperature: 0.5,
+    signal,
+  })
+}
+
 // gpt-image-2/1.5: 유연 해상도 — 대상 종횡비를 16배수로 맞춤(최대변 3840, 종횡비 ≤3:1).
 export function flexSize(width, height, longEdge = 1536) {
   const r = (width || 1) / (height || 1)
@@ -287,6 +320,23 @@ function dataUrlToBlob(dataUrl) {
 }
 
 /**
+ * 이미지 디자인 향상용 image-to-image 프롬프트를 만든다(editImage에 그대로 전달).
+ * 원본의 모든 텍스트·요소 위치를 유지하면서 시각 스타일만 끌어올리도록 지시한다.
+ * @param {string} [styleDirective]  화풍 지시문(aiImageStyles). 빈 값이면 모델 기본 미감 사용.
+ * @returns {string}
+ */
+export function buildImageEnhancePrompt(styleDirective) {
+  const base = `Redesign this presentation slide image with a more polished, professional and modern visual design. Improve the typography hierarchy, spacing, alignment, color harmony and overall visual balance.
+
+CRITICAL constraints:
+- Keep EVERY existing text string EXACTLY as written (verbatim, same language, legible characters); do not translate, add, remove or alter any wording.
+- Preserve the position, order and arrangement of every text block, icon, chart, photo and shape. Do NOT move, add or delete elements or change the layout.
+- Only elevate the visual style and finish — do not redraw the slide as something different.`
+  const d = (styleDirective || '').trim()
+  return d ? `${base}\n\nStyle: ${d}` : base
+}
+
+/**
  * 입력 이미지 → 인포그래픽으로 편집(image-to-image). gpt-image-1 edits 사용.
  * 원본의 구도/위치를 유지한 채 변환하는 데 적합하다.
  * @param {string} imageDataUrl  입력 이미지 data URL(캡처/crop)
@@ -308,6 +358,9 @@ export async function editImage(imageDataUrl, prompt, { width, height, size, sig
   form.append('model', editModel)
   form.append('image', dataUrlToBlob(imageDataUrl), 'input.png')
   form.append('prompt', p)
+  // images/edits는 generations와 달리 유연 크기를 지원하지 않고 프리셋만 받는다
+  // (1024x1024 / 1536x1024 / 1024x1536). 대상 종횡비에 가장 가까운 프리셋을 고른다.
+  // 박스와 정확히 안 맞아도 적용 측 objectFit:contain이 잘림을 막는다(레터박스만).
   form.append('size', size || pickImageSize(editModel, width, height))
   form.append('quality', 'medium')
   form.append('input_fidelity', 'high') // 원본 이미지의 레이아웃/구도/글자를 최대한 유지

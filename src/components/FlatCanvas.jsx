@@ -6,6 +6,7 @@ import { getRotatedAABB } from '../core/RotationUtils'
 import FlatElementRenderer from './FlatElementRenderer'
 import FlatSelectionOverlay, { FlatGroupOverlay } from './FlatSelectionOverlay'
 import FlatAiBar from './FlatAiBar'
+import FlatImageAiBar from './FlatImageAiBar'
 import FlatSelectionAiBar from './FlatSelectionAiBar'
 import FlatInlineEditor from './FlatInlineEditor'
 import FlatTableEditor from './FlatTableEditor'
@@ -870,6 +871,10 @@ export default function FlatCanvas() {
             {/* 텍스트 박스 단일 선택 시 전용 AI 플로팅바 (편집 중·발표 중에는 숨김) */}
             {selectedEls.length === 1 && selectedEl && selectedEl.type === 'text' && !editingFlatId && mode !== 'present' && (
               <FlatAiBar element={selectedEl} scale={scale} canvasRef={canvasRef} />
+            )}
+            {/* 이미지 단일 선택 시 전용 AI 디자인 향상 플로팅바 (편집 중·발표 중에는 숨김) */}
+            {selectedEls.length === 1 && selectedEl && selectedEl.type === 'image' && !editingFlatId && mode !== 'present' && (
+              <FlatImageAiBar element={selectedEl} scale={scale} canvasRef={canvasRef} />
             )}
             {selectedEls.length > 1 && !editingFlatId && (
               <FlatGroupOverlay elements={selectedEls} scale={scale}
