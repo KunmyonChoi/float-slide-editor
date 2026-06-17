@@ -196,11 +196,12 @@ const REDESIGN_SYSTEM = `You are an expert information designer for academic pap
 You are given an image of ONE such figure. Analyze its real structure — the components/nodes/rows/columns, their order, the connections/arrows/flow, and the data — then write ONE English image-generation prompt that RE-CREATES the SAME figure as a clean, modern, well-organized version that communicates the same information more clearly.
 
 Rules:
-- Output ONLY the prompt text. No preamble, no quotes, no labels, no markdown.
-- Write the instruction in English, but keep EVERY label, heading, axis title, cell value and number EXACTLY as in the original, in its ORIGINAL language (e.g. Korean). Quote them literally inside the prompt. Do NOT translate, invent, drop or change any value.
+- Output ONLY the prompt text. No preamble, no labels, no markdown.
+- Write the instruction in English, but keep EVERY label, heading, axis title, cell value and number EXACTLY as in the original, in its ORIGINAL language (e.g. Korean). Wrap each text string in double quotes inside the prompt so the renderer reproduces it verbatim. Do NOT translate, invent, drop or change any value.
+- Explicitly instruct that all text must be rendered in crisp, correct, fully legible characters in the original script — including Korean Hangul (e.g. 한글) — with high contrast and clean typography; never garble, distort or replace glyphs.
 - Reproduce the real structure faithfully: same boxes/nodes/rows/columns, same arrows/flow direction, same groupings and hierarchy. Improve clarity (alignment, spacing, consistent shapes, readable type, a coherent limited palette, clear legend) — do NOT add fictional content.
 - Keep it a precise schematic / diagram / chart / table — flat vector, infographic quality, NOT decorative illustration or photo.
-- If a required visual style is provided, apply it while keeping the structure and verbatim text. Keep it under ~140 words.`
+- If a required visual style is provided, apply it while keeping the structure and verbatim text. Keep it under ~150 words.`
 
 /**
  * 도식/다이어그램/표 캡처 → 같은 정보를 더 명확히 재구성하는 영어 이미지 생성 프롬프트.
@@ -264,7 +265,7 @@ export function pickImageSize(model, width, height) {
  * @param {{ model?: string, width?: number, height?: number, size?: string, signal?: AbortSignal }} [opts]
  * @returns {Promise<string>} `data:image/png;base64,...`
  */
-export async function generateImage(prompt, { model, width, height, size, signal } = {}) {
+export async function generateImage(prompt, { model, width, height, size, quality, signal } = {}) {
   const apiKey = getApiKey()
   if (!apiKey) throw new Error('OpenAI API 키가 설정되지 않았습니다. 먼저 키를 입력하세요.')
   const p = (prompt || '').trim()
@@ -277,7 +278,7 @@ export async function generateImage(prompt, { model, width, height, size, signal
     n: 1,
     size: size || generationSize(m, width, height),
   }
-  if (m.startsWith('gpt-image')) body.quality = 'medium' // gpt-image 계열은 b64 기본 반환
+  if (m.startsWith('gpt-image')) body.quality = quality || 'medium' // gpt-image 계열은 b64 기본 반환
   else body.response_format = 'b64_json' // dall-e 계열만 명시해야 b64 반환
 
   let res
@@ -343,6 +344,7 @@ export function buildImageEnhancePrompt(styleDirective) {
 
 CRITICAL constraints:
 - Keep EVERY existing text string EXACTLY as written (verbatim, same language, legible characters); do not translate, add, remove or alter any wording.
+- Render ALL text with crisp, correct, fully legible characters in the ORIGINAL script — including Korean Hangul (e.g. 한글), Chinese or Japanese. Never garble, distort, mojibake, drop strokes, or replace glyphs. Use clean high-contrast typography.
 - Preserve the position, order and arrangement of every text block, icon, chart, photo and shape. Do NOT move, add or delete elements or change the layout.
 - Only elevate the visual style and finish — do not redraw the slide as something different.`
   const d = (styleDirective || '').trim()
@@ -357,7 +359,7 @@ CRITICAL constraints:
  * @param {{ width?: number, height?: number, size?: string, signal?: AbortSignal }} [opts]
  * @returns {Promise<string>} `data:image/png;base64,...`
  */
-export async function editImage(imageDataUrl, prompt, { width, height, size, signal } = {}) {
+export async function editImage(imageDataUrl, prompt, { width, height, size, quality = 'high', signal } = {}) {
   const apiKey = getApiKey()
   if (!apiKey) throw new Error('OpenAI API 키가 설정되지 않았습니다. 먼저 키를 입력하세요.')
   if (!imageDataUrl) throw new Error('편집할 입력 이미지가 없습니다.')
@@ -373,16 +375,17 @@ export async function editImage(imageDataUrl, prompt, { width, height, size, sig
   for (let i = 0; i < candidates.length; i++) {
     const model = candidates[i]
     const isLast = i === candidates.length - 1
+    // gpt-image-2: edits에서 유연 크기(정확 종횡비) 지원 + 입력을 자동 high fidelity 처리
+    //   → input_fidelity 파라미터를 받지 않으므로 보내면 안 된다(보내면 오류).
+    // gpt-image-1.5/1: edits는 프리셋 크기만, input_fidelity=high로 원본 보존.
+    const isImage2 = model.startsWith('gpt-image-2')
     const form = new FormData()
     form.append('model', model)
     form.append('image', blob, 'input.png')
     form.append('prompt', p)
-    // images/edits는 generations와 달리 유연 크기를 지원하지 않고 프리셋만 받는다
-    // (1024x1024 / 1536x1024 / 1024x1536). 대상 종횡비에 가장 가까운 프리셋을 고른다.
-    // 박스와 정확히 안 맞아도 적용 측 objectFit:contain이 잘림을 막는다(레터박스만).
-    form.append('size', size || pickImageSize(model, width, height))
-    form.append('quality', 'medium')
-    form.append('input_fidelity', 'high') // 원본 이미지의 레이아웃/구도/글자를 최대한 유지
+    form.append('size', size || (isImage2 ? flexSize(width, height) : pickImageSize(model, width, height)))
+    form.append('quality', quality)
+    if (!isImage2) form.append('input_fidelity', 'high')
 
     let res
     try {

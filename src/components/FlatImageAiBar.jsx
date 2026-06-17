@@ -92,7 +92,7 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
         if (ctrl.signal.aborted) return
         setPrompt(p)
         setStatus('AI 이미지 생성 중… (수십 초 걸릴 수 있어요)')
-        url = await generateImage(p, { width: element.width, height: element.height, signal: ctrl.signal })
+        url = await generateImage(p, { width: element.width, height: element.height, quality: 'high', signal: ctrl.signal })
       } else {
         p = buildImageEnhancePrompt(directive)
         setPrompt(p)
@@ -121,7 +121,7 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
     try {
       setStatus(method === 'reconstruct' ? 'AI 이미지 생성 중…' : 'AI 디자인 변환 중…')
       const url = method === 'reconstruct'
-        ? await generateImage(p, { width: element.width, height: element.height, signal: ctrl.signal })
+        ? await generateImage(p, { width: element.width, height: element.height, quality: 'high', signal: ctrl.signal })
         : await editImage(cap, p, { width: element.width, height: element.height, signal: ctrl.signal })
       if (ctrl.signal.aborted) return
       setImageUrl(url)
