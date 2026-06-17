@@ -36,10 +36,18 @@ export function isSubtleGradient(bgImage) {
   if (!bgImage.startsWith('radial-gradient')) return false
   // 투명으로 끝나는지 확인: rgba(..., 0) 이 포함되어야 함
   if (!/ 0\)/.test(bgImage)) return false
-  // 모든 rgba alpha 값을 추출하여 최대값 확인
+  // 모든 색상 stop의 alpha 값을 추출하여 최대값 확인.
   const alphas = []
-  for (const m of bgImage.matchAll(/rgba\(\s*\d+\s*,\s*\d+\s*,\s*\d+\s*,\s*([\d.]+)\s*\)/g)) {
+  // rgba(...,a) / hsla(...,a) — 콤마 구분 alpha
+  for (const m of bgImage.matchAll(/(?:rgba|hsla)\(\s*[\d.]+\s*,\s*[\d.]+%?\s*,\s*[\d.]+%?\s*,\s*([\d.]+)\s*\)/g)) {
     alphas.push(parseFloat(m[1]))
+  }
+  // oklch/oklab/lch/lab/hwb/color(... / a) — 슬래시 구분 alpha.
+  // 이게 없으면 선명한 oklch 그래디언트(예: .hm-frame 히트맵)가 rgba 투명 endpoint(alpha 0)만
+  // 잡혀 'subtle'로 오판→배경 통째로 누락된다.
+  for (const m of bgImage.matchAll(/(?:oklch|oklab|lch|lab|hwb|color)\([^)]*\/\s*([\d.]+%?)\s*\)/gi)) {
+    const v = m[1]
+    alphas.push(v.endsWith('%') ? parseFloat(v) / 100 : parseFloat(v))
   }
   if (alphas.length === 0) return false
   return Math.max(...alphas) < SUBTLE_GRADIENT_THRESHOLD
@@ -719,10 +727,17 @@ function getInheritedBorderRadius(el, rect) {
  * 자식은 부모의 stacking context 안에 있으므로 부모의 z-index를 상속받아야 한다.
  */
 function getEffectiveZIndex(el) {
+  // z-index는 클래스 규칙으로 설정되는 경우가 많아(예: .evidence-stamp{z-index:3})
+  // 인라인 스타일만 보면 놓친다. 인라인 우선, 없으면 계산된 z-index를 사용해
+  // 이미지 위에 겹쳐진 라벨/스탬프 등이 이미지에 가려지지 않게 한다.
+  const win = el.ownerDocument && el.ownerDocument.defaultView
   let maxZ = null
   let node = el
   while (node && node.nodeType === Node.ELEMENT_NODE) {
-    const z = node.style.zIndex
+    let z = node.style.zIndex
+    if ((!z || z === 'auto') && win) {
+      try { z = win.getComputedStyle(node).zIndex } catch { z = '' }
+    }
     if (z && z !== 'auto') {
       const parsed = parseInt(z, 10)
       if (!isNaN(parsed) && (maxZ === null || parsed > maxZ)) {
@@ -740,6 +755,7 @@ function buildFlatElement(el, rect, cs, domOrder, forceType, transformScale = 1,
   let type = forceType
   if (!type) {
     if (editorType === 'image') type = 'image'
+    else if (editorType === 'video') type = 'video'
     else if (editorType === 'text') type = 'text'
     else type = 'shape'
   }
@@ -749,6 +765,11 @@ function buildFlatElement(el, rect, cs, domOrder, forceType, transformScale = 1,
   let liMarkerFromBefore = false // <li> 마커가 ::before content에서 온 경우(중복 추출 방지)
   if (type === 'image') {
     content = el.getAttribute('src') || ''
+  } else if (type === 'video') {
+    // 실제 재생 중인 src 우선(번들 미디어 세터가 data-res-id→data:URL로 설정),
+    // 없으면 src 속성 또는 <source> 자식. (자동재생/음소거 등 속성도 보존)
+    content = el.currentSrc || el.getAttribute('src') ||
+      el.querySelector('source')?.getAttribute('src') || ''
   } else if (type === 'text') {
     const rich = getRichTextContent(el)
     content = rich.text
@@ -850,7 +871,12 @@ function buildFlatElement(el, rect, cs, domOrder, forceType, transformScale = 1,
     // → white-space:nowrap으로 일시 전환하여 한 줄일 때의 실제 필요 너비를 측정하고,
     //   현재 너비보다 넓으면 줄바꿈이 발생한 것이므로 너비를 교정한다.
     const brCount = (el.innerHTML || '').match(/<br\s*\/?>/gi)?.length || 0
-    const nlCount = ((el.textContent || '').match(/\n/g) || []).length
+    // textContent의 개행은 white-space가 pre 계열일 때만 실제 줄바꿈이다. normal이면 HTML
+    // 소스 들여쓰기 개행(인라인 span 사이 등)이 렌더 시 공백으로 collapse되므로 줄바꿈으로
+    // 세면 안 된다. (예: .qa-title "Q & A"는 span 사이 소스 개행 때문에 의도된 줄바꿈으로
+    //  오판→nowrap 보정이 누락되어 빠듯한 박스가 flat 렌더에서 줄바꿈됨)
+    const wsPre = cs.whiteSpace === 'pre' || cs.whiteSpace === 'pre-wrap' || cs.whiteSpace === 'pre-line'
+    const nlCount = wsPre ? ((el.textContent || '').match(/\n/g) || []).length : 0
     const intendedBreaks = brCount + nlCount
     // pre/code 블록은 줄바꿈이 의도된 것이므로 스킵
     // (monospace 폰트 사용 여부가 아닌, 실제 pre 태그 기반으로 판별)
@@ -1045,12 +1071,27 @@ function buildFlatElement(el, rect, cs, domOrder, forceType, transformScale = 1,
     }
   }
 
+  let elemX = flexParentX !== null ? flexParentX : rect.left
+  let elemY = rect.top
+  // 회전된 요소: getBoundingClientRect()는 회전 후 축정렬 bbox(예: 6×70 막대를 -45° 회전 →
+  // 약 54×54)를 돌려준다. 그대로 width/height로 쓰고 rotation까지 다시 적용하면 회전이
+  // 이중 적용돼 가는 선이 회전된 사각형이 된다. 회전 시엔 회전 전 레이아웃 크기
+  // (offsetWidth/Height = CSS px = 비스케일 논리 좌표)를 쓰고 bbox 중심 기준으로 배치한다.
+  if (rotation !== 0 && el.offsetWidth > 0 && el.offsetHeight > 0) {
+    const cx = rect.left + rect.width / 2
+    const cy = rect.top + rect.height / 2
+    width = el.offsetWidth
+    height = el.offsetHeight
+    elemX = cx - width / 2
+    elemY = cy - height / 2
+  }
+
   const result = {
     id: nextFlatId(),
     sourceId: el.getAttribute('data-editor-id'),
     type,
-    x: flexParentX !== null ? flexParentX : rect.left,
-    y: rect.top,
+    x: elemX,
+    y: elemY,
     width,
     height,
     rotation,
@@ -1070,6 +1111,22 @@ function buildFlatElement(el, rect, cs, domOrder, forceType, transformScale = 1,
   if (pseudoBefore) result._pseudoBefore = pseudoBefore
   const pseudoAfter = extractPseudoElement(el, rect, '::after')
   if (pseudoAfter) result._pseudoAfter = pseudoAfter
+
+  // inline-flex/flex 요소에 선두 ::before 장식(불릿)이 가로로 배치되고 직접 텍스트가 있으면,
+  // 텍스트 박스를 불릿+gap만큼 오른쪽으로 밀어 겹침을 막는다. 불릿은 별도 요소로 왼쪽에 남는다.
+  // (예: .chip — display:inline-flex; gap:14px; ::before 원형 불릿 + "SOLUTION / ARCHITECTURE")
+  if (type === 'text' && content && pseudoBefore && pseudoBefore.w > 0) {
+    const isFlex = cs.display === 'flex' || cs.display === 'inline-flex'
+    const beforeAtLeft = Math.abs(pseudoBefore.x - rect.left) < 2 && pseudoBefore.h < rect.height + 2
+    if (isFlex && beforeAtLeft) {
+      const gap = parseFloat(cs.columnGap) || parseFloat(cs.gap) || 0
+      const offset = pseudoBefore.w + gap
+      if (offset > 0 && offset < result.width) {
+        result.x += offset
+        result.width -= offset
+      }
+    }
+  }
 
   return result
 }
@@ -1183,6 +1240,16 @@ function extractPseudoElement(el, parentRect, pseudo) {
     out.color = pcs.color
     out.fontSize = pcs.fontSize
     out.fontFamily = pcs.fontFamily
+    // 의사요소가 flex로 글자를 중앙정렬하는 경우(예: .glass::after '?' — inset:0 +
+    // display:flex; align-items/justify-content:center) 정렬을 보존한다. 없으면 flat
+    // 렌더러가 좌상단에 붙여 '?'가 원 중앙에서 벗어난다.
+    if (pcs.display === 'flex' || pcs.display === 'inline-flex') {
+      out.display = pcs.display
+      out.alignItems = pcs.alignItems
+      out.justifyContent = pcs.justifyContent
+      if (pcs.justifyContent === 'center') out.textAlign = 'center'
+      else if (pcs.justifyContent === 'flex-end' || pcs.justifyContent === 'end') out.textAlign = 'right'
+    }
     // 배지(예: "AI" 라벨)의 padding 보존 — w/h를 border-box로 확장했으므로
     // box-sizing:border-box인 flat 렌더러에서 텍스트가 안쪽에 배치된다.
     if (hasPadding) {
@@ -1566,6 +1633,10 @@ function pseudoToFlatElement(pb, baseSourceId, which, domOrder, originalZIndex) 
     if (pb.fontFamily) styles.fontFamily = pb.fontFamily
     if (pb.padding) styles.padding = pb.padding
     if (pb.textAlign) styles.textAlign = pb.textAlign
+    // flex 중앙정렬 의사요소(예: '?')의 정렬 보존
+    if (pb.display) styles.display = pb.display
+    if (pb.alignItems) styles.alignItems = pb.alignItems
+    if (pb.justifyContent) styles.justifyContent = pb.justifyContent
   }
   return {
     id: nextFlatId(),
@@ -1895,6 +1966,13 @@ export function extractFlatElements(doc, win) {
       result.push(buildFlatElement(el, rect, cs, zCounter++, undefined, transformScale, originRect))
     } else if (editorType === 'image') {
       result.push(buildFlatElement(el, rect, cs, zCounter++, undefined, transformScale, originRect))
+    } else if (editorType === 'video') {
+      const vEl = buildFlatElement(el, rect, cs, zCounter++, undefined, transformScale, originRect)
+      // <video> 재생 속성 보존 (렌더러/익스포트가 참조)
+      vEl.autoplay = el.autoplay || el.hasAttribute('autoplay')
+      vEl.loop = el.loop || el.hasAttribute('loop')
+      vEl.muted = el.muted || el.hasAttribute('muted')
+      result.push(vEl)
     } else if (editorType === 'container') {
       // flex 컨테이너(예: .win-bar, .live-flag, .kicker): 자식들이 독립 위치를
       // 가지므로 병합하지 않는다. 컨테이너 시각 속성이 있으면 shape로, 컨테이너
@@ -2375,6 +2453,39 @@ function detectTransformContext(doc) {
     if (!el.querySelector('[data-editor-id]')) {
       testEl = el
       break
+    }
+  }
+
+  // 방법 -1: deck-stage(커스텀 무대 웹컴포넌트) 감지.
+  //   deck-stage는 scale을 shadow DOM 내부 래퍼에 적용하므로 light-DOM 조상 transform
+  //   탐색(방법 1)으로는 못 잡고, :host가 position:fixed라 body가 0 높이가 되어 캔버스가
+  //   1280×0으로 폴백된다. 게다가 방법 2는 scale만 잡고 origin=null을 반환해 모든 요소가
+  //   캔버스 밖으로 밀려 빈 슬라이드가 된다.
+  //   → 현재 활성 섹션(data-deck-active)을 무대로 보고 scale/origin/캔버스를 직접 계산한다.
+  //     (offsetWidth/Height는 스케일 전 CSS 크기 = 논리 슬라이드 크기 1920×1080)
+  {
+    const deckStage = doc.querySelector('deck-stage')
+    if (deckStage) {
+      const activeSec = deckStage.querySelector(':scope > section[data-deck-active]') ||
+        deckStage.querySelector(':scope > section')
+      if (activeSec) {
+        const rect = activeSec.getBoundingClientRect()
+        const offsetW = activeSec.offsetWidth
+        const offsetH = activeSec.offsetHeight
+        if (offsetW > 1 && offsetH > 1 && rect.width > 1) {
+          let scale = rect.width / offsetW
+          if (!(scale > 0.1 && scale < 10)) scale = 1
+          return {
+            transformScale: scale,
+            originRect: {
+              screenLeft: rect.left,
+              screenTop: rect.top,
+              cssWidth: offsetW,
+              cssHeight: offsetH,
+            },
+          }
+        }
+      }
     }
   }
 

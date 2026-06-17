@@ -205,6 +205,11 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
     const muted = element.muted ?? true
     const hideControls = element.hideControls ?? false
 
+    // 직접 미디어 파일 URL(data:/blob:/http .mp4 등)인지 — 임베드(YouTube/Vimeo)와 구분.
+    // 임베드는 <iframe>, 직접 파일은 네이티브 <video>로 재생한다(import된 <video> 추출 포함).
+    const isEmbed = /youtube\.com|youtu\.be|vimeo\.com|\/embed\//i.test(content || '')
+    const isDirectVideo = !BlobStore.isIdbRef(content) && !isEmbed && !!content
+
     // YouTube/Vimeo embed URL에 파라미터 추가
     let embedSrc = content
     if (!BlobStore.isIdbRef(content)) {
@@ -241,6 +246,16 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
         }}>
           {BlobStore.isIdbRef(content)
             ? <IdbVideo src={content} controls={isPresent && !hideControls} autoplay={isPresent && autoplay} loop={loop} muted={muted} />
+            : isDirectVideo
+            ? <video
+                src={content}
+                style={{ width: '100%', height: '100%', objectFit: 'cover', border: 'none', pointerEvents: (isPresent && !hideControls) ? 'auto' : 'none' }}
+                controls={isPresent && !hideControls}
+                autoPlay={isPresent && autoplay}
+                loop={loop}
+                muted={muted}
+                playsInline
+              />
             : <>
                 <iframe
                   src={isPresent ? embedSrc : content}

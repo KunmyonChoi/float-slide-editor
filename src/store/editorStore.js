@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { prepareHtmlForEditor, nextId, classifyTag } from '../core/ElementRegistry'
 import { HistoryStack } from '../core/HistoryStack'
 import { resolveAlignment, readCurrentAlignment } from '../core/AlignmentResolver'
+import { isBundlerHtml, unpackBundlerHtml } from '../core/BundlerUnpacker'
 
 const _history = new HistoryStack()
 
@@ -115,6 +116,23 @@ export const useEditorStore = create((set, get) => ({
   htmlImported: false,
 
   loadHtml(fullHtml, { imported = false } = {}) {
+    // standalone 번들 포맷이면 먼저 풀어(에셋 인라인) 실제 덱 HTML을 얻는다.
+    // 풀기는 비동기(gzip 해제)이므로 번들일 때만 async 경로로 분기하고, 일반 HTML은
+    // 기존처럼 동기로 처리한다(테스트/호출부 호환 유지).
+    if (isBundlerHtml(fullHtml)) {
+      unpackBundlerHtml(fullHtml)
+        .then((unpacked) => get()._applyLoadedHtml(unpacked || fullHtml, imported))
+        .catch((e) => {
+          console.warn('[loadHtml] 번들 풀기 실패, 원본으로 로드:', e?.message)
+          get()._applyLoadedHtml(fullHtml, imported)
+        })
+      return
+    }
+    get()._applyLoadedHtml(fullHtml, imported)
+  },
+
+  /** loadHtml의 동기 본체 — prepare + 상태 설정 */
+  _applyLoadedHtml(fullHtml, imported) {
     const { html, elements } = prepareHtmlForEditor(fullHtml)
     // 덱이 의존하는 외부 stylesheet(<link rel="stylesheet">)를 메인 문서에도 주입.
     // flat presenter는 iframe이 아닌 메인 React 트리에 렌더되므로

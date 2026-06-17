@@ -6,10 +6,12 @@
 
 export const EDITABLE_TAGS = new Set(['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'span', 'li', 'td', 'th', 'a', 'strong', 'em', 'label', 'figcaption', 'pre', 'code', 'blockquote', 'dt', 'dd'])
 export const IMAGE_TAGS = new Set(['img'])
+export const VIDEO_TAGS = new Set(['video'])
 export const CONTAINER_TAGS = new Set(['div', 'section', 'article', 'header', 'footer', 'main', 'aside', 'nav', 'figure', 'table', 'thead', 'tbody', 'tfoot', 'tr', 'ul', 'ol', 'dl', 'details', 'summary'])
 
 export function classifyTag(tag) {
   if (IMAGE_TAGS.has(tag)) return 'image'
+  if (VIDEO_TAGS.has(tag)) return 'video'
   if (EDITABLE_TAGS.has(tag)) return 'text'
   if (CONTAINER_TAGS.has(tag)) return 'container'
   return null
@@ -178,6 +180,36 @@ const EDITOR_AGENT = `
   /* ── 페이지 변경 감시 ── */
   var __feIsReveal = false;
 
+  /* 커스텀 덱 컴포넌트(deck-stage 등): goTo/next/prev + index/length API 노출.
+     자체 내비게이션을 갖고 있으므로 DOM 조작 없이 그 API를 호출한다. */
+  function __feDeckEl() {
+    var d = document.querySelector('deck-stage');
+    if (d && typeof d.goTo === 'function' && typeof d.length === 'number') return d;
+    return null;
+  }
+
+  /* 폴백: reveal/.slide/deck-API가 모두 없을 때 최상위 반복 <section>을 슬라이드로 취급.
+     (단일 컨테이너의 직속 section 우선, 없으면 body 직속) */
+  function __feSectionSlides() {
+    var host = document.querySelector('deck-stage');
+    if (host) {
+      var hs = host.querySelectorAll(':scope > section');
+      if (hs.length >= 2) return hs;
+    }
+    var bs = document.body ? document.body.querySelectorAll(':scope > section') : [];
+    return bs.length >= 2 ? bs : null;
+  }
+
+  /* 섹션 폴백 네비게이션: 한 번에 한 섹션만 표시 (덱 CSS의 자연 display 복원) */
+  var __feSectionIdx = 0;
+  function __feShowSection(secs, idx) {
+    for (var i = 0; i < secs.length; i++) {
+      if (i === idx) __feShowSlide(secs[i]);
+      else secs[i].style.display = 'none';
+    }
+    __feSectionIdx = idx;
+  }
+
   function __feDetectPage() {
     if (__feIsReveal) {
       var R = window.Reveal;
@@ -213,19 +245,33 @@ const EDITOR_AGENT = `
       }, '*');
       return;
     }
+    /* 커스텀 덱 API(deck-stage 등) */
+    var deck = __feDeckEl();
+    if (deck) {
+      window.parent.postMessage({
+        type: 'fe:pageChange',
+        page: deck.index || 0,
+        total: deck.length || 1,
+      }, '*');
+      return;
+    }
     /* 기본 .slide.active 패턴 */
     var slides = document.querySelectorAll('.slide');
-    if (slides.length === 0) return;
-    var total = slides.length;
-    var current = 0;
-    for (var i = 0; i < slides.length; i++) {
-      if (slides[i].classList.contains('active')) { current = i; break; }
+    if (slides.length > 0) {
+      var total = slides.length;
+      var current = 0;
+      for (var i = 0; i < slides.length; i++) {
+        if (slides[i].classList.contains('active')) { current = i; break; }
+      }
+      window.parent.postMessage({ type: 'fe:pageChange', page: current, total: total }, '*');
+      return;
     }
-    window.parent.postMessage({
-      type: 'fe:pageChange',
-      page: current,
-      total: total,
-    }, '*');
+    /* 최상위 <section> 폴백 */
+    var secs = __feSectionSlides();
+    if (secs) {
+      var cur = Math.min(__feSectionIdx, secs.length - 1);
+      window.parent.postMessage({ type: 'fe:pageChange', page: cur < 0 ? 0 : cur, total: secs.length }, '*');
+    }
   }
 
   /* reveal.js 바인딩 */
@@ -257,15 +303,57 @@ const EDITOR_AGENT = `
         }
       }, 200);
       setTimeout(function () { clearInterval(poll); }, 30000);
-    } else {
-      /* 기본 .slide 패턴 */
-      document.querySelectorAll('.slide').forEach(function (sl) {
-        __feMo.observe(sl, { attributes: true, attributeFilter: ['class'] });
-      });
-      setTimeout(__feDetectPage, 100);
+      return;
     }
+    /* deck-stage(커스텀 요소 업그레이드)·.slide·최상위 section — 비동기 로드 대응 폴링.
+       deck-stage 태그가 있으면 그 API 업그레이드를 기다린다(아직 미업그레이드 상태에서
+       그 자식 section을 폴백으로 오인해 display를 건드리지 않도록 우선 처리). */
+    var tries = 0;
+    var poll2 = setInterval(function () {
+      tries++;
+      var deckTag = document.querySelector('deck-stage');
+      if (deckTag) {
+        if (typeof deckTag.goTo === 'function' && (deckTag.length | 0) >= 1) {
+          clearInterval(poll2);
+          __feDetectPage();
+        } else if (tries > 50) {
+          clearInterval(poll2);
+          __feDetectPage();
+        }
+        return;
+      }
+      var dotSlides = document.querySelectorAll('.slide');
+      if (dotSlides.length > 0) {
+        clearInterval(poll2);
+        dotSlides.forEach(function (sl) {
+          __feMo.observe(sl, { attributes: true, attributeFilter: ['class'] });
+        });
+        __feDetectPage();
+        return;
+      }
+      var secs = __feSectionSlides();
+      if (secs) {
+        clearInterval(poll2);
+        __feShowSection(secs, 0); /* 한 번에 한 섹션만 표시 */
+        __feDetectPage();
+        return;
+      }
+      if (tries > 50) { clearInterval(poll2); __feDetectPage(); } /* ~10s 후 포기 */
+    }, 200);
   }
   __feInitPageDetection();
+
+  /* deck-stage가 자체 네비게이션(키보드/클릭/goTo)으로 슬라이드를 바꾸면
+     window로 {slideIndexChanged,deckTotal}을 브로드캐스트한다 → 부모에 페이지 변경 전달. */
+  window.addEventListener('message', function (e) {
+    if (e.data && typeof e.data.slideIndexChanged === 'number') {
+      window.parent.postMessage({
+        type: 'fe:pageChange',
+        page: e.data.slideIndexChanged,
+        total: e.data.deckTotal || 1,
+      }, '*');
+    }
+  });
 
   /* ── 부모로부터 명령 수신 ── */
   window.addEventListener('message', function (e) {
@@ -287,6 +375,28 @@ const EDITOR_AGENT = `
           else if (delta < 0) window.Reveal.prev();
           else if (e.data.page != null) window.Reveal.slide(e.data.page, e.data.v || 0);
         }
+      } else if (__feDeckEl()) {
+        /* 커스텀 덱 API(deck-stage 등): 자체 네비게이션 호출 (페이지 보고는 브로드캐스트가 처리) */
+        var deck = __feDeckEl();
+        if (e.data.direction === 'right') deck.next();
+        else if (e.data.direction === 'left') deck.prev();
+        else if (e.data.direction) { /* up/down 무시 (선형 덱) */ }
+        else if (e.data.page != null) deck.goTo(e.data.page);
+        else if ((e.data.delta || 0) > 0) deck.next();
+        else if ((e.data.delta || 0) < 0) deck.prev();
+      } else if (__feSectionSlides()) {
+        /* 최상위 <section> 폴백: 한 번에 한 섹션 표시 */
+        var secs = __feSectionSlides();
+        var curS = Math.min(Math.max(__feSectionIdx, 0), secs.length - 1);
+        var targetS;
+        if (e.data.page != null) targetS = e.data.page;
+        else if (e.data.direction === 'right') targetS = curS + 1;
+        else if (e.data.direction === 'left') targetS = curS - 1;
+        else if (e.data.direction) targetS = curS; /* up/down 무시 */
+        else targetS = curS + (e.data.delta || 0);
+        if (targetS < 0 || targetS >= secs.length || targetS === curS) return;
+        __feShowSection(secs, targetS);
+        __feDetectPage();
       } else {
         /* 기본 .slide 패턴: 직접 DOM 조작 */
         var slides = document.querySelectorAll('.slide');
@@ -316,6 +426,11 @@ const EDITOR_AGENT = `
       var idx = e.data.index != null ? e.data.index : 0;
       if (__feIsReveal) {
         window.Reveal.slide(idx, 0);
+      } else if (__feDeckEl()) {
+        __feDeckEl().goTo(idx);
+      } else if (__feSectionSlides()) {
+        var gsecs = __feSectionSlides();
+        if (idx >= 0 && idx < gsecs.length) { __feShowSection(gsecs, idx); __feDetectPage(); }
       } else {
         var slides = document.querySelectorAll('.slide');
         if (slides.length === 0) return;
@@ -402,6 +517,8 @@ export function prepareHtmlForEditor(fullHtml) {
 
     const type = IMAGE_TAGS.has(tag)
       ? 'image'
+      : VIDEO_TAGS.has(tag)
+      ? 'video'
       : EDITABLE_TAGS.has(tag)
       ? 'text'
       : CONTAINER_TAGS.has(tag)
