@@ -302,9 +302,15 @@ export default function FlatCanvas() {
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return
       if (e.target.contentEditable === 'true') return
 
+      // 1순위: 내부 요소 클립보드가 있으면 keydown(pasteElement)이 처리.
+      // OS 클립보드(이미지/텍스트)보다 우선 — 안 그러면 Ctrl+C로 복사한 요소와
+      // 직전에 캡처한 외부 이미지가 함께 붙는 중복 붙여넣기가 발생한다.
+      const { clipboard } = useFlatStore.getState()
+      if (clipboard && clipboard.length > 0) return
+
       const items = [...(e.clipboardData?.items || [])]
 
-      // 1순위: 이미지
+      // 2순위: 이미지
       const imageItem = items.find(i => i.type.startsWith('image/'))
       if (imageItem) {
         e.preventDefault()
@@ -312,10 +318,6 @@ export default function FlatCanvas() {
         if (file) insertImageFromFile(file)
         return
       }
-
-      // 2순위: 내부 요소 클립보드가 있으면 요소 붙여넣기 (keydown에서 처리)
-      const { clipboard } = useFlatStore.getState()
-      if (clipboard && clipboard.length > 0) return
 
       // 3순위: 텍스트 → 새 텍스트 요소 생성
       const text = e.clipboardData?.getData('text/plain')
