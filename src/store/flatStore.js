@@ -252,6 +252,9 @@ export const useFlatStore = create((set, get) => ({
   canRedo: false,
   /** 복사/붙여넣기용 클립보드 */
   clipboard: null,
+  /** 현재 프로젝트 파일명/핸들 — 열기·저장 시 기억해 같은 파일에 재저장(Ctrl+S) */
+  projectFileName: null,
+  projectFileHandle: null,
   /** 스타일 복사용 클립보드 */
   styleClipboard: null,
   /** 그리기 모드: null | 'line' | 'polyline' | 'polygon' */
@@ -1150,6 +1153,33 @@ export const useFlatStore = create((set, get) => ({
     const { selectedFlatIds, flatElements } = get()
     const copied = flatElements.filter(e => selectedFlatIds.includes(e.id))
     if (copied.length > 0) set({ clipboard: structuredClone(copied) })
+  },
+
+  /** 현재 프로젝트 파일(핸들/이름) 기억 — 열기·저장 시 호출. null이면 초기화. */
+  setProjectFile(handle, name) {
+    set({ projectFileHandle: handle || null, projectFileName: name || null })
+  },
+
+  /**
+   * 프로젝트 저장. 기억된 파일 핸들이 있으면 같은 파일에 덮어쓰고(=Ctrl+S),
+   * 없거나 saveAs=true면 저장 팝업으로 새 파일을 만든 뒤 그 파일을 기억한다.
+   * @param {{ saveAs?: boolean }} [opts]
+   * @returns {Promise<boolean>} 저장 성공 여부
+   */
+  async saveProject({ saveAs = false } = {}) {
+    const st = get()
+    const { serializeProject } = await import('../core/ProjectSerializer.js')
+    const { saveBlob } = await import('../core/FilePicker.js')
+    const blob = await serializeProject(get())
+    const handle = (!saveAs && st.projectFileHandle) ? st.projectFileHandle : null
+    const used = await saveBlob(blob, {
+      suggestedName: st.projectFileName || 'project.flatproj',
+      description: 'Genitor 프로젝트',
+      accept: { 'application/octet-stream': ['.flatproj'] },
+      handle,
+    })
+    if (used) set({ projectFileHandle: used, projectFileName: used.name || st.projectFileName })
+    return !!used
   },
 
   /** 선택된 요소 잘라내기 (복사 + 삭제) — 다중 지원 */
