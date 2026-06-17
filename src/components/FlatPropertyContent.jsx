@@ -527,6 +527,24 @@ function OrderSection({ el }) {
 }
 
 function PositionSection({ el, update, preview }) {
+  // 캔버스에 꽉 채우기 (위치 0,0 + 캔버스 크기)
+  const fillCanvas = () => {
+    const cs = useFlatStore.getState().canvasSize
+    update({ x: 0, y: 0, width: cs.w, height: cs.h })
+  }
+  // 이미지 원본(실제 픽셀) 크기로 복원 — 현재 중심을 유지한 채 자연 크기 적용
+  const originalSize = async () => {
+    if (el.type !== 'image' || !el.content) return
+    const src = BlobStore.isIdbRef(el.content) ? await BlobStore.getUrl(BlobStore.parseRef(el.content)) : el.content
+    const img = new Image()
+    img.onload = () => {
+      const nw = img.naturalWidth, nh = img.naturalHeight
+      if (!nw || !nh) return
+      const cx = el.x + el.width / 2, cy = el.y + el.height / 2
+      update({ x: Math.round(cx - nw / 2), y: Math.round(cy - nh / 2), width: nw, height: nh })
+    }
+    img.src = src
+  }
   return (
     <div>
       <SectionTitle>크기 및 위치</SectionTitle>
@@ -536,8 +554,50 @@ function PositionSection({ el, update, preview }) {
         <NumInput label="W" value={el.width} onChange={v => update({ width: v })} onPreview={preview && (v => preview({ width: v }))} min={1} />
         <NumInput label="H" value={el.height} onChange={v => update({ height: v })} onPreview={preview && (v => preview({ height: v }))} min={1} />
         <NumInput label="회전" value={el.rotation || 0} onChange={v => update({ rotation: v })} onPreview={preview && (v => preview({ rotation: v }))} unit="°" />
+        {/* 화면 채우기 / 원본 크기 — 아이콘 버튼(공간 절약) */}
+        <div className="flex items-end gap-1">
+          <button
+            type="button"
+            onClick={fillCanvas}
+            title="화면 채우기 (캔버스에 꽉 채움)"
+            className="flex items-center justify-center px-2 py-1.5 rounded-lg bg-white/5 text-slate-300 border border-white/10 hover:bg-white/10 transition-colors"
+          >
+            <FillCanvasIcon />
+          </button>
+          {el.type === 'image' && (
+            <button
+              type="button"
+              onClick={originalSize}
+              title="원본 크기 (이미지 실제 픽셀 크기로)"
+              className="flex items-center justify-center px-2 py-1.5 rounded-lg bg-white/5 text-slate-300 border border-white/10 hover:bg-white/10 transition-colors"
+            >
+              <OriginalSizeIcon />
+            </button>
+          )}
+        </div>
       </div>
     </div>
+  )
+}
+
+function FillCanvasIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M8 3H5a2 2 0 0 0-2 2v3" />
+      <path d="M16 3h3a2 2 0 0 1 2 2v3" />
+      <path d="M8 21H5a2 2 0 0 1-2-2v-3" />
+      <path d="M16 21h3a2 2 0 0 0 2-2v-3" />
+    </svg>
+  )
+}
+
+function OriginalSizeIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="3" y="3" width="18" height="18" rx="2" />
+      <circle cx="8.5" cy="8.5" r="1.5" />
+      <path d="M21 15l-5-5L5 21" />
+    </svg>
   )
 }
 
