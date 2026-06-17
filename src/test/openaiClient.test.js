@@ -268,6 +268,20 @@ describe('analyzeImageForRedesign (도식/표 내용 재구성)', () => {
     const text = JSON.parse(fetchMock.mock.calls[0][1].body).messages[1].content[0].text
     expect(text).not.toContain('Required visual style')
   })
+
+  it('강조 방향(direction)을 user 텍스트에 주입(미지정이면 생략)', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(okResponse('x'))
+    vi.stubGlobal('fetch', fetchMock)
+    await analyzeImageForRedesign('data:image/png;base64,AAA', { direction: '데이터 흐름을 단계별로 강조' })
+    let text = JSON.parse(fetchMock.mock.calls[0][1].body).messages[1].content[0].text
+    expect(text).toContain('EMPHASIZE')
+    expect(text).toContain('데이터 흐름을 단계별로 강조')
+
+    fetchMock.mockClear()
+    await analyzeImageForRedesign('data:image/png;base64,AAA')
+    text = JSON.parse(fetchMock.mock.calls[0][1].body).messages[1].content[0].text
+    expect(text).not.toContain('EMPHASIZE')
+  })
 })
 
 describe('buildImageEnhancePrompt (이미지 디자인 향상)', () => {
