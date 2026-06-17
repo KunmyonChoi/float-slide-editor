@@ -3,7 +3,7 @@ import { useFlatStore } from '../store/flatStore'
 import { useEditorStore } from '../store/editorStore'
 import { exportFlatHtml, exportFlatHtmlAllPages, downloadHtml } from '../core/FlatExporter'
 import { openAiSettings } from './AiSettingsModal'
-import { saveBlob, openFile } from '../core/FilePicker'
+import { openFile } from '../core/FilePicker'
 import { confirmDialog } from './ConfirmDialog'
 
 const ACCEPT_FLATPROJ = { 'application/octet-stream': ['.flatproj'] }
@@ -59,6 +59,7 @@ export default function FileMenu({ fallbackSample }) {
     if (!file) return
     const text = await file.text()
     clearPageCache()
+    useFlatStore.getState().setProjectFile(null, null) // .flatproj 아님 → 재저장 대상 초기화
     loadHtml(text, { imported: true })
   }, [clearPageCache, loadHtml])
 
@@ -66,6 +67,7 @@ export default function FileMenu({ fallbackSample }) {
   const handleLoadSample = useCallback(() => {
     setOpen(false)
     clearPageCache()
+    useFlatStore.getState().setProjectFile(null, null)
     loadHtml(fallbackSample, { imported: true })
   }, [clearPageCache, loadHtml, fallbackSample])
 
@@ -89,18 +91,22 @@ export default function FileMenu({ fallbackSample }) {
     useFlatStore.getState().startScratchProject('title')
   }, [hasContent, clearPageCache])
 
-  // 프로젝트 저장 (ZIP 패키지) — 시스템 저장 팝업으로 파일명 선택
+  // 프로젝트 저장 — 기억된 파일이 있으면 같은 파일에 덮어쓰기, 없으면 저장 팝업(Ctrl+S와 동일)
   const handleSaveProject = useCallback(async () => {
     setOpen(false)
-    const { serializeProject } = await import('../core/ProjectSerializer.js')
-    const blob = await serializeProject(useFlatStore.getState())
-    await saveBlob(blob, { suggestedName: 'project.flatproj', description: 'Genitor 프로젝트', accept: ACCEPT_FLATPROJ })
+    await useFlatStore.getState().saveProject()
   }, [])
 
-  // 프로젝트 열기 — 확장자 필터(.flatproj)
+  // 다른 이름으로 저장 — 항상 저장 팝업으로 새 파일
+  const handleSaveProjectAs = useCallback(async () => {
+    setOpen(false)
+    await useFlatStore.getState().saveProject({ saveAs: true })
+  }, [])
+
+  // 프로젝트 열기 — 확장자 필터(.flatproj). 파일명/핸들을 기억해 재저장에 사용.
   const handleOpenProject = useCallback(async () => {
     setOpen(false)
-    const file = await openFile({ description: 'Genitor 프로젝트', accept: ACCEPT_FLATPROJ, acceptAttr: '.flatproj' })
+    const { file, handle } = await openFile({ description: 'Genitor 프로젝트', accept: ACCEPT_FLATPROJ, acceptAttr: '.flatproj', withHandle: true })
     if (!file) return
     const { loadProjectFile } = await import('../core/ProjectSerializer.js')
     try {
@@ -108,6 +114,7 @@ export default function FileMenu({ fallbackSample }) {
       loadAllPages(data.pages, data.currentPageKey)
       useFlatStore.getState().setCustomTheme(data.customTheme) // 사용자정의 테마 복원
       useFlatStore.getState().setThemeId(data.themeId) // 저장된 테마 선택 복원
+      useFlatStore.getState().setProjectFile(handle, file.name) // 같은 파일에 재저장하도록 기억
       // flat 프로젝트는 원본 HTML이 없으므로 'Flat 재생성' 게이트를 닫는다.
       useEditorStore.getState().setHtmlImported(false)
       const { viewMode } = useFlatStore.getState()
@@ -243,7 +250,8 @@ export default function FileMenu({ fallbackSample }) {
   const ITEMS = [
     { id: 'newProject', label: '새 프로젝트', action: handleNewProject },
     { id: 'sepNew', type: 'separator' },
-    { id: 'saveProject', label: '프로젝트 저장', shortcut: '.flatproj', action: handleSaveProject, disabled: !hasContent },
+    { id: 'saveProject', label: '프로젝트 저장', shortcut: 'Ctrl+S', action: handleSaveProject, disabled: !hasContent },
+    { id: 'saveProjectAs', label: '다른 이름으로 저장', action: handleSaveProjectAs, disabled: !hasContent },
     { id: 'openProject', label: '프로젝트 열기', action: handleOpenProject },
     { id: 'sep1', type: 'separator' },
     { id: 'export', label: '내보내기', submenu: 'export', disabled: !hasContent,

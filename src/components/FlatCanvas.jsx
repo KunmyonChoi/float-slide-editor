@@ -418,6 +418,13 @@ export default function FlatCanvas() {
         return
       }
 
+      // Ctrl/Cmd+S → 프로젝트 저장(같은 파일에 재저장). 편집 중·입력 포커스와 무관하게 동작.
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.code === 'KeyS') {
+        e.preventDefault()
+        useFlatStore.getState().saveProject()
+        return
+      }
+
       if (useFlatStore.getState().editingFlatId) return  // 텍스트 편집 중
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return
       if (e.target.contentEditable === 'true') return
