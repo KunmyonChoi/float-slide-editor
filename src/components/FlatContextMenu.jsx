@@ -205,6 +205,8 @@ export default function FlatContextMenu({ x, y, canvasX, canvasY, onClose }) {
       width: w, height: h,
       content: embedUrl,
       isRich: false, merged: false,
+      // 기본 옵션: 자동 재생 on, 반복·음소거 off
+      autoplay: true, loop: false, muted: false,
       styles: { ...DEFAULT_STYLES, borderRadius: '8px' },
     })
   }, [canvasSize, insertCustomElement])
