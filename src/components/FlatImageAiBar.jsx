@@ -1,40 +1,47 @@
-import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { useFlatStore } from '../store/flatStore'
-import { hasApiKey, editImage, generateImage, analyzeImageForRedesign, buildImageEnhancePrompt } from '../core/OpenAIClient'
+import { hasApiKey, editImage, generateImage, analyzeImageForDiagram, buildImageEnhancePrompt } from '../core/OpenAIClient'
 import { captureElementRegion } from '../core/captureCanvasRegion'
+import { buildDiagramElements, DIAGRAM_VARIANT_COUNT } from '../core/diagramLayout'
 import { openAiSettings } from './AiSettingsModal'
 import { INFOGRAPHIC_STYLES } from '../core/aiImageStyles'
+import DiagramPreview from './DiagramPreview'
+
+// 선택 배경(장식) 생성 프롬프트 — 텍스트/경쟁 요소 없는 은은한 배경.
+const BG_PROMPT = 'A clean, minimal, subtle abstract background for a slide. Soft light gradient, very low contrast, lots of empty space. No text, no icons, no charts, no prominent shapes.'
 
 /**
  * FlatImageAiBar — 이미지 요소를 단일 선택했을 때 뜨는 전용 AI 플로팅바.
  *
  * 두 가지 액션:
  *  - "디자인 향상"(enhance): 영역을 캡처해 image-to-image로 글자·요소 위치는 유지한 채
- *    시각 스타일만 끌어올린다(editImage, input_fidelity high).
- *  - "내용 재구성"(reconstruct): 논문 도식/표 등을 비전 분석해 같은 정보를 더 명확히
- *    표현하도록 재구성한 이미지를 새로 생성한다(analyzeImageForRedesign → generateImage).
- * 미리보기(적용/재생성/취소)를 거쳐 **같은 id·위치·크기로 인플레이스 교체**한다(되돌리기 가능).
- * 결과 종횡비가 박스와 어긋나도 잘리지 않도록 objectFit:contain으로 적용한다.
+ *    시각 스타일만 끌어올린다(editImage). 결과는 같은 자리에 이미지로 교체.
+ *  - "내용 재구성"(reconstruct): 도식/플로우를 비전 분석해 노드+간선 그래프(JSON)로 추출하고,
+ *    이를 **편집 가능한 카드(text)+화살표(shape) 요소**로 재구성한다(diagramLayout).
+ *    후보(variant) 여러 개 + 원본/재구성 비교 후, 원본 이미지를 그 요소들로 교체(undo 1회).
  *
  * 구조는 텍스트용 FlatAiBar와 동일(포털 + 화면 좌표 배치).
  */
 export default function FlatImageAiBar({ element, scale, canvasRef }) {
   // 'idle' | 'compose' | 'loading' | 'preview' | 'error'
-  // compose: 내용 재구성 전 '강조 방향' 입력 단계
   const [phase, setPhase] = useState('idle')
-  // 'enhance'(디자인 향상) | 'reconstruct'(내용 재구성) — 마지막 실행 모드(재생성/표시에 사용)
+  // 'enhance'(디자인 향상) | 'reconstruct'(내용 재구성)
   const [method, setMethod] = useState('enhance')
   const [styleId, setStyleId] = useState('original')
   const [emphasis, setEmphasis] = useState('') // 내용 재구성 강조 방향(선택)
+  const [bgOn, setBgOn] = useState(false)       // 내용 재구성: 장식 배경 이미지 추가(선택)
   const [status, setStatus] = useState('')
-  const [prompt, setPrompt] = useState('')
-  const [imageUrl, setImageUrl] = useState('')
+  const [prompt, setPrompt] = useState('')      // enhance 전용 변환 지시
+  const [imageUrl, setImageUrl] = useState('')  // enhance 결과
+  const [diagramSpec, setDiagramSpec] = useState(null) // reconstruct 분석 결과(그래프)
+  const [bgUrl, setBgUrl] = useState('')        // reconstruct 배경 이미지(선택)
+  const [selectedVariant, setSelectedVariant] = useState(0)
+  const [showBefore, setShowBefore] = useState(false) // 원본/재구성 비교 토글
   const [error, setError] = useState('')
-  const [zoom, setZoom] = useState(false) // 미리보기 크게 보기(라이트박스)
+  const [zoom, setZoom] = useState(false)       // enhance 미리보기 크게 보기
   const abortRef = useRef(null)
-  const captureRef = useRef('') // 입력 캡처 — 재생성 시 재사용
-  // 선택 요소의 화면 좌표(줌/팬 반영). ref는 렌더 중 읽지 않고 layout effect에서 계산.
+  const captureRef = useRef('')
   const [rect, setRect] = useState(null)
   const [tick, setTick] = useState(0)
 
@@ -48,7 +55,6 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
     }
   }, [])
 
-  // 줌/팬에 따라 변하는 선택 요소의 화면 좌표를 렌더 후 측정해 state에 반영한다.
   useLayoutEffect(() => {
     const cr = canvasRef?.current?.getBoundingClientRect()
     const next = cr ? {
@@ -56,7 +62,6 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
       top: cr.top + element.y * scale,
       bottom: cr.top + (element.y + element.height) * scale,
     } : null
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setRect(prev => {
       if (!prev && !next) return prev
       if (prev && next && prev.left === next.left && prev.top === next.top && prev.bottom === next.bottom) return prev
@@ -64,22 +69,39 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
     })
   }, [canvasRef, element.x, element.y, element.height, scale, tick])
 
-  // 선택 요소가 바뀌면 진행 중 작업 취소 + 캡처/강조 입력 무효화
+  // 선택 요소가 바뀌면 진행 중 작업 취소 + 패널을 idle로 완전 초기화
+  // (다른 이미지로 전환 시 같은 컴포넌트가 재사용되므로 직전 결과가 남지 않도록)
   useEffect(() => {
+    abortRef.current?.abort()
     captureRef.current = ''
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setEmphasis('')
+    setPhase('idle'); setError(''); setStatus('')
+    setEmphasis(''); setDiagramSpec(null); setBgUrl(''); setImageUrl('')
+    setSelectedVariant(0); setShowBefore(false); setZoom(false)
     return () => { abortRef.current?.abort() }
   }, [element.id])
 
-  // 전체 파이프라인: 영역 캡처 → (enhance) 디자인 향상 / (reconstruct) 분석→재생성
+  const bbox = { x: element.x, y: element.y, w: element.width, h: element.height }
+
+  // reconstruct 후보(variant)들 — 분석 결과/배경/박스에서 계산(추가 API 비용 없음)
+  const variantsEls = useMemo(() => {
+    if (!diagramSpec) return []
+    const bb = { x: element.x, y: element.y, w: element.width, h: element.height }
+    return Array.from({ length: DIAGRAM_VARIANT_COUNT }, (_, v) =>
+      buildDiagramElements(diagramSpec, bb, { variant: v, zStart: 1, backgroundUrl: bgUrl || undefined }))
+  }, [diagramSpec, bgUrl, element.x, element.y, element.width, element.height])
+
+  const resetAll = () => {
+    setPhase('idle'); setError(''); setImageUrl(''); setZoom(false)
+    setEmphasis(''); setDiagramSpec(null); setBgUrl(''); setShowBefore(false); setSelectedVariant(0)
+  }
+
   const run = useCallback(async (useMethod, directionText = '') => {
     if (!hasApiKey()) { openAiSettings(); return }
     setMethod(useMethod)
     abortRef.current?.abort()
     const ctrl = new AbortController()
     abortRef.current = ctrl
-    setPhase('loading'); setError(''); setImageUrl('')
+    setPhase('loading'); setError('')
     try {
       setStatus('이미지 캡처 중…')
       const cap = await captureElementRegion(
@@ -89,20 +111,34 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
       if (ctrl.signal.aborted) return
       captureRef.current = cap
       const directive = INFOGRAPHIC_STYLES.find(s => s.id === styleId)?.directive || ''
-      let p, url
+
       if (useMethod === 'reconstruct') {
         setStatus('내용 분석 중…')
-        p = await analyzeImageForRedesign(cap, { style: directive, direction: directionText, signal: ctrl.signal })
+        const raw = await analyzeImageForDiagram(cap, { style: directive, direction: directionText, signal: ctrl.signal })
         if (ctrl.signal.aborted) return
-        setPrompt(p)
-        setStatus('AI 이미지 생성 중… (수십 초 걸릴 수 있어요)')
-        url = await generateImage(p, { width: element.width, height: element.height, quality: 'high', signal: ctrl.signal })
-      } else {
-        p = buildImageEnhancePrompt(directive)
-        setPrompt(p)
-        setStatus('AI 디자인 변환 중… (수십 초 걸릴 수 있어요)')
-        url = await editImage(cap, p, { width: element.width, height: element.height, signal: ctrl.signal })
+        let spec
+        try { spec = JSON.parse(raw) } catch { throw new Error('분석 결과(JSON)를 해석하지 못했습니다. 다시 시도해 주세요.') }
+        if (!spec || !Array.isArray(spec.nodes) || spec.nodes.length === 0) {
+          throw new Error('이미지에서 다이어그램 구조(노드/연결)를 찾지 못했습니다. ‘디자인 향상’을 사용해 보세요.')
+        }
+        let bg = ''
+        if (bgOn) {
+          setStatus('배경 이미지 생성 중…')
+          try { bg = await generateImage(BG_PROMPT, { width: element.width, height: element.height, quality: 'low', signal: ctrl.signal }) }
+          catch { /* 배경 실패는 무시(다이어그램은 그대로) */ }
+          if (ctrl.signal.aborted) return
+        }
+        setDiagramSpec(spec); setBgUrl(bg); setSelectedVariant(0); setShowBefore(false); setImageUrl('')
+        setPhase('preview')
+        return
       }
+
+      // enhance
+      setImageUrl('')
+      const p = buildImageEnhancePrompt(directive)
+      setPrompt(p)
+      setStatus('AI 디자인 변환 중… (수십 초 걸릴 수 있어요)')
+      const url = await editImage(cap, p, { width: element.width, height: element.height, signal: ctrl.signal })
       if (ctrl.signal.aborted) return
       setImageUrl(url)
       setPhase('preview')
@@ -111,68 +147,71 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
       setError(e?.message || 'AI 변환에 실패했습니다.')
       setPhase('error')
     }
-  }, [styleId, element.x, element.y, element.width, element.height])
+  }, [styleId, bgOn, element.x, element.y, element.width, element.height])
 
-  // 현재 프롬프트(편집 가능)로 캡처를 재사용해 같은 모드로 다시 변환(분석은 생략)
+  // 재생성: reconstruct는 재분석, enhance는 캡처 재사용+편집 프롬프트
   const regenerate = useCallback(async () => {
+    if (method === 'reconstruct') { run('reconstruct', emphasis); return }
     const cap = captureRef.current
     const p = prompt.trim()
-    if (!cap || !p) { run(method); return }
+    if (!cap || !p) { run('enhance'); return }
     abortRef.current?.abort()
     const ctrl = new AbortController()
     abortRef.current = ctrl
-    setPhase('loading'); setError('')
+    setPhase('loading'); setError(''); setStatus('AI 디자인 변환 중…')
     try {
-      setStatus(method === 'reconstruct' ? 'AI 이미지 생성 중…' : 'AI 디자인 변환 중…')
-      const url = method === 'reconstruct'
-        ? await generateImage(p, { width: element.width, height: element.height, quality: 'high', signal: ctrl.signal })
-        : await editImage(cap, p, { width: element.width, height: element.height, signal: ctrl.signal })
+      const url = await editImage(cap, p, { width: element.width, height: element.height, signal: ctrl.signal })
       if (ctrl.signal.aborted) return
-      setImageUrl(url)
-      setPhase('preview')
+      setImageUrl(url); setPhase('preview')
     } catch (e) {
       if (e?.name === 'AbortError') return
-      setError(e?.message || '이미지 변환에 실패했습니다.')
-      setPhase('error')
+      setError(e?.message || '이미지 변환에 실패했습니다.'); setPhase('error')
     }
-  }, [prompt, method, run, element.width, element.height])
+  }, [method, emphasis, run, prompt, element.width, element.height])
 
-  // 같은 id·위치·크기 유지한 채 이미지 content만 교체(되돌리기 가능).
-  // objectFit:contain — 결과 종횡비가 박스와 달라도 잘리지 않고 전체가 보이게.
   const apply = useCallback(() => {
+    const st = useFlatStore.getState()
+    if (method === 'reconstruct') {
+      if (!diagramSpec) return
+      const bb = { x: element.x, y: element.y, w: element.width, h: element.height }
+      const maxZ = st.flatElements.length ? Math.max(...st.flatElements.map(e => e.zIndex)) : 0
+      const els = buildDiagramElements(diagramSpec, bb, { variant: selectedVariant, zStart: maxZ + 1, backgroundUrl: bgUrl || undefined })
+      st.applyLayoutElements([element.id], els) // 원본 이미지 제거 + 다이어그램 추가(undo 1회)
+      st.setSelectedFlats(els.map(e => e.id))
+      resetAll()
+      return
+    }
     if (!imageUrl) return
-    useFlatStore.getState().updateFlatElement(element.id, {
-      content: imageUrl,
-      isRich: false,
-      styles: { objectFit: 'contain' },
-    })
-    setPhase('idle'); setImageUrl(''); setZoom(false); setEmphasis('')
-  }, [imageUrl, element.id])
+    st.updateFlatElement(element.id, { content: imageUrl, isRich: false, styles: { objectFit: 'contain' } })
+    resetAll()
+  }, [method, diagramSpec, selectedVariant, bgUrl, imageUrl, element.id, element.x, element.y, element.width, element.height])
 
   const cancel = useCallback(() => {
     abortRef.current?.abort()
-    setPhase('idle'); setError(''); setImageUrl(''); setZoom(false); setEmphasis('')
+    resetAll()
   }, [])
 
-  // 화면 좌표 (layout effect에서 계산됨)
   if (!rect) return null
   const { left: elemLeft, top: elemTop, bottom: elemBottom } = rect
 
   const BAR_H = 36
-  const BAR_W = 460 // 화풍 select + 버튼 2개
+  const BAR_W = 460
   const placeAbove = elemTop - BAR_H - 8 >= 8
   const anchorTop = placeAbove ? elemTop - BAR_H - 8 : elemBottom + 8
   const anchorLeft = Math.max(8, Math.min(window.innerWidth - BAR_W - 8, elemLeft))
 
   const methodLabel = method === 'reconstruct' ? 'AI 내용 재구성' : 'AI 디자인 향상'
 
-  const PANEL_W = 360
-  const PANEL_H_EST = 380
+  const PANEL_W = 380
+  const PANEL_H_EST = 420
   const panelLeft = Math.max(8, Math.min(window.innerWidth - PANEL_W - 8, elemLeft))
   const panelTop = Math.max(8, Math.min(
     window.innerHeight - PANEL_H_EST - 8,
     placeAbove ? elemTop - 8 - PANEL_H_EST : elemBottom + 8,
   ))
+  const previewW = PANEL_W - 28
+
+  const canApply = phase === 'preview' && (method === 'reconstruct' ? !!variantsEls[selectedVariant] : !!imageUrl)
 
   return createPortal(
     <>
@@ -180,7 +219,6 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
       {phase === 'idle' && (
         <div
           data-edit-accessory="true"
-          // 포털 자식의 React 이벤트는 FlatCanvas(부모)로 버블링되므로 반드시 전파 차단.
           onMouseDown={e => e.stopPropagation()}
           onClick={e => e.stopPropagation()}
           style={{
@@ -212,7 +250,7 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
           <button
             type="button"
             onClick={() => { setMethod('reconstruct'); setPhase('compose') }}
-            title="도식/표 등의 내용을 분석해 같은 정보를 더 명확히 표현하도록 재구성한 이미지를 새로 생성합니다. 강조할 방향을 입력할 수 있어요."
+            title="도식/플로우의 내용을 분석해 편집 가능한 카드+화살표 다이어그램으로 재구성합니다. 강조 방향을 입력할 수 있어요."
             style={aiBtnStyle}
           >
             <DiagramIcon />
@@ -221,7 +259,7 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
         </div>
       )}
 
-      {/* 로딩 / 미리보기 / 에러 팝업 */}
+      {/* 로딩 / compose / 미리보기 / 에러 팝업 */}
       {phase !== 'idle' && (
         <div
           data-edit-accessory="true"
@@ -247,17 +285,16 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
                 rows={3}
                 autoFocus
                 spellCheck={false}
-                placeholder="예: 데이터 흐름을 단계별로 강조 · 핵심 수치를 크게 · 항목 간 비교를 명확히"
+                placeholder="예: 데이터 흐름을 단계별로 강조 · 핵심 단계를 부각 · 분기 관계를 명확히"
                 onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); run('reconstruct', emphasis) } }}
-                style={{
-                  width: '100%', boxSizing: 'border-box', resize: 'vertical',
-                  padding: '8px 10px', fontSize: 12, lineHeight: 1.5,
-                  background: 'rgba(255,255,255,0.06)', color: '#f1f5f9',
-                  border: '1px solid rgba(255,255,255,0.16)', borderRadius: 8, outline: 'none',
-                }}
+                style={textareaStyle}
               />
+              <label style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12, color: '#cbd5e1', cursor: 'pointer' }}>
+                <input type="checkbox" checked={bgOn} onChange={e => setBgOn(e.target.checked)} />
+                장식 배경 이미지 추가(선택)
+              </label>
               <div style={{ fontSize: 11, color: '#64748b' }}>
-                비워두면 원본 구조를 그대로 더 명확히 재구성합니다. 원문 텍스트·데이터는 항상 유지됩니다.
+                내용을 분석해 <b style={{ color: '#cbd5e1' }}>편집 가능한 카드+화살표</b>로 재구성합니다. 원문 텍스트는 유지됩니다.
               </div>
             </>
           )}
@@ -272,7 +309,8 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
             <div style={{ fontSize: 12.5, color: '#fca5a5', lineHeight: 1.5 }}>{error}</div>
           )}
 
-          {phase === 'preview' && (
+          {/* enhance 미리보기 (이미지) */}
+          {phase === 'preview' && method === 'enhance' && (
             <>
               <div
                 onClick={() => imageUrl && setZoom(true)}
@@ -286,23 +324,48 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
               >
                 {imageUrl && <img src={imageUrl} alt="" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', display: 'block' }} />}
               </div>
-              <div style={{ fontSize: 11, color: '#64748b' }}>
-                {method === 'reconstruct' ? '생성 프롬프트' : '변환 지시'}(편집 후 재생성 가능)
+              <div style={{ fontSize: 11, color: '#64748b' }}>변환 지시(편집 후 재생성 가능)</div>
+              <textarea value={prompt} onChange={e => setPrompt(e.target.value)} rows={3} spellCheck={false} style={textareaStyle} />
+              <div style={{ fontSize: 11, color: '#64748b' }}>적용하면 같은 자리에서 결과 이미지로 교체됩니다(되돌리기 가능).</div>
+            </>
+          )}
+
+          {/* reconstruct 미리보기 (다이어그램 후보 + 원본/재구성 비교) */}
+          {phase === 'preview' && method === 'reconstruct' && (
+            <>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <button type="button" onClick={() => setShowBefore(false)} style={toggleBtnStyle(!showBefore)}>재구성</button>
+                <button type="button" onClick={() => setShowBefore(true)} style={toggleBtnStyle(showBefore)}>원본</button>
               </div>
-              <textarea
-                value={prompt}
-                onChange={e => setPrompt(e.target.value)}
-                rows={3}
-                spellCheck={false}
-                style={{
-                  width: '100%', boxSizing: 'border-box', resize: 'vertical',
-                  padding: '8px 10px', fontSize: 12, lineHeight: 1.5,
-                  background: 'rgba(255,255,255,0.06)', color: '#f1f5f9',
-                  border: '1px solid rgba(255,255,255,0.16)', borderRadius: 8, outline: 'none',
-                }}
-              />
+              <div style={{
+                borderRadius: 8, overflow: 'hidden', background: 'rgba(255,255,255,0.04)',
+                border: '1px solid rgba(255,255,255,0.1)', display: 'flex', justifyContent: 'center', alignItems: 'center',
+                minHeight: 120,
+              }}>
+                {showBefore
+                  ? (captureRef.current
+                      ? <img src={captureRef.current} alt="" style={{ maxWidth: '100%', maxHeight: 220, objectFit: 'contain', display: 'block' }} />
+                      : <span style={{ fontSize: 12, color: '#64748b' }}>원본 미리보기 없음</span>)
+                  : (variantsEls[selectedVariant]
+                      ? <DiagramPreview elements={variantsEls[selectedVariant]} bbox={bbox} width={previewW} />
+                      : null)}
+              </div>
+              {!showBefore && (
+                <div style={{ display: 'flex', gap: 6 }}>
+                  {variantsEls.map((els, i) => (
+                    <DiagramPreview
+                      key={i}
+                      elements={els}
+                      bbox={bbox}
+                      width={(previewW - (DIAGRAM_VARIANT_COUNT - 1) * 6) / DIAGRAM_VARIANT_COUNT}
+                      selected={i === selectedVariant}
+                      onClick={() => setSelectedVariant(i)}
+                    />
+                  ))}
+                </div>
+              )}
               <div style={{ fontSize: 11, color: '#64748b' }}>
-                적용하면 이 이미지가 같은 자리에서 결과 이미지로 교체됩니다(되돌리기 가능).
+                후보를 고르세요. 적용하면 <b style={{ color: '#cbd5e1' }}>편집 가능한 카드·화살표</b>로 교체됩니다(되돌리기 가능).
               </div>
             </>
           )}
@@ -315,14 +378,14 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
             {(phase === 'preview' || phase === 'error') && (
               <button type="button" onClick={regenerate} style={ghostBtnStyle}>재생성</button>
             )}
-            {phase === 'preview' && (
+            {canApply && (
               <button type="button" onClick={apply} style={primaryBtnStyle}>적용</button>
             )}
           </div>
         </div>
       )}
 
-      {/* 크게 보기 라이트박스 */}
+      {/* 크게 보기 라이트박스 (enhance 이미지) */}
       {zoom && imageUrl && (
         <div
           data-edit-accessory="true"
@@ -351,6 +414,12 @@ const styleSelectStyle = {
   background: 'rgba(255,255,255,0.06)', color: '#e2e8f0',
   border: '1px solid rgba(255,255,255,0.14)', outline: 'none',
 }
+const textareaStyle = {
+  width: '100%', boxSizing: 'border-box', resize: 'vertical',
+  padding: '8px 10px', fontSize: 12, lineHeight: 1.5,
+  background: 'rgba(255,255,255,0.06)', color: '#f1f5f9',
+  border: '1px solid rgba(255,255,255,0.16)', borderRadius: 8, outline: 'none',
+}
 const ghostBtnStyle = {
   padding: '6px 12px', fontSize: 12.5, borderRadius: 8, cursor: 'pointer',
   border: '1px solid rgba(255,255,255,0.14)', background: 'transparent', color: '#cbd5e1',
@@ -359,6 +428,12 @@ const primaryBtnStyle = {
   padding: '6px 14px', fontSize: 12.5, borderRadius: 8, cursor: 'pointer',
   border: 'none', background: 'rgba(99,102,241,0.9)', color: '#fff', fontWeight: 600,
 }
+const toggleBtnStyle = (active) => ({
+  flex: 1, padding: '5px 8px', fontSize: 12, borderRadius: 7, cursor: 'pointer',
+  border: active ? '1px solid rgba(99,102,241,0.5)' : '1px solid rgba(255,255,255,0.12)',
+  background: active ? 'rgba(99,102,241,0.22)' : 'transparent',
+  color: active ? '#c7d2fe' : '#94a3b8',
+})
 
 function SparkleIcon() {
   return (
