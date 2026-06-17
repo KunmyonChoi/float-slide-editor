@@ -94,13 +94,13 @@ export default function FileMenu({ fallbackSample }) {
     setOpen(false)
     const { serializeProject } = await import('../core/ProjectSerializer.js')
     const blob = await serializeProject(useFlatStore.getState())
-    await saveBlob(blob, { suggestedName: 'project.flatproj', description: 'Float 프로젝트', accept: ACCEPT_FLATPROJ })
+    await saveBlob(blob, { suggestedName: 'project.flatproj', description: 'Genitor 프로젝트', accept: ACCEPT_FLATPROJ })
   }, [])
 
   // 프로젝트 열기 — 확장자 필터(.flatproj)
   const handleOpenProject = useCallback(async () => {
     setOpen(false)
-    const file = await openFile({ description: 'Float 프로젝트', accept: ACCEPT_FLATPROJ, acceptAttr: '.flatproj' })
+    const file = await openFile({ description: 'Genitor 프로젝트', accept: ACCEPT_FLATPROJ, acceptAttr: '.flatproj' })
     if (!file) return
     const { loadProjectFile } = await import('../core/ProjectSerializer.js')
     try {

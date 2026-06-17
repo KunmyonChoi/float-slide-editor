@@ -30,7 +30,7 @@ const FALLBACK_SAMPLE = `<!DOCTYPE html>
 <body>
 
 <div class="slide slide-1 active">
-  <div style="color:#a5b4fc;font-size:14px;letter-spacing:4px;text-transform:uppercase;margin-bottom:16px;">float-editor sample</div>
+  <div style="color:#a5b4fc;font-size:14px;letter-spacing:4px;text-transform:uppercase;margin-bottom:16px;">Genitor sample</div>
   <h1 style="font-size:64px;font-weight:700;color:#fff;letter-spacing:-2px;text-align:center;line-height:1.1;margin-bottom:24px;">
     HTML 슬라이드<br>편집기
   </h1>
@@ -146,8 +146,12 @@ export default function FloatingToolbar() {
         borderBottom: '1px solid rgba(255,255,255,0.08)',
       }}
     >
-      <span className="text-white font-semibold text-sm tracking-wide px-2 mr-1">
-        float-editor
+      <span className="flex items-center gap-2 px-1 mr-1 select-none" title="Genitor — generative editor">
+        <Logo />
+        <span className="font-semibold text-[15px] tracking-tight" style={{
+          background: 'linear-gradient(90deg,#c4b5fd,#818cf8)',
+          WebkitBackgroundClip: 'text', backgroundClip: 'text', color: 'transparent',
+        }}>Genitor</span>
       </span>
 
       <Divider />
@@ -217,8 +221,6 @@ export default function FloatingToolbar() {
 
       <div className="flex-1" />
 
-      {debugMode && <span className="text-xs text-slate-600 px-2 select-none">Phase 8</span>}
-
     </div>
 
     {/* 품질 대시보드 패널 (디버그 모드에서만) */}
@@ -279,6 +281,23 @@ export function ToolBtn({ children, onClick, disabled, title, highlight }) {
 
 export function Divider() {
   return <div className="w-px h-5 bg-white/10 mx-1 shrink-0" />
+}
+
+// Genitor 로고 — 보라/인디고 그라데이션 배지 안에 'G' 모노그램 + 생성형 스파크.
+function Logo() {
+  return (
+    <svg width="24" height="24" viewBox="0 0 32 32" fill="none" aria-hidden="true" style={{ display: 'block', filter: 'drop-shadow(0 1px 3px rgba(99,102,241,0.45))' }}>
+      <defs>
+        <linearGradient id="genitorLogoGrad" x1="2" y1="2" x2="30" y2="30" gradientUnits="userSpaceOnUse">
+          <stop stopColor="#a855f7" />
+          <stop offset="1" stopColor="#6366f1" />
+        </linearGradient>
+      </defs>
+      <rect x="1.5" y="1.5" width="29" height="29" rx="8.5" fill="url(#genitorLogoGrad)" />
+      <path d="M21.53 12.4A6.6 6.6 0 1 0 22.6 16H16" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M24.4 5.4l.66 1.8 1.8.66-1.8.66-.66 1.8-.66-1.8-1.8-.66 1.8-.66z" fill="#fff" />
+    </svg>
+  )
 }
 
 export function UndoIcon() {

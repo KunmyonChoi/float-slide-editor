@@ -128,8 +128,8 @@ describe('editImage (image-to-image edits)', () => {
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
-  it('edits: 설정이 gpt-image-2면 1.5로 폴백 + input_fidelity:high', async () => {
-    setImageModel('gpt-image-2') // edits 미지원 → 1.5로 폴백
+  it('edits: 설정 모델(gpt-image-2)을 우선 사용 + 프리셋 size + input_fidelity:high', async () => {
+    setImageModel('gpt-image-2')
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true, status: 200, json: async () => ({ data: [{ b64_json: 'RURJVA==' }] }),
     })
@@ -137,24 +137,43 @@ describe('editImage (image-to-image edits)', () => {
     const out = await editImage('data:image/png;base64,AAAA', 'make infographic', { width: 1600, height: 900 })
     expect(out).toBe('data:image/png;base64,RURJVA==')
 
+    expect(fetchMock).toHaveBeenCalledTimes(1) // 성공 → 폴백 없음
     const [url, init] = fetchMock.mock.calls[0]
     expect(url).toContain('images/edits')
     expect(init.body instanceof FormData).toBe(true)
-    expect(init.body.get('model')).toBe('gpt-image-1.5')
+    expect(init.body.get('model')).toBe('gpt-image-2')
     expect(init.body.get('input_fidelity')).toBe('high')
     expect(init.body.get('size')).toBe('1536x1024') // edits는 프리셋만 지원 → 가장 가까운 가로 프리셋
     expect(init.body.get('prompt')).toBe('make infographic')
     expect(init.headers.Authorization).toBe('Bearer sk-test')
   })
 
-  it('edits: 설정이 edits 지원 모델이면 그대로 사용', async () => {
-    setImageModel('gpt-image-1')
+  it('edits: 설정 모델이 edits 미지원이면 gpt-image-1.5로 폴백', async () => {
+    setImageModel('gpt-image-2')
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ // 1차: 모델 미지원 오류
+        ok: false, status: 400,
+        json: async () => ({ error: { message: "model 'gpt-image-2' does not support image edits" } }),
+      })
+      .mockResolvedValueOnce({ // 2차: 폴백 성공
+        ok: true, status: 200, json: async () => ({ data: [{ b64_json: 'RkInfA==' }] }),
+      })
+    vi.stubGlobal('fetch', fetchMock)
+    const out = await editImage('data:image/png;base64,AAAA', 'x', { width: 500, height: 500 })
+    expect(out).toBe('data:image/png;base64,RkInfA==')
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(fetchMock.mock.calls[0][1].body.get('model')).toBe('gpt-image-2')
+    expect(fetchMock.mock.calls[1][1].body.get('model')).toBe('gpt-image-1.5')
+  })
+
+  it('edits: 모델 무관 오류(권한 등)는 폴백 없이 즉시 전파', async () => {
+    setImageModel('gpt-image-2')
     const fetchMock = vi.fn().mockResolvedValue({
-      ok: true, status: 200, json: async () => ({ data: [{ b64_json: 'RURJVA==' }] }),
+      ok: false, status: 403, json: async () => ({ error: { message: 'must be verified' } }),
     })
     vi.stubGlobal('fetch', fetchMock)
-    await editImage('data:image/png;base64,AAAA', 'x', { width: 500, height: 500 })
-    expect(fetchMock.mock.calls[0][1].body.get('model')).toBe('gpt-image-1')
+    await expect(editImage('data:image/png;base64,AAAA', 'x', { width: 500, height: 500 })).rejects.toThrow(/권한/)
+    expect(fetchMock).toHaveBeenCalledTimes(1) // 폴백 안 함
   })
 })
 
