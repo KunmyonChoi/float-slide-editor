@@ -151,10 +151,11 @@ export default function PptExportButton() {
           top: '100%',
           left: 0, // 버튼이 툴바 왼쪽에 있으므로 오른쪽으로 펼침(화면 밖 방지)
           marginTop: 4,
-          minWidth: 230,
+          width: 320,
           maxWidth: 'calc(100vw - 16px)',
           maxHeight: 'calc(100vh - 80px)',
           overflowY: 'auto',
+          boxSizing: 'border-box',
           background: 'rgba(15,23,42,0.97)',
           backdropFilter: 'blur(16px)',
           border: '1px solid rgba(255,255,255,0.1)',
