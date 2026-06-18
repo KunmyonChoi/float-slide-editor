@@ -1089,27 +1089,31 @@ export default function FlatCanvas() {
                 })()}
               </svg>
             )}
-            {/* 다이어그램 모드: 호버 도형 연결점 (드래그 시작점) */}
+            {/* 다이어그램 모드: 호버 도형 연결점 — 리사이즈 핸들(인디고 사각, 변 위)과
+                구분되도록 초록 원으로 도형 '바깥쪽'에 띄워 표시(드래그 시작점) */}
             {diagramMode && !connectorDraft && hoverShapeId && (() => {
               const el = renderElements.find(e => e.id === hoverShapeId)
               if (!el) return null
+              const OUT = 14 // 도형 변에서 바깥으로 띄우는 거리
               const dots = [
-                { x: el.x + el.width / 2, y: el.y },
-                { x: el.x + el.width, y: el.y + el.height / 2 },
-                { x: el.x + el.width / 2, y: el.y + el.height },
-                { x: el.x, y: el.y + el.height / 2 },
+                { x: el.x + el.width / 2, y: el.y - OUT },
+                { x: el.x + el.width + OUT, y: el.y + el.height / 2 },
+                { x: el.x + el.width / 2, y: el.y + el.height + OUT },
+                { x: el.x - OUT, y: el.y + el.height / 2 },
               ]
               const center = { x: el.x + el.width / 2, y: el.y + el.height / 2 }
               return (
                 <div data-export-ignore="true">
                   <div style={{ position: 'absolute', left: el.x, top: el.y, width: el.width, height: el.height,
-                    border: '1px solid rgba(99,102,241,0.7)', borderRadius: 4, pointerEvents: 'none', zIndex: 9998 }} />
+                    border: '1px dashed rgba(16,185,129,0.8)', borderRadius: 4, pointerEvents: 'none', zIndex: 9998 }} />
                   {dots.map((p, i) => (
                     <div key={i}
+                      title="드래그해서 다른 도형에 연결"
                       onMouseDown={(e) => { e.stopPropagation(); e.preventDefault()
                         useFlatStore.getState().beginConnectorFrom(el.id, center) }}
-                      style={{ position: 'absolute', left: p.x - 5, top: p.y - 5, width: 10, height: 10, borderRadius: '50%',
-                        background: '#6366f1', border: '2px solid #fff', cursor: 'crosshair', zIndex: 9999 }} />
+                      style={{ position: 'absolute', left: p.x - 6, top: p.y - 6, width: 12, height: 12, borderRadius: '50%',
+                        background: '#10b981', border: '2px solid #fff', boxShadow: '0 0 0 1px rgba(16,185,129,0.5)',
+                        cursor: 'crosshair', zIndex: 10001 }} />
                   ))}
                 </div>
               )

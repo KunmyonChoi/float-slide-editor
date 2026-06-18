@@ -505,7 +505,7 @@ export default function EditToolbar() {
           <Divider />
           <span className="text-xs text-indigo-300 px-2">
             다이어그램 모드
-            <span className="text-slate-500 ml-1">도형 호버→연결점 드래그(또는 Alt+드래그)</span>
+            <span className="text-slate-500 ml-1">도형 호버→초록 연결점 드래그(또는 Alt/⌘+드래그)</span>
           </span>
           <ToolBtn onClick={() => useFlatStore.getState().setDiagramMode(false)} title="다이어그램 모드 종료">
             <span className="text-xs text-red-400">종료</span>

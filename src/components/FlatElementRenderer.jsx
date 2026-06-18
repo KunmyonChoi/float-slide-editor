@@ -32,10 +32,10 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
   const handleMouseDown = useCallback((e) => {
     // 그리기 모드 중에는 요소 선택 차단
     if (useFlatStore.getState().drawMode) return
-    // 다이어그램 모드 + Alt 드래그 → 이 도형에서 커넥터 시작(이동 대신)
-    // (Ctrl/Cmd는 컨텍스트 메뉴·다중선택과 충돌하므로 Alt만 사용)
+    // 다이어그램 모드 + Alt/⌘(Cmd) 드래그 → 이 도형에서 커넥터 시작(이동 대신)
+    // (Ctrl은 맥에서 우클릭=컨텍스트 메뉴라 제외)
     const st = useFlatStore.getState()
-    if (st.diagramMode && e.altKey
+    if (st.diagramMode && (e.altKey || e.metaKey)
         && element.shapeType !== 'connector' && !isFullCanvasBg) {
       e.stopPropagation(); e.preventDefault()
       const cur = st.flatElements.find(el => el.id === element.id) || element

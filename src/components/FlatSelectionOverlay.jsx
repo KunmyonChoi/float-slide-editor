@@ -60,8 +60,8 @@ export default function FlatSelectionOverlay({ element, scale, otherRects, canva
     const st = useFlatStore.getState()
     if (st.drawMode) return // 그리기 모드 중 이동 차단
     if (editingFlatId) return
-    // 다이어그램 모드 + Alt 드래그 → 이 도형(선택됨)에서 커넥터 시작(이동 대신)
-    if (st.diagramMode && e.altKey && element.shapeType !== 'connector') {
+    // 다이어그램 모드 + Alt/⌘(Cmd) 드래그 → 이 도형(선택됨)에서 커넥터 시작(이동 대신)
+    if (st.diagramMode && (e.altKey || e.metaKey) && element.shapeType !== 'connector') {
       e.stopPropagation(); e.preventDefault()
       st.beginConnectorFrom(element.id, { x: element.x + element.width / 2, y: element.y + element.height / 2 })
       return
