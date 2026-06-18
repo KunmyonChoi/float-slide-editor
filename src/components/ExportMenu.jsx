@@ -142,23 +142,29 @@ export default function FileMenu({ fallbackSample }) {
     }
   }, [loadProjectFromFile])
 
-  // 최근 프로젝트 열기 — 저장된 핸들로 권한 재요청 후 로드
+  // 최근 프로젝트 열기 — 저장된 핸들로 권한 재요청 후 로드. 실패하면 최근 목록에서 제거.
   const openRecent = useCallback(async (entry) => {
     setOpen(false)
-    const h = entry?.handle
     const { removeRecent } = await import('../core/RecentProjects.js')
-    if (!h) return
+    // 목록에서 제거 + 화면 목록(state)도 즉시 갱신
+    const dropFromList = async (msg) => {
+      if (msg) alert(msg)
+      await removeRecent(entry.name)
+      setRecents(prev => prev.filter(e => e.name !== entry.name))
+    }
+    const h = entry?.handle
+    if (!h) { await dropFromList('이 항목은 다시 열 수 없어 최근 목록에서 제거합니다.'); return }
     try {
       if (h.queryPermission) {
         let p = await h.queryPermission({ mode: 'read' })
         if (p !== 'granted') p = await h.requestPermission({ mode: 'read' })
+        // 권한 거부는 '실패'가 아니라 보류 — 목록 유지
         if (p !== 'granted') { alert('파일 접근 권한이 필요합니다.'); return }
       }
       const file = await h.getFile()
       await loadProjectFromFile(file, h)
     } catch {
-      alert('파일을 열 수 없습니다(이동/삭제되었을 수 있어요). 최근 목록에서 제거합니다.')
-      await removeRecent(entry.name)
+      await dropFromList('파일을 열 수 없습니다(이동/삭제되었을 수 있어요). 최근 목록에서 제거합니다.')
     }
   }, [loadProjectFromFile])
 
