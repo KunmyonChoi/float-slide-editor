@@ -3,7 +3,7 @@ import { useFlatStore } from '../store/flatStore'
 import { nextFlatId } from '../core/FlatExtractor'
 import { BlobStore } from '../core/BlobStore'
 import { copyElementToSystemClipboard } from '../core/SystemClipboard'
-import { computeAlignmentChanges, computeDistributionChanges } from '../core/SnapEngine'
+import { computeAlignmentChanges, computeDistributionChanges, isBackgroundElement } from '../core/SnapEngine'
 import { promptUrl } from './UrlPrompt'
 import { openInfographic } from './InfographicModal'
 
@@ -64,12 +64,8 @@ export default function FlatContextMenu({ x, y, canvasX, canvasY, onClose }) {
   const singleTextEl = selectedEls.length === 1 && selectedEls[0].type === 'text' ? selectedEls[0] : null
   const singleImageEl = selectedEls.length === 1 && selectedEls[0].type === 'image' ? selectedEls[0] : null
 
-  // 배경 요소 찾기
-  const bgElement = useMemo(() => flatElements.find(el =>
-    el.type === 'shape' && !el.content
-    && Math.abs(el.width - canvasSize.w) < 2 && Math.abs(el.height - canvasSize.h) < 2
-    && Math.abs(el.x) < 2 && Math.abs(el.y) < 2
-  ), [flatElements, canvasSize])
+  // 배경 요소 찾기 — 명시 배경(플래그/__bg)만
+  const bgElement = useMemo(() => flatElements.find(el => isBackgroundElement(el)), [flatElements])
   const anyLocked = selectedEls.some(e => e.locked)
 
   // 위치 보정 (메뉴가 stageRef 밖으로 나가지 않게)
@@ -323,40 +319,31 @@ export default function FlatContextMenu({ x, y, canvasX, canvasY, onClose }) {
       case 'downloadImage': downloadSelectedImage(); break
       case 'aiInfographic': openInfographic(); break
       case 'convertToBg': {
-        // 선택된 요소를 배경 레이어로 변환
-        for (const el of selectedEls) {
-          if (el.type === 'text') continue // 텍스트는 변환 불가
-          const minZ = Math.min(...flatElements.map(e => e.zIndex)) - 1
-          const changes = {
-            x: 0, y: 0,
-            width: canvasSize.w, height: canvasSize.h,
-            zIndex: minZ,
-            locked: true,
-            sourceId: '__bg',
-          }
-          if (el.type === 'image') {
-            // 이미지 → shape(backgroundImage)로 변환
-            const imgSrc = el.content
-            changes.type = 'shape'
-            changes.content = ''
-            changes.styles = {
-              ...(el.styles || {}),
-              backgroundImage: `url(${imgSrc})`,
-              backgroundSize: 'cover',
-              backgroundPosition: 'center',
-              borderRadius: '0px',
-              border: '0px none',
-            }
-          } else {
-            // shape → 배경으로 (크기/위치/잠금만 변경)
-            changes.styles = {
-              ...(el.styles || {}),
-              borderRadius: '0px',
-              border: '0px none',
-            }
-          }
-          updateFlatElement(el.id, changes)
-        }
+        // 단일 이미지/영상만 배경으로 변환(타입 유지). 원래 위치/크기는 _restore에 보관.
+        if (selectedEls.length !== 1) break
+        const el = selectedEls[0]
+        if (el.type !== 'image' && el.type !== 'video') break
+        // 새 배경은 기존 배경들보다 '앞'(최상위 배경)에 — 안 그러면 흰 배경 등에 가려 사라진다.
+        // 배경끼리는 render z에 -1,000,000 오프셋이 있어 항상 콘텐츠 아래로 유지됨.
+        const otherBgZs = flatElements.filter(e => e.id !== el.id && isBackgroundElement(e)).map(e => e.zIndex)
+        const bgTopZ = otherBgZs.length
+          ? Math.max(...otherBgZs) + 1
+          : (flatElements.length ? Math.min(...flatElements.map(e => e.zIndex)) - 1 : 0)
+        updateFlatElement(el.id, {
+          isBackground: true, sourceId: '__bg', locked: true,
+          x: 0, y: 0, width: canvasSize.w, height: canvasSize.h, zIndex: bgTopZ,
+          _restore: { x: el.x, y: el.y, width: el.width, height: el.height, zIndex: el.zIndex, objectFit: el.styles?.objectFit },
+          styles: { ...(el.styles || {}), objectFit: 'cover' }, // 배경은 꽉 채움
+        })
+        setSelectedFlat(null) // 배경은 캔버스 선택 대상 아님
+        break
+      }
+      case 'restoreFromBg': {
+        // 배경 → 일반 요소로 복원
+        if (selectedEls.length !== 1) break
+        const el = selectedEls[0]
+        if (!isBackgroundElement(el)) break
+        useFlatStore.getState().restoreBackgroundToNormal(el.id)
         break
       }
       case 'lock': {
@@ -411,8 +398,12 @@ export default function FlatContextMenu({ x, y, canvasX, canvasY, onClose }) {
     ...(singleImageEl ? [{ id: 'dlImage', label: '이미지 다운로드', action: 'downloadImage' }] : []),
     { id: 'del', label: '삭제', shortcut: 'Delete', action: 'delete' },
     { id: 'lock', label: allLocked ? '잠금 해제' : '잠금', action: 'lock' },
-    { id: 'toBg', label: '배경으로 변환', action: 'convertToBg',
-      disabled: selectedEls.every(e => e.type === 'text') },
+    // 배경으로 변환: 단일 이미지/영상만(이미 배경인 것 제외). 그 외(도형/표/그룹/텍스트)는 비활성
+    ...(selectedEls.length === 1 && !isBackgroundElement(selectedEls[0]) && ['image', 'video'].includes(selectedEls[0].type)
+      ? [{ id: 'toBg', label: '배경으로 변환', action: 'convertToBg' }] : []),
+    // 일반 요소로 복원: 선택이 배경일 때
+    ...(selectedEls.length === 1 && isBackgroundElement(selectedEls[0])
+      ? [{ id: 'restoreBg', label: '일반 요소로 복원', action: 'restoreFromBg' }] : []),
     ...(singleTextEl ? [{ id: 'themeColor', label: '사용자 테마 색 지정', submenu: 'themeColor',
       children: [
         { id: 'asTitle', label: '이 색을 제목색으로', action: 'setThemeTitle' },

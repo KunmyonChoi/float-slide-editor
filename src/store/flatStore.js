@@ -7,7 +7,7 @@ import { DEFAULT_THEME_ID, getTheme, themeBackgroundStyles, themeRoleStyles } fr
 import { highlightCode } from '../core/codeHighlight'
 import { applyAutoFit } from '../core/autoFit'
 
-// 배경 레이어 판정 — SnapEngine의 canonical 헬퍼 재노출(명시 플래그 + 전체캔버스 휴리스틱)
+// 배경 레이어 판정 — SnapEngine의 canonical 헬퍼 재노출(명시 플래그/__bg 기반)
 export { isBackgroundElement as isBackgroundLayer }
 
 // 사용자정의 테마 기본값 — 기본 테마(화이트)를 복제한 가변 토큰
@@ -181,7 +181,8 @@ function _buildStarterLayout(layoutId, cs) {
 /** 테마 배경을 가진 잠긴 전체-캔버스 배경 레이어 요소 생성 (theme 객체 직접 사용) */
 function _buildThemeBgElement(theme, cs) {
   return {
-    id: nextFlatId(), sourceId: null, type: 'shape', content: '', isRich: false, merged: false,
+    id: nextFlatId(), sourceId: '__bg', type: 'shape', content: '', isRich: false, merged: false,
+    isBackground: true,
     x: 0, y: 0, width: cs.w, height: cs.h, zIndex: 0, locked: true,
     styles: {
       backgroundColor: 'rgba(0,0,0,0)', backgroundImage: 'none', borderRadius: '0px',
@@ -1014,7 +1015,8 @@ export const useFlatStore = create((set, get) => ({
     } else {
       const minZ = els.length ? Math.min(...els.map(e => e.zIndex)) : 1
       get().addFlatElement({
-        id: nextFlatId(), sourceId: null, type: 'shape', content: '', isRich: false, merged: false,
+        id: nextFlatId(), sourceId: '__bg', type: 'shape', content: '', isRich: false, merged: false,
+        isBackground: true,
         x: 0, y: 0, width: cs.w, height: cs.h, zIndex: minZ - 1, locked: true,
         styles: {
           backgroundColor: 'rgba(0,0,0,0)', backgroundImage: 'none', borderRadius: '0px',
@@ -1238,6 +1240,16 @@ export const useFlatStore = create((set, get) => ({
       }
       return clone
     })
+    // 배경 클론은 대상 페이지의 기존 배경들보다 '앞'에 — 안 그러면 그 페이지의 흰 배경 등에 가려 안 보인다.
+    let bgTop = null
+    for (const clone of newEls) {
+      if (!isBackgroundElement(clone)) continue
+      if (bgTop === null) {
+        const bgZs = flatElements.filter(e => isBackgroundElement(e)).map(e => e.zIndex)
+        bgTop = bgZs.length ? Math.max(...bgZs) : (flatElements.length ? Math.min(...flatElements.map(e => e.zIndex)) - 1 : 0)
+      }
+      clone.zIndex = ++bgTop
+    }
     if (newEls.length === 1) {
       get().addFlatElement(newEls[0])
     } else {
@@ -1435,6 +1447,45 @@ export const useFlatStore = create((set, get) => ({
       e.id === el.id ? { ...e, zIndex: target } : e
     )
     set({ flatElements: updated, canUndo: _history.canUndo, canRedo: _history.canRedo })
+  },
+
+  /** 배경끼리 순서 변경 — dir +1: 앞으로(위), -1: 뒤로(아래). 인접 배경과 zIndex 스왑. */
+  reorderBackground(id, dir) {
+    const els = get().flatElements
+    const bgs = els.filter(e => isBackgroundElement(e)).sort((a, b) => a.zIndex - b.zIndex)
+    const idx = bgs.findIndex(e => e.id === id)
+    if (idx < 0) return
+    const swapIdx = idx + dir
+    if (swapIdx < 0 || swapIdx >= bgs.length) return
+    const a = bgs[idx], b = bgs[swapIdx]
+    if (a.zIndex === b.zIndex) return
+    _history.push({ type: 'zorder', changes: [
+      { id: a.id, oldZ: a.zIndex, newZ: b.zIndex },
+      { id: b.id, oldZ: b.zIndex, newZ: a.zIndex },
+    ]})
+    const updated = els.map(e =>
+      e.id === a.id ? { ...e, zIndex: b.zIndex } : e.id === b.id ? { ...e, zIndex: a.zIndex } : e
+    )
+    set({ flatElements: updated, canUndo: _history.canUndo, canRedo: _history.canRedo })
+  },
+
+  /** 배경 → 일반 요소로 복원. _restore가 있으면 원래 위치/크기로, 없으면 중앙 배치. */
+  restoreBackgroundToNormal(id) {
+    const { flatElements, canvasSize } = get()
+    const el = flatElements.find(e => e.id === id)
+    if (!el || !isBackgroundElement(el)) return
+    const r = el._restore || {}
+    const w = r.width ?? el.width, h = r.height ?? el.height
+    get().updateFlatElement(id, {
+      isBackground: false, sourceId: null, locked: false,
+      x: r.x ?? Math.round((canvasSize.w - w) / 2),
+      y: r.y ?? Math.round((canvasSize.h - h) / 2),
+      width: w, height: h,
+      zIndex: r.zIndex ?? el.zIndex,
+      _restore: undefined,
+      styles: { ...(el.styles || {}), objectFit: r.objectFit ?? 'contain' },
+    })
+    set({ selectedFlatIds: [id] })
   },
 
   undo() {

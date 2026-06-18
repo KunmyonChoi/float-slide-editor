@@ -32,7 +32,7 @@ describe('사용자정의 테마', () => {
     useFlatStore.setState({
       canvasSize: cs, customTheme: ct, themeId: 'white', selectedFlatIds: [], editingFlatId: null,
       flatElements: [
-        { id: 'bg', type: 'shape', content: '', isRich: false, x: 0, y: 0, width: 1280, height: 720, zIndex: 1, locked: true, styles: { backgroundColor: '#fff', backgroundImage: 'none' } },
+        { id: 'bg', sourceId: '__bg', type: 'shape', content: '', isRich: false, x: 0, y: 0, width: 1280, height: 720, zIndex: 1, locked: true, styles: { backgroundColor: '#fff', backgroundImage: 'none' } },
         { id: 'title', type: 'text', layoutRole: 'title', content: 'T', isRich: false, x: 0, y: 0, width: 200, height: 40, zIndex: 2, styles: { color: '#000', fontWeight: '400', textShadow: 'none' } },
       ],
     })
@@ -115,7 +115,7 @@ describe('applyThemeToCurrentPage', () => {
       selectedFlatIds: [],
       editingFlatId: null,
       flatElements: [
-        { id: 'bg', type: 'shape', content: '', isRich: false, x: 0, y: 0, width: 1280, height: 720, zIndex: 1, locked: true, styles: { backgroundColor: 'rgba(0,0,0,0)', backgroundImage: 'none' } },
+        { id: 'bg', sourceId: '__bg', type: 'shape', content: '', isRich: false, x: 0, y: 0, width: 1280, height: 720, zIndex: 1, locked: true, styles: { backgroundColor: 'rgba(0,0,0,0)', backgroundImage: 'none' } },
         { id: 'title', type: 'text', layoutRole: 'title', content: '제목', isRich: false, x: 100, y: 80, width: 600, height: 60, zIndex: 2, styles: { color: '#000', fontWeight: '400', textShadow: 'none' } },
         { id: 'free', type: 'text', content: '사용자색', isRich: false, x: 100, y: 200, width: 300, height: 40, zIndex: 3, styles: { color: '#ff0000', fontWeight: '400', textShadow: 'none' } },
       ],
@@ -153,7 +153,7 @@ describe('applyThemeToCurrentPage', () => {
     useFlatStore.getState().loadAllPages({
       '0-0': {
         elements: [
-          { id: 'bg', type: 'shape', content: '', isRich: false, x: 0, y: 0, width: cs.w, height: cs.h, zIndex: 0, locked: true, styles: { backgroundColor: 'rgba(0,0,0,0)', backgroundImage: bgImg, backgroundSize: 'cover' } },
+          { id: 'bg', sourceId: '__bg', type: 'shape', content: '', isRich: false, x: 0, y: 0, width: cs.w, height: cs.h, zIndex: 0, locked: true, styles: { backgroundColor: 'rgba(0,0,0,0)', backgroundImage: bgImg, backgroundSize: 'cover' } },
         ],
         canvasSize: cs, fontImports: [], htmlSlideIndex: null,
       },

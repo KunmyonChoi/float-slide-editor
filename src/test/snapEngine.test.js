@@ -298,9 +298,11 @@ describe('computeDistributionChanges', () => {
 // ── isBackgroundElement ──────────────────────────────
 
 describe('isBackgroundElement', () => {
-  it('배경 요소 판정', () => {
-    const bg = { type: 'shape', content: '', x: 0, y: 0, width: 1280, height: 800 }
-    expect(isBackgroundElement(bg, CANVAS)).toBe(true)
+  it('배경 요소 판정 — 플래그/__bg 기반', () => {
+    expect(isBackgroundElement({ type: 'shape', content: '', sourceId: '__bg' })).toBe(true)
+    expect(isBackgroundElement({ type: 'image', isBackground: true })).toBe(true)
+    // 크기만 풀캔버스이고 표식이 없으면 더 이상 배경 아님(사용자 콘텐츠)
+    expect(isBackgroundElement({ type: 'shape', content: '', x: 0, y: 0, width: 1280, height: 800 })).toBe(false)
   })
 
   it('비배경 요소', () => {

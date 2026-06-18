@@ -87,6 +87,31 @@ describe('ProjectSerializer', () => {
         version: 1, pages: { '0-0': { elements: [] } },
       }))).toThrow('canvasSize')
     })
+
+    it('옛 프로젝트의 빈 전체화면 shape에 isBackground 마이그레이션', () => {
+      const data = deserializeProject(JSON.stringify({
+        version: 1,
+        pages: { '0-0': { canvasSize: { w: 1280, h: 720 }, elements: [
+          { id: 'a', type: 'shape', x: 0, y: 0, width: 1280, height: 720, zIndex: 0, content: '', styles: {} },
+          { id: 'b', type: 'shape', x: 100, y: 100, width: 200, height: 100, zIndex: 1, content: '', styles: {} },
+          { id: 'c', type: 'image', x: 0, y: 0, width: 1280, height: 720, zIndex: 2, content: 'x.png', styles: {} },
+        ] } },
+      }))
+      const els = data.pages['0-0'].elements
+      expect(els.find(e => e.id === 'a').isBackground).toBe(true)  // 빈 전체화면 shape → 배경
+      expect(els.find(e => e.id === 'b').isBackground).toBeFalsy() // 작은 shape → 일반
+      expect(els.find(e => e.id === 'c').isBackground).toBeFalsy() // 이미지 → 일반(옛 휴리스틱은 shape 한정)
+    })
+
+    it('이미 isBackground/__bg인 요소는 마이그레이션이 건드리지 않음', () => {
+      const data = deserializeProject(JSON.stringify({
+        version: 1,
+        pages: { '0-0': { canvasSize: { w: 1280, h: 720 }, elements: [
+          { id: 'a', type: 'shape', x: 0, y: 0, width: 1280, height: 720, zIndex: 0, content: '', isBackground: true, styles: {} },
+        ] } },
+      }))
+      expect(data.pages['0-0'].elements[0].isBackground).toBe(true)
+    })
   })
 
   describe('라운드트립', () => {

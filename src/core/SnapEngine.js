@@ -3,15 +3,14 @@
  */
 
 /**
- * 배경 요소 판정 (캔버스 전체를 덮는 shape)
+ * 배경 요소 판정 — '역할(플래그)'로만 판정한다.
+ * 크기 추론(전체 캔버스 도형)으로 사용자 콘텐츠를 배경으로 잠그지 않는다.
+ * - isBackground: '배경 추가'/'배경으로 변환'이 설정하는 명시 플래그
+ * - sourceId==='__bg': 추출/변환된 배경(구 프로젝트 호환)
+ * (둘째 인자 canvasSize는 더 이상 쓰지 않지만 호출부 호환을 위해 받기만 함)
  */
-export function isBackgroundElement(el, canvasSize) {
-  if (!el) return false
-  if (el.isBackground) return true // 명시 배경 플래그('배경 추가')
-  const cs = canvasSize || { w: 0, h: 0 }
-  return el.type === 'shape' && !el.content
-    && Math.abs(el.width - cs.w) < 2 && Math.abs(el.height - cs.h) < 2
-    && Math.abs(el.x) < 2 && Math.abs(el.y) < 2
+export function isBackgroundElement(el) {
+  return !!(el && (el.isBackground || el.sourceId === '__bg'))
 }
 
 /**

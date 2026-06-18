@@ -510,7 +510,7 @@ function getGroupBBox(elements) {
 
 // 순서(z-order) — 배경 레이어는 맨 뒤 고정이라 비활성
 function OrderSection({ el }) {
-  const isBg = !!el.isBackground
+  const isBg = isBackgroundElement(el)
   const hint = isBg ? ' (배경은 맨 뒤 고정)' : ''
   const act = (fn) => () => useFlatStore.getState()[fn](el.id)
   const btn = 'flex-1 flex items-center justify-center text-sm px-2 py-1.5 rounded bg-white/5 text-slate-300 border border-white/10 hover:bg-white/10 transition-colors disabled:opacity-40 disabled:cursor-not-allowed'
@@ -843,7 +843,7 @@ function FontSection({ el, styles, updateStyle, previewStyle, isGradientText, li
               title={'텍스트 ' + a.label + ' 정렬'}
               className={[
                 'flex-1 py-1.5 rounded-lg text-xs transition-colors flex items-center justify-center border',
-                (styles.alignItems || 'flex-start') === a.value
+                (styles.alignItems || (el.type === 'shape' ? 'center' : 'flex-start')) === a.value
                   ? 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30'
                   : 'bg-white/5 text-slate-400 border-white/10 hover:bg-white/10',
               ].join(' ')}
@@ -2366,8 +2366,9 @@ function SlideBackgroundPanel() {
     const bgMaxZ = bgLayers.length > 0
       ? Math.max(...bgLayers.map(e => e.zIndex)) : minZ
     const newEl = {
-      id: nextFlatId(), sourceId: null,
+      id: nextFlatId(), sourceId: '__bg',
       type: 'shape', content: '', isRich: false, merged: false,
+      isBackground: true, // 명시 배경 플래그(크기 추론 제거 후 필수)
       x: 0, y: 0, width: canvasSize.w, height: canvasSize.h,
       zIndex: bgMaxZ + 1,
       locked: true,
@@ -2414,7 +2415,8 @@ function SlideBackgroundPanel() {
     } else {
       const minZ = flatElements.length > 0 ? Math.min(...flatElements.map(e => e.zIndex)) - 1 : 0
       addFlatElement({
-        id: nextFlatId(), sourceId: null, type: 'shape', content: '', isRich: false, merged: false,
+        id: nextFlatId(), sourceId: '__bg', type: 'shape', content: '', isRich: false, merged: false,
+        isBackground: true,
         x: 0, y: 0, width: canvasSize.w, height: canvasSize.h, zIndex: minZ, locked: true,
         styles: { ...BG_DEFAULT_STYLES, ...imgStyles },
       })
@@ -2423,6 +2425,13 @@ function SlideBackgroundPanel() {
 
   // 레이어 미리보기 색상 (썸네일용)
   const layerPreviewStyle = (el) => {
+    // 이미지/영상 요소 배경: content가 곧 소스 (CSS backgroundImage가 아님)
+    if (el.type === 'image' && el.content) {
+      return { backgroundImage: `url("${el.content}")`, backgroundSize: 'cover', backgroundPosition: 'center' }
+    }
+    if (el.type === 'video') {
+      return { backgroundColor: '#1e293b' } // 영상 프레임은 못 그리므로 어두운 스와치
+    }
     const s = el.styles || {}
     const bg = s.backgroundColor || 'transparent'
     const bgImg = s.backgroundImage
@@ -2433,7 +2442,9 @@ function SlideBackgroundPanel() {
     return { backgroundColor: bg }
   }
 
-  const layerLabel = (el, idx) => {
+  const layerLabel = (el) => {
+    if (el.type === 'image') return `이미지`
+    if (el.type === 'video') return `영상`
     const s = el.styles || {}
     if (s.backgroundImage?.startsWith('url(')) return `이미지`
     if (s.backgroundImage?.includes('gradient')) return `그래디언트`
@@ -2441,6 +2452,12 @@ function SlideBackgroundPanel() {
     if (bg && bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent') return `단색`
     return `투명`
   }
+
+  // 이미지/영상 '요소' 배경 — 전용 디테일 패널(썸네일/맞춤/교체) 사용
+  const isMediaEl = (el) => el.type === 'image' || el.type === 'video'
+  // 일반 요소로 변환 가능한 배경: 이미지/영상 요소 또는 이미지가 설정된 shape 배경
+  // (어떤 경로로 만든 이미지 배경이든 목록/패널에서 일관되게 변환 가능)
+  const canRestore = (el) => isMediaEl(el) || !!el.styles?.backgroundImage?.startsWith('url(')
 
   const styles = currentBg?.styles || BG_DEFAULT_STYLES
   const hasGradient = styles.backgroundImage && styles.backgroundImage !== 'none'
@@ -2488,9 +2505,31 @@ function SlideBackgroundPanel() {
                   ...layerPreviewStyle(el),
                 }} />
                 <span className="text-xs text-slate-300 flex-1">
-                  {layerLabel(el, idx)}
+                  {layerLabel(el)}
                 </span>
-                <span className="text-xs text-slate-600">z{el.zIndex}</span>
+                {canRestore(el) && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); useFlatStore.getState().restoreBackgroundToNormal(el.id) }}
+                    className="text-xs text-slate-400 hover:text-indigo-300 px-0.5"
+                    title="일반 요소로 복원"
+                  >↩</button>
+                )}
+                {bgLayers.length > 1 && (
+                  <>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); useFlatStore.getState().reorderBackground(el.id, 1) }}
+                      disabled={el.zIndex >= Math.max(...bgLayers.map(b => b.zIndex))}
+                      className="text-xs text-slate-400 hover:text-slate-200 px-0.5 disabled:opacity-30 disabled:cursor-not-allowed"
+                      title="앞으로(다른 배경 위)"
+                    >↑</button>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); useFlatStore.getState().reorderBackground(el.id, -1) }}
+                      disabled={el.zIndex <= Math.min(...bgLayers.map(b => b.zIndex))}
+                      className="text-xs text-slate-400 hover:text-slate-200 px-0.5 disabled:opacity-30 disabled:cursor-not-allowed"
+                      title="뒤로(다른 배경 아래)"
+                    >↓</button>
+                  </>
+                )}
                 {bgLayers.length > 1 && (
                   <button
                     onClick={(e) => { e.stopPropagation(); removeLayer(idx) }}
@@ -2513,8 +2552,84 @@ function SlideBackgroundPanel() {
         {/* ── AI 배경 생성 ── */}
         <AiBackgroundSection onApply={applyBgImage} />
 
-        {/* ── 선택된 레이어 편집 ── */}
-        {currentBg && (
+        {/* ── 선택된 레이어 편집 (이미지/영상 요소 배경) ── */}
+        {currentBg && isMediaEl(currentBg) && (
+          <div className="border-t border-white/5 pt-3 space-y-3">
+            {/* 미디어 미리보기 */}
+            <div className="space-y-1.5">
+              <p className={labelClass}>{currentBg.type === 'video' ? '배경 영상' : '배경 이미지'}</p>
+              {currentBg.type === 'image' && currentBg.content ? (
+                <div style={{
+                  width: '100%', height: 60, borderRadius: 4,
+                  backgroundImage: `url("${currentBg.content}")`,
+                  backgroundSize: 'cover', backgroundPosition: 'center',
+                  border: '1px solid rgba(255,255,255,0.1)',
+                }} />
+              ) : (
+                <div style={{
+                  width: '100%', height: 60, borderRadius: 4, background: '#1e293b',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  color: '#64748b', fontSize: 12, border: '1px solid rgba(255,255,255,0.1)',
+                }}>🎬 영상 배경</div>
+              )}
+            </div>
+
+            {/* 맞춤 (이미지만 — 영상은 항상 cover) */}
+            {currentBg.type === 'image' && (
+              <div className="space-y-1.5">
+                <p className={labelClass}>맞춤</p>
+                <select
+                  value={styles.objectFit || 'cover'}
+                  onChange={e => updateStyle('objectFit', e.target.value)}
+                  className="w-full px-2 py-1 rounded-md text-xs text-slate-200 border border-white/10"
+                  style={selectStyle}
+                >
+                  <option value="cover">채우기 (cover)</option>
+                  <option value="contain">맞추기 (contain)</option>
+                  <option value="fill">늘이기 (fill)</option>
+                </select>
+              </div>
+            )}
+
+            {/* 투명도 */}
+            <div className="space-y-1.5">
+              <p className={labelClass}>
+                투명도 <span className="text-slate-600">{styles.opacity || '1'}</span>
+              </p>
+              <input
+                type="range" min="0" max="1" step="0.01"
+                value={styles.opacity || '1'}
+                onChange={e => previewStyle('opacity', e.target.value)}
+                onMouseUp={e => updateStyle('opacity', e.target.value)}
+                onTouchEnd={e => updateStyle('opacity', e.target.value)}
+                className="w-full" style={{ accentColor: '#6366f1' }}
+              />
+            </div>
+
+            {/* 이미지 교체 (이미지만) */}
+            {currentBg.type === 'image' && (
+              <label className="flex items-center justify-center gap-1 w-full py-1.5 rounded-lg text-xs text-slate-400 border border-dashed border-white/10 hover:border-indigo-500/40 hover:text-indigo-300 cursor-pointer transition-colors">
+                <span>이미지 교체</span>
+                <input type="file" accept="image/*" style={{ display: 'none' }} onChange={e => {
+                  const file = e.target.files?.[0]
+                  if (!file) return
+                  const reader = new FileReader()
+                  reader.onload = (ev) => updateFlatElement(currentBg.id, { content: ev.target.result })
+                  reader.readAsDataURL(file)
+                  e.target.value = ''
+                }} />
+              </label>
+            )}
+
+            <button
+              onClick={() => useFlatStore.getState().restoreBackgroundToNormal(currentBg.id)}
+              className="w-full py-1.5 rounded-lg text-xs text-slate-400 border border-white/10 hover:border-indigo-500/40 hover:text-indigo-300 transition-colors"
+            >일반 요소로 복원</button>
+          </div>
+        )}
+
+        {/* ── 선택된 레이어 편집 (shape 배경) ── */}
+        {currentBg && !isMediaEl(currentBg) && (
           <>
             <div className="border-t border-white/5 pt-3 space-y-3">
               {/* 배경색 */}
@@ -2582,6 +2697,14 @@ function SlideBackgroundPanel() {
                   }} />
                 </label>
               </div>
+
+              {/* 이미지가 설정된 shape 배경 → 일반 요소로 변환 (이미지 요소 배경과 동작 일치) */}
+              {canRestore(currentBg) && (
+                <button
+                  onClick={() => useFlatStore.getState().restoreBackgroundToNormal(currentBg.id)}
+                  className="w-full py-1.5 rounded-lg text-xs text-slate-400 border border-white/10 hover:border-indigo-500/40 hover:text-indigo-300 transition-colors"
+                >일반 요소로 변환</button>
+              )}
             </div>
           </>
         )}
