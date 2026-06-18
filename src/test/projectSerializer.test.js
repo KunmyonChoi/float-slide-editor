@@ -88,19 +88,25 @@ describe('ProjectSerializer', () => {
       }))).toThrow('canvasSize')
     })
 
-    it('옛 프로젝트의 빈 전체화면 shape에 isBackground 마이그레이션', () => {
+    it('옛 프로젝트의 전체화면 shape/이미지/영상에 isBackground 마이그레이션', () => {
       const data = deserializeProject(JSON.stringify({
         version: 1,
         pages: { '0-0': { canvasSize: { w: 1280, h: 720 }, elements: [
           { id: 'a', type: 'shape', x: 0, y: 0, width: 1280, height: 720, zIndex: 0, content: '', styles: {} },
           { id: 'b', type: 'shape', x: 100, y: 100, width: 200, height: 100, zIndex: 1, content: '', styles: {} },
           { id: 'c', type: 'image', x: 0, y: 0, width: 1280, height: 720, zIndex: 2, content: 'x.png', styles: {} },
+          { id: 'd', type: 'video', x: 0, y: 0, width: 1280, height: 720, zIndex: 3, content: 'v.mp4', styles: {} },
+          { id: 'e', type: 'image', x: 50, y: 50, width: 300, height: 200, zIndex: 4, content: 'small.png', styles: {} },
+          { id: 'f', type: 'shape', x: 0, y: 0, width: 1280, height: 720, zIndex: 5, content: 'hi', styles: {} },
         ] } },
       }))
       const els = data.pages['0-0'].elements
-      expect(els.find(e => e.id === 'a').isBackground).toBe(true)  // 빈 전체화면 shape → 배경
+      expect(els.find(e => e.id === 'a').isBackground).toBe(true)  // 빈 전체화면 shape
       expect(els.find(e => e.id === 'b').isBackground).toBeFalsy() // 작은 shape → 일반
-      expect(els.find(e => e.id === 'c').isBackground).toBeFalsy() // 이미지 → 일반(옛 휴리스틱은 shape 한정)
+      expect(els.find(e => e.id === 'c').isBackground).toBe(true)  // 전체화면 이미지 → 배경
+      expect(els.find(e => e.id === 'd').isBackground).toBe(true)  // 전체화면 영상 → 배경
+      expect(els.find(e => e.id === 'e').isBackground).toBeFalsy() // 작은 이미지 → 일반
+      expect(els.find(e => e.id === 'f').isBackground).toBeFalsy() // 내용 있는 전체화면 shape → 일반(배경 아님)
     })
 
     it('이미 isBackground/__bg인 요소는 마이그레이션이 건드리지 않음', () => {
