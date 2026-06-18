@@ -81,6 +81,8 @@ export default function EditToolbar() {
   const layoutRef = useRef(null)
   const tableRef = useRef(null)
   const imageInputRef = useRef(null)
+  const bgImageInputRef = useRef(null)
+  const bgVideoInputRef = useRef(null)
 
   const isFlatMode = viewMode === 'flat' || viewMode === 'split'
   const canUndo = isFlatMode ? flatCanUndo : htmlCanUndo
@@ -139,6 +141,45 @@ export default function EditToolbar() {
     addFlatElement(el)
     // 배경은 캔버스에서 선택 대상이 아님 → 선택 해제하여 '배경 레이어' 패널이 뜨게 함
     setSelectedFlat(null)
+  }, [flatElements, canvasSize, addFlatElement, setSelectedFlat])
+
+  // 배경 이미지 추가 — 선택한 이미지 파일을 전체화면 배경 레이어로
+  const handleBgImageFile = useCallback((e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = (ev) => {
+      const minZ = flatElements.length > 0 ? Math.min(...flatElements.map(el => el.zIndex)) : 0
+      addFlatElement({
+        id: nextFlatId(), sourceId: '__bg', type: 'image',
+        content: ev.target.result, isRich: false, merged: false,
+        isBackground: true, locked: true,
+        x: 0, y: 0, width: canvasSize.w, height: canvasSize.h, zIndex: minZ - 1,
+        styles: { ...DEFAULT_STYLES, objectFit: 'cover' },
+      })
+      setSelectedFlat(null)
+    }
+    reader.readAsDataURL(file)
+    e.target.value = ''
+  }, [flatElements, canvasSize, addFlatElement, setSelectedFlat])
+
+  // 배경 영상 추가 — 선택한 영상 파일을 전체화면 배경 레이어로(자동재생/반복/음소거)
+  const handleBgVideoFile = useCallback(async (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const { BlobStore } = await import('../core/BlobStore')
+    const key = await BlobStore.put(file)
+    const minZ = flatElements.length > 0 ? Math.min(...flatElements.map(el => el.zIndex)) : 0
+    addFlatElement({
+      id: nextFlatId(), sourceId: '__bg', type: 'video',
+      content: BlobStore.toRef(key), isRich: false, merged: false,
+      isBackground: true, locked: true,
+      autoplay: true, loop: true, muted: true, hideControls: true,
+      x: 0, y: 0, width: canvasSize.w, height: canvasSize.h, zIndex: minZ - 1,
+      styles: { ...DEFAULT_STYLES, objectFit: 'cover' },
+    })
+    setSelectedFlat(null)
+    e.target.value = ''
   }, [flatElements, canvasSize, addFlatElement, setSelectedFlat])
 
   // 레이아웃 적용 — 기존 레이아웃이 있으면 변환(역할별 내용 이어받아 교체), 없으면 신규 삽입.
@@ -347,7 +388,9 @@ export default function EditToolbar() {
             icon={<RectIcon />}
             label="도형"
             items={[
-              { id: 'background', icon: <RectIcon />, label: '배경 (전체·맨 뒤)', action: insertBackground },
+              { id: 'background', icon: <RectIcon />, label: '배경 (단색·전체·맨 뒤)', action: insertBackground },
+              { id: 'bgImage', icon: <ImageIcon />, label: '배경 이미지', action: () => bgImageInputRef.current?.click() },
+              { id: 'bgVideo', icon: <VideoIcon />, label: '배경 영상', action: () => bgVideoInputRef.current?.click() },
               { id: 'rect', icon: <RectIcon />, label: '사각형', action: () => insertFlatPreset('rect') },
               { id: 'circle', icon: <CircleIcon />, label: '원', action: () => insertFlatPreset('circle') },
               { id: 'lineH', icon: <LineHIcon />, label: '가로 선', action: () => insertFlatPreset('lineH') },
@@ -376,6 +419,8 @@ export default function EditToolbar() {
             style={{ display: 'none' }}
             onChange={handleImageFile}
           />
+          <input ref={bgImageInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleBgImageFile} />
+          <input ref={bgVideoInputRef} type="file" accept="video/*" style={{ display: 'none' }} onChange={handleBgVideoFile} />
 
           {/* 영상 드롭다운 (URL / 파일) */}
           <DropdownBtn
