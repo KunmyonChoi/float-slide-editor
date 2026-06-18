@@ -6,6 +6,7 @@ import SlideListPanel from './components/SlideListPanel'
 import FlatCanvas from './components/FlatCanvas'
 import FlatPresenter from './components/FlatPresenter'
 import ComparePanel from './components/ComparePanel'
+import DebugElementsPanel from './components/DebugElementsPanel'
 import PageBar from './components/PageBar'
 import SlideDeleteToast from './components/SlideDeleteToast'
 import { UrlPromptHost } from './components/UrlPrompt'
@@ -88,6 +89,7 @@ export default function App() {
       <InfographicHost />
       <ConfirmHost />
       {debugMode && <ComparePanel />}
+      {debugMode && <DebugElementsPanel />}
       <InsertPopup />
       {/* flat 모드 발표 — fixed 전체화면 오버레이 */}
       {useFlatPresenter && <FlatPresenter />}
