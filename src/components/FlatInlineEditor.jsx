@@ -455,15 +455,27 @@ export default function FlatInlineEditor({ element }) {
     border: styles.border,
     boxShadow: styles.boxShadow,
     opacity: styles.opacity,
-    // flex 레이아웃 (세로정렬/병합/도형)
-    ...(needsFlex ? {
-      display: 'flex',
-      alignItems: vAlign || (styles.isFlex ? (styles.alignItems || 'center') : 'center'),
-      justifyContent: styles.isFlex
-        ? (styles.justifyContent || 'center')
-        : (styles.textAlign === 'center' ? 'center'
-          : styles.textAlign === 'right' ? 'flex-end' : 'flex-start'),
-    } : {}),
+    // flex 레이아웃. 병합/자체-flex 컨테이너는 가로(기존 동작) 유지.
+    // 도형/세로정렬 텍스트는 '세로 방향(column)' flex로 — Enter 줄바꿈이 아래로 쌓이게
+    // (가로 flex면 Enter가 만든 블록이 옆으로 붙어 줄바꿈이 안 됨).
+    ...(needsFlex ? (
+      (merged || styles.isFlex || styles.display === 'flex' || styles.display === 'inline-flex')
+        ? {
+            display: 'flex',
+            alignItems: vAlign || (styles.isFlex ? (styles.alignItems || 'center') : 'center'),
+            justifyContent: styles.isFlex
+              ? (styles.justifyContent || 'center')
+              : (styles.textAlign === 'center' ? 'center'
+                : styles.textAlign === 'right' ? 'flex-end' : 'flex-start'),
+          }
+        : {
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: vAlign || 'center', // 세로 정렬(주축)
+            alignItems: styles.textAlign === 'left' ? 'flex-start'
+              : styles.textAlign === 'right' ? 'flex-end' : 'center', // 가로(교차축)
+          }
+    ) : {}),
     // 편집 시각 피드백
     outline: '2px solid rgba(99, 102, 241, 0.8)',
     outlineOffset: -1,

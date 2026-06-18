@@ -27,12 +27,12 @@ const ELEMENT_PRESETS = {
   rect: {
     type: 'shape', width: 150, height: 100,
     content: '', isRich: false, merged: false,
-    styles: { ...DEFAULT_STYLES, backgroundColor: '#e2e8f0' },
+    styles: { ...DEFAULT_STYLES, backgroundColor: '#e2e8f0', textAlign: 'center', alignItems: 'center' },
   },
   circle: {
     type: 'shape', width: 100, height: 100,
     content: '', isRich: false, merged: false,
-    styles: { ...DEFAULT_STYLES, backgroundColor: '#e2e8f0', borderRadius: '50%' },
+    styles: { ...DEFAULT_STYLES, backgroundColor: '#e2e8f0', borderRadius: '50%', textAlign: 'center', alignItems: 'center' },
   },
   lineH: {
     type: 'shape', width: 200, height: 2,

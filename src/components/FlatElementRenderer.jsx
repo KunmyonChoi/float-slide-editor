@@ -187,12 +187,21 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
             // border 등과 겹칠 때 정렬이 어긋나 보인다. 미설정(undefined)일 때만 블록 흐름(위).
             const hasVAlign = vAlign === 'center' || vAlign === 'flex-end' || vAlign === 'flex-start'
             if (!isSelfFlex && !merged && !hasVAlign) return {} // 기본: 위(블록 흐름)
+            // 병합/자체-flex 컨테이너는 가로(기존 동작) 유지
+            if (isSelfFlex || merged || styles.isFlex) {
+              return {
+                display: 'flex',
+                alignItems: vAlign || (styles.isFlex ? (styles.alignItems || 'center') : 'center'),
+                justifyContent: isSelfFlex ? (styles.justifyContent || 'center') : styles.isFlex ? (styles.justifyContent || 'center') : (styles.textAlign === 'center' ? 'center' : styles.textAlign === 'right' ? 'flex-end' : 'flex-start'),
+                ...(styles.gap && styles.gap !== '0px' && styles.gap !== 'normal' ? { gap: styles.gap } : {}),
+              }
+            }
+            // 명시적 세로정렬 텍스트: 세로 방향(column) flex — 여러 줄이 아래로 쌓이게
             return {
               display: 'flex',
-              // 명시적 세로정렬이 있으면 그것을, 없으면(병합/self-flex 버튼류) 중앙
-              alignItems: vAlign || (styles.isFlex ? (styles.alignItems || 'center') : 'center'),
-              justifyContent: isSelfFlex ? (styles.justifyContent || 'center') : styles.isFlex ? (styles.justifyContent || 'center') : (styles.textAlign === 'center' ? 'center' : styles.textAlign === 'right' ? 'flex-end' : 'flex-start'),
-              ...(styles.gap && styles.gap !== '0px' && styles.gap !== 'normal' ? { gap: styles.gap } : {}),
+              flexDirection: 'column',
+              justifyContent: vAlign || 'center', // 세로 정렬(주축)
+              alignItems: styles.textAlign === 'center' ? 'center' : styles.textAlign === 'right' ? 'flex-end' : 'flex-start', // 가로(교차축)
             }
           })(),
           visibility: isEditing ? 'hidden' : undefined,
@@ -441,10 +450,13 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
     textAlign: styles.textAlign || 'center',
     letterSpacing: styles.letterSpacing,
     padding: styles.padding || '8px',
+    // 세로 방향 flex — Enter 줄바꿈이 아래로 쌓이도록(가로 flex면 블록이 옆으로 붙음).
     display: 'flex',
-    // 세로 정렬: 설정값 존중, 미설정이면 가운데(도형 텍스트 기본). 편집기/속성패널과 일치.
-    alignItems: styles.alignItems || 'center',
-    justifyContent: styles.textAlign === 'left' ? 'flex-start'
+    flexDirection: 'column',
+    // 세로 정렬(주축): 설정값 존중, 미설정이면 가운데(도형 텍스트 기본). 편집기/속성패널과 일치.
+    justifyContent: styles.alignItems || 'center',
+    // 가로 정렬(교차축): textAlign 기반
+    alignItems: styles.textAlign === 'left' ? 'flex-start'
       : styles.textAlign === 'right' ? 'flex-end' : 'center',
     width: '100%', height: '100%',
     overflow: 'hidden',
