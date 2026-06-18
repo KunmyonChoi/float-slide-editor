@@ -11,6 +11,27 @@ import { BlobStore } from './BlobStore'
 const CURRENT_VERSION = 2
 
 /**
+ * 옛 프로젝트 호환 마이그레이션 — 배경 판정이 '크기 추론'에서 '명시 플래그(isBackground)'로
+ * 바뀌기 전에 저장된 프로젝트엔 배경 shape에 플래그가 없다. 그 옛 시그니처(빈 전체화면 shape)에만
+ * isBackground를 부여해, 일반 도형으로 둔갑해 캔버스 클릭으로 선택되던 문제를 해결한다.
+ * (런타임 동작엔 영향 없음 — 로드 시 1회만, 옛 휴리스틱과 정확히 동일한 조건에만 적용)
+ */
+function migrateLegacyBackgrounds(pages) {
+  for (const page of Object.values(pages || {})) {
+    const cs = page.canvasSize
+    if (!cs || !Array.isArray(page.elements)) continue
+    for (const el of page.elements) {
+      if (el.isBackground || el.sourceId === '__bg') continue // 이미 명시 배경
+      const isLegacyBg = el.type === 'shape' && !el.content
+        && Math.abs(el.width - cs.w) < 2 && Math.abs(el.height - cs.h) < 2
+        && Math.abs(el.x) < 2 && Math.abs(el.y) < 2
+      if (isLegacyBg) el.isBackground = true
+    }
+  }
+  return pages
+}
+
+/**
  * store 상태를 .flatproj ZIP 패키지로 직렬화
  * @returns {Promise<Blob>} ZIP Blob
  */
@@ -144,7 +165,7 @@ async function _loadZipProject(file) {
   }
 
   return {
-    pages: data.pages,
+    pages: migrateLegacyBackgrounds(data.pages),
     currentPageKey: data.currentPageKey || Object.keys(data.pages)[0],
     themeId: data.themeId || null,
     customTheme: data.customTheme || null,
@@ -167,7 +188,7 @@ export function deserializeProject(jsonString) {
   }
 
   return {
-    pages: data.pages,
+    pages: migrateLegacyBackgrounds(data.pages),
     currentPageKey: data.currentPageKey || Object.keys(data.pages)[0],
     themeId: data.themeId || null,
     customTheme: data.customTheme || null,
