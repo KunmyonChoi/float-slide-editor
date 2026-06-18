@@ -484,6 +484,12 @@ export default function FlatInlineEditor({ element }) {
         onBlur={handleBlur}
         onInput={handleInput}
         onKeyDown={handleKeyDown}
+        onPaste={(e) => {
+          // 편집 중 붙여넣기는 평문만 — 리치 HTML/이미지가 들어와 깨진 글자가 삽입되는 것 방지
+          e.preventDefault()
+          const text = e.clipboardData?.getData('text/plain') || ''
+          if (text) document.execCommand('insertText', false, text)
+        }}
         onMouseDown={(e) => e.stopPropagation()}
         onMouseOver={handleEditorMouseOver}
         onMouseOut={handleEditorMouseOut}
