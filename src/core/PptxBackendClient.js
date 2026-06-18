@@ -36,9 +36,9 @@ export const PPTX_DOCKER_IMAGE = 'dilly97/float-pptx'
 export const PPTX_DEFAULT_PORT = 8321
 const BACKEND_URL_KEY = 'pptx-backend-url'
 
-/** `docker run` 안내 명령 (UI 힌트용) — 최신 이미지 pull + 기존 컨테이너 교체(덮어쓰기) */
+/** `docker run` 안내 명령 (UI 힌트용) — 최신 pull + 기존 교체 + 백그라운드(-d) 실행 */
 export function dockerRunCommand() {
-  return `docker rm -f float-pptx 2>/dev/null; docker run --pull=always --name float-pptx -p ${PPTX_DEFAULT_PORT}:${PPTX_DEFAULT_PORT} ${PPTX_DOCKER_IMAGE}`
+  return `docker rm -f float-pptx 2>/dev/null; docker run -d --pull=always --name float-pptx -p ${PPTX_DEFAULT_PORT}:${PPTX_DEFAULT_PORT} ${PPTX_DOCKER_IMAGE}`
 }
 
 /**
