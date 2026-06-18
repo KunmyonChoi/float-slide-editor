@@ -1831,6 +1831,7 @@ export function extractFlatElements(doc, win) {
         zIndex: zCounter++,
         content: '',
         locked: true,
+        isBackground: true,
         styles: bgLayers[i],
       })
     }
@@ -1847,6 +1848,7 @@ export function extractFlatElements(doc, win) {
         zIndex: zCounter++,
         content: '',
         locked: true,
+        isBackground: true,
         styles: {
           backgroundColor: 'rgb(255, 255, 255)',
           backgroundImage: 'none',

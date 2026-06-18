@@ -3,7 +3,7 @@ import { useFlatStore } from '../store/flatStore'
 import { nextFlatId } from '../core/FlatExtractor'
 import { BlobStore } from '../core/BlobStore'
 import { copyElementToSystemClipboard } from '../core/SystemClipboard'
-import { computeAlignmentChanges, computeDistributionChanges } from '../core/SnapEngine'
+import { computeAlignmentChanges, computeDistributionChanges, isBackgroundElement } from '../core/SnapEngine'
 import { promptUrl } from './UrlPrompt'
 import { openInfographic } from './InfographicModal'
 
@@ -64,12 +64,8 @@ export default function FlatContextMenu({ x, y, canvasX, canvasY, onClose }) {
   const singleTextEl = selectedEls.length === 1 && selectedEls[0].type === 'text' ? selectedEls[0] : null
   const singleImageEl = selectedEls.length === 1 && selectedEls[0].type === 'image' ? selectedEls[0] : null
 
-  // 배경 요소 찾기
-  const bgElement = useMemo(() => flatElements.find(el =>
-    el.type === 'shape' && !el.content
-    && Math.abs(el.width - canvasSize.w) < 2 && Math.abs(el.height - canvasSize.h) < 2
-    && Math.abs(el.x) < 2 && Math.abs(el.y) < 2
-  ), [flatElements, canvasSize])
+  // 배경 요소 찾기 — 명시 배경(플래그/__bg)만
+  const bgElement = useMemo(() => flatElements.find(el => isBackgroundElement(el)), [flatElements])
   const anyLocked = selectedEls.some(e => e.locked)
 
   // 위치 보정 (메뉴가 stageRef 밖으로 나가지 않게)

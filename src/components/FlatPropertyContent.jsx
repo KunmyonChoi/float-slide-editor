@@ -510,7 +510,7 @@ function getGroupBBox(elements) {
 
 // 순서(z-order) — 배경 레이어는 맨 뒤 고정이라 비활성
 function OrderSection({ el }) {
-  const isBg = !!el.isBackground
+  const isBg = isBackgroundElement(el)
   const hint = isBg ? ' (배경은 맨 뒤 고정)' : ''
   const act = (fn) => () => useFlatStore.getState()[fn](el.id)
   const btn = 'flex-1 flex items-center justify-center text-sm px-2 py-1.5 rounded bg-white/5 text-slate-300 border border-white/10 hover:bg-white/10 transition-colors disabled:opacity-40 disabled:cursor-not-allowed'

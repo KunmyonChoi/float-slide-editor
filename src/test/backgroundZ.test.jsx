@@ -24,10 +24,17 @@ describe('배경 레이어는 항상 콘텐츠 아래로 렌더', () => {
     expect(Number(container.firstChild.style.zIndex)).toBe(5)
   })
 
-  it('높은 zIndex의 풀캔버스 배경도 콘텐츠 아래(휴리스틱)', () => {
-    // isBackground 플래그 없이 전체 캔버스 크기 무내용 도형 → 배경으로 간주
-    const bg = shape('fullbg', { x: 0, y: 0, width: 1280, height: 720, zIndex: 999, content: '' })
+  it('sourceId=__bg 배경(추출/변환)은 콘텐츠 아래로 렌더', () => {
+    const bg = shape('extbg', { x: 0, y: 0, width: 1280, height: 720, zIndex: 7, content: '', sourceId: '__bg' })
     const { container } = render(<FlatElementRenderer element={bg} isSelected={false} isEditing={false} scale={1} />)
-    expect(Number(container.firstChild.style.zIndex)).toBeLessThan(0)
+    expect(Number(container.firstChild.style.zIndex)).toBeLessThan(-100000)
+  })
+
+  it('플래그/__bg 없는 풀캔버스 도형은 더 이상 배경 아님(일반 z 유지·선택 가능)', () => {
+    // 크기 추론 제거: 사용자가 만든 전체화면 도형이 배경으로 잠기지 않는다
+    const el = shape('fullshape', { x: 0, y: 0, width: 1280, height: 720, zIndex: 999, content: '' })
+    const { container } = render(<FlatElementRenderer element={el} isSelected={false} isEditing={false} scale={1} />)
+    expect(Number(container.firstChild.style.zIndex)).toBe(999)
+    expect(container.firstChild.style.pointerEvents).not.toBe('none') // 선택 가능
   })
 })
