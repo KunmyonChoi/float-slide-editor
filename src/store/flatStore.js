@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { extractFlatElementsFromIframe, nextFlatId } from '../core/FlatExtractor'
+import { extractFlatElementsFromIframe, nextFlatId, bumpFlatCounterTo } from '../core/FlatExtractor'
 import { SLIDE_LAYOUTS } from '../core/slideLayouts'
 import { HistoryStack } from '../core/HistoryStack'
 import { isBackgroundElement } from '../core/SnapEngine'
@@ -1849,6 +1849,17 @@ export const useFlatStore = create((set, get) => ({
     // 캐시 초기화
     for (const key in _pageCache) delete _pageCache[key]
     _history.clear()
+
+    // ID 카운터 동기화 — 로드된 최대 flat-N 이후로 새 ID를 발급해 충돌 방지
+    // (충돌 시 같은 id 요소가 함께 선택돼 그룹처럼 보이는 버그 발생)
+    let _maxFlatId = 0
+    for (const key in pagesData) {
+      for (const el of (pagesData[key].elements || [])) {
+        const m = /^flat-(\d+)$/.exec(el.id || '')
+        if (m) { const n = +m[1]; if (n > _maxFlatId) _maxFlatId = n }
+      }
+    }
+    bumpFlatCounterTo(_maxFlatId)
 
     // 모든 페이지를 캐시에 저장
     for (const key in pagesData) {

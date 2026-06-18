@@ -12,6 +12,8 @@
 let _flatCounter = 0
 export function nextFlatId() { return `flat-${++_flatCounter}` }
 export function resetFlatCounter() { _flatCounter = 0 }
+// 프로젝트 로드 시 기존 최대 ID로 카운터를 올려, 새 요소 ID가 기존 ID와 충돌하지 않게 한다.
+export function bumpFlatCounterTo(n) { if (Number.isFinite(n) && n > _flatCounter) _flatCounter = n }
 
 /** 컨테이너가 시각적으로 의미 있는지 판별 (배경/테두리/그림자) */
 export function isVisuallyMeaningful(cs) {
