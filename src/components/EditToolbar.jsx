@@ -84,6 +84,7 @@ export default function EditToolbar() {
   const [videoOpen, setVideoOpen] = useState(false)
   const [layoutOpen, setLayoutOpen] = useState(false)
   const [tableOpen, setTableOpen] = useState(false)
+  const diagramMode = useFlatStore(s => s.diagramMode)
   const insertRef = useRef(null)
   const shapeRef = useRef(null)
   const videoRef = useRef(null)
@@ -406,6 +407,15 @@ export default function EditToolbar() {
               { id: 'drawPolygon', icon: <PolygonIcon />, label: '폴리곤', action: () => useFlatStore.getState().setDrawMode('polygon') },
             ]}
           />
+
+          {/* 다이어그램 모드 토글 — 켜면 도형 호버 시 연결점 표시, 끌어 커넥터 연결 */}
+          <ToolBtn
+            highlight={diagramMode}
+            onClick={() => useFlatStore.getState().setDiagramMode(!diagramMode)}
+            title="다이어그램 모드 (도형 연결선)"
+          >
+            <ConnectorIcon />
+          </ToolBtn>
 
           {/* 표 삽입 — 행×열 그리드 피커 */}
           <TableSizeDropdown
@@ -733,6 +743,18 @@ function DrawLineIcon() {
       <path d="M4 20L20 4" />
       <circle cx="4" cy="20" r="2" fill="currentColor" />
       <circle cx="20" cy="4" r="2" fill="currentColor" />
+    </svg>
+  )
+}
+
+function ConnectorIcon() {
+  // 두 노드 + 화살표 연결선
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="2" y="3" width="7" height="6" rx="1" />
+      <rect x="15" y="15" width="7" height="6" rx="1" />
+      <path d="M9 6h5a4 4 0 0 1 4 4v5" />
+      <path d="M15 12l3 3 3-3" />
     </svg>
   )
 }

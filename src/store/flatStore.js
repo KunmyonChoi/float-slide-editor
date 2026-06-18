@@ -261,6 +261,13 @@ export const useFlatStore = create((set, get) => ({
   styleClipboard: null,
   /** 그리기 모드: null | 'line' | 'polyline' | 'polygon' */
   drawMode: null,
+  /** 다이어그램 모드: 켜면 도형 호버 시 연결점 표시 + 커넥터 생성 가능(이동/선택은 그대로) */
+  diagramMode: false,
+  /** 새 커넥터 기본 스타일 — 마지막 사용 설정을 기억해 다음 커넥터에 적용 */
+  connectorDefaults: {
+    startArrow: 'none', endArrow: 'triangle',
+    stroke: '#1e293b', strokeWidth: '2', strokeDasharray: '',
+  },
   /** 마키 드래그 직후 배경 click 무시용 플래그 */
   _skipBgClick: false,
 
@@ -611,7 +618,57 @@ export const useFlatStore = create((set, get) => ({
   },
 
   setDrawMode(mode) {
-    set({ drawMode: mode, selectedFlatIds: [], editingFlatId: null })
+    set({ drawMode: mode, selectedFlatIds: [], editingFlatId: null, diagramMode: false })
+  },
+
+  /** 다이어그램 모드 토글 — drawMode와 상호배타 */
+  setDiagramMode(on) {
+    set({ diagramMode: !!on, drawMode: null, editingFlatId: null })
+  },
+
+  /** 새 커넥터 기본 스타일 갱신(마지막 사용 기억) */
+  setConnectorDefaults(partial) {
+    set({ connectorDefaults: { ...get().connectorDefaults, ...partial } })
+  },
+
+  /**
+   * 커넥터 생성 — connection({start,end} 각각 {elementId} 또는 {point}).
+   * 기하(x/y/width/height/points)는 렌더 시 resolveConnectors가 유도하므로
+   * 여기선 자리만 채운다(저장/선택용 캐시). connectorDefaults로 스타일 적용.
+   */
+  addConnector(connection) {
+    const d = get().connectorDefaults
+    const els = get().flatElements
+    const maxZ = els.length > 0 ? Math.max(...els.map(e => e.zIndex)) : 0
+    const el = {
+      id: nextFlatId(), sourceId: null,
+      type: 'shape', shapeType: 'connector',
+      connection,
+      routing: 'straight',
+      closed: false,
+      content: '', isRich: false, merged: false,
+      x: 0, y: 0, width: 0, height: 0, points: [{ x: 0, y: 0 }, { x: 0, y: 0 }],
+      zIndex: maxZ + 1,
+      startArrow: d.startArrow, endArrow: d.endArrow,
+      styles: {
+        stroke: d.stroke, strokeWidth: d.strokeWidth, strokeDasharray: d.strokeDasharray,
+        fill: 'none', opacity: '1', backgroundColor: 'rgba(0,0,0,0)',
+      },
+    }
+    get().addFlatElement(el)
+    set({ selectedFlatIds: [el.id] })
+    return el.id
+  },
+
+  /** 커넥터 방향 뒤집기 — 양끝 연결 + 화살표 스왑 */
+  reverseConnector(id) {
+    const el = get().flatElements.find(e => e.id === id)
+    if (!el || el.shapeType !== 'connector' || !el.connection) return
+    get().updateFlatElement(id, {
+      connection: { start: el.connection.end, end: el.connection.start },
+      startArrow: el.endArrow || 'none',
+      endArrow: el.startArrow || 'none',
+    })
   },
 
   /** 모든 페이지를 백그라운드로 미리 flat 변환 (로딩 시 자동 호출) */
