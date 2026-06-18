@@ -16,6 +16,7 @@ import { nextFlatId, isFontUrl } from '../core/FlatExtractor'
 import { pointsToBBox, absoluteToRelativePoints, pointsToSvgPath } from '../core/PolyShapeUtils'
 import { confirmDialog } from './ConfirmDialog'
 import { bumpFontSizePx } from '../core/TextStyleScope'
+import { copyElementToSystemClipboard } from '../core/SystemClipboard'
 
 /**
  * FlatCanvas
@@ -130,6 +131,51 @@ export default function FlatCanvas() {
     reader.onload = (ev) => insertImageFromDataUrl(ev.target.result, dropX, dropY)
     reader.readAsDataURL(file)
   }, [insertImageFromDataUrl])
+
+  // 텍스트 문자열 → 캔버스 중앙에 텍스트 요소 삽입
+  const insertTextString = useCallback((text) => {
+    const { canvasSize: cs, flatElements: els, addFlatElement, setSelectedFlat } = useFlatStore.getState()
+    const maxZ = els.length > 0 ? Math.max(...els.map(el => el.zIndex)) : 0
+    const lines = text.trim().split('\n')
+    const estWidth = Math.min(Math.max(200, Math.max(...lines.map(l => l.length)) * 10), cs.w * 0.8)
+    const estHeight = Math.max(40, lines.length * 24)
+    const el = {
+      id: nextFlatId(), sourceId: null, type: 'text',
+      content: text.trim().replace(/\n/g, '<br>'), isRich: text.includes('\n'), merged: false,
+      x: Math.round((cs.w - estWidth) / 2), y: Math.round((cs.h - estHeight) / 2),
+      width: Math.round(estWidth), height: estHeight, zIndex: maxZ + 1,
+      styles: {
+        backgroundColor: 'rgba(0,0,0,0)', color: '#1e293b',
+        fontSize: '16px', fontFamily: 'sans-serif', fontWeight: '400',
+        lineHeight: '1.5', textAlign: 'left', padding: '4px 8px',
+        borderRadius: '0px', border: '0px none', boxShadow: 'none', opacity: '1',
+      },
+    }
+    addFlatElement(el)
+    setSelectedFlat(el.id)
+  }, [])
+
+  // OS 클립보드 붙여넣기(Ctrl+Alt+V) — 내부 요소 클립보드와 무관하게 외부 캡처/복사본을
+  // 강제로 붙인다. 콘텐츠 타입을 보고 이미지/텍스트 구분 삽입.
+  const pasteOSClipboard = useCallback(async () => {
+    if (!navigator.clipboard?.read) { alert('이 브라우저는 클립보드 읽기를 지원하지 않습니다.'); return }
+    try {
+      const items = await navigator.clipboard.read()
+      for (const item of items) {
+        const t = item.types.find(x => x.startsWith('image/'))
+        if (t) { insertImageFromFile(await item.getType(t)); return }
+      }
+      for (const item of items) {
+        if (item.types.includes('text/plain')) {
+          const text = await (await item.getType('text/plain')).text()
+          if (text.trim()) { insertTextString(text); return }
+        }
+      }
+      alert('클립보드에 붙여넣을 이미지나 텍스트가 없습니다.')
+    } catch {
+      alert('클립보드를 읽지 못했습니다(권한이 필요할 수 있어요).')
+    }
+  }, [insertImageFromFile, insertTextString])
 
   // 비디오 파일 → IndexedDB + 요소 삽입
   const insertVideoFromFile = useCallback(async (file, dropX, dropY) => {
@@ -428,6 +474,13 @@ export default function FlatCanvas() {
         return
       }
 
+      // Ctrl/Cmd+Alt+V → OS 클립보드(캡처 이미지/텍스트) 강제 붙여넣기
+      if ((e.ctrlKey || e.metaKey) && e.altKey && e.code === 'KeyV') {
+        e.preventDefault()
+        pasteOSClipboard()
+        return
+      }
+
       if (useFlatStore.getState().editingFlatId) return  // 텍스트 편집 중
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return
       if (e.target.contentEditable === 'true') return
@@ -435,6 +488,12 @@ export default function FlatCanvas() {
       const { selectedFlatIds } = useFlatStore.getState()
       const hasSelection = selectedFlatIds.length > 0
       const singleId = selectedFlatIds.length === 1 ? selectedFlatIds[0] : null
+      // 단일 이미지/텍스트 복사 시 OS 클립보드에도 기록(다른 앱 붙여넣기용)
+      const copySingleToOS = () => {
+        if (!singleId) return
+        const el = useFlatStore.getState().flatElements.find(x => x.id === singleId)
+        if (el) copyElementToSystemClipboard(el)
+      }
 
       // Enter / F2 → 텍스트/도형 편집 모드 진입 (단일 선택만, F2는 PowerPoint 호환)
       if ((e.key === 'Enter' || e.key === 'F2') && singleId) {
@@ -479,8 +538,8 @@ export default function FlatCanvas() {
         // Ctrl+Shift+C/V: 스타일 복사/붙여넣기 (Ctrl+C/V보다 먼저 체크)
         if (e.code === 'KeyC' && e.shiftKey && hasSelection) { e.preventDefault(); useFlatStore.getState().copyStyle(); return }
         if (e.code === 'KeyV' && e.shiftKey && hasSelection) { e.preventDefault(); useFlatStore.getState().pasteStyle(); return }
-        if (e.code === 'KeyC' && hasSelection)  { copyElement(); return }
-        if (e.code === 'KeyX' && hasSelection)  { cutElement(); return }
+        if (e.code === 'KeyC' && hasSelection)  { copyElement(); copySingleToOS(); return }
+        if (e.code === 'KeyX' && hasSelection)  { copySingleToOS(); cutElement(); return }
         if (e.code === 'KeyV')                  { pasteElement(); return }
         if (e.code === 'KeyD' && hasSelection)  { e.preventDefault(); duplicateElement(); return }
         // 그룹 / 그룹 해제
@@ -566,7 +625,7 @@ export default function FlatCanvas() {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [removeSelectedElements, updateFlatElement, undo, redo, copyElement, cutElement, pasteElement, duplicateElement, selectAllFlats, bringForward, sendBackward, bringToFront, sendToBack])
+  }, [removeSelectedElements, updateFlatElement, undo, redo, copyElement, cutElement, pasteElement, duplicateElement, selectAllFlats, bringForward, sendBackward, bringToFront, sendToBack, pasteOSClipboard])
 
   /** 맞춤 scale 재계산. 맞춤 모드면 scale도 맞춤값으로 동기화. */
   const recalcScale = useCallback(() => {

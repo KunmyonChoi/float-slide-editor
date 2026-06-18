@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useFlatStore } from '../store/flatStore'
 import { nextFlatId } from '../core/FlatExtractor'
 import { BlobStore } from '../core/BlobStore'
+import { copyElementToSystemClipboard } from '../core/SystemClipboard'
 import { computeAlignmentChanges, computeDistributionChanges } from '../core/SnapEngine'
 import { promptUrl } from './UrlPrompt'
 import { openInfographic } from './InfographicModal'
@@ -150,15 +151,12 @@ export default function FlatContextMenu({ x, y, canvasX, canvasY, onClose }) {
     setSelectedFlat(el.id)
   }, [canvasX, canvasY, canvasSize, flatElements, addFlatElement, setSelectedFlat])
 
-  // 이미지 파일 선택 처리
-  const handleImageFile = useCallback((e) => {
-    const file = e.target.files?.[0]
-    if (!file) { onClose(); return }
+  // 이미지 Blob/File → 캔버스에 맞게 축소해 우클릭 위치에 삽입(파일선택/캡처 붙여넣기 공용)
+  const insertImageFromBlob = useCallback((blob) => {
     const reader = new FileReader()
     reader.onload = (ev) => {
       const img = new Image()
       img.onload = () => {
-        // 이미지를 캔버스에 맞게 축소
         let w = img.width, h = img.height
         const maxW = canvasSize.w * 0.6, maxH = canvasSize.h * 0.6
         if (w > maxW || h > maxH) {
@@ -173,13 +171,59 @@ export default function FlatContextMenu({ x, y, canvasX, canvasY, onClose }) {
           isRich: false, merged: false,
           styles: { ...DEFAULT_STYLES, objectFit: 'contain' },
         })
-        onClose()
       }
       img.src = ev.target.result
     }
-    reader.readAsDataURL(file)
+    reader.readAsDataURL(blob)
+  }, [canvasSize, insertCustomElement])
+
+  // 이미지 파일 선택 처리
+  const handleImageFile = useCallback((e) => {
+    const file = e.target.files?.[0]
+    if (!file) { onClose(); return }
+    insertImageFromBlob(file)
     e.target.value = '' // 같은 파일 재선택 허용
-  }, [canvasSize, insertCustomElement, onClose])
+    onClose()
+  }, [insertImageFromBlob, onClose])
+
+  // 텍스트 → 캔버스에 텍스트 요소로 삽입(우클릭 위치). 줄 수/길이로 크기 추정.
+  const insertTextElement = useCallback((text) => {
+    const lines = text.trim().split('\n')
+    const w = Math.min(Math.max(200, Math.max(...lines.map(l => l.length)) * 10), canvasSize.w * 0.8)
+    const h = Math.max(40, lines.length * 24)
+    insertCustomElement({
+      type: 'text',
+      width: Math.round(w), height: h,
+      content: text.trim().replace(/\n/g, '<br>'),
+      isRich: text.includes('\n'),
+      merged: false,
+      styles: { ...DEFAULT_STYLES, padding: '4px 8px' },
+    })
+  }, [canvasSize, insertCustomElement])
+
+  // OS 클립보드 붙여넣기 — 내용 타입을 보고 이미지/텍스트로 구분 삽입.
+  // 내부 요소 클립보드(Ctrl+V)와 무관하게 외부 캡처/복사본을 강제로 붙인다.
+  const pasteFromClipboard = useCallback(async () => {
+    if (!navigator.clipboard?.read) { alert('이 브라우저는 클립보드 읽기를 지원하지 않습니다.'); return }
+    try {
+      const items = await navigator.clipboard.read()
+      // 1순위: 이미지
+      for (const item of items) {
+        const t = item.types.find(x => x.startsWith('image/'))
+        if (t) { insertImageFromBlob(await item.getType(t)); return }
+      }
+      // 2순위: 텍스트
+      for (const item of items) {
+        if (item.types.includes('text/plain')) {
+          const text = await (await item.getType('text/plain')).text()
+          if (text.trim()) { insertTextElement(text); return }
+        }
+      }
+      alert('클립보드에 붙여넣을 이미지나 텍스트가 없습니다.')
+    } catch {
+      alert('클립보드를 읽지 못했습니다(권한이 필요할 수 있어요).')
+    }
+  }, [insertImageFromBlob, insertTextElement])
 
   // 영상 URL → embed URL 변환
   const parseVideoUrl = (url) => {
@@ -234,9 +278,10 @@ export default function FlatContextMenu({ x, y, canvasX, canvasY, onClose }) {
   // 액션 디스패치
   const handleAction = useCallback((action) => {
     switch (action) {
-      case 'cut': cutElement(); break
-      case 'copy': copyElement(); break
+      case 'cut': if (selectedEls.length === 1) copyElementToSystemClipboard(selectedEls[0]); cutElement(); break
+      case 'copy': copyElement(); if (selectedEls.length === 1) copyElementToSystemClipboard(selectedEls[0]); break
       case 'paste': pasteElement(); break
+      case 'pasteClipboard': pasteFromClipboard(); break
       case 'duplicate': duplicateElement(); break
       case 'delete': removeSelectedElements(); break
       case 'selectAll': selectAllFlats(); break
@@ -342,7 +387,7 @@ export default function FlatContextMenu({ x, y, canvasX, canvasY, onClose }) {
       removeSelectedElements, selectAllFlats, bringForward, sendBackward,
       bringToFront, sendToBack, insertElement, insertVideo, onClose, allLocked,
       flatElements, selectedFlatIds, batchUpdateFlatElementsIndividual,
-      updateFlatElement, batchUpdateFlatElements, bgElement, setSelectedFlat, singleTextEl, downloadSelectedImage])
+      updateFlatElement, batchUpdateFlatElements, bgElement, setSelectedFlat, singleTextEl, downloadSelectedImage, pasteFromClipboard])
 
   // 서브메뉴 hover
   const enterSubmenu = (key) => {
@@ -358,6 +403,7 @@ export default function FlatContextMenu({ x, y, canvasX, canvasY, onClose }) {
     { id: 'cut', label: '잘라내기', shortcut: 'Ctrl+X', action: 'cut' },
     { id: 'copy', label: '복사', shortcut: 'Ctrl+C', action: 'copy' },
     { id: 'paste', label: '붙여넣기', shortcut: 'Ctrl+V', action: 'paste', disabled: clipboardEmpty },
+    { id: 'pasteClip', label: '클립보드 붙여넣기 (이미지/텍스트)', shortcut: 'Ctrl+Alt+V', action: 'pasteClipboard' },
     { id: 'copyStyle', label: '서식 복사', shortcut: 'Ctrl+Shift+C', action: 'copyStyle', disabled: !singleId },
     { id: 'pasteStyle', label: '서식 붙여넣기', shortcut: 'Ctrl+Shift+V', action: 'pasteStyle',
       disabled: !useFlatStore.getState().styleClipboard },
@@ -404,6 +450,7 @@ export default function FlatContextMenu({ x, y, canvasX, canvasY, onClose }) {
     { id: 'all', label: '전체 선택', shortcut: 'Ctrl+A', action: 'selectAll' },
   ] : [
     { id: 'paste', label: '붙여넣기', shortcut: 'Ctrl+V', action: 'paste', disabled: clipboardEmpty },
+    { id: 'pasteClip', label: '클립보드 붙여넣기 (이미지/텍스트)', shortcut: 'Ctrl+Alt+V', action: 'pasteClipboard' },
     { id: 'sep1', type: 'separator' },
     ...(bgElement ? [{ id: 'formatBg', label: '배경 서식', action: 'formatBackground' }] : []),
     ...(bgElement ? [{ id: 'bgToTheme', label: '현재 배경을 사용자 테마로', action: 'setThemeBg' }] : []),
