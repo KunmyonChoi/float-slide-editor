@@ -1186,6 +1186,23 @@ export const useFlatStore = create((set, get) => ({
     const updated = [...els]
     updated[idx] = { ...old, ...changes }
     set({ flatElements: updated, canUndo: _history.canUndo, canRedo: _history.canRedo })
+
+    // 커넥터의 화살표/선스타일을 바꾸면 다음 커넥터 기본값으로 기억(마지막 사용 기억)
+    if (updated[idx].shapeType === 'connector') {
+      const touchesArrow = 'startArrow' in changes || 'endArrow' in changes
+      const s = changes.styles || {}
+      const touchesLine = 'stroke' in s || 'strokeWidth' in s || 'strokeDasharray' in s
+      if (touchesArrow || touchesLine) {
+        const c = updated[idx]
+        get().setConnectorDefaults({
+          startArrow: c.startArrow ?? 'none',
+          endArrow: c.endArrow ?? 'none',
+          stroke: c.styles?.stroke ?? '#1e293b',
+          strokeWidth: c.styles?.strokeWidth ?? '2',
+          strokeDasharray: c.styles?.strokeDasharray ?? '',
+        })
+      }
+    }
   },
 
   /** 실시간 미리보기 (히스토리 없음) */

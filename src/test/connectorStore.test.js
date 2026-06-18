@@ -124,6 +124,26 @@ describe('flatStore 커넥터', () => {
     expect(useFlatStore.getState().flatElements.find(e => e.id === cid)).toBeUndefined()
   })
 
+  it('커넥터 화살표/선스타일 변경이 connectorDefaults에 기억됨', () => {
+    const id = useFlatStore.getState().addConnector({ start: { elementId: 'A' }, end: { elementId: 'B' } })
+    useFlatStore.getState().updateFlatElement(id, { endArrow: 'circle' })
+    useFlatStore.getState().updateFlatElement(id, { styles: { strokeDasharray: '8 4' } })
+    const d = useFlatStore.getState().connectorDefaults
+    expect(d.endArrow).toBe('circle')
+    expect(d.strokeDasharray).toBe('8 4')
+    // 다음 새 커넥터가 기억된 값 상속
+    const id2 = useFlatStore.getState().addConnector({ start: { elementId: 'A' }, end: { point: { x: 200, y: 50 } } })
+    const el2 = useFlatStore.getState().flatElements.find(e => e.id === id2)
+    expect(el2.endArrow).toBe('circle')
+    expect(el2.styles.strokeDasharray).toBe('8 4')
+  })
+
+  it('일반 도형 업데이트는 connectorDefaults에 영향 없음', () => {
+    const d0 = { ...useFlatStore.getState().connectorDefaults }
+    useFlatStore.getState().updateFlatElement('A', { styles: { strokeDasharray: '2 2' } })
+    expect(useFlatStore.getState().connectorDefaults).toEqual(d0)
+  })
+
   it('커넥터만 단독 삭제는 도형에 영향 없음', () => {
     const cid = useFlatStore.getState().addConnector({ start: { elementId: 'A' }, end: { elementId: 'B' } })
     useFlatStore.getState().removeFlatElement(cid)
