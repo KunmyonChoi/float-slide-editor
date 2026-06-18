@@ -2425,6 +2425,13 @@ function SlideBackgroundPanel() {
 
   // 레이어 미리보기 색상 (썸네일용)
   const layerPreviewStyle = (el) => {
+    // 이미지/영상 요소 배경: content가 곧 소스 (CSS backgroundImage가 아님)
+    if (el.type === 'image' && el.content) {
+      return { backgroundImage: `url("${el.content}")`, backgroundSize: 'cover', backgroundPosition: 'center' }
+    }
+    if (el.type === 'video') {
+      return { backgroundColor: '#1e293b' } // 영상 프레임은 못 그리므로 어두운 스와치
+    }
     const s = el.styles || {}
     const bg = s.backgroundColor || 'transparent'
     const bgImg = s.backgroundImage
@@ -2435,7 +2442,9 @@ function SlideBackgroundPanel() {
     return { backgroundColor: bg }
   }
 
-  const layerLabel = (el, idx) => {
+  const layerLabel = (el) => {
+    if (el.type === 'image') return `이미지`
+    if (el.type === 'video') return `영상`
     const s = el.styles || {}
     if (s.backgroundImage?.startsWith('url(')) return `이미지`
     if (s.backgroundImage?.includes('gradient')) return `그래디언트`
@@ -2443,6 +2452,9 @@ function SlideBackgroundPanel() {
     if (bg && bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent') return `단색`
     return `투명`
   }
+
+  // 일반 요소로 복원 가능한 배경(이미지/영상 요소만 — shape 배경은 복원 대상 아님)
+  const canRestore = (el) => el.type === 'image' || el.type === 'video'
 
   const styles = currentBg?.styles || BG_DEFAULT_STYLES
   const hasGradient = styles.backgroundImage && styles.backgroundImage !== 'none'
@@ -2490,8 +2502,15 @@ function SlideBackgroundPanel() {
                   ...layerPreviewStyle(el),
                 }} />
                 <span className="text-xs text-slate-300 flex-1">
-                  {layerLabel(el, idx)}
+                  {layerLabel(el)}
                 </span>
+                {canRestore(el) && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); useFlatStore.getState().restoreBackgroundToNormal(el.id) }}
+                    className="text-xs text-slate-400 hover:text-indigo-300 px-0.5"
+                    title="일반 요소로 복원"
+                  >↩</button>
+                )}
                 {bgLayers.length > 1 && (
                   <>
                     <button

@@ -1469,6 +1469,25 @@ export const useFlatStore = create((set, get) => ({
     set({ flatElements: updated, canUndo: _history.canUndo, canRedo: _history.canRedo })
   },
 
+  /** 배경 → 일반 요소로 복원. _restore가 있으면 원래 위치/크기로, 없으면 중앙 배치. */
+  restoreBackgroundToNormal(id) {
+    const { flatElements, canvasSize } = get()
+    const el = flatElements.find(e => e.id === id)
+    if (!el || !isBackgroundElement(el)) return
+    const r = el._restore || {}
+    const w = r.width ?? el.width, h = r.height ?? el.height
+    get().updateFlatElement(id, {
+      isBackground: false, sourceId: null, locked: false,
+      x: r.x ?? Math.round((canvasSize.w - w) / 2),
+      y: r.y ?? Math.round((canvasSize.h - h) / 2),
+      width: w, height: h,
+      zIndex: r.zIndex ?? el.zIndex,
+      _restore: undefined,
+      styles: { ...(el.styles || {}), objectFit: r.objectFit ?? 'contain' },
+    })
+    set({ selectedFlatIds: [id] })
+  },
+
   undo() {
     const cmd = _history.undo()
     if (!cmd) return

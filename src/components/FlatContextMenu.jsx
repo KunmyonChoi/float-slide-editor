@@ -343,17 +343,7 @@ export default function FlatContextMenu({ x, y, canvasX, canvasY, onClose }) {
         if (selectedEls.length !== 1) break
         const el = selectedEls[0]
         if (!isBackgroundElement(el)) break
-        const r = el._restore || {}
-        updateFlatElement(el.id, {
-          isBackground: false, sourceId: null, locked: false,
-          x: r.x ?? Math.round((canvasSize.w - (r.width ?? el.width)) / 2),
-          y: r.y ?? Math.round((canvasSize.h - (r.height ?? el.height)) / 2),
-          width: r.width ?? el.width, height: r.height ?? el.height,
-          zIndex: r.zIndex ?? el.zIndex,
-          _restore: undefined,
-          styles: { ...(el.styles || {}), objectFit: r.objectFit ?? 'contain' },
-        })
-        setSelectedFlat(el.id)
+        useFlatStore.getState().restoreBackgroundToNormal(el.id)
         break
       }
       case 'lock': {
