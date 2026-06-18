@@ -343,6 +343,8 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
     const startArrow = element.startArrow || 'none'
     const endArrow = element.endArrow || 'none'
     const markerId = element.id
+    // 화살표 마커 크기 — 선 두께에 따라 적당히 커진다(viewBox 0..12를 aMark px로 스케일).
+    const aMark = Math.max(12, Math.min(32, Math.round(9 + sw * 2)))
     return (
       <div style={{ ...baseStyle, overflow: 'visible' }} onMouseDown={handleMouseDown} onClick={handleClick}>
         <svg
@@ -352,7 +354,7 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
         >
           <defs>
             {startArrow !== 'none' && (
-              <marker id={`ms-${markerId}`} markerWidth="12" markerHeight="12" refX="10" refY="6"
+              <marker id={`ms-${markerId}`} markerWidth={aMark} markerHeight={aMark} viewBox="0 0 12 12" refX="10" refY="6"
                       orient="auto-start-reverse" markerUnits="userSpaceOnUse">
                 {startArrow === 'arrow' && <path d="M 0 1 L 10 6 L 0 11" fill="none" stroke={strokeColor} strokeWidth="1.5" />}
                 {startArrow === 'triangle' && <path d="M 0 1 L 10 6 L 0 11 Z" fill={strokeColor} />}
@@ -361,7 +363,7 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
               </marker>
             )}
             {endArrow !== 'none' && (
-              <marker id={`me-${markerId}`} markerWidth="12" markerHeight="12" refX="10" refY="6"
+              <marker id={`me-${markerId}`} markerWidth={aMark} markerHeight={aMark} viewBox="0 0 12 12" refX="10" refY="6"
                       orient="auto" markerUnits="userSpaceOnUse">
                 {endArrow === 'arrow' && <path d="M 0 1 L 10 6 L 0 11" fill="none" stroke={strokeColor} strokeWidth="1.5" />}
                 {endArrow === 'triangle' && <path d="M 0 1 L 10 6 L 0 11 Z" fill={strokeColor} />}
