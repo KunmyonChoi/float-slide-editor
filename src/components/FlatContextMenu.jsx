@@ -323,10 +323,15 @@ export default function FlatContextMenu({ x, y, canvasX, canvasY, onClose }) {
         if (selectedEls.length !== 1) break
         const el = selectedEls[0]
         if (el.type !== 'image' && el.type !== 'video') break
-        const minZ = flatElements.length ? Math.min(...flatElements.map(e => e.zIndex)) : 0
+        // 새 배경은 기존 배경들보다 '앞'(최상위 배경)에 — 안 그러면 흰 배경 등에 가려 사라진다.
+        // 배경끼리는 render z에 -1,000,000 오프셋이 있어 항상 콘텐츠 아래로 유지됨.
+        const otherBgZs = flatElements.filter(e => e.id !== el.id && isBackgroundElement(e)).map(e => e.zIndex)
+        const bgTopZ = otherBgZs.length
+          ? Math.max(...otherBgZs) + 1
+          : (flatElements.length ? Math.min(...flatElements.map(e => e.zIndex)) - 1 : 0)
         updateFlatElement(el.id, {
           isBackground: true, sourceId: '__bg', locked: true,
-          x: 0, y: 0, width: canvasSize.w, height: canvasSize.h, zIndex: minZ - 1,
+          x: 0, y: 0, width: canvasSize.w, height: canvasSize.h, zIndex: bgTopZ,
           _restore: { x: el.x, y: el.y, width: el.width, height: el.height, zIndex: el.zIndex, objectFit: el.styles?.objectFit },
           styles: { ...(el.styles || {}), objectFit: 'cover' }, // 배경은 꽉 채움
         })

@@ -1240,6 +1240,16 @@ export const useFlatStore = create((set, get) => ({
       }
       return clone
     })
+    // 배경 클론은 대상 페이지의 기존 배경들보다 '앞'에 — 안 그러면 그 페이지의 흰 배경 등에 가려 안 보인다.
+    let bgTop = null
+    for (const clone of newEls) {
+      if (!isBackgroundElement(clone)) continue
+      if (bgTop === null) {
+        const bgZs = flatElements.filter(e => isBackgroundElement(e)).map(e => e.zIndex)
+        bgTop = bgZs.length ? Math.max(...bgZs) : (flatElements.length ? Math.min(...flatElements.map(e => e.zIndex)) - 1 : 0)
+      }
+      clone.zIndex = ++bgTop
+    }
     if (newEls.length === 1) {
       get().addFlatElement(newEls[0])
     } else {
