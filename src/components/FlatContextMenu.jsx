@@ -319,40 +319,36 @@ export default function FlatContextMenu({ x, y, canvasX, canvasY, onClose }) {
       case 'downloadImage': downloadSelectedImage(); break
       case 'aiInfographic': openInfographic(); break
       case 'convertToBg': {
-        // 선택된 요소를 배경 레이어로 변환
-        for (const el of selectedEls) {
-          if (el.type === 'text') continue // 텍스트는 변환 불가
-          const minZ = Math.min(...flatElements.map(e => e.zIndex)) - 1
-          const changes = {
-            x: 0, y: 0,
-            width: canvasSize.w, height: canvasSize.h,
-            zIndex: minZ,
-            locked: true,
-            sourceId: '__bg',
-          }
-          if (el.type === 'image') {
-            // 이미지 → shape(backgroundImage)로 변환
-            const imgSrc = el.content
-            changes.type = 'shape'
-            changes.content = ''
-            changes.styles = {
-              ...(el.styles || {}),
-              backgroundImage: `url(${imgSrc})`,
-              backgroundSize: 'cover',
-              backgroundPosition: 'center',
-              borderRadius: '0px',
-              border: '0px none',
-            }
-          } else {
-            // shape → 배경으로 (크기/위치/잠금만 변경)
-            changes.styles = {
-              ...(el.styles || {}),
-              borderRadius: '0px',
-              border: '0px none',
-            }
-          }
-          updateFlatElement(el.id, changes)
-        }
+        // 단일 이미지/영상만 배경으로 변환(타입 유지). 원래 위치/크기는 _restore에 보관.
+        if (selectedEls.length !== 1) break
+        const el = selectedEls[0]
+        if (el.type !== 'image' && el.type !== 'video') break
+        const minZ = flatElements.length ? Math.min(...flatElements.map(e => e.zIndex)) : 0
+        updateFlatElement(el.id, {
+          isBackground: true, sourceId: '__bg', locked: true,
+          x: 0, y: 0, width: canvasSize.w, height: canvasSize.h, zIndex: minZ - 1,
+          _restore: { x: el.x, y: el.y, width: el.width, height: el.height, zIndex: el.zIndex, objectFit: el.styles?.objectFit },
+          styles: { ...(el.styles || {}), objectFit: 'cover' }, // 배경은 꽉 채움
+        })
+        setSelectedFlat(null) // 배경은 캔버스 선택 대상 아님
+        break
+      }
+      case 'restoreFromBg': {
+        // 배경 → 일반 요소로 복원
+        if (selectedEls.length !== 1) break
+        const el = selectedEls[0]
+        if (!isBackgroundElement(el)) break
+        const r = el._restore || {}
+        updateFlatElement(el.id, {
+          isBackground: false, sourceId: null, locked: false,
+          x: r.x ?? Math.round((canvasSize.w - (r.width ?? el.width)) / 2),
+          y: r.y ?? Math.round((canvasSize.h - (r.height ?? el.height)) / 2),
+          width: r.width ?? el.width, height: r.height ?? el.height,
+          zIndex: r.zIndex ?? el.zIndex,
+          _restore: undefined,
+          styles: { ...(el.styles || {}), objectFit: r.objectFit ?? 'contain' },
+        })
+        setSelectedFlat(el.id)
         break
       }
       case 'lock': {
@@ -407,8 +403,12 @@ export default function FlatContextMenu({ x, y, canvasX, canvasY, onClose }) {
     ...(singleImageEl ? [{ id: 'dlImage', label: '이미지 다운로드', action: 'downloadImage' }] : []),
     { id: 'del', label: '삭제', shortcut: 'Delete', action: 'delete' },
     { id: 'lock', label: allLocked ? '잠금 해제' : '잠금', action: 'lock' },
-    { id: 'toBg', label: '배경으로 변환', action: 'convertToBg',
-      disabled: selectedEls.every(e => e.type === 'text') },
+    // 배경으로 변환: 단일 이미지/영상만(이미 배경인 것 제외). 그 외(도형/표/그룹/텍스트)는 비활성
+    ...(selectedEls.length === 1 && !isBackgroundElement(selectedEls[0]) && ['image', 'video'].includes(selectedEls[0].type)
+      ? [{ id: 'toBg', label: '배경으로 변환', action: 'convertToBg' }] : []),
+    // 일반 요소로 복원: 선택이 배경일 때
+    ...(selectedEls.length === 1 && isBackgroundElement(selectedEls[0])
+      ? [{ id: 'restoreBg', label: '일반 요소로 복원', action: 'restoreFromBg' }] : []),
     ...(singleTextEl ? [{ id: 'themeColor', label: '사용자 테마 색 지정', submenu: 'themeColor',
       children: [
         { id: 'asTitle', label: '이 색을 제목색으로', action: 'setThemeTitle' },
