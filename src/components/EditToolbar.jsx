@@ -409,13 +409,19 @@ export default function EditToolbar() {
           />
 
           {/* 다이어그램 모드 토글 — 켜면 도형 호버 시 연결점 표시, 끌어 커넥터 연결 */}
-          <ToolBtn
-            highlight={diagramMode}
+          <button
             onClick={() => useFlatStore.getState().setDiagramMode(!diagramMode)}
             title="다이어그램 모드 (도형 연결선)"
+            className={[
+              'flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-sm transition-colors',
+              diagramMode
+                ? 'bg-indigo-500 text-white shadow-sm'
+                : 'text-slate-300 hover:text-white hover:bg-white/10',
+            ].join(' ')}
           >
             <ConnectorIcon />
-          </ToolBtn>
+            {diagramMode && <span className="text-xs font-medium">연결</span>}
+          </button>
 
           {/* 표 삽입 — 행×열 그리드 피커 */}
           <TableSizeDropdown
@@ -491,6 +497,20 @@ export default function EditToolbar() {
             setInsertOpen(false)
           }}
         />
+      )}
+
+      {/* 다이어그램 모드 표시 */}
+      {diagramMode && (
+        <>
+          <Divider />
+          <span className="text-xs text-indigo-300 px-2">
+            다이어그램 모드
+            <span className="text-slate-500 ml-1">도형 호버→연결점 드래그(또는 Alt+드래그)</span>
+          </span>
+          <ToolBtn onClick={() => useFlatStore.getState().setDiagramMode(false)} title="다이어그램 모드 종료">
+            <span className="text-xs text-red-400">종료</span>
+          </ToolBtn>
+        </>
       )}
 
       {/* 그리기 모드 표시 */}
