@@ -264,10 +264,11 @@ function BackendSection({ pythonAvailable, backendUrl, onApplyUrl, onRecheck }) 
         <button onClick={onRecheck} title="다시 확인" style={iconBtnStyle}>↻</button>
       </div>
 
-      {pythonAvailable !== true && (
+      {/* 연결돼 있어도 항상 노출 — 최신 이미지로 덮어쓰기(재다운로드/교체)할 수 있게 */}
+      {(
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
           <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)' }}>
-            고품질 변환 서버 실행 (Docker):
+            {pythonAvailable === true ? '변환 서버 최신으로 업데이트 (Docker):' : '고품질 변환 서버 실행 (Docker):'}
           </div>
           <div style={{ display: 'flex', alignItems: 'stretch', gap: 4 }}>
             <code style={{

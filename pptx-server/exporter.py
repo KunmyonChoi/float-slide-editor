@@ -212,7 +212,9 @@ def _separate_background_elements(elements: list, cs: dict) -> tuple:
         w = el.get('width', 0)
         h = el.get('height', 0)
         is_fullsize = w >= cw * 0.95 and h >= ch * 0.95
-        is_bg_type = el.get('type') in ('shape', 'image')
+        # 배경 fill 후보는 'shape'만 — 전체화면 이미지는 fill로 변환 불가하므로
+        # 콘텐츠로 남겨 실제 그림으로 렌더(안 그러면 배경 이미지가 통째로 누락됨).
+        is_bg_type = el.get('type') == 'shape'
         z = el.get('zIndex', 0)
         is_locked = el.get('locked', False)
         if is_fullsize and is_bg_type and (is_locked or z <= 2):
@@ -450,7 +452,7 @@ def _add_element(slide, el: dict, cs: dict, font_name_map: dict = None, slide_bg
     elif el_type == 'svg':
         _add_svg(slide, el, x, y, w, h, rotation)
     elif el_type == 'video':
-        _add_video_placeholder(slide, el, x, y, w, h, rotation)
+        _add_video(slide, el, x, y, w, h, rotation)
     elif el_type == 'table':
         _add_table(slide, el, x, y, w, h, rotation)
 
@@ -618,19 +620,21 @@ def _add_text(slide, el: dict, x, y, w, h, rotation, font_name_map: dict = None,
     br = s.get('borderRadius', '0px')
     is_circle = _is_ellipse(br, w, h) if br and br not in ('0px', '') else False
 
-    # vertical alignment
-    has_bg = s.get('backgroundColor', '') not in ('', 'rgba(0, 0, 0, 0)', 'transparent')
+    # vertical alignment — 편집기와 동일하게 alignItems를 항상 반영(미설정=위).
+    # (기존엔 merged/배경 있을 때만 반영해, 배경 없는 가운데정렬 자막이 위로 붙었음)
     if is_circle:
-        # 원형 컨테이너: 항상 수평/수직 중앙 정렬
+        # 원형 컨테이너: 항상 수직 중앙
         _set_anchor(txbox, 'middle')
-    elif el.get('merged') or has_bg:
-        ai = s.get('alignItems', 'center') if s.get('isFlex') else 'center'
+    else:
+        ai = s.get('alignItems')
+        if not ai and s.get('isFlex'):
+            ai = 'center'
         if ai == 'center':
             _set_anchor(txbox, 'middle')
         elif ai == 'flex-end':
             _set_anchor(txbox, 'bottom')
-    else:
-        _set_anchor(txbox, 'top')
+        else:
+            _set_anchor(txbox, 'top')
 
     # margin (internal padding) - default to 0
     _set_margins(txbox, s.get('padding', '0px'))
@@ -954,6 +958,24 @@ def _add_svg(slide, el: dict, x, y, w, h, rotation):
                 pic.rotation = rotation
         except Exception:
             pass
+
+
+def _add_video(slide, el: dict, x, y, w, h, rotation):
+    """영상을 실제 임베드(add_movie). data: 영상만 지원, 실패 시 플레이스홀더."""
+    content = el.get('content', '')
+    m = re.match(r'data:([^;]+);base64,(.+)', content)
+    if m:
+        mime = m.group(1) or 'video/mp4'
+        try:
+            raw = base64.b64decode(m.group(2))
+            stream = io.BytesIO(raw)
+            movie = slide.shapes.add_movie(stream, x, y, w, h, mime_type=mime)
+            if rotation:
+                movie.rotation = rotation
+            return
+        except Exception as e:
+            print(f'PPT export: video embed failed, placeholder: {e}')
+    _add_video_placeholder(slide, el, x, y, w, h, rotation)
 
 
 def _add_video_placeholder(slide, el: dict, x, y, w, h, rotation):

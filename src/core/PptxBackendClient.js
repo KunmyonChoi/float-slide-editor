@@ -1,13 +1,44 @@
+import { BlobStore } from './BlobStore'
+
 let _backendAvailable = null
+
+// idb:// 콘텐츠를 data URL로 해석해 서버로 전송(서버는 idb를 못 읽음 — 영상 등 누락 방지)
+function _blobToDataUrl(blob) {
+  return new Promise((resolve) => {
+    const fr = new FileReader()
+    fr.onload = () => resolve(fr.result)
+    fr.onerror = () => resolve(null)
+    fr.readAsDataURL(blob)
+  })
+}
+async function _resolveIdbMedia(pages) {
+  const out = {}
+  for (const [k, p] of Object.entries(pages || {})) {
+    const els = []
+    for (const el of (p.elements || [])) {
+      let e = el
+      if (el.content && BlobStore.isIdbRef && BlobStore.isIdbRef(el.content)) {
+        try {
+          const blob = await BlobStore.get(BlobStore.parseRef(el.content))
+          const url = blob ? await _blobToDataUrl(blob) : null
+          if (url) e = { ...el, content: url }
+        } catch { /* 해석 실패 시 원본 유지 */ }
+      }
+      els.push(e)
+    }
+    out[k] = { ...p, elements: els }
+  }
+  return out
+}
 
 // 로컬 컨테이너 배포 기본값 (Docker Hub 이미지 / 포트)
 export const PPTX_DOCKER_IMAGE = 'dilly97/float-pptx'
 export const PPTX_DEFAULT_PORT = 8321
 const BACKEND_URL_KEY = 'pptx-backend-url'
 
-/** `docker run` 안내 명령 (UI 힌트용) */
+/** `docker run` 안내 명령 (UI 힌트용) — 최신 이미지 pull + 기존 컨테이너 교체(덮어쓰기) */
 export function dockerRunCommand() {
-  return `docker run -p ${PPTX_DEFAULT_PORT}:${PPTX_DEFAULT_PORT} ${PPTX_DOCKER_IMAGE}`
+  return `docker rm -f float-pptx 2>/dev/null; docker run --pull=always --name float-pptx -p ${PPTX_DEFAULT_PORT}:${PPTX_DEFAULT_PORT} ${PPTX_DOCKER_IMAGE}`
 }
 
 /**
@@ -100,6 +131,8 @@ function _cssProp(css, prop) {
 }
 
 export async function exportViaPython(pages, defaultCanvasSize, { embedFonts = true } = {}) {
+  // idb 미디어(영상 등)를 data URL로 해석 — 서버는 idb를 못 읽으므로 먼저 변환
+  pages = await _resolveIdbMedia(pages)
   // 임베딩 OFF면 폰트를 수집/전송하지 않음 → 서버가 다운로드·임베딩을 건너뛰고
   // 원본 family명으로 출력(파일 가벼움, 시스템 설치 폰트 의존).
   const fonts = embedFonts ? collectFontData(pages) : []
