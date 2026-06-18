@@ -19,6 +19,9 @@ import { confirmDialog } from './ConfirmDialog'
 import { bumpFontSizePx } from '../core/TextStyleScope'
 import { copyElementToSystemClipboard } from '../core/SystemClipboard'
 
+// 다이어그램 모드 연결점을 도형 변에서 바깥으로 띄우는 거리(리사이즈 핸들과 구분)
+const CONNECT_DOT_OUT = 14
+
 /**
  * FlatCanvas
  * FlatElement 배열을 절대 배치로 렌더링하는 캔버스.
@@ -336,12 +339,15 @@ export default function FlatCanvas() {
     return { x: (e.clientX - rect.left) / scale, y: (e.clientY - rect.top) / scale }
   }, [scale])
 
-  // 호버 도형(연결점 표시) — 다이어그램 모드, 드래그 아님
+  // 호버 도형(연결점 표시) — 다이어그램 모드, 드래그 아님.
+  // 연결점은 도형 '바깥쪽'(CONNECT_DOT_OUT)에 떠 있으므로, 호버 감지 영역도 그만큼
+  // 넓혀야(threshold) 점 위로 커서가 나가도 호버가 유지되어 점을 잡을 수 있다.
   const handleDiagramHover = useCallback((e) => {
     if (!diagramMode || connectorDraft) return
     const pt = canvasPt(e)
     if (!pt) { setHoverShapeId(null); return }
-    const id = attachTargetAt(pt.x, pt.y, useFlatStore.getState().flatElements, { threshold: 0 })
+    const st = useFlatStore.getState()
+    const id = attachTargetAt(pt.x, pt.y, st.flatElements, { threshold: CONNECT_DOT_OUT + 10, canvasSize: st.canvasSize })
     setHoverShapeId(id)
   }, [diagramMode, connectorDraft, canvasPt])
 
@@ -355,7 +361,7 @@ export default function FlatCanvas() {
       const st = useFlatStore.getState()
       const d = st.connectorDraft
       if (!d) return
-      const targetId = attachTargetAt(pt.x, pt.y, st.flatElements, { excludeId: d.sourceId })
+      const targetId = attachTargetAt(pt.x, pt.y, st.flatElements, { excludeId: d.sourceId, canvasSize: st.canvasSize })
       st.updateConnectorDraft(pt, targetId)
     }
     const onUp = () => useFlatStore.getState().commitConnectorDraft()
@@ -1094,7 +1100,7 @@ export default function FlatCanvas() {
             {diagramMode && !connectorDraft && hoverShapeId && (() => {
               const el = renderElements.find(e => e.id === hoverShapeId)
               if (!el) return null
-              const OUT = 14 // 도형 변에서 바깥으로 띄우는 거리
+              const OUT = CONNECT_DOT_OUT // 도형 변에서 바깥으로 띄우는 거리
               const dots = [
                 { x: el.x + el.width / 2, y: el.y - OUT },
                 { x: el.x + el.width + OUT, y: el.y + el.height / 2 },
@@ -1102,6 +1108,7 @@ export default function FlatCanvas() {
                 { x: el.x - OUT, y: el.y + el.height / 2 },
               ]
               const center = { x: el.x + el.width / 2, y: el.y + el.height / 2 }
+              const R = 7 // 점 반지름(잡기 쉽게)
               return (
                 <div data-export-ignore="true">
                   <div style={{ position: 'absolute', left: el.x, top: el.y, width: el.width, height: el.height,
@@ -1111,7 +1118,7 @@ export default function FlatCanvas() {
                       title="드래그해서 다른 도형에 연결"
                       onMouseDown={(e) => { e.stopPropagation(); e.preventDefault()
                         useFlatStore.getState().beginConnectorFrom(el.id, center) }}
-                      style={{ position: 'absolute', left: p.x - 6, top: p.y - 6, width: 12, height: 12, borderRadius: '50%',
+                      style={{ position: 'absolute', left: p.x - R, top: p.y - R, width: R * 2, height: R * 2, borderRadius: '50%',
                         background: '#10b981', border: '2px solid #fff', boxShadow: '0 0 0 1px rgba(16,185,129,0.5)',
                         cursor: 'crosshair', zIndex: 10001 }} />
                   ))}

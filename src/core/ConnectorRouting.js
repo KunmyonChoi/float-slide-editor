@@ -134,11 +134,17 @@ export function resolveConnectors(flatElements, pad = DEFAULT_PAD) {
 export function attachTargetAt(px, py, elements, opts = {}) {
   const threshold = opts.threshold ?? ATTACH_THRESHOLD
   const excludeId = opts.excludeId ?? null
+  const cs = opts.canvasSize ?? null
+  // 전체 캔버스를 덮는 요소(플래그 없는 크기추론 배경 포함)는 부착 대상에서 제외
+  const isFullCanvas = (el) => cs &&
+    Math.abs(el.width - cs.w) < 2 && Math.abs(el.height - cs.h) < 2 &&
+    Math.abs(el.x) < 2 && Math.abs(el.y) < 2
   const cand = elements
     .filter(el =>
       !isConnector(el) &&
       !el.isBackground &&
       el.sourceId !== '__bg' &&
+      !isFullCanvas(el) &&
       el.id !== excludeId
     )
     .sort((a, b) => (b.zIndex ?? 0) - (a.zIndex ?? 0))

@@ -680,14 +680,10 @@ export const useFlatStore = create((set, get) => ({
     const d = get().connectorDraft
     if (!d) return null
     set({ connectorDraft: null })
-    const { sourceId, startPt, curPt, targetId } = d
+    const { sourceId, targetId } = d
+    // 커넥터는 도형↔도형만. 다른 도형 위에 놓으면 연결, 빈 공간/자기 자신이면 취소.
     if (targetId && targetId !== sourceId) {
       return get().addConnector({ start: { elementId: sourceId }, end: { elementId: targetId } })
-    }
-    // 타겟 없음(빈 곳)에서 충분히 끌면 자유 끝점. 자기 도형 위(targetId===sourceId)면 취소.
-    const dist = Math.hypot(curPt.x - startPt.x, curPt.y - startPt.y)
-    if (!targetId && dist >= 8) {
-      return get().addConnector({ start: { elementId: sourceId }, end: { point: { x: curPt.x, y: curPt.y } } })
     }
     return null
   },

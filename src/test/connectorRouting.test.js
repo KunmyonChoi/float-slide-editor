@@ -162,6 +162,19 @@ describe('ConnectorRouting', () => {
     it('excludeId로 자기 자신 제외', () => {
       expect(attachTargetAt(20, 20, [A], { excludeId: 'A' })).toBeNull()
     })
+
+    it('플래그 없는 전체화면 배경도 canvasSize 주면 제외', () => {
+      const cs = { w: 1280, h: 720 }
+      const plainBg = rect('PBG', 0, 0, 1280, 720, { zIndex: 0 }) // isBackground 없음(크기추론 배경)
+      const card = rect('CARD', 100, 100, 200, 100, { zIndex: 2 })
+      const els = [plainBg, card]
+      // 카드 밖 빈 곳(배경 위) → canvasSize 주면 null
+      expect(attachTargetAt(700, 400, els, { canvasSize: cs })).toBeNull()
+      // canvasSize 없으면 전체화면 배경이 후보가 됨(기존 동작)
+      expect(attachTargetAt(700, 400, els)).toBe('PBG')
+      // 카드 위는 그대로 카드
+      expect(attachTargetAt(150, 150, els, { canvasSize: cs })).toBe('CARD')
+    })
   })
 
   describe('isConnector', () => {

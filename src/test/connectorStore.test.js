@@ -64,19 +64,10 @@ describe('flatStore 커넥터', () => {
     expect(el.connection).toEqual({ start: { elementId: 'A' }, end: { elementId: 'B' } })
   })
 
-  it('드래그 드래프트: 빈 곳에서 충분히 끌면 자유 끝점 커넥터', () => {
-    useFlatStore.getState().beginConnectorFrom('A', { x: 50, y: 50 })
-    useFlatStore.getState().updateConnectorDraft({ x: 600, y: 400 }, null)
-    const id = useFlatStore.getState().commitConnectorDraft()
-    const el = useFlatStore.getState().flatElements.find(e => e.id === id)
-    expect(el.connection.start).toEqual({ elementId: 'A' })
-    expect(el.connection.end).toEqual({ point: { x: 600, y: 400 } })
-  })
-
-  it('드래그 드래프트: 거의 안 끌면 생성 안 함', () => {
+  it('드래그 드래프트: 빈 곳에 놓으면 취소(도형↔도형만)', () => {
     const before = useFlatStore.getState().flatElements.length
     useFlatStore.getState().beginConnectorFrom('A', { x: 50, y: 50 })
-    useFlatStore.getState().updateConnectorDraft({ x: 52, y: 51 }, null)
+    useFlatStore.getState().updateConnectorDraft({ x: 600, y: 400 }, null)
     const id = useFlatStore.getState().commitConnectorDraft()
     expect(id).toBeNull()
     expect(useFlatStore.getState().flatElements.length).toBe(before)
