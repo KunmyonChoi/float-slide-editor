@@ -3,9 +3,26 @@
  */
 import { htmlToTextRuns, cssColorToHex, applyTextTransform } from './HtmlToTextRuns'
 import { parseGradient } from './GradientParser'
+import { BlobStore } from './BlobStore'
 
 // px → inches (96 DPI 기준)
 const PX_TO_INCH = 1 / 96
+
+// 콘텐츠(content)를 base64 data URL로 해석 — data:는 그대로, idb://는 BlobStore에서, http(s)는 fetch.
+async function contentToDataUrl(content) {
+  if (!content) return null
+  if (content.startsWith('data:')) return content
+  if (BlobStore.isIdbRef && BlobStore.isIdbRef(content)) {
+    try {
+      const blob = await BlobStore.get(BlobStore.parseRef(content))
+      return blob ? await blobToDataUrl(blob) : null
+    } catch { return null }
+  }
+  try {
+    const resp = await fetch(content)
+    return await blobToDataUrl(await resp.blob())
+  } catch { return null }
+}
 
 /**
  * 모든 페이지를 PPTX로 내보내고 다운로드
@@ -73,7 +90,7 @@ async function addElementToSlide(slide, el, canvasSize) {
       await addSvg(slide, el, { x, y, w, h, rotate })
       break
     case 'video':
-      addVideoPlaceholder(slide, el, { x, y, w, h, rotate })
+      await addVideo(slide, el, { x, y, w, h, rotate })
       break
     case 'table':
       addTable(slide, el, { x, y, w, h, rotate })
@@ -215,16 +232,12 @@ async function addText(slide, el, pos) {
     textRuns = [{ text: applyTextTransform(el.content || '', s.textTransform), options: opts }]
   }
 
-  // 수직 정렬: merged/배경 있는 텍스트는 alignItems 반영
-  const hasBg = s.backgroundColor && s.backgroundColor !== 'rgba(0, 0, 0, 0)' && s.backgroundColor !== 'transparent'
-  const needsFlex = el.merged || hasBg
+  // 수직 정렬: 편집기와 동일하게 alignItems를 항상 반영(미설정=위).
+  // 기존엔 merged/배경 있을 때만 반영해, 배경 없는 가운데정렬 텍스트가 위로 붙어 어긋났음.
+  const ai = s.alignItems || (s.isFlex ? 'center' : undefined)
   let valign = 'top'
-  if (needsFlex) {
-    const ai = s.isFlex ? (s.alignItems || 'center') : 'center'
-    if (ai === 'center') valign = 'middle'
-    else if (ai === 'flex-end') valign = 'bottom'
-    else valign = 'top'
-  }
+  if (ai === 'center') valign = 'middle'
+  else if (ai === 'flex-end') valign = 'bottom'
 
   const textOpts = {
     x: pos.x, y: pos.y, w: pos.w, h: pos.h,
@@ -328,26 +341,22 @@ async function addImage(slide, el, pos) {
     imgOpts.rounding = true
   }
 
-  if (el.content.startsWith('data:image/svg')) {
+  if (el.content && el.content.startsWith('data:image/svg')) {
     imgOpts.data = await svgToPngDataUrl(el.content, el.width, el.height)
-  } else if (el.content.startsWith('data:')) {
-    imgOpts.data = el.content
   } else {
-    // 외부 URL → fetch로 base64 변환 시도
-    try {
-      const resp = await fetch(el.content)
-      const blob = await resp.blob()
-      imgOpts.data = await blobToDataUrl(blob)
-    } catch {
-      // CORS 실패 시 플레이스홀더
-      slide.addText([{ text: `[이미지: ${el.content}]`, options: { fontSize: 10, color: '666666' } }], {
-        x: pos.x, y: pos.y, w: pos.w, h: pos.h,
-        fill: { color: 'F0F0F0' },
-        border: { pt: 1, color: 'CCCCCC' },
-        valign: 'middle', align: 'center',
-      })
-      return
-    }
+    // data:/idb://(BlobStore)/http(s) 모두 data URL로 해석
+    imgOpts.data = await contentToDataUrl(el.content)
+  }
+
+  if (!imgOpts.data) {
+    // 해석 실패 시 플레이스홀더
+    slide.addText([{ text: `[이미지: ${el.content || ''}]`, options: { fontSize: 10, color: '666666' } }], {
+      x: pos.x, y: pos.y, w: pos.w, h: pos.h,
+      fill: { color: 'F0F0F0' },
+      border: { pt: 1, color: 'CCCCCC' },
+      valign: 'middle', align: 'center',
+    })
+    return
   }
 
   slide.addImage(imgOpts)
@@ -439,6 +448,35 @@ async function addSvg(slide, el, pos) {
   } catch {
     console.warn('SVG rasterization failed, skipping element')
   }
+}
+
+async function addVideo(slide, el, pos) {
+  const content = el.content || ''
+  const isEmbed = /youtube\.com|youtu\.be|vimeo\.com|\/embed\//i.test(content)
+  try {
+    if (isEmbed) {
+      // 유튜브/비메오 등 임베드 → 온라인 비디오 링크
+      slide.addMedia({
+        type: 'online', link: content,
+        x: pos.x, y: pos.y, w: pos.w, h: pos.h,
+        ...(pos.rotate ? { rotate: pos.rotate } : {}),
+      })
+      return
+    }
+    // 파일/idb 영상 → base64로 임베드
+    const dataUrl = await contentToDataUrl(content)
+    if (dataUrl) {
+      slide.addMedia({
+        type: 'video', data: dataUrl,
+        x: pos.x, y: pos.y, w: pos.w, h: pos.h,
+        ...(pos.rotate ? { rotate: pos.rotate } : {}),
+      })
+      return
+    }
+  } catch (e) {
+    console.warn('PPT export: 영상 임베드 실패, 플레이스홀더로 대체:', e.message)
+  }
+  addVideoPlaceholder(slide, el, pos)
 }
 
 function addVideoPlaceholder(slide, el, pos) {
