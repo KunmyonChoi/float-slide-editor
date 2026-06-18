@@ -206,10 +206,15 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
 
   if (type === 'video') {
     const isPresent = useEditorStore.getState().mode === 'present'
-    const autoplay = element.autoplay ?? false
-    const loop = element.loop ?? false
-    const muted = element.muted ?? true
-    const hideControls = element.hideControls ?? false
+    // 배경 영상은 '라이브 배경' — 편집/발표 모드 모두에서 자동재생·루프·음소거·컨트롤 숨김으로
+    // 캔버스를 꽉 채워 보이게 한다. 일반 영상은 발표 모드에서만 재생.
+    const isBgVideo = isFullCanvasBg
+    const autoplay = isBgVideo ? true : (element.autoplay ?? false)
+    const loop = isBgVideo ? true : (element.loop ?? false)
+    const muted = isBgVideo ? true : (element.muted ?? true)
+    const hideControls = isBgVideo ? true : (element.hideControls ?? false)
+    const playNow = isBgVideo || isPresent
+    const vidFit = isBgVideo ? 'cover' : undefined
 
     // 직접 미디어 파일 URL(data:/blob:/http .mp4 등)인지 — 임베드(YouTube/Vimeo)와 구분.
     // 임베드는 <iframe>, 직접 파일은 네이티브 <video>로 재생한다(import된 <video> 추출 포함).
@@ -220,7 +225,7 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
     let embedSrc = content
     if (!BlobStore.isIdbRef(content)) {
       const params = []
-      if (isPresent && autoplay) params.push('autoplay=1')
+      if (playNow && autoplay) params.push('autoplay=1')
       if (muted) params.push('mute=1')
       if (loop) {
         params.push('loop=1')
@@ -251,21 +256,21 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
           opacity: styles.opacity,
         }}>
           {BlobStore.isIdbRef(content)
-            ? <IdbVideo src={content} controls={isPresent && !hideControls} autoplay={isPresent && autoplay} loop={loop} muted={muted} />
+            ? <IdbVideo src={content} controls={playNow && !hideControls} autoplay={playNow && autoplay} loop={loop} muted={muted} objectFit={vidFit} />
             : isDirectVideo
             ? <video
                 src={content}
-                style={{ width: '100%', height: '100%', objectFit: 'cover', border: 'none', pointerEvents: (isPresent && !hideControls) ? 'auto' : 'none' }}
-                controls={isPresent && !hideControls}
-                autoPlay={isPresent && autoplay}
+                style={{ width: '100%', height: '100%', objectFit: vidFit || 'cover', border: 'none', pointerEvents: (playNow && !hideControls) ? 'auto' : 'none' }}
+                controls={playNow && !hideControls}
+                autoPlay={playNow && autoplay}
                 loop={loop}
                 muted={muted}
                 playsInline
               />
             : <>
                 <iframe
-                  src={isPresent ? embedSrc : content}
-                  style={{ width: '100%', height: '100%', border: 'none', pointerEvents: (isPresent && !hideControls) ? 'auto' : 'none' }}
+                  src={playNow ? embedSrc : content}
+                  style={{ width: '100%', height: '100%', border: 'none', pointerEvents: (playNow && !hideControls) ? 'auto' : 'none' }}
                   allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                   allowFullScreen
                 />
@@ -490,7 +495,7 @@ function resolveBorders(s) {
 /**
  * IndexedDB 참조 비디오 — blob URL로 <video> 렌더링
  */
-function IdbVideo({ src, controls, autoplay, loop, muted }) {
+function IdbVideo({ src, controls, autoplay, loop, muted, objectFit }) {
   const [blobUrl, setBlobUrl] = useState(null)
   useEffect(() => {
     if (!BlobStore.isIdbRef(src)) return
@@ -509,7 +514,7 @@ function IdbVideo({ src, controls, autoplay, loop, muted }) {
   return (
     <video
       src={blobUrl}
-      style={{ width: '100%', height: '100%', objectFit: 'contain', pointerEvents: controls ? 'auto' : 'none' }}
+      style={{ width: '100%', height: '100%', objectFit: objectFit || 'contain', pointerEvents: controls ? 'auto' : 'none' }}
       controls={controls}
       autoPlay={autoplay}
       loop={loop}
