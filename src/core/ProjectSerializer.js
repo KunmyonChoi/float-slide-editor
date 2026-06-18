@@ -12,9 +12,11 @@ const CURRENT_VERSION = 2
 
 /**
  * 옛 프로젝트 호환 마이그레이션 — 배경 판정이 '크기 추론'에서 '명시 플래그(isBackground)'로
- * 바뀌기 전에 저장된 프로젝트엔 배경 shape에 플래그가 없다. 그 옛 시그니처(빈 전체화면 shape)에만
- * isBackground를 부여해, 일반 도형으로 둔갑해 캔버스 클릭으로 선택되던 문제를 해결한다.
- * (런타임 동작엔 영향 없음 — 로드 시 1회만, 옛 휴리스틱과 정확히 동일한 조건에만 적용)
+ * 바뀌기 전에 저장된 프로젝트엔 배경 요소에 플래그가 없다. 로드 시 1회, 전체화면(0,0~캔버스크기)
+ * 요소에 isBackground를 부여해 '일반 요소로 둔갑해 선택/간섭되고 배경 목록에도 안 뜨던' 문제를 고친다.
+ * - 빈 전체화면 shape: 옛 단색/그래디언트 배경
+ * - 전체화면 image/video: 배경 이미지/영상(옛 휴리스틱은 shape만 봐서 일반 요소로 남았음)
+ * 오판(전면 사진 1장이 본문)이어도 배경 패널의 '일반 요소로 변환'으로 되돌릴 수 있어 안전.
  */
 function migrateLegacyBackgrounds(pages) {
   for (const page of Object.values(pages || {})) {
@@ -22,13 +24,31 @@ function migrateLegacyBackgrounds(pages) {
     if (!cs || !Array.isArray(page.elements)) continue
     for (const el of page.elements) {
       if (el.isBackground || el.sourceId === '__bg') continue // 이미 명시 배경
-      const isLegacyBg = el.type === 'shape' && !el.content
-        && Math.abs(el.width - cs.w) < 2 && Math.abs(el.height - cs.h) < 2
+      const fullCanvas = Math.abs(el.width - cs.w) < 2 && Math.abs(el.height - cs.h) < 2
         && Math.abs(el.x) < 2 && Math.abs(el.y) < 2
+      if (!fullCanvas) continue
+      const isLegacyBg = (el.type === 'shape' && !el.content) // 빈 전체화면 도형(단색/그래디언트)
+        || el.type === 'image' || el.type === 'video'          // 전체화면 이미지/영상
       if (isLegacyBg) el.isBackground = true
     }
   }
   return pages
+}
+
+/**
+ * 이미 '명시 플래그(isBackground)' 모델을 쓰는 프로젝트인지 판별.
+ * 그렇다면 배경은 플래그가 권위이므로 크기 기반 추론(migrateLegacyBackgrounds)을 건너뛴다
+ * — 전체화면이어도 일반 요소일 수 있고, 저장→로드만으로 배경으로 둔갑하면 안 됨.
+ * 판별: 저장 마커(bgFlagModel) 또는 isBackground 속성이 존재하는 요소가 하나라도 있으면 신모델.
+ */
+function _usesBgFlagModel(data) {
+  if (data?.bgFlagModel === true) return true
+  for (const page of Object.values(data?.pages || {})) {
+    for (const el of (page.elements || [])) {
+      if (el.isBackground === true || el.isBackground === false) return true
+    }
+  }
+  return false
 }
 
 /**
@@ -90,6 +110,7 @@ export async function serializeProject(store) {
 
   const project = {
     version: CURRENT_VERSION,
+    bgFlagModel: true, // 명시 배경 플래그 모델 — 로드 시 크기 기반 배경 추론을 건너뛰게 하는 마커
     pages: pagesClone,
     currentPageKey,
     themeId: store.themeId,
@@ -165,7 +186,7 @@ async function _loadZipProject(file) {
   }
 
   return {
-    pages: migrateLegacyBackgrounds(data.pages),
+    pages: _usesBgFlagModel(data) ? data.pages : migrateLegacyBackgrounds(data.pages),
     currentPageKey: data.currentPageKey || Object.keys(data.pages)[0],
     themeId: data.themeId || null,
     customTheme: data.customTheme || null,
@@ -188,7 +209,7 @@ export function deserializeProject(jsonString) {
   }
 
   return {
-    pages: migrateLegacyBackgrounds(data.pages),
+    pages: _usesBgFlagModel(data) ? data.pages : migrateLegacyBackgrounds(data.pages),
     currentPageKey: data.currentPageKey || Object.keys(data.pages)[0],
     themeId: data.themeId || null,
     customTheme: data.customTheme || null,

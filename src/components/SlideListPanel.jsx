@@ -2,6 +2,7 @@ import { memo, useState, useRef, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { useFlatStore } from '../store/flatStore'
 import FlatElementRenderer from './FlatElementRenderer'
+import { resolveConnectors } from '../core/ConnectorRouting'
 
 const PANEL_W = 200
 // 패널 가용 폭에 맞춤: PANEL_W − px-2(16) − 번호 w-4(16) − gap-2(8) − 스크롤바 여유(≈12)
@@ -229,10 +230,11 @@ export const SlideThumbnail = memo(function SlideThumbnail({ elements, canvasSiz
   const cs = canvasSize && canvasSize.w ? canvasSize : { w: 1280, h: 720 }
   const scale = width / cs.w
   const height = Math.round(cs.h * scale)
+  const els = resolveConnectors(elements) // 커넥터 기하 유도(썸네일도 동일)
   return (
     <div style={{ width, height, position: 'relative', overflow: 'hidden', background: '#fff', pointerEvents: 'none' }}>
       <div style={{ position: 'absolute', top: 0, left: 0, width: cs.w, height: cs.h, transform: `scale(${scale})`, transformOrigin: 'top left' }}>
-        {elements.map(el => (
+        {els.map(el => (
           <FlatElementRenderer key={el.id} element={el} isSelected={false} isEditing={false} scale={scale} canvasSize={cs} />
         ))}
       </div>

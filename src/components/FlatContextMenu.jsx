@@ -27,12 +27,12 @@ const ELEMENT_PRESETS = {
   rect: {
     type: 'shape', width: 150, height: 100,
     content: '', isRich: false, merged: false,
-    styles: { ...DEFAULT_STYLES, backgroundColor: '#e2e8f0' },
+    styles: { ...DEFAULT_STYLES, backgroundColor: '#e2e8f0', textAlign: 'center', alignItems: 'center' },
   },
   circle: {
     type: 'shape', width: 100, height: 100,
     content: '', isRich: false, merged: false,
-    styles: { ...DEFAULT_STYLES, backgroundColor: '#e2e8f0', borderRadius: '50%' },
+    styles: { ...DEFAULT_STYLES, backgroundColor: '#e2e8f0', borderRadius: '50%', textAlign: 'center', alignItems: 'center' },
   },
   lineH: {
     type: 'shape', width: 200, height: 2,
@@ -474,7 +474,7 @@ export default function FlatContextMenu({ x, y, canvasX, canvasY, onClose }) {
         border: '1px solid rgba(255,255,255,0.1)',
         borderRadius: 10,
         boxShadow: '0 12px 40px rgba(0,0,0,0.6)',
-        zIndex: 10000,
+        zIndex: 10100, // 선택 시 뜨는 플로팅 바(AI 바·인라인툴바, ~10060)보다 위
         padding: '4px',
         userSelect: 'none',
       }}

@@ -1982,9 +1982,10 @@ function PolyShapeSection({ el, update, updateStyle, previewStyle }) {
   )
 }
 
+// '화살표'(열린 V)는 두꺼운 선에서 채운 삼각형처럼 보여 어색 → 선택 옵션에서 제외.
+// (기존/임포트 데이터의 'arrow' 값은 렌더러가 계속 지원)
 const ARROW_OPTIONS = [
   { id: 'none', label: '없음', icon: '─' },
-  { id: 'arrow', label: '화살표', icon: '→' },
   { id: 'triangle', label: '삼각형', icon: '▶' },
   { id: 'circle', label: '원', icon: '●' },
   { id: 'diamond', label: '다이아', icon: '◆' },
@@ -2378,11 +2379,11 @@ function SlideBackgroundPanel() {
     setActiveLayer(bgLayers.length) // 새 레이어 선택
   }, [flatElements, bgLayers, canvasSize, addFlatElement])
 
-  // 레이어 삭제 (최소 1개 유지)
+  // 레이어 삭제 (0개까지 허용 — 배경 없음=투명/흰 캔버스)
   const removeLayer = useCallback((idx) => {
-    if (bgLayers.length <= 1) return
+    if (!bgLayers[idx]) return
     removeFlatElement(bgLayers[idx].id)
-    setActiveLayer(Math.min(idx, bgLayers.length - 2))
+    setActiveLayer(Math.max(0, Math.min(idx, bgLayers.length - 2)))
   }, [bgLayers, removeFlatElement])
 
   // 활성 레이어 범위 보정
@@ -2404,21 +2405,23 @@ function SlideBackgroundPanel() {
     previewFlatElement(currentBg.id, { styles: { [key]: value } })
   }, [currentBg, previewFlatElement])
 
-  // AI 생성 배경 이미지를 현재 배경 레이어에 적용(없으면 생성)
+  // 배경 이미지 적용(AI 생성·파일 선택 공용) — 이미지 '요소' 배경으로 만든다.
+  // (CSS backgroundImage를 입힌 shape이 아니라 type:'image' 요소 → 변환된 이미지 배경과
+  //  동일한 미디어 속성창: 썸네일·맞춤·투명도·이미지 교체·일반 요소로 복원)
   const applyBgImage = useCallback((dataUrl) => {
-    const imgStyles = {
-      backgroundImage: `url(${dataUrl})`, backgroundColor: 'rgba(0,0,0,0)',
-      backgroundSize: 'cover', backgroundPosition: 'center', backgroundRepeat: 'no-repeat',
-    }
     if (currentBg) {
-      updateFlatElement(currentBg.id, { styles: imgStyles })
+      // 현재 배경을 이미지 요소로 전환(맞춤=cover). shape의 CSS 배경 흔적 제거.
+      updateFlatElement(currentBg.id, {
+        type: 'image', content: dataUrl, isRich: false,
+        styles: { ...(currentBg.styles || {}), backgroundImage: 'none', backgroundColor: 'rgba(0,0,0,0)', objectFit: 'cover' },
+      })
     } else {
       const minZ = flatElements.length > 0 ? Math.min(...flatElements.map(e => e.zIndex)) - 1 : 0
       addFlatElement({
-        id: nextFlatId(), sourceId: '__bg', type: 'shape', content: '', isRich: false, merged: false,
+        id: nextFlatId(), sourceId: '__bg', type: 'image', content: dataUrl, isRich: false, merged: false,
         isBackground: true,
         x: 0, y: 0, width: canvasSize.w, height: canvasSize.h, zIndex: minZ, locked: true,
-        styles: { ...BG_DEFAULT_STYLES, ...imgStyles },
+        styles: { ...BG_DEFAULT_STYLES, objectFit: 'cover' },
       })
     }
   }, [currentBg, updateFlatElement, flatElements, canvasSize, addFlatElement])
@@ -2530,13 +2533,11 @@ function SlideBackgroundPanel() {
                     >↓</button>
                   </>
                 )}
-                {bgLayers.length > 1 && (
-                  <button
-                    onClick={(e) => { e.stopPropagation(); removeLayer(idx) }}
-                    className="text-xs text-slate-600 hover:text-red-400 px-0.5"
-                    title="레이어 삭제"
-                  >&times;</button>
-                )}
+                <button
+                  onClick={(e) => { e.stopPropagation(); removeLayer(idx) }}
+                  className="text-xs text-slate-600 hover:text-red-400 px-0.5"
+                  title="레이어 삭제"
+                >&times;</button>
               </div>
             ))}
           </div>
@@ -2691,7 +2692,8 @@ function SlideBackgroundPanel() {
                     const file = e.target.files?.[0]
                     if (!file) return
                     const reader = new FileReader()
-                    reader.onload = (ev) => updateStyle('backgroundImage', `url(${ev.target.result})`)
+                    // 이미지 요소 배경으로 전환 → 미디어 속성창(맞춤/투명도/교체/복원) 표시
+                    reader.onload = (ev) => applyBgImage(ev.target.result)
                     reader.readAsDataURL(file)
                     e.target.value = ''
                   }} />

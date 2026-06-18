@@ -3,6 +3,7 @@ import { useFlatStore } from '../store/flatStore'
 import { computeSnapGuides, computeResizeSnapGuides } from '../core/SnapEngine'
 import { computeRotationAngle, snapRotation, normalizeAngle, canvasDeltaToLocal } from '../core/RotationUtils'
 import { pointsToBBox, closestPointOnSegments } from '../core/PolyShapeUtils'
+import { attachTargetAt } from '../core/ConnectorRouting'
 
 const HANDLE_SIZE = 8
 const ROTATE_HANDLE_OFFSET = 30
@@ -57,8 +58,17 @@ export default function FlatSelectionOverlay({ element, scale, otherRects, canva
 
   // 드래그 이동
   const handleMoveStart = useCallback((e) => {
-    if (useFlatStore.getState().drawMode) return // 그리기 모드 중 이동 차단
+    const st = useFlatStore.getState()
+    if (st.drawMode) return // 그리기 모드 중 이동 차단
     if (editingFlatId) return
+    // 다이어그램 모드 + Alt/⌘(Cmd) 드래그 → 이 도형(선택됨)에서 커넥터 시작(이동 대신)
+    if (st.diagramMode && (e.altKey || e.metaKey) && element.shapeType !== 'connector') {
+      e.stopPropagation(); e.preventDefault()
+      st.beginConnectorFrom(element.id, { x: element.x + element.width / 2, y: element.y + element.height / 2 })
+      return
+    }
+    // 커넥터는 기하가 연결 참조에서 유도됨 → 본체 이동 무의미. 선택만 유지(마키/해제 방지).
+    if (element.shapeType === 'connector') { e.stopPropagation(); return }
     if (element.locked) return
     if (e.target.dataset.resizeHandle) return
     e.stopPropagation()
@@ -175,8 +185,8 @@ export default function FlatSelectionOverlay({ element, scale, otherRects, canva
       if (d.mode === 'move') {
         let px = d.startX + dx
         let py = d.startY + dy
-        // 스냅 가이드 계산
-        if (d.otherRects && onSnapGuides) {
+        // 스냅 가이드 계산 — ⌘(Cmd)/Ctrl를 누르고 있으면 일시적으로 스냅(자석) 무시(Figma식)
+        if (d.otherRects && onSnapGuides && !(e.metaKey || e.ctrlKey)) {
           const snap = computeSnapGuides(
             { x: px, y: py, width: element.width, height: element.height },
             d.otherRects, canvasSize
@@ -184,6 +194,8 @@ export default function FlatSelectionOverlay({ element, scale, otherRects, canva
           if (snap.snappedX !== null) px = snap.snappedX
           if (snap.snappedY !== null) py = snap.snappedY
           onSnapGuides(snap.guides)
+        } else if (onSnapGuides) {
+          onSnapGuides([]) // 스냅 무시 중에는 가이드도 숨김
         }
         previewFlatElement(element.id, { x: px, y: py })
       } else if (d.mode === 'resize') {
@@ -299,6 +311,7 @@ export default function FlatSelectionOverlay({ element, scale, otherRects, canva
   const { x, y, width, height, zIndex } = element
   const rot = element.rotation || 0
   const locked = element.locked
+  const isConnector = element.shapeType === 'connector'
 
   // 모서리 둥글기 핸들: 사각형 요소(포인트 기반 다각형·배경 제외)에만 노출
   const isBackground = element.type === 'shape' && !element.content
@@ -324,7 +337,9 @@ export default function FlatSelectionOverlay({ element, scale, otherRects, canva
         height,
         zIndex: 9999,
         cursor: locked ? 'default' : 'move',
-        pointerEvents: locked ? 'none' : 'auto',
+        // 커넥터는 본체 이동이 없고 bbox가 (대각선이면) 크다 → 컨테이너가 아래 도형 클릭을
+        // 막지 않도록 pointer 통과. 끝점 핸들만 따로 auto로 받는다.
+        pointerEvents: (locked || isConnector) ? 'none' : 'auto',
         transform: rot ? `rotate(${rot}deg)` : undefined,
         transformOrigin: rot ? 'center center' : undefined,
       }}
@@ -333,7 +348,8 @@ export default function FlatSelectionOverlay({ element, scale, otherRects, canva
     >
       {!locked && (
         <>
-          {/* 회전 핸들 */}
+          {/* 회전 핸들 (커넥터는 회전 무의미 → 숨김) */}
+          {!isConnector && <>
           <div
             data-resize-handle="true"
             onMouseDown={handleRotateStart}
@@ -360,6 +376,7 @@ export default function FlatSelectionOverlay({ element, scale, otherRects, canva
             background: 'rgba(99,102,241,0.5)',
             pointerEvents: 'none',
           }} />
+          </>}
           {/* 모서리 둥글기 핸들 (좌상단 안쪽 다이아몬드) */}
           {showRadiusHandle && (
             <div
@@ -381,7 +398,63 @@ export default function FlatSelectionOverlay({ element, scale, otherRects, canva
             />
           )}
           {/* 리사이즈 핸들 또는 포인트 핸들 */}
-          {element.shapeType && element.points ? (
+          {isConnector && element.connection && element.points && element.points.length >= 2 ? (
+            /* 커넥터: 양 끝 재연결 핸들 — 드래그로 다른 도형에 재부착(빈 공간이면 원복) */
+            [0, element.points.length - 1].map((idx, i) => {
+              const which = i === 0 ? 'start' : 'end'
+              const pt = element.points[idx]
+              return (
+                <div
+                  key={which}
+                  data-resize-handle="true"
+                  title="드래그해서 다른 도형에 다시 연결"
+                  onMouseDown={(e) => {
+                    e.stopPropagation(); e.preventDefault()
+                    const orig = element.connection
+                    const origMine = which === 'start' ? orig.start : orig.end
+                    const onMove = (me) => {
+                      const canvasEl = document.querySelector('[data-flat-canvas]')
+                      if (!canvasEl) return
+                      const rect = canvasEl.getBoundingClientRect()
+                      const p = { x: (me.clientX - rect.left) / scale, y: (me.clientY - rect.top) / scale }
+                      const st = useFlatStore.getState()
+                      const otherId = (which === 'start' ? orig.end : orig.start)?.elementId
+                      const targetId = attachTargetAt(p.x, p.y, st.flatElements, { excludeId: otherId, canvasSize: st.canvasSize })
+                      const tempEnd = targetId ? { elementId: targetId } : { point: p }
+                      const tempConn = which === 'start' ? { start: tempEnd, end: orig.end } : { start: orig.start, end: tempEnd }
+                      previewFlatElement(element.id, { connection: tempConn })
+                    }
+                    const onUp = () => {
+                      window.removeEventListener('mousemove', onMove)
+                      window.removeEventListener('mouseup', onUp)
+                      const cur = useFlatStore.getState().flatElements.find(el => el.id === element.id)
+                      const curEnd = cur && (which === 'start' ? cur.connection.start : cur.connection.end)
+                      // 원복 후, 도형에 부착(변경)된 경우만 히스토리 커밋. 빈 공간이면 취소(원복 유지).
+                      previewFlatElement(element.id, { connection: orig })
+                      if (curEnd && curEnd.elementId && curEnd.elementId !== origMine?.elementId) {
+                        const finalConn = which === 'start' ? { start: curEnd, end: orig.end } : { start: orig.start, end: curEnd }
+                        updateFlatElement(element.id, { connection: finalConn })
+                      }
+                    }
+                    window.addEventListener('mousemove', onMove)
+                    window.addEventListener('mouseup', onUp)
+                  }}
+                  style={{
+                    position: 'absolute',
+                    left: pt.x - 6, top: pt.y - 6,
+                    width: 12, height: 12,
+                    background: '#10b981',
+                    border: '2px solid #fff',
+                    boxShadow: '0 0 0 1px rgba(16,185,129,0.5)',
+                    borderRadius: '50%',
+                    cursor: 'crosshair',
+                    pointerEvents: 'auto', // 컨테이너가 none이어도 핸들은 받음
+                    zIndex: 10001,
+                  }}
+                />
+              )
+            })
+          ) : element.shapeType && element.points ? (
             /* 포인트 기반 shape: 각 꼭지점에 원형 핸들 */
             element.points.map((pt, idx) => (
               <div
@@ -561,8 +634,8 @@ export function FlatGroupOverlay({ elements, scale, otherRects, canvasSize, onSn
         let bx = d.bbox.x + dx
         let by = d.bbox.y + dy
         let snapDx = 0, snapDy = 0
-        // 그룹 bbox 기준 스냅
-        if (d.otherRects && onSnapGuides) {
+        // 그룹 bbox 기준 스냅 — ⌘(Cmd)/Ctrl 누르면 일시적으로 스냅 무시
+        if (d.otherRects && onSnapGuides && !(e.metaKey || e.ctrlKey)) {
           const snap = computeSnapGuides(
             { x: bx, y: by, width: d.bbox.w, height: d.bbox.h },
             d.otherRects, canvasSize
@@ -570,6 +643,8 @@ export function FlatGroupOverlay({ elements, scale, otherRects, canvasSize, onSn
           if (snap.snappedX !== null) snapDx = snap.snappedX - bx
           if (snap.snappedY !== null) snapDy = snap.snappedY - by
           onSnapGuides(snap.guides)
+        } else if (onSnapGuides) {
+          onSnapGuides([])
         }
         const changesMap = d.startPositions.map(sp => ({
           id: sp.id,

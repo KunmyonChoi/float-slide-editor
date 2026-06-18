@@ -32,6 +32,16 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
   const handleMouseDown = useCallback((e) => {
     // 그리기 모드 중에는 요소 선택 차단
     if (useFlatStore.getState().drawMode) return
+    // 다이어그램 모드 + Alt/⌘(Cmd) 드래그 → 이 도형에서 커넥터 시작(이동 대신)
+    // (Ctrl은 맥에서 우클릭=컨텍스트 메뉴라 제외)
+    const st = useFlatStore.getState()
+    if (st.diagramMode && (e.altKey || e.metaKey)
+        && element.shapeType !== 'connector' && !isFullCanvasBg) {
+      e.stopPropagation(); e.preventDefault()
+      const cur = st.flatElements.find(el => el.id === element.id) || element
+      st.beginConnectorFrom(element.id, { x: cur.x + cur.width / 2, y: cur.y + cur.height / 2 })
+      return
+    }
     if (isFullCanvasBg) {
       // 배경: stopPropagation 안 함 (마키 공존), 선택은 mouseup에서 처리
       return
@@ -177,12 +187,21 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
             // border 등과 겹칠 때 정렬이 어긋나 보인다. 미설정(undefined)일 때만 블록 흐름(위).
             const hasVAlign = vAlign === 'center' || vAlign === 'flex-end' || vAlign === 'flex-start'
             if (!isSelfFlex && !merged && !hasVAlign) return {} // 기본: 위(블록 흐름)
+            // 병합/자체-flex 컨테이너는 가로(기존 동작) 유지
+            if (isSelfFlex || merged || styles.isFlex) {
+              return {
+                display: 'flex',
+                alignItems: vAlign || (styles.isFlex ? (styles.alignItems || 'center') : 'center'),
+                justifyContent: isSelfFlex ? (styles.justifyContent || 'center') : styles.isFlex ? (styles.justifyContent || 'center') : (styles.textAlign === 'center' ? 'center' : styles.textAlign === 'right' ? 'flex-end' : 'flex-start'),
+                ...(styles.gap && styles.gap !== '0px' && styles.gap !== 'normal' ? { gap: styles.gap } : {}),
+              }
+            }
+            // 명시적 세로정렬 텍스트: 세로 방향(column) flex — 여러 줄이 아래로 쌓이게
             return {
               display: 'flex',
-              // 명시적 세로정렬이 있으면 그것을, 없으면(병합/self-flex 버튼류) 중앙
-              alignItems: vAlign || (styles.isFlex ? (styles.alignItems || 'center') : 'center'),
-              justifyContent: isSelfFlex ? (styles.justifyContent || 'center') : styles.isFlex ? (styles.justifyContent || 'center') : (styles.textAlign === 'center' ? 'center' : styles.textAlign === 'right' ? 'flex-end' : 'flex-start'),
-              ...(styles.gap && styles.gap !== '0px' && styles.gap !== 'normal' ? { gap: styles.gap } : {}),
+              flexDirection: 'column',
+              justifyContent: vAlign || 'center', // 세로 정렬(주축)
+              alignItems: styles.textAlign === 'center' ? 'center' : styles.textAlign === 'right' ? 'flex-end' : 'flex-start', // 가로(교차축)
             }
           })(),
           visibility: isEditing ? 'hidden' : undefined,
@@ -333,6 +352,42 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
     const startArrow = element.startArrow || 'none'
     const endArrow = element.endArrow || 'none'
     const markerId = element.id
+    // 화살표 마커 크기 — 선 두께에 따라 적당히 커진다(viewBox 0..12를 aMark px로 스케일).
+    const aMark = Math.max(12, Math.min(32, Math.round(9 + sw * 2)))
+    // 열린(뼈대) 화살표의 선 굵기를 본선 두께에 맞춘다(viewBox 단위로 환산) — 두꺼운 선에서
+    // V가 가늘어 따로 노는 문제 방지. 렌더 px ≈ openSw * aMark/12 = sw.
+    const openSw = Math.max(1.2, sw * 12 / aMark)
+    // 보이는 선은 끝에서 안쪽으로 살짝 당긴다 — 마커(화살표)는 전체 길이 경로(투명)에 두어
+    // 끝점/방향(도형 경계 위치)은 유지. 화살표 있는 끝: 화살표 길이만큼(앞 삐져나옴 방지).
+    // 커넥터의 화살표 없는 끝: 선 두께만큼(두꺼운 선 끝이 도형을 가리지 않게). 일반 선은 안 당김.
+    const isConn = element.shapeType === 'connector'
+    const endInset = (k) => {
+      if (k === 'triangle') return aMark * 0.8          // 채운 삼각: 선은 밑변까지(앞 삐져나옴 방지)
+      if (k === 'circle' || k === 'diamond') return aMark * 0.5
+      // 열린 화살표('arrow'): 선이 팁까지 가고 V 팔이 머리 → 두께만큼만 살짝(빈 공간 방지).
+      // 화살표 없는 끝: 커넥터만 두께만큼 띄움(도형 안 가림), 일반 선은 그대로.
+      if (k === 'arrow') return sw * 0.5 + 1
+      return isConn ? sw * 0.5 + 1 : 0
+    }
+    const dVisible = (() => {
+      const pts = element.points
+      // 닫힌 도형(폴리곤)은 끝점 개념이 없어 당기면 외곽선이 일그러짐 → 원본 유지
+      if (element.closed) return d
+      const insetStart = endInset(startArrow)
+      const insetEnd = endInset(endArrow)
+      if ((insetStart <= 0 && insetEnd <= 0) || !pts || pts.length < 2) return d
+      const out = pts.map(p => ({ ...p }))
+      const pull = (ai, bi, inset) => {
+        if (inset <= 0) return
+        const a = out[ai], b = out[bi]
+        const len = Math.hypot(b.x - a.x, b.y - a.y) || 1
+        const t = Math.min(inset, len * 0.45) / len
+        out[ai] = { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t }
+      }
+      pull(0, 1, insetStart)
+      pull(out.length - 1, out.length - 2, insetEnd)
+      return pointsToSvgPath(out, element.closed)
+    })()
     return (
       <div style={{ ...baseStyle, overflow: 'visible' }} onMouseDown={handleMouseDown} onClick={handleClick}>
         <svg
@@ -342,27 +397,31 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
         >
           <defs>
             {startArrow !== 'none' && (
-              <marker id={`ms-${markerId}`} markerWidth="12" markerHeight="12" refX="10" refY="6"
+              <marker id={`ms-${markerId}`} markerWidth={aMark} markerHeight={aMark} viewBox="0 0 12 12" refX="10" refY="6"
                       orient="auto-start-reverse" markerUnits="userSpaceOnUse">
-                {startArrow === 'arrow' && <path d="M 0 1 L 10 6 L 0 11" fill="none" stroke={strokeColor} strokeWidth="1.5" />}
+                {startArrow === 'arrow' && <path d="M 0 1 L 10 6 L 0 11" fill="none" stroke={strokeColor} strokeWidth={openSw} strokeLinecap="round" strokeLinejoin="round" />}
                 {startArrow === 'triangle' && <path d="M 0 1 L 10 6 L 0 11 Z" fill={strokeColor} />}
                 {startArrow === 'circle' && <circle cx="6" cy="6" r="4" fill={strokeColor} />}
                 {startArrow === 'diamond' && <path d="M 6 0 L 12 6 L 6 12 L 0 6 Z" fill={strokeColor} />}
               </marker>
             )}
             {endArrow !== 'none' && (
-              <marker id={`me-${markerId}`} markerWidth="12" markerHeight="12" refX="10" refY="6"
+              <marker id={`me-${markerId}`} markerWidth={aMark} markerHeight={aMark} viewBox="0 0 12 12" refX="10" refY="6"
                       orient="auto" markerUnits="userSpaceOnUse">
-                {endArrow === 'arrow' && <path d="M 0 1 L 10 6 L 0 11" fill="none" stroke={strokeColor} strokeWidth="1.5" />}
+                {endArrow === 'arrow' && <path d="M 0 1 L 10 6 L 0 11" fill="none" stroke={strokeColor} strokeWidth={openSw} strokeLinecap="round" strokeLinejoin="round" />}
                 {endArrow === 'triangle' && <path d="M 0 1 L 10 6 L 0 11 Z" fill={strokeColor} />}
                 {endArrow === 'circle' && <circle cx="6" cy="6" r="4" fill={strokeColor} />}
                 {endArrow === 'diamond' && <path d="M 6 0 L 12 6 L 6 12 L 0 6 Z" fill={strokeColor} />}
               </marker>
             )}
           </defs>
-          <path d={d} stroke="transparent" strokeWidth={Math.max(sw, 10)} fill="none" />
+          {/* 전체 길이(투명) — 히트영역 겸 마커(화살표) 캐리어: 끝점/방향 유지 */}
+          <path d={d} stroke="transparent" strokeWidth={Math.max(sw, 10)} fill="none"
+            markerStart={startArrow !== 'none' ? `url(#ms-${markerId})` : undefined}
+            markerEnd={endArrow !== 'none' ? `url(#me-${markerId})` : undefined} />
+          {/* 보이는 선 — 화살표 있는 끝은 짧게(겹침 방지) */}
           <path
-            d={d}
+            d={dVisible}
             stroke={strokeColor}
             strokeWidth={sw}
             strokeDasharray={styles.strokeDasharray || ''}
@@ -370,8 +429,6 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
             strokeLinecap="round"
             strokeLinejoin="round"
             opacity={styles.opacity || 1}
-            markerStart={startArrow !== 'none' ? `url(#ms-${markerId})` : undefined}
-            markerEnd={endArrow !== 'none' ? `url(#me-${markerId})` : undefined}
           />
         </svg>
       </div>
@@ -393,10 +450,13 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
     textAlign: styles.textAlign || 'center',
     letterSpacing: styles.letterSpacing,
     padding: styles.padding || '8px',
+    // 세로 방향 flex — Enter 줄바꿈이 아래로 쌓이도록(가로 flex면 블록이 옆으로 붙음).
     display: 'flex',
-    // 세로 정렬: 설정값 존중, 미설정이면 가운데(도형 텍스트 기본). 편집기/속성패널과 일치.
-    alignItems: styles.alignItems || 'center',
-    justifyContent: styles.textAlign === 'left' ? 'flex-start'
+    flexDirection: 'column',
+    // 세로 정렬(주축): 설정값 존중, 미설정이면 가운데(도형 텍스트 기본). 편집기/속성패널과 일치.
+    justifyContent: styles.alignItems || 'center',
+    // 가로 정렬(교차축): textAlign 기반
+    alignItems: styles.textAlign === 'left' ? 'flex-start'
       : styles.textAlign === 'right' ? 'flex-end' : 'center',
     width: '100%', height: '100%',
     overflow: 'hidden',

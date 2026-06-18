@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { extractFlatElementsFromIframe, nextFlatId } from '../core/FlatExtractor'
+import { extractFlatElementsFromIframe, nextFlatId, bumpFlatCounterTo } from '../core/FlatExtractor'
 import { SLIDE_LAYOUTS } from '../core/slideLayouts'
 import { HistoryStack } from '../core/HistoryStack'
 import { isBackgroundElement } from '../core/SnapEngine'
@@ -261,6 +261,15 @@ export const useFlatStore = create((set, get) => ({
   styleClipboard: null,
   /** 그리기 모드: null | 'line' | 'polyline' | 'polygon' */
   drawMode: null,
+  /** 다이어그램 모드: 켜면 도형 호버 시 연결점 표시 + 커넥터 생성 가능(이동/선택은 그대로) */
+  diagramMode: false,
+  /** 새 커넥터 기본 스타일 — 마지막 사용 설정을 기억해 다음 커넥터에 적용 */
+  connectorDefaults: {
+    startArrow: 'none', endArrow: 'triangle',
+    stroke: '#1e293b', strokeWidth: '2', strokeDasharray: '',
+  },
+  /** 커넥터 생성 드래그 진행 상태: null | { sourceId, startPt:{x,y}, curPt:{x,y}, targetId } */
+  connectorDraft: null,
   /** 마키 드래그 직후 배경 click 무시용 플래그 */
   _skipBgClick: false,
 
@@ -611,7 +620,83 @@ export const useFlatStore = create((set, get) => ({
   },
 
   setDrawMode(mode) {
-    set({ drawMode: mode, selectedFlatIds: [], editingFlatId: null })
+    set({ drawMode: mode, selectedFlatIds: [], editingFlatId: null, diagramMode: false })
+  },
+
+  /** 다이어그램 모드 토글 — drawMode와 상호배타 */
+  setDiagramMode(on) {
+    set({ diagramMode: !!on, drawMode: null, editingFlatId: null })
+  },
+
+  /** 새 커넥터 기본 스타일 갱신(마지막 사용 기억) */
+  setConnectorDefaults(partial) {
+    set({ connectorDefaults: { ...get().connectorDefaults, ...partial } })
+  },
+
+  /**
+   * 커넥터 생성 — connection({start,end} 각각 {elementId} 또는 {point}).
+   * 기하(x/y/width/height/points)는 렌더 시 resolveConnectors가 유도하므로
+   * 여기선 자리만 채운다(저장/선택용 캐시). connectorDefaults로 스타일 적용.
+   */
+  addConnector(connection) {
+    const d = get().connectorDefaults
+    const els = get().flatElements
+    const maxZ = els.length > 0 ? Math.max(...els.map(e => e.zIndex)) : 0
+    const el = {
+      id: nextFlatId(), sourceId: null,
+      type: 'shape', shapeType: 'connector',
+      connection,
+      routing: 'straight',
+      closed: false,
+      content: '', isRich: false, merged: false,
+      x: 0, y: 0, width: 0, height: 0, points: [{ x: 0, y: 0 }, { x: 0, y: 0 }],
+      zIndex: maxZ + 1,
+      startArrow: d.startArrow, endArrow: d.endArrow,
+      styles: {
+        stroke: d.stroke, strokeWidth: d.strokeWidth, strokeDasharray: d.strokeDasharray,
+        fill: 'none', opacity: '1', backgroundColor: 'rgba(0,0,0,0)',
+      },
+    }
+    get().addFlatElement(el)
+    set({ selectedFlatIds: [el.id] })
+    return el.id
+  },
+
+  /** 커넥터 생성 드래그 시작(소스 도형에서) */
+  beginConnectorFrom(sourceId, startPt) {
+    set({ connectorDraft: { sourceId, startPt, curPt: startPt, targetId: null } })
+  },
+  /** 드래그 중 갱신(커서 위치 + 부착 후보) */
+  updateConnectorDraft(curPt, targetId) {
+    const d = get().connectorDraft
+    if (!d) return
+    set({ connectorDraft: { ...d, curPt, targetId: targetId ?? null } })
+  },
+  cancelConnectorDraft() {
+    if (get().connectorDraft) set({ connectorDraft: null })
+  },
+  /** 드래그 종료 → 커넥터 생성(타겟 도형 또는 자유 끝점). 드래그 미미하면 취소. */
+  commitConnectorDraft() {
+    const d = get().connectorDraft
+    if (!d) return null
+    set({ connectorDraft: null })
+    const { sourceId, targetId } = d
+    // 커넥터는 도형↔도형만. 다른 도형 위에 놓으면 연결, 빈 공간/자기 자신이면 취소.
+    if (targetId && targetId !== sourceId) {
+      return get().addConnector({ start: { elementId: sourceId }, end: { elementId: targetId } })
+    }
+    return null
+  },
+
+  /** 커넥터 방향 뒤집기 — 양끝 연결 + 화살표 스왑 */
+  reverseConnector(id) {
+    const el = get().flatElements.find(e => e.id === id)
+    if (!el || el.shapeType !== 'connector' || !el.connection) return
+    get().updateFlatElement(id, {
+      connection: { start: el.connection.end, end: el.connection.start },
+      startArrow: el.endArrow || 'none',
+      endArrow: el.startArrow || 'none',
+    })
   },
 
   /** 모든 페이지를 백그라운드로 미리 flat 변환 (로딩 시 자동 호출) */
@@ -1097,6 +1182,25 @@ export const useFlatStore = create((set, get) => ({
     const updated = [...els]
     updated[idx] = { ...old, ...changes }
     set({ flatElements: updated, canUndo: _history.canUndo, canRedo: _history.canRedo })
+
+    // 커넥터의 화살표/선스타일을 바꾸면 다음 커넥터 기본값으로 기억(마지막 사용 기억)
+    if (updated[idx].shapeType === 'connector') {
+      // 한쪽 끝 화살표만 바꾸는 '의도적 선택'일 때만 기억. 양쪽 동시 변경(방향 뒤집기 등)은
+      // 기본값으로 굳히면 안 됨(다음 새 커넥터가 시작쪽 화살표로 잘못 생성됨).
+      const touchesArrow = ('startArrow' in changes) !== ('endArrow' in changes)
+      const s = changes.styles || {}
+      const touchesLine = 'stroke' in s || 'strokeWidth' in s || 'strokeDasharray' in s
+      if (touchesArrow || touchesLine) {
+        const c = updated[idx]
+        get().setConnectorDefaults({
+          startArrow: c.startArrow ?? 'none',
+          endArrow: c.endArrow ?? 'none',
+          stroke: c.styles?.stroke ?? '#1e293b',
+          strokeWidth: c.styles?.strokeWidth ?? '2',
+          strokeDasharray: c.styles?.strokeDasharray ?? '',
+        })
+      }
+    }
   },
 
   /** 실시간 미리보기 (히스토리 없음) */
@@ -1115,40 +1219,54 @@ export const useFlatStore = create((set, get) => ({
 
   /** flat 요소 삭제 */
   removeFlatElement(id) {
-    const els = get().flatElements
-    const idx = els.findIndex(e => e.id === id)
-    if (idx === -1) return
-
-    const removed = els[idx]
-    _history.push({ type: 'remove', element: removed, index: idx })
-
-    const updated = els.filter(e => e.id !== id)
-    const updates = { flatElements: updated, canUndo: _history.canUndo, canRedo: _history.canRedo }
-    const ids = get().selectedFlatIds
-    if (ids.includes(id)) updates.selectedFlatIds = ids.filter(i => i !== id)
-    if (get().editingFlatId === id) updates.editingFlatId = null
-    set(updates)
+    get()._removeByIdSet([id])
   },
 
   /** 선택된 요소 전체 삭제 (다중 삭제) */
   removeSelectedElements() {
-    const { selectedFlatIds, flatElements } = get()
+    const { selectedFlatIds } = get()
     if (selectedFlatIds.length === 0) return
-    if (selectedFlatIds.length === 1) {
-      get().removeFlatElement(selectedFlatIds[0])
-      return
+    get()._removeByIdSet(selectedFlatIds)
+  },
+
+  /**
+   * 주어진 id들(+그것을 참조하는 커넥터)을 한 번의 히스토리로 삭제.
+   * 연결 도형을 지우면 커넥터도 함께 삭제된다(동반 삭제).
+   */
+  _removeByIdSet(baseIds) {
+    const flatElements = get().flatElements
+    const idSet = new Set(baseIds)
+    // 참조 커넥터 동반 삭제
+    for (const el of flatElements) {
+      if (el.shapeType === 'connector' && el.connection) {
+        const s = el.connection.start?.elementId
+        const t = el.connection.end?.elementId
+        if ((s && idSet.has(s)) || (t && idSet.has(t))) idSet.add(el.id)
+      }
     }
+    // 문서 순서대로 entries 구성(점진 삭제 인덱스 — batch_remove undo와 일치)
     const entries = []
     let updated = [...flatElements]
-    for (const id of selectedFlatIds) {
-      const idx = updated.findIndex(e => e.id === id)
+    for (const el of flatElements) {
+      if (!idSet.has(el.id)) continue
+      const idx = updated.findIndex(e => e.id === el.id)
       if (idx === -1) continue
       entries.push({ element: { ...updated[idx] }, index: idx })
-      updated = updated.filter(e => e.id !== id)
+      updated = updated.filter(e => e.id !== el.id)
     }
     if (entries.length === 0) return
-    _history.push({ type: 'batch_remove', entries })
-    set({ flatElements: updated, selectedFlatIds: [], canUndo: _history.canUndo, canRedo: _history.canRedo })
+    if (entries.length === 1) {
+      _history.push({ type: 'remove', element: entries[0].element, index: entries[0].index })
+    } else {
+      _history.push({ type: 'batch_remove', entries })
+    }
+    const updates = {
+      flatElements: updated,
+      selectedFlatIds: get().selectedFlatIds.filter(i => !idSet.has(i)),
+      canUndo: _history.canUndo, canRedo: _history.canRedo,
+    }
+    if (idSet.has(get().editingFlatId)) updates.editingFlatId = null
+    set(updates)
   },
 
   /** 선택된 요소 복사 (클립보드에 저장) — 다중 지원 */
@@ -1731,6 +1849,17 @@ export const useFlatStore = create((set, get) => ({
     // 캐시 초기화
     for (const key in _pageCache) delete _pageCache[key]
     _history.clear()
+
+    // ID 카운터 동기화 — 로드된 최대 flat-N 이후로 새 ID를 발급해 충돌 방지
+    // (충돌 시 같은 id 요소가 함께 선택돼 그룹처럼 보이는 버그 발생)
+    let _maxFlatId = 0
+    for (const key in pagesData) {
+      for (const el of (pagesData[key].elements || [])) {
+        const m = /^flat-(\d+)$/.exec(el.id || '')
+        if (m) { const n = +m[1]; if (n > _maxFlatId) _maxFlatId = n }
+      }
+    }
+    bumpFlatCounterTo(_maxFlatId)
 
     // 모든 페이지를 캐시에 저장
     for (const key in pagesData) {

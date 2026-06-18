@@ -2,12 +2,14 @@ import { useRef, useEffect, useCallback, useState, useMemo } from 'react'
 import { useFlatStore, isBackgroundLayer } from '../store/flatStore'
 import { useEditorStore } from '../store/editorStore'
 import { isBackgroundElement } from '../core/SnapEngine'
+import { resolveConnectors, resolveConnectorEndpoints, attachTargetAt } from '../core/ConnectorRouting'
 import { getRotatedAABB } from '../core/RotationUtils'
 import FlatElementRenderer from './FlatElementRenderer'
 import FlatSelectionOverlay, { FlatGroupOverlay } from './FlatSelectionOverlay'
 import FlatAiBar from './FlatAiBar'
 import FlatImageAiBar from './FlatImageAiBar'
 import FlatSelectionAiBar from './FlatSelectionAiBar'
+import ConnectorInlineToolbar from './ConnectorInlineToolbar'
 import FlatInlineEditor from './FlatInlineEditor'
 import FlatTableEditor from './FlatTableEditor'
 import FlatContextMenu from './FlatContextMenu'
@@ -17,6 +19,9 @@ import { pointsToBBox, absoluteToRelativePoints, pointsToSvgPath } from '../core
 import { confirmDialog } from './ConfirmDialog'
 import { bumpFontSizePx } from '../core/TextStyleScope'
 import { copyElementToSystemClipboard } from '../core/SystemClipboard'
+
+// 다이어그램 모드 연결점을 도형 변에서 바깥으로 띄우는 거리(리사이즈 핸들과 구분)
+const CONNECT_DOT_OUT = 14
 
 /**
  * FlatCanvas
@@ -41,8 +46,10 @@ export default function FlatCanvas() {
           removeSelectedElements, updateFlatElement, undo, redo, viewMode, reExtract,
           copyElement, cutElement, pasteElement, duplicateElement, selectAllFlats,
           bringForward, sendBackward, bringToFront, sendToBack, setCroppingFlat,
-          addFlatElement, setCanvasRef, preloadProgress, drawMode, setDrawMode, flatPageCount } = useFlatStore()
+          addFlatElement, setCanvasRef, preloadProgress, drawMode, setDrawMode, flatPageCount,
+          diagramMode, connectorDraft } = useFlatStore()
   const [dragOver, setDragOver] = useState(false)
+  const [hoverShapeId, setHoverShapeId] = useState(null) // 다이어그램 모드 연결점 표시용
   const [drawPoints, setDrawPoints] = useState([])     // 그리기 중 확정된 점들
   const [drawPreview, setDrawPreview] = useState(null)  // 마우스 위치 (프리뷰용)
   const { currentPage, revealV, mode } = useEditorStore()
@@ -85,7 +92,10 @@ export default function FlatCanvas() {
     return () => setCanvasRef(null)
   }, [setCanvasRef])
 
-  const selectedEls = flatElements.filter(e => selectedFlatIds.includes(e.id))
+  // 커넥터 기하(끝점/bbox/points)는 참조 도형에서 유도 — 렌더·선택 모두 해석된 사본 사용.
+  // 도형 이동(previewFlatElement)으로 flatElements가 바뀌면 커넥터도 자동 재계산되어 따라온다.
+  const renderElements = useMemo(() => resolveConnectors(flatElements), [flatElements])
+  const selectedEls = renderElements.filter(e => selectedFlatIds.includes(e.id))
   const selectedEl = selectedEls.length === 1 ? selectedEls[0] : null
 
   // 이미지 data URL로 요소 생성 + 추가
@@ -322,6 +332,53 @@ export default function FlatCanvas() {
     if (!rect) return
     setDrawPreview({ x: (e.clientX - rect.left) / scale, y: (e.clientY - rect.top) / scale })
   }, [drawMode, drawPoints.length, scale])
+
+  // ── 다이어그램 모드: 커넥터 생성 드래그 ──
+  const canvasPt = useCallback((e) => {
+    const rect = canvasRef.current?.getBoundingClientRect()
+    if (!rect) return null
+    return { x: (e.clientX - rect.left) / scale, y: (e.clientY - rect.top) / scale }
+  }, [scale])
+
+  // 호버 도형(연결점 표시) — 다이어그램 모드, 드래그 아님.
+  // 연결점은 도형 '바깥쪽'(CONNECT_DOT_OUT)에 떠 있으므로, 호버 감지 영역도 그만큼
+  // 넓혀야(threshold) 점 위로 커서가 나가도 호버가 유지되어 점을 잡을 수 있다.
+  const handleDiagramHover = useCallback((e) => {
+    if (!diagramMode || connectorDraft) return
+    const pt = canvasPt(e)
+    if (!pt) { setHoverShapeId(null); return }
+    const st = useFlatStore.getState()
+    const id = attachTargetAt(pt.x, pt.y, st.flatElements, { threshold: CONNECT_DOT_OUT + 10, canvasSize: st.canvasSize })
+    setHoverShapeId(id)
+  }, [diagramMode, connectorDraft, canvasPt])
+
+  // 드래그 중 window 리스너 (커서 추적 + 부착 후보 + 종료)
+  const connectorDragging = !!connectorDraft
+  useEffect(() => {
+    if (!connectorDragging) return
+    const onMove = (e) => {
+      const pt = canvasPt(e)
+      if (!pt) return
+      const st = useFlatStore.getState()
+      const d = st.connectorDraft
+      if (!d) return
+      const targetId = attachTargetAt(pt.x, pt.y, st.flatElements, { excludeId: d.sourceId, canvasSize: st.canvasSize })
+      st.updateConnectorDraft(pt, targetId)
+    }
+    const onUp = () => useFlatStore.getState().commitConnectorDraft()
+    const onKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); useFlatStore.getState().cancelConnectorDraft() } }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [connectorDragging, canvasPt])
+
+  // 다이어그램 모드 해제 시 호버 정리
+  useEffect(() => { if (!diagramMode) setHoverShapeId(null) }, [diagramMode])
 
   // ESC로 그리기 취소/확정
   useEffect(() => {
@@ -832,8 +889,9 @@ export default function FlatCanvas() {
       useFlatStore.setState({ _skipBgClick: true })
       requestAnimationFrame(() => useFlatStore.setState({ _skipBgClick: false }))
 
-      // 완전 포함된 요소만 선택 (PPT 방식) + 배경 제외
-      const els = useFlatStore.getState().flatElements
+      // 완전 포함된 요소만 선택 (PPT 방식) + 배경 제외.
+      // 커넥터는 기하가 유도값이라 raw flatElements엔 0,0,0,0 → resolveConnectors로 실제 bbox 사용.
+      const els = resolveConnectors(useFlatStore.getState().flatElements)
       const cs = useFlatStore.getState().canvasSize
       const hits = els.filter(el => {
         if (isBackgroundLayer(el, cs)) return false // 배경 레이어는 마퀴 선택 제외
@@ -909,13 +967,14 @@ export default function FlatCanvas() {
             data-flat-canvas="true"
             style={{
               position: 'relative', width: '100%', height: '100%', overflow: 'hidden', userSelect: 'none',
-              cursor: drawMode ? 'crosshair' : undefined,
+              cursor: (drawMode || connectorDraft) ? 'crosshair' : undefined,
             }}
             onClick={drawMode ? handleDrawClick : undefined}
             onDoubleClick={drawMode ? handleDrawDoubleClick : undefined}
-            onMouseMove={drawMode ? handleDrawMouseMove : undefined}
+            onMouseMove={drawMode ? handleDrawMouseMove : (diagramMode ? handleDiagramHover : undefined)}
+            onMouseLeave={diagramMode ? () => setHoverShapeId(null) : undefined}
           >
-            {flatElements.map(el => (
+            {renderElements.map(el => (
               <FlatElementRenderer
                 key={el.id}
                 element={el}
@@ -935,6 +994,10 @@ export default function FlatCanvas() {
             {/* 이미지 단일 선택 시 전용 AI 디자인 향상 플로팅바 (편집 중·발표 중에는 숨김) */}
             {selectedEls.length === 1 && selectedEl && selectedEl.type === 'image' && !editingFlatId && mode !== 'present' && (
               <FlatImageAiBar element={selectedEl} scale={scale} canvasRef={canvasRef} />
+            )}
+            {/* 커넥터 단일 선택 시 빠른 편집 미니툴바 */}
+            {selectedEls.length === 1 && selectedEl && selectedEl.shapeType === 'connector' && !editingFlatId && mode !== 'present' && (
+              <ConnectorInlineToolbar element={selectedEl} scale={scale} canvasRef={canvasRef} />
             )}
             {selectedEls.length > 1 && !editingFlatId && (
               <FlatGroupOverlay elements={selectedEls} scale={scale}
@@ -1038,6 +1101,59 @@ export default function FlatCanvas() {
                 })()}
               </svg>
             )}
+            {/* 다이어그램 모드: 호버 도형 연결점 — 리사이즈 핸들(인디고 사각, 변 위)과
+                구분되도록 초록 원으로 도형 '바깥쪽'에 띄워 표시(드래그 시작점) */}
+            {diagramMode && !connectorDraft && hoverShapeId && (() => {
+              const el = renderElements.find(e => e.id === hoverShapeId)
+              if (!el) return null
+              const OUT = CONNECT_DOT_OUT // 도형 변에서 바깥으로 띄우는 거리
+              const dots = [
+                { x: el.x + el.width / 2, y: el.y - OUT },
+                { x: el.x + el.width + OUT, y: el.y + el.height / 2 },
+                { x: el.x + el.width / 2, y: el.y + el.height + OUT },
+                { x: el.x - OUT, y: el.y + el.height / 2 },
+              ]
+              const center = { x: el.x + el.width / 2, y: el.y + el.height / 2 }
+              const R = 7 // 점 반지름(잡기 쉽게)
+              return (
+                <div data-export-ignore="true">
+                  <div style={{ position: 'absolute', left: el.x, top: el.y, width: el.width, height: el.height,
+                    border: '1px dashed rgba(16,185,129,0.8)', borderRadius: 4, pointerEvents: 'none', zIndex: 9998 }} />
+                  {dots.map((p, i) => (
+                    <div key={i}
+                      title="드래그해서 다른 도형에 연결"
+                      onMouseDown={(e) => { e.stopPropagation(); e.preventDefault()
+                        useFlatStore.getState().beginConnectorFrom(el.id, center) }}
+                      style={{ position: 'absolute', left: p.x - R, top: p.y - R, width: R * 2, height: R * 2, borderRadius: '50%',
+                        background: '#10b981', border: '2px solid #fff', boxShadow: '0 0 0 1px rgba(16,185,129,0.5)',
+                        cursor: 'crosshair', zIndex: 10001 }} />
+                  ))}
+                </div>
+              )
+            })()}
+            {/* 다이어그램 모드: 커넥터 생성 드래그 프리뷰 */}
+            {connectorDraft && (() => {
+              const byId = {}
+              for (const e of flatElements) byId[e.id] = e
+              const conn = {
+                start: { elementId: connectorDraft.sourceId },
+                end: connectorDraft.targetId ? { elementId: connectorDraft.targetId } : { point: connectorDraft.curPt },
+              }
+              const eps = resolveConnectorEndpoints(conn, byId)
+              if (!eps) return null
+              const tgt = connectorDraft.targetId ? renderElements.find(e => e.id === connectorDraft.targetId) : null
+              return (
+                <div data-export-ignore="true">
+                  {tgt && <div style={{ position: 'absolute', left: tgt.x, top: tgt.y, width: tgt.width, height: tgt.height,
+                    border: '2px solid #6366f1', borderRadius: 4, pointerEvents: 'none', zIndex: 9998 }} />}
+                  <svg style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', overflow: 'visible', pointerEvents: 'none', zIndex: 9999 }}>
+                    <line x1={eps.start.x} y1={eps.start.y} x2={eps.end.x} y2={eps.end.y}
+                      stroke="#6366f1" strokeWidth="2" strokeDasharray="5 4" strokeLinecap="round" />
+                    <circle cx={eps.end.x} cy={eps.end.y} r="4" fill="#6366f1" stroke="#fff" strokeWidth="1.5" />
+                  </svg>
+                </div>
+              )
+            })()}
             {editingFlatId && flatElements.find(e => e.id === editingFlatId) && (
               flatElements.find(e => e.id === editingFlatId).type === 'table'
                 ? <FlatTableEditor element={flatElements.find(e => e.id === editingFlatId)} />
