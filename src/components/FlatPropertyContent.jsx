@@ -1982,9 +1982,10 @@ function PolyShapeSection({ el, update, updateStyle, previewStyle }) {
   )
 }
 
+// '화살표'(열린 V)는 두꺼운 선에서 채운 삼각형처럼 보여 어색 → 선택 옵션에서 제외.
+// (기존/임포트 데이터의 'arrow' 값은 렌더러가 계속 지원)
 const ARROW_OPTIONS = [
   { id: 'none', label: '없음', icon: '─' },
-  { id: 'arrow', label: '화살표', icon: '→' },
   { id: 'triangle', label: '삼각형', icon: '▶' },
   { id: 'circle', label: '원', icon: '●' },
   { id: 'diamond', label: '다이아', icon: '◆' },
