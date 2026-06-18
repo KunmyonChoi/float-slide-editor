@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef } from 'react'
 import { useEditorStore } from '../store/editorStore'
 import { useFlatStore } from '../store/flatStore'
 import { compareFlatConversion } from '../core/FlatCompare'
@@ -14,8 +14,29 @@ export default function ComparePanel() {
   const { flatElements, canvasSize, fontImports, viewMode } = useFlatStore()
   const [report, setReport] = useState(null)
   const [expanded, setExpanded] = useState(null) // 'missing' | 'extra' | 'drift' | null
+  const [pos, setPos] = useState(null) // null = 기본(좌하단)
+  const containerRef = useRef(null)
 
   const isActive = viewMode !== 'html' && flatElements.length > 0
+
+  // 헤더 드래그로 이동(버튼 클릭은 제외)
+  const onHeaderMouseDown = useCallback((e) => {
+    if (e.target.closest('button')) return
+    const r = containerRef.current?.getBoundingClientRect()
+    if (!r) return
+    const start = { sx: e.clientX, sy: e.clientY, left: r.left, top: r.top }
+    const onMove = (me) => {
+      const left = Math.max(0, Math.min(window.innerWidth - 80, start.left + (me.clientX - start.sx)))
+      const top = Math.max(0, Math.min(window.innerHeight - 30, start.top + (me.clientY - start.sy)))
+      setPos({ left, top })
+    }
+    const onUp = () => {
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+    }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+  }, [])
 
   const runCompare = useCallback(() => {
     if (!iframeRef) return
@@ -40,9 +61,10 @@ export default function ComparePanel() {
 
   return (
     <div
+      ref={containerRef}
       className="fixed z-40 rounded-xl overflow-hidden select-none"
       style={{
-        left: 16, bottom: 16,
+        ...(pos ? { left: pos.left, top: pos.top } : { left: 16, bottom: 16 }),
         width: 300,
         maxHeight: 420,
         background: 'rgba(15,23,42,0.92)',
@@ -51,8 +73,12 @@ export default function ComparePanel() {
         boxShadow: '0 16px 48px rgba(0,0,0,0.5)',
       }}
     >
-      {/* 헤더 */}
-      <div className="flex items-center justify-between px-3 py-2.5 border-b border-white/5">
+      {/* 헤더 (드래그로 이동) */}
+      <div
+        onMouseDown={onHeaderMouseDown}
+        className="flex items-center justify-between px-3 py-2.5 border-b border-white/5"
+        style={{ cursor: 'move' }}
+      >
         <span className="text-xs font-medium text-slate-400">변환 검증</span>
         <div className="flex gap-1.5">
           <SmallBtn onClick={handleExportOriginal} title="원본 HTML 내보내기">원본</SmallBtn>
