@@ -345,13 +345,21 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
     const markerId = element.id
     // 화살표 마커 크기 — 선 두께에 따라 적당히 커진다(viewBox 0..12를 aMark px로 스케일).
     const aMark = Math.max(12, Math.min(32, Math.round(9 + sw * 2)))
+    // 열린(뼈대) 화살표의 선 굵기를 본선 두께에 맞춘다(viewBox 단위로 환산) — 두꺼운 선에서
+    // V가 가늘어 따로 노는 문제 방지. 렌더 px ≈ openSw * aMark/12 = sw.
+    const openSw = Math.max(1.2, sw * 12 / aMark)
     // 보이는 선은 끝에서 안쪽으로 살짝 당긴다 — 마커(화살표)는 전체 길이 경로(투명)에 두어
     // 끝점/방향(도형 경계 위치)은 유지. 화살표 있는 끝: 화살표 길이만큼(앞 삐져나옴 방지).
     // 커넥터의 화살표 없는 끝: 선 두께만큼(두꺼운 선 끝이 도형을 가리지 않게). 일반 선은 안 당김.
     const isConn = element.shapeType === 'connector'
-    const endInset = (k) => k !== 'none'
-      ? ((k === 'circle' || k === 'diamond') ? aMark * 0.5 : aMark * 0.8)
-      : (isConn ? sw * 0.5 + 1 : 0)
+    const endInset = (k) => {
+      if (k === 'triangle') return aMark * 0.8          // 채운 삼각: 선은 밑변까지(앞 삐져나옴 방지)
+      if (k === 'circle' || k === 'diamond') return aMark * 0.5
+      // 열린 화살표('arrow'): 선이 팁까지 가고 V 팔이 머리 → 두께만큼만 살짝(빈 공간 방지).
+      // 화살표 없는 끝: 커넥터만 두께만큼 띄움(도형 안 가림), 일반 선은 그대로.
+      if (k === 'arrow') return sw * 0.5 + 1
+      return isConn ? sw * 0.5 + 1 : 0
+    }
     const dVisible = (() => {
       const pts = element.points
       const insetStart = endInset(startArrow)
@@ -380,7 +388,7 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
             {startArrow !== 'none' && (
               <marker id={`ms-${markerId}`} markerWidth={aMark} markerHeight={aMark} viewBox="0 0 12 12" refX="10" refY="6"
                       orient="auto-start-reverse" markerUnits="userSpaceOnUse">
-                {startArrow === 'arrow' && <path d="M 0 1 L 10 6 L 0 11" fill="none" stroke={strokeColor} strokeWidth="1.5" />}
+                {startArrow === 'arrow' && <path d="M 0 1 L 10 6 L 0 11" fill="none" stroke={strokeColor} strokeWidth={openSw} strokeLinecap="round" strokeLinejoin="round" />}
                 {startArrow === 'triangle' && <path d="M 0 1 L 10 6 L 0 11 Z" fill={strokeColor} />}
                 {startArrow === 'circle' && <circle cx="6" cy="6" r="4" fill={strokeColor} />}
                 {startArrow === 'diamond' && <path d="M 6 0 L 12 6 L 6 12 L 0 6 Z" fill={strokeColor} />}
@@ -389,7 +397,7 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
             {endArrow !== 'none' && (
               <marker id={`me-${markerId}`} markerWidth={aMark} markerHeight={aMark} viewBox="0 0 12 12" refX="10" refY="6"
                       orient="auto" markerUnits="userSpaceOnUse">
-                {endArrow === 'arrow' && <path d="M 0 1 L 10 6 L 0 11" fill="none" stroke={strokeColor} strokeWidth="1.5" />}
+                {endArrow === 'arrow' && <path d="M 0 1 L 10 6 L 0 11" fill="none" stroke={strokeColor} strokeWidth={openSw} strokeLinecap="round" strokeLinejoin="round" />}
                 {endArrow === 'triangle' && <path d="M 0 1 L 10 6 L 0 11 Z" fill={strokeColor} />}
                 {endArrow === 'circle' && <circle cx="6" cy="6" r="4" fill={strokeColor} />}
                 {endArrow === 'diamond' && <path d="M 6 0 L 12 6 L 6 12 L 0 6 Z" fill={strokeColor} />}
