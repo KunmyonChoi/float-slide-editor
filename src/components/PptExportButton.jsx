@@ -272,7 +272,7 @@ function BackendSection({ pythonAvailable, backendUrl, onApplyUrl, onRecheck }) 
           </div>
           <div style={{ display: 'flex', alignItems: 'stretch', gap: 4 }}>
             <code style={{
-              flex: 1, fontSize: 11, fontFamily: 'ui-monospace, monospace',
+              flex: 1, minWidth: 0, fontSize: 11, fontFamily: 'ui-monospace, monospace',
               background: 'rgba(0,0,0,0.35)', color: '#e2e8f0', borderRadius: 5,
               padding: '5px 7px', whiteSpace: 'nowrap', overflowX: 'auto',
             }}>{cmd}</code>
