@@ -109,6 +109,32 @@ describe('ProjectSerializer', () => {
       expect(els.find(e => e.id === 'f').isBackground).toBeFalsy() // 내용 있는 전체화면 shape → 일반(배경 아님)
     })
 
+    it('bgFlagModel 마커가 있으면 전체화면 일반 요소를 배경으로 추론하지 않음', () => {
+      const data = deserializeProject(JSON.stringify({
+        version: 2, bgFlagModel: true,
+        pages: { '0-0': { canvasSize: { w: 1280, h: 720 }, elements: [
+          { id: 'a', type: 'image', x: 0, y: 0, width: 1280, height: 720, zIndex: 0, content: 'x.png', styles: {} },
+          { id: 'b', type: 'shape', x: 0, y: 0, width: 1280, height: 720, zIndex: 1, content: '', styles: {} },
+        ] } },
+      }))
+      const els = data.pages['0-0'].elements
+      expect(els.find(e => e.id === 'a').isBackground).toBeFalsy() // 전체화면 이미지지만 일반 요소 유지
+      expect(els.find(e => e.id === 'b').isBackground).toBeFalsy() // 전체화면 shape지만 일반 요소 유지
+    })
+
+    it('isBackground 속성이 존재하는 파일(신모델)은 추론 건너뜀 — 저장→로드 왕복에 일반 요소 보존', () => {
+      const data = deserializeProject(JSON.stringify({
+        version: 2,
+        pages: { '0-0': { canvasSize: { w: 1280, h: 720 }, elements: [
+          { id: 'bg', type: 'shape', x: 0, y: 0, width: 1280, height: 720, zIndex: 0, content: '', isBackground: true, styles: {} },
+          { id: 'full', type: 'video', x: 0, y: 0, width: 1280, height: 720, zIndex: 1, content: 'v.mp4', styles: {} },
+        ] } },
+      }))
+      const els = data.pages['0-0'].elements
+      expect(els.find(e => e.id === 'bg').isBackground).toBe(true)
+      expect(els.find(e => e.id === 'full').isBackground).toBeFalsy() // 전체화면 영상이지만 일반 유지(신모델)
+    })
+
     it('이미 isBackground/__bg인 요소는 마이그레이션이 건드리지 않음', () => {
       const data = deserializeProject(JSON.stringify({
         version: 1,

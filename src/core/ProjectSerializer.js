@@ -36,6 +36,22 @@ function migrateLegacyBackgrounds(pages) {
 }
 
 /**
+ * 이미 '명시 플래그(isBackground)' 모델을 쓰는 프로젝트인지 판별.
+ * 그렇다면 배경은 플래그가 권위이므로 크기 기반 추론(migrateLegacyBackgrounds)을 건너뛴다
+ * — 전체화면이어도 일반 요소일 수 있고, 저장→로드만으로 배경으로 둔갑하면 안 됨.
+ * 판별: 저장 마커(bgFlagModel) 또는 isBackground 속성이 존재하는 요소가 하나라도 있으면 신모델.
+ */
+function _usesBgFlagModel(data) {
+  if (data?.bgFlagModel === true) return true
+  for (const page of Object.values(data?.pages || {})) {
+    for (const el of (page.elements || [])) {
+      if (el.isBackground === true || el.isBackground === false) return true
+    }
+  }
+  return false
+}
+
+/**
  * store 상태를 .flatproj ZIP 패키지로 직렬화
  * @returns {Promise<Blob>} ZIP Blob
  */
@@ -94,6 +110,7 @@ export async function serializeProject(store) {
 
   const project = {
     version: CURRENT_VERSION,
+    bgFlagModel: true, // 명시 배경 플래그 모델 — 로드 시 크기 기반 배경 추론을 건너뛰게 하는 마커
     pages: pagesClone,
     currentPageKey,
     themeId: store.themeId,
@@ -169,7 +186,7 @@ async function _loadZipProject(file) {
   }
 
   return {
-    pages: migrateLegacyBackgrounds(data.pages),
+    pages: _usesBgFlagModel(data) ? data.pages : migrateLegacyBackgrounds(data.pages),
     currentPageKey: data.currentPageKey || Object.keys(data.pages)[0],
     themeId: data.themeId || null,
     customTheme: data.customTheme || null,
@@ -192,7 +209,7 @@ export function deserializeProject(jsonString) {
   }
 
   return {
-    pages: migrateLegacyBackgrounds(data.pages),
+    pages: _usesBgFlagModel(data) ? data.pages : migrateLegacyBackgrounds(data.pages),
     currentPageKey: data.currentPageKey || Object.keys(data.pages)[0],
     themeId: data.themeId || null,
     customTheme: data.customTheme || null,
