@@ -2453,8 +2453,11 @@ function SlideBackgroundPanel() {
     return `투명`
   }
 
-  // 일반 요소로 복원 가능한 배경(이미지/영상 요소만 — shape 배경은 복원 대상 아님)
-  const canRestore = (el) => el.type === 'image' || el.type === 'video'
+  // 이미지/영상 '요소' 배경 — 전용 디테일 패널(썸네일/맞춤/교체) 사용
+  const isMediaEl = (el) => el.type === 'image' || el.type === 'video'
+  // 일반 요소로 변환 가능한 배경: 이미지/영상 요소 또는 이미지가 설정된 shape 배경
+  // (어떤 경로로 만든 이미지 배경이든 목록/패널에서 일관되게 변환 가능)
+  const canRestore = (el) => isMediaEl(el) || !!el.styles?.backgroundImage?.startsWith('url(')
 
   const styles = currentBg?.styles || BG_DEFAULT_STYLES
   const hasGradient = styles.backgroundImage && styles.backgroundImage !== 'none'
@@ -2549,8 +2552,84 @@ function SlideBackgroundPanel() {
         {/* ── AI 배경 생성 ── */}
         <AiBackgroundSection onApply={applyBgImage} />
 
-        {/* ── 선택된 레이어 편집 ── */}
-        {currentBg && (
+        {/* ── 선택된 레이어 편집 (이미지/영상 요소 배경) ── */}
+        {currentBg && isMediaEl(currentBg) && (
+          <div className="border-t border-white/5 pt-3 space-y-3">
+            {/* 미디어 미리보기 */}
+            <div className="space-y-1.5">
+              <p className={labelClass}>{currentBg.type === 'video' ? '배경 영상' : '배경 이미지'}</p>
+              {currentBg.type === 'image' && currentBg.content ? (
+                <div style={{
+                  width: '100%', height: 60, borderRadius: 4,
+                  backgroundImage: `url("${currentBg.content}")`,
+                  backgroundSize: 'cover', backgroundPosition: 'center',
+                  border: '1px solid rgba(255,255,255,0.1)',
+                }} />
+              ) : (
+                <div style={{
+                  width: '100%', height: 60, borderRadius: 4, background: '#1e293b',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  color: '#64748b', fontSize: 12, border: '1px solid rgba(255,255,255,0.1)',
+                }}>🎬 영상 배경</div>
+              )}
+            </div>
+
+            {/* 맞춤 (이미지만 — 영상은 항상 cover) */}
+            {currentBg.type === 'image' && (
+              <div className="space-y-1.5">
+                <p className={labelClass}>맞춤</p>
+                <select
+                  value={styles.objectFit || 'cover'}
+                  onChange={e => updateStyle('objectFit', e.target.value)}
+                  className="w-full px-2 py-1 rounded-md text-xs text-slate-200 border border-white/10"
+                  style={selectStyle}
+                >
+                  <option value="cover">채우기 (cover)</option>
+                  <option value="contain">맞추기 (contain)</option>
+                  <option value="fill">늘이기 (fill)</option>
+                </select>
+              </div>
+            )}
+
+            {/* 투명도 */}
+            <div className="space-y-1.5">
+              <p className={labelClass}>
+                투명도 <span className="text-slate-600">{styles.opacity || '1'}</span>
+              </p>
+              <input
+                type="range" min="0" max="1" step="0.01"
+                value={styles.opacity || '1'}
+                onChange={e => previewStyle('opacity', e.target.value)}
+                onMouseUp={e => updateStyle('opacity', e.target.value)}
+                onTouchEnd={e => updateStyle('opacity', e.target.value)}
+                className="w-full" style={{ accentColor: '#6366f1' }}
+              />
+            </div>
+
+            {/* 이미지 교체 (이미지만) */}
+            {currentBg.type === 'image' && (
+              <label className="flex items-center justify-center gap-1 w-full py-1.5 rounded-lg text-xs text-slate-400 border border-dashed border-white/10 hover:border-indigo-500/40 hover:text-indigo-300 cursor-pointer transition-colors">
+                <span>이미지 교체</span>
+                <input type="file" accept="image/*" style={{ display: 'none' }} onChange={e => {
+                  const file = e.target.files?.[0]
+                  if (!file) return
+                  const reader = new FileReader()
+                  reader.onload = (ev) => updateFlatElement(currentBg.id, { content: ev.target.result })
+                  reader.readAsDataURL(file)
+                  e.target.value = ''
+                }} />
+              </label>
+            )}
+
+            <button
+              onClick={() => useFlatStore.getState().restoreBackgroundToNormal(currentBg.id)}
+              className="w-full py-1.5 rounded-lg text-xs text-slate-400 border border-white/10 hover:border-indigo-500/40 hover:text-indigo-300 transition-colors"
+            >일반 요소로 복원</button>
+          </div>
+        )}
+
+        {/* ── 선택된 레이어 편집 (shape 배경) ── */}
+        {currentBg && !isMediaEl(currentBg) && (
           <>
             <div className="border-t border-white/5 pt-3 space-y-3">
               {/* 배경색 */}
@@ -2618,6 +2697,14 @@ function SlideBackgroundPanel() {
                   }} />
                 </label>
               </div>
+
+              {/* 이미지가 설정된 shape 배경 → 일반 요소로 변환 (이미지 요소 배경과 동작 일치) */}
+              {canRestore(currentBg) && (
+                <button
+                  onClick={() => useFlatStore.getState().restoreBackgroundToNormal(currentBg.id)}
+                  className="w-full py-1.5 rounded-lg text-xs text-slate-400 border border-white/10 hover:border-indigo-500/40 hover:text-indigo-300 transition-colors"
+                >일반 요소로 변환</button>
+              )}
             </div>
           </>
         )}
