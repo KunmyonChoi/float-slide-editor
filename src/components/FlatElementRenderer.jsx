@@ -394,7 +394,8 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
     letterSpacing: styles.letterSpacing,
     padding: styles.padding || '8px',
     display: 'flex',
-    alignItems: 'center',
+    // 세로 정렬: 설정값 존중, 미설정이면 가운데(도형 텍스트 기본). 편집기/속성패널과 일치.
+    alignItems: styles.alignItems || 'center',
     justifyContent: styles.textAlign === 'left' ? 'flex-start'
       : styles.textAlign === 'right' ? 'flex-end' : 'center',
     width: '100%', height: '100%',

@@ -843,7 +843,7 @@ function FontSection({ el, styles, updateStyle, previewStyle, isGradientText, li
               title={'텍스트 ' + a.label + ' 정렬'}
               className={[
                 'flex-1 py-1.5 rounded-lg text-xs transition-colors flex items-center justify-center border',
-                (styles.alignItems || 'flex-start') === a.value
+                (styles.alignItems || (el.type === 'shape' ? 'center' : 'flex-start')) === a.value
                   ? 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30'
                   : 'bg-white/5 text-slate-400 border-white/10 hover:bg-white/10',
               ].join(' ')}
