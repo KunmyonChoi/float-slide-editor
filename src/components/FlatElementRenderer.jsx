@@ -345,13 +345,18 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
     const markerId = element.id
     // 화살표 마커 크기 — 선 두께에 따라 적당히 커진다(viewBox 0..12를 aMark px로 스케일).
     const aMark = Math.max(12, Math.min(32, Math.round(9 + sw * 2)))
-    // 보이는 선은 화살표가 있는 끝에서 화살표 길이만큼 안쪽으로 당긴다 — 두꺼운 선 끝이
-    // 화살표 앞으로 삐져나와 겹치는 문제 방지. 마커(화살표)는 전체 길이 경로(투명)에 두어
-    // 끝점/방향은 그대로 유지(화살표 위치는 도형 경계 그대로).
-    const arrowInset = (k) => k === 'none' ? 0 : (k === 'circle' || k === 'diamond') ? aMark * 0.5 : aMark * 0.8
+    // 보이는 선은 끝에서 안쪽으로 살짝 당긴다 — 마커(화살표)는 전체 길이 경로(투명)에 두어
+    // 끝점/방향(도형 경계 위치)은 유지. 화살표 있는 끝: 화살표 길이만큼(앞 삐져나옴 방지).
+    // 커넥터의 화살표 없는 끝: 선 두께만큼(두꺼운 선 끝이 도형을 가리지 않게). 일반 선은 안 당김.
+    const isConn = element.shapeType === 'connector'
+    const endInset = (k) => k !== 'none'
+      ? ((k === 'circle' || k === 'diamond') ? aMark * 0.5 : aMark * 0.8)
+      : (isConn ? sw * 0.5 + 1 : 0)
     const dVisible = (() => {
       const pts = element.points
-      if ((startArrow === 'none' && endArrow === 'none') || !pts || pts.length < 2) return d
+      const insetStart = endInset(startArrow)
+      const insetEnd = endInset(endArrow)
+      if ((insetStart <= 0 && insetEnd <= 0) || !pts || pts.length < 2) return d
       const out = pts.map(p => ({ ...p }))
       const pull = (ai, bi, inset) => {
         if (inset <= 0) return
@@ -360,8 +365,8 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
         const t = Math.min(inset, len * 0.45) / len
         out[ai] = { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t }
       }
-      pull(0, 1, arrowInset(startArrow))
-      pull(out.length - 1, out.length - 2, arrowInset(endArrow))
+      pull(0, 1, insetStart)
+      pull(out.length - 1, out.length - 2, insetEnd)
       return pointsToSvgPath(out, element.closed)
     })()
     return (
