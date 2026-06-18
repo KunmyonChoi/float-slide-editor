@@ -2405,21 +2405,23 @@ function SlideBackgroundPanel() {
     previewFlatElement(currentBg.id, { styles: { [key]: value } })
   }, [currentBg, previewFlatElement])
 
-  // AI 생성 배경 이미지를 현재 배경 레이어에 적용(없으면 생성)
+  // 배경 이미지 적용(AI 생성·파일 선택 공용) — 이미지 '요소' 배경으로 만든다.
+  // (CSS backgroundImage를 입힌 shape이 아니라 type:'image' 요소 → 변환된 이미지 배경과
+  //  동일한 미디어 속성창: 썸네일·맞춤·투명도·이미지 교체·일반 요소로 복원)
   const applyBgImage = useCallback((dataUrl) => {
-    const imgStyles = {
-      backgroundImage: `url(${dataUrl})`, backgroundColor: 'rgba(0,0,0,0)',
-      backgroundSize: 'cover', backgroundPosition: 'center', backgroundRepeat: 'no-repeat',
-    }
     if (currentBg) {
-      updateFlatElement(currentBg.id, { styles: imgStyles })
+      // 현재 배경을 이미지 요소로 전환(맞춤=cover). shape의 CSS 배경 흔적 제거.
+      updateFlatElement(currentBg.id, {
+        type: 'image', content: dataUrl, isRich: false,
+        styles: { ...(currentBg.styles || {}), backgroundImage: 'none', backgroundColor: 'rgba(0,0,0,0)', objectFit: 'cover' },
+      })
     } else {
       const minZ = flatElements.length > 0 ? Math.min(...flatElements.map(e => e.zIndex)) - 1 : 0
       addFlatElement({
-        id: nextFlatId(), sourceId: '__bg', type: 'shape', content: '', isRich: false, merged: false,
+        id: nextFlatId(), sourceId: '__bg', type: 'image', content: dataUrl, isRich: false, merged: false,
         isBackground: true,
         x: 0, y: 0, width: canvasSize.w, height: canvasSize.h, zIndex: minZ, locked: true,
-        styles: { ...BG_DEFAULT_STYLES, ...imgStyles },
+        styles: { ...BG_DEFAULT_STYLES, objectFit: 'cover' },
       })
     }
   }, [currentBg, updateFlatElement, flatElements, canvasSize, addFlatElement])
@@ -2690,7 +2692,8 @@ function SlideBackgroundPanel() {
                     const file = e.target.files?.[0]
                     if (!file) return
                     const reader = new FileReader()
-                    reader.onload = (ev) => updateStyle('backgroundImage', `url(${ev.target.result})`)
+                    // 이미지 요소 배경으로 전환 → 미디어 속성창(맞춤/투명도/교체/복원) 표시
+                    reader.onload = (ev) => applyBgImage(ev.target.result)
                     reader.readAsDataURL(file)
                     e.target.value = ''
                   }} />
