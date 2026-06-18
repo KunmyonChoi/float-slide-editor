@@ -2379,11 +2379,11 @@ function SlideBackgroundPanel() {
     setActiveLayer(bgLayers.length) // 새 레이어 선택
   }, [flatElements, bgLayers, canvasSize, addFlatElement])
 
-  // 레이어 삭제 (최소 1개 유지)
+  // 레이어 삭제 (0개까지 허용 — 배경 없음=투명/흰 캔버스)
   const removeLayer = useCallback((idx) => {
-    if (bgLayers.length <= 1) return
+    if (!bgLayers[idx]) return
     removeFlatElement(bgLayers[idx].id)
-    setActiveLayer(Math.min(idx, bgLayers.length - 2))
+    setActiveLayer(Math.max(0, Math.min(idx, bgLayers.length - 2)))
   }, [bgLayers, removeFlatElement])
 
   // 활성 레이어 범위 보정
@@ -2531,13 +2531,11 @@ function SlideBackgroundPanel() {
                     >↓</button>
                   </>
                 )}
-                {bgLayers.length > 1 && (
-                  <button
-                    onClick={(e) => { e.stopPropagation(); removeLayer(idx) }}
-                    className="text-xs text-slate-600 hover:text-red-400 px-0.5"
-                    title="레이어 삭제"
-                  >&times;</button>
-                )}
+                <button
+                  onClick={(e) => { e.stopPropagation(); removeLayer(idx) }}
+                  className="text-xs text-slate-600 hover:text-red-400 px-0.5"
+                  title="레이어 삭제"
+                >&times;</button>
               </div>
             ))}
           </div>
