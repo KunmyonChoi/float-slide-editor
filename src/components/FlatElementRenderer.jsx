@@ -362,6 +362,8 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
     }
     const dVisible = (() => {
       const pts = element.points
+      // 닫힌 도형(폴리곤)은 끝점 개념이 없어 당기면 외곽선이 일그러짐 → 원본 유지
+      if (element.closed) return d
       const insetStart = endInset(startArrow)
       const insetEnd = endInset(endArrow)
       if ((insetStart <= 0 && insetEnd <= 0) || !pts || pts.length < 2) return d

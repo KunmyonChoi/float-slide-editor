@@ -37,7 +37,7 @@ export default function ConnectorInlineToolbar({ element, scale, canvasRef }) {
       if (prev && next && prev.cx === next.cx && prev.top === next.top) return prev
       return next
     })
-  }, [canvasRef, element.x, element.y, element.width, scale, tick])
+  }, [canvasRef, element.id, element.x, element.y, element.width, scale, tick])
 
   if (!rect) return null
 

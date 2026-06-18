@@ -135,6 +135,13 @@ describe('flatStore 커넥터', () => {
     expect(useFlatStore.getState().connectorDefaults).toEqual(d0)
   })
 
+  it('방향 뒤집기는 connectorDefaults를 오염시키지 않음(양쪽 동시 변경 제외)', () => {
+    const d0 = { ...useFlatStore.getState().connectorDefaults } // endArrow:'triangle', startArrow:'none'
+    const id = useFlatStore.getState().addConnector({ start: { elementId: 'A' }, end: { elementId: 'B' } })
+    useFlatStore.getState().reverseConnector(id)
+    expect(useFlatStore.getState().connectorDefaults).toEqual(d0)
+  })
+
   it('커넥터만 단독 삭제는 도형에 영향 없음', () => {
     const cid = useFlatStore.getState().addConnector({ start: { elementId: 'A' }, end: { elementId: 'B' } })
     useFlatStore.getState().removeFlatElement(cid)

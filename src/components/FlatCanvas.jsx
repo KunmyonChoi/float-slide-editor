@@ -889,8 +889,9 @@ export default function FlatCanvas() {
       useFlatStore.setState({ _skipBgClick: true })
       requestAnimationFrame(() => useFlatStore.setState({ _skipBgClick: false }))
 
-      // 완전 포함된 요소만 선택 (PPT 방식) + 배경 제외
-      const els = useFlatStore.getState().flatElements
+      // 완전 포함된 요소만 선택 (PPT 방식) + 배경 제외.
+      // 커넥터는 기하가 유도값이라 raw flatElements엔 0,0,0,0 → resolveConnectors로 실제 bbox 사용.
+      const els = resolveConnectors(useFlatStore.getState().flatElements)
       const cs = useFlatStore.getState().canvasSize
       const hits = els.filter(el => {
         if (isBackgroundLayer(el, cs)) return false // 배경 레이어는 마퀴 선택 제외

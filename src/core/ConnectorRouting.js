@@ -56,9 +56,9 @@ export function resolveConnectorEndpoints(connection, byId) {
   const aEl = endEl(a, byId)
   const bEl = endEl(b, byId)
 
-  // 부착 참조가 있으나 도형을 못 찾으면 저장 point로 폴백(없으면 계산 불가)
-  const aFree = a.point || (aEl ? null : null)
-  const bFree = b.point || (bEl ? null : null)
+  // 자유 끝점(부착 안 됨) 또는 참조 도형을 못 찾을 때의 폴백 좌표
+  const aFree = a.point || null
+  const bFree = b.point || null
 
   let start, end
   if (aEl && bEl) {

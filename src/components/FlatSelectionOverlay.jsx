@@ -335,7 +335,9 @@ export default function FlatSelectionOverlay({ element, scale, otherRects, canva
         height,
         zIndex: 9999,
         cursor: locked ? 'default' : 'move',
-        pointerEvents: locked ? 'none' : 'auto',
+        // 커넥터는 본체 이동이 없고 bbox가 (대각선이면) 크다 → 컨테이너가 아래 도형 클릭을
+        // 막지 않도록 pointer 통과. 끝점 핸들만 따로 auto로 받는다.
+        pointerEvents: (locked || isConnector) ? 'none' : 'auto',
         transform: rot ? `rotate(${rot}deg)` : undefined,
         transformOrigin: rot ? 'center center' : undefined,
       }}
@@ -394,7 +396,7 @@ export default function FlatSelectionOverlay({ element, scale, otherRects, canva
             />
           )}
           {/* 리사이즈 핸들 또는 포인트 핸들 */}
-          {isConnector && element.points && element.points.length >= 2 ? (
+          {isConnector && element.connection && element.points && element.points.length >= 2 ? (
             /* 커넥터: 양 끝 재연결 핸들 — 드래그로 다른 도형에 재부착(빈 공간이면 원복) */
             [0, element.points.length - 1].map((idx, i) => {
               const which = i === 0 ? 'start' : 'end'
@@ -444,6 +446,7 @@ export default function FlatSelectionOverlay({ element, scale, otherRects, canva
                     boxShadow: '0 0 0 1px rgba(16,185,129,0.5)',
                     borderRadius: '50%',
                     cursor: 'crosshair',
+                    pointerEvents: 'auto', // 컨테이너가 none이어도 핸들은 받음
                     zIndex: 10001,
                   }}
                 />

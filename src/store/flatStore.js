@@ -1185,7 +1185,9 @@ export const useFlatStore = create((set, get) => ({
 
     // 커넥터의 화살표/선스타일을 바꾸면 다음 커넥터 기본값으로 기억(마지막 사용 기억)
     if (updated[idx].shapeType === 'connector') {
-      const touchesArrow = 'startArrow' in changes || 'endArrow' in changes
+      // 한쪽 끝 화살표만 바꾸는 '의도적 선택'일 때만 기억. 양쪽 동시 변경(방향 뒤집기 등)은
+      // 기본값으로 굳히면 안 됨(다음 새 커넥터가 시작쪽 화살표로 잘못 생성됨).
+      const touchesArrow = ('startArrow' in changes) !== ('endArrow' in changes)
       const s = changes.styles || {}
       const touchesLine = 'stroke' in s || 'strokeWidth' in s || 'strokeDasharray' in s
       if (touchesArrow || touchesLine) {
