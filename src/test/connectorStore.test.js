@@ -102,4 +102,33 @@ describe('flatStore 커넥터', () => {
     useFlatStore.getState().undo()
     expect(useFlatStore.getState().flatElements.find(e => e.id === id)).toBeUndefined()
   })
+
+  it('도형 삭제 시 참조 커넥터도 함께 삭제(1 undo로 복구)', () => {
+    const cid = useFlatStore.getState().addConnector({ start: { elementId: 'A' }, end: { elementId: 'B' } })
+    useFlatStore.setState({ selectedFlatIds: ['A'] })
+    useFlatStore.getState().removeSelectedElements()
+    let els = useFlatStore.getState().flatElements
+    expect(els.find(e => e.id === 'A')).toBeUndefined()
+    expect(els.find(e => e.id === cid)).toBeUndefined() // 커넥터 동반 삭제
+    expect(els.find(e => e.id === 'B')).toBeTruthy()
+    // 한 번의 undo로 도형+커넥터 모두 복구
+    useFlatStore.getState().undo()
+    els = useFlatStore.getState().flatElements
+    expect(els.find(e => e.id === 'A')).toBeTruthy()
+    expect(els.find(e => e.id === cid)).toBeTruthy()
+  })
+
+  it('자유 끝점 커넥터는 한쪽 도형 삭제로 함께 삭제', () => {
+    const cid = useFlatStore.getState().addConnector({ start: { elementId: 'B' }, end: { point: { x: 200, y: 50 } } })
+    useFlatStore.getState().removeFlatElement('B')
+    expect(useFlatStore.getState().flatElements.find(e => e.id === cid)).toBeUndefined()
+  })
+
+  it('커넥터만 단독 삭제는 도형에 영향 없음', () => {
+    const cid = useFlatStore.getState().addConnector({ start: { elementId: 'A' }, end: { elementId: 'B' } })
+    useFlatStore.getState().removeFlatElement(cid)
+    const els = useFlatStore.getState().flatElements
+    expect(els.find(e => e.id === 'A')).toBeTruthy()
+    expect(els.find(e => e.id === 'B')).toBeTruthy()
+  })
 })

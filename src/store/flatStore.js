@@ -1204,40 +1204,54 @@ export const useFlatStore = create((set, get) => ({
 
   /** flat 요소 삭제 */
   removeFlatElement(id) {
-    const els = get().flatElements
-    const idx = els.findIndex(e => e.id === id)
-    if (idx === -1) return
-
-    const removed = els[idx]
-    _history.push({ type: 'remove', element: removed, index: idx })
-
-    const updated = els.filter(e => e.id !== id)
-    const updates = { flatElements: updated, canUndo: _history.canUndo, canRedo: _history.canRedo }
-    const ids = get().selectedFlatIds
-    if (ids.includes(id)) updates.selectedFlatIds = ids.filter(i => i !== id)
-    if (get().editingFlatId === id) updates.editingFlatId = null
-    set(updates)
+    get()._removeByIdSet([id])
   },
 
   /** 선택된 요소 전체 삭제 (다중 삭제) */
   removeSelectedElements() {
-    const { selectedFlatIds, flatElements } = get()
+    const { selectedFlatIds } = get()
     if (selectedFlatIds.length === 0) return
-    if (selectedFlatIds.length === 1) {
-      get().removeFlatElement(selectedFlatIds[0])
-      return
+    get()._removeByIdSet(selectedFlatIds)
+  },
+
+  /**
+   * 주어진 id들(+그것을 참조하는 커넥터)을 한 번의 히스토리로 삭제.
+   * 연결 도형을 지우면 커넥터도 함께 삭제된다(동반 삭제).
+   */
+  _removeByIdSet(baseIds) {
+    const flatElements = get().flatElements
+    const idSet = new Set(baseIds)
+    // 참조 커넥터 동반 삭제
+    for (const el of flatElements) {
+      if (el.shapeType === 'connector' && el.connection) {
+        const s = el.connection.start?.elementId
+        const t = el.connection.end?.elementId
+        if ((s && idSet.has(s)) || (t && idSet.has(t))) idSet.add(el.id)
+      }
     }
+    // 문서 순서대로 entries 구성(점진 삭제 인덱스 — batch_remove undo와 일치)
     const entries = []
     let updated = [...flatElements]
-    for (const id of selectedFlatIds) {
-      const idx = updated.findIndex(e => e.id === id)
+    for (const el of flatElements) {
+      if (!idSet.has(el.id)) continue
+      const idx = updated.findIndex(e => e.id === el.id)
       if (idx === -1) continue
       entries.push({ element: { ...updated[idx] }, index: idx })
-      updated = updated.filter(e => e.id !== id)
+      updated = updated.filter(e => e.id !== el.id)
     }
     if (entries.length === 0) return
-    _history.push({ type: 'batch_remove', entries })
-    set({ flatElements: updated, selectedFlatIds: [], canUndo: _history.canUndo, canRedo: _history.canRedo })
+    if (entries.length === 1) {
+      _history.push({ type: 'remove', element: entries[0].element, index: entries[0].index })
+    } else {
+      _history.push({ type: 'batch_remove', entries })
+    }
+    const updates = {
+      flatElements: updated,
+      selectedFlatIds: get().selectedFlatIds.filter(i => !idSet.has(i)),
+      canUndo: _history.canUndo, canRedo: _history.canRedo,
+    }
+    if (idSet.has(get().editingFlatId)) updates.editingFlatId = null
+    set(updates)
   },
 
   /** 선택된 요소 복사 (클립보드에 저장) — 다중 지원 */
