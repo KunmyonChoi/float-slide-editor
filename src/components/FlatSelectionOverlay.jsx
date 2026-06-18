@@ -185,8 +185,8 @@ export default function FlatSelectionOverlay({ element, scale, otherRects, canva
       if (d.mode === 'move') {
         let px = d.startX + dx
         let py = d.startY + dy
-        // 스냅 가이드 계산
-        if (d.otherRects && onSnapGuides) {
+        // 스냅 가이드 계산 — Alt를 누르고 있으면 일시적으로 스냅(자석) 무시(PowerPoint식)
+        if (d.otherRects && onSnapGuides && !e.altKey) {
           const snap = computeSnapGuides(
             { x: px, y: py, width: element.width, height: element.height },
             d.otherRects, canvasSize
@@ -194,6 +194,8 @@ export default function FlatSelectionOverlay({ element, scale, otherRects, canva
           if (snap.snappedX !== null) px = snap.snappedX
           if (snap.snappedY !== null) py = snap.snappedY
           onSnapGuides(snap.guides)
+        } else if (onSnapGuides) {
+          onSnapGuides([]) // Alt 중에는 가이드도 숨김
         }
         previewFlatElement(element.id, { x: px, y: py })
       } else if (d.mode === 'resize') {
@@ -632,8 +634,8 @@ export function FlatGroupOverlay({ elements, scale, otherRects, canvasSize, onSn
         let bx = d.bbox.x + dx
         let by = d.bbox.y + dy
         let snapDx = 0, snapDy = 0
-        // 그룹 bbox 기준 스냅
-        if (d.otherRects && onSnapGuides) {
+        // 그룹 bbox 기준 스냅 — Alt 누르면 일시적으로 스냅 무시
+        if (d.otherRects && onSnapGuides && !e.altKey) {
           const snap = computeSnapGuides(
             { x: bx, y: by, width: d.bbox.w, height: d.bbox.h },
             d.otherRects, canvasSize
@@ -641,6 +643,8 @@ export function FlatGroupOverlay({ elements, scale, otherRects, canvasSize, onSn
           if (snap.snappedX !== null) snapDx = snap.snappedX - bx
           if (snap.snappedY !== null) snapDy = snap.snappedY - by
           onSnapGuides(snap.guides)
+        } else if (onSnapGuides) {
+          onSnapGuides([])
         }
         const changesMap = d.startPositions.map(sp => ({
           id: sp.id,
