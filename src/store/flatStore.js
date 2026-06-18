@@ -268,6 +268,8 @@ export const useFlatStore = create((set, get) => ({
     startArrow: 'none', endArrow: 'triangle',
     stroke: '#1e293b', strokeWidth: '2', strokeDasharray: '',
   },
+  /** 커넥터 생성 드래그 진행 상태: null | { sourceId, startPt:{x,y}, curPt:{x,y}, targetId } */
+  connectorDraft: null,
   /** 마키 드래그 직후 배경 click 무시용 플래그 */
   _skipBgClick: false,
 
@@ -658,6 +660,36 @@ export const useFlatStore = create((set, get) => ({
     get().addFlatElement(el)
     set({ selectedFlatIds: [el.id] })
     return el.id
+  },
+
+  /** 커넥터 생성 드래그 시작(소스 도형에서) */
+  beginConnectorFrom(sourceId, startPt) {
+    set({ connectorDraft: { sourceId, startPt, curPt: startPt, targetId: null } })
+  },
+  /** 드래그 중 갱신(커서 위치 + 부착 후보) */
+  updateConnectorDraft(curPt, targetId) {
+    const d = get().connectorDraft
+    if (!d) return
+    set({ connectorDraft: { ...d, curPt, targetId: targetId ?? null } })
+  },
+  cancelConnectorDraft() {
+    if (get().connectorDraft) set({ connectorDraft: null })
+  },
+  /** 드래그 종료 → 커넥터 생성(타겟 도형 또는 자유 끝점). 드래그 미미하면 취소. */
+  commitConnectorDraft() {
+    const d = get().connectorDraft
+    if (!d) return null
+    set({ connectorDraft: null })
+    const { sourceId, startPt, curPt, targetId } = d
+    if (targetId && targetId !== sourceId) {
+      return get().addConnector({ start: { elementId: sourceId }, end: { elementId: targetId } })
+    }
+    // 타겟 없음(빈 곳)에서 충분히 끌면 자유 끝점. 자기 도형 위(targetId===sourceId)면 취소.
+    const dist = Math.hypot(curPt.x - startPt.x, curPt.y - startPt.y)
+    if (!targetId && dist >= 8) {
+      return get().addConnector({ start: { elementId: sourceId }, end: { point: { x: curPt.x, y: curPt.y } } })
+    }
+    return null
   },
 
   /** 커넥터 방향 뒤집기 — 양끝 연결 + 화살표 스왑 */

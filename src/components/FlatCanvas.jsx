@@ -2,7 +2,7 @@ import { useRef, useEffect, useCallback, useState, useMemo } from 'react'
 import { useFlatStore, isBackgroundLayer } from '../store/flatStore'
 import { useEditorStore } from '../store/editorStore'
 import { isBackgroundElement } from '../core/SnapEngine'
-import { resolveConnectors } from '../core/ConnectorRouting'
+import { resolveConnectors, resolveConnectorEndpoints, attachTargetAt } from '../core/ConnectorRouting'
 import { getRotatedAABB } from '../core/RotationUtils'
 import FlatElementRenderer from './FlatElementRenderer'
 import FlatSelectionOverlay, { FlatGroupOverlay } from './FlatSelectionOverlay'
@@ -42,8 +42,10 @@ export default function FlatCanvas() {
           removeSelectedElements, updateFlatElement, undo, redo, viewMode, reExtract,
           copyElement, cutElement, pasteElement, duplicateElement, selectAllFlats,
           bringForward, sendBackward, bringToFront, sendToBack, setCroppingFlat,
-          addFlatElement, setCanvasRef, preloadProgress, drawMode, setDrawMode, flatPageCount } = useFlatStore()
+          addFlatElement, setCanvasRef, preloadProgress, drawMode, setDrawMode, flatPageCount,
+          diagramMode, connectorDraft } = useFlatStore()
   const [dragOver, setDragOver] = useState(false)
+  const [hoverShapeId, setHoverShapeId] = useState(null) // 다이어그램 모드 연결점 표시용
   const [drawPoints, setDrawPoints] = useState([])     // 그리기 중 확정된 점들
   const [drawPreview, setDrawPreview] = useState(null)  // 마우스 위치 (프리뷰용)
   const { currentPage, revealV, mode } = useEditorStore()
@@ -326,6 +328,50 @@ export default function FlatCanvas() {
     if (!rect) return
     setDrawPreview({ x: (e.clientX - rect.left) / scale, y: (e.clientY - rect.top) / scale })
   }, [drawMode, drawPoints.length, scale])
+
+  // ── 다이어그램 모드: 커넥터 생성 드래그 ──
+  const canvasPt = useCallback((e) => {
+    const rect = canvasRef.current?.getBoundingClientRect()
+    if (!rect) return null
+    return { x: (e.clientX - rect.left) / scale, y: (e.clientY - rect.top) / scale }
+  }, [scale])
+
+  // 호버 도형(연결점 표시) — 다이어그램 모드, 드래그 아님
+  const handleDiagramHover = useCallback((e) => {
+    if (!diagramMode || connectorDraft) return
+    const pt = canvasPt(e)
+    if (!pt) { setHoverShapeId(null); return }
+    const id = attachTargetAt(pt.x, pt.y, useFlatStore.getState().flatElements, { threshold: 0 })
+    setHoverShapeId(id)
+  }, [diagramMode, connectorDraft, canvasPt])
+
+  // 드래그 중 window 리스너 (커서 추적 + 부착 후보 + 종료)
+  const connectorDragging = !!connectorDraft
+  useEffect(() => {
+    if (!connectorDragging) return
+    const onMove = (e) => {
+      const pt = canvasPt(e)
+      if (!pt) return
+      const st = useFlatStore.getState()
+      const d = st.connectorDraft
+      if (!d) return
+      const targetId = attachTargetAt(pt.x, pt.y, st.flatElements, { excludeId: d.sourceId })
+      st.updateConnectorDraft(pt, targetId)
+    }
+    const onUp = () => useFlatStore.getState().commitConnectorDraft()
+    const onKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); useFlatStore.getState().cancelConnectorDraft() } }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [connectorDragging, canvasPt])
+
+  // 다이어그램 모드 해제 시 호버 정리
+  useEffect(() => { if (!diagramMode) setHoverShapeId(null) }, [diagramMode])
 
   // ESC로 그리기 취소/확정
   useEffect(() => {
@@ -913,11 +959,12 @@ export default function FlatCanvas() {
             data-flat-canvas="true"
             style={{
               position: 'relative', width: '100%', height: '100%', overflow: 'hidden', userSelect: 'none',
-              cursor: drawMode ? 'crosshair' : undefined,
+              cursor: (drawMode || connectorDraft) ? 'crosshair' : undefined,
             }}
             onClick={drawMode ? handleDrawClick : undefined}
             onDoubleClick={drawMode ? handleDrawDoubleClick : undefined}
-            onMouseMove={drawMode ? handleDrawMouseMove : undefined}
+            onMouseMove={drawMode ? handleDrawMouseMove : (diagramMode ? handleDiagramHover : undefined)}
+            onMouseLeave={diagramMode ? () => setHoverShapeId(null) : undefined}
           >
             {renderElements.map(el => (
               <FlatElementRenderer
@@ -1042,6 +1089,54 @@ export default function FlatCanvas() {
                 })()}
               </svg>
             )}
+            {/* 다이어그램 모드: 호버 도형 연결점 (드래그 시작점) */}
+            {diagramMode && !connectorDraft && hoverShapeId && (() => {
+              const el = renderElements.find(e => e.id === hoverShapeId)
+              if (!el) return null
+              const dots = [
+                { x: el.x + el.width / 2, y: el.y },
+                { x: el.x + el.width, y: el.y + el.height / 2 },
+                { x: el.x + el.width / 2, y: el.y + el.height },
+                { x: el.x, y: el.y + el.height / 2 },
+              ]
+              const center = { x: el.x + el.width / 2, y: el.y + el.height / 2 }
+              return (
+                <div data-export-ignore="true">
+                  <div style={{ position: 'absolute', left: el.x, top: el.y, width: el.width, height: el.height,
+                    border: '1px solid rgba(99,102,241,0.7)', borderRadius: 4, pointerEvents: 'none', zIndex: 9998 }} />
+                  {dots.map((p, i) => (
+                    <div key={i}
+                      onMouseDown={(e) => { e.stopPropagation(); e.preventDefault()
+                        useFlatStore.getState().beginConnectorFrom(el.id, center) }}
+                      style={{ position: 'absolute', left: p.x - 5, top: p.y - 5, width: 10, height: 10, borderRadius: '50%',
+                        background: '#6366f1', border: '2px solid #fff', cursor: 'crosshair', zIndex: 9999 }} />
+                  ))}
+                </div>
+              )
+            })()}
+            {/* 다이어그램 모드: 커넥터 생성 드래그 프리뷰 */}
+            {connectorDraft && (() => {
+              const byId = {}
+              for (const e of flatElements) byId[e.id] = e
+              const conn = {
+                start: { elementId: connectorDraft.sourceId },
+                end: connectorDraft.targetId ? { elementId: connectorDraft.targetId } : { point: connectorDraft.curPt },
+              }
+              const eps = resolveConnectorEndpoints(conn, byId)
+              if (!eps) return null
+              const tgt = connectorDraft.targetId ? renderElements.find(e => e.id === connectorDraft.targetId) : null
+              return (
+                <div data-export-ignore="true">
+                  {tgt && <div style={{ position: 'absolute', left: tgt.x, top: tgt.y, width: tgt.width, height: tgt.height,
+                    border: '2px solid #6366f1', borderRadius: 4, pointerEvents: 'none', zIndex: 9998 }} />}
+                  <svg style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', overflow: 'visible', pointerEvents: 'none', zIndex: 9999 }}>
+                    <line x1={eps.start.x} y1={eps.start.y} x2={eps.end.x} y2={eps.end.y}
+                      stroke="#6366f1" strokeWidth="2" strokeDasharray="5 4" strokeLinecap="round" />
+                    <circle cx={eps.end.x} cy={eps.end.y} r="4" fill="#6366f1" stroke="#fff" strokeWidth="1.5" />
+                  </svg>
+                </div>
+              )
+            })()}
             {editingFlatId && flatElements.find(e => e.id === editingFlatId) && (
               flatElements.find(e => e.id === editingFlatId).type === 'table'
                 ? <FlatTableEditor element={flatElements.find(e => e.id === editingFlatId)} />

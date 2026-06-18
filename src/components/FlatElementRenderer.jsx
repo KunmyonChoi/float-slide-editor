@@ -32,6 +32,15 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
   const handleMouseDown = useCallback((e) => {
     // 그리기 모드 중에는 요소 선택 차단
     if (useFlatStore.getState().drawMode) return
+    // 다이어그램 모드 + 보조키(Alt/Ctrl) 드래그 → 이 도형에서 커넥터 시작(이동 대신)
+    const st = useFlatStore.getState()
+    if (st.diagramMode && (e.altKey || e.ctrlKey || e.metaKey)
+        && element.shapeType !== 'connector' && !isFullCanvasBg) {
+      e.stopPropagation(); e.preventDefault()
+      const cur = st.flatElements.find(el => el.id === element.id) || element
+      st.beginConnectorFrom(element.id, { x: cur.x + cur.width / 2, y: cur.y + cur.height / 2 })
+      return
+    }
     if (isFullCanvasBg) {
       // 배경: stopPropagation 안 함 (마키 공존), 선택은 mouseup에서 처리
       return

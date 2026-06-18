@@ -54,6 +54,47 @@ describe('flatStore 커넥터', () => {
     expect(el.endArrow).toBe('none')
   })
 
+  it('드래그 드래프트: 타겟 위에서 종료 → 부착 커넥터 생성', () => {
+    useFlatStore.getState().beginConnectorFrom('A', { x: 50, y: 50 })
+    expect(useFlatStore.getState().connectorDraft.sourceId).toBe('A')
+    useFlatStore.getState().updateConnectorDraft({ x: 350, y: 50 }, 'B')
+    const id = useFlatStore.getState().commitConnectorDraft()
+    expect(useFlatStore.getState().connectorDraft).toBeNull()
+    const el = useFlatStore.getState().flatElements.find(e => e.id === id)
+    expect(el.connection).toEqual({ start: { elementId: 'A' }, end: { elementId: 'B' } })
+  })
+
+  it('드래그 드래프트: 빈 곳에서 충분히 끌면 자유 끝점 커넥터', () => {
+    useFlatStore.getState().beginConnectorFrom('A', { x: 50, y: 50 })
+    useFlatStore.getState().updateConnectorDraft({ x: 600, y: 400 }, null)
+    const id = useFlatStore.getState().commitConnectorDraft()
+    const el = useFlatStore.getState().flatElements.find(e => e.id === id)
+    expect(el.connection.start).toEqual({ elementId: 'A' })
+    expect(el.connection.end).toEqual({ point: { x: 600, y: 400 } })
+  })
+
+  it('드래그 드래프트: 거의 안 끌면 생성 안 함', () => {
+    const before = useFlatStore.getState().flatElements.length
+    useFlatStore.getState().beginConnectorFrom('A', { x: 50, y: 50 })
+    useFlatStore.getState().updateConnectorDraft({ x: 52, y: 51 }, null)
+    const id = useFlatStore.getState().commitConnectorDraft()
+    expect(id).toBeNull()
+    expect(useFlatStore.getState().flatElements.length).toBe(before)
+  })
+
+  it('드래그 드래프트: 같은 도형으로 종료 → 생성 안 함(자기연결 금지)', () => {
+    useFlatStore.getState().beginConnectorFrom('A', { x: 50, y: 50 })
+    useFlatStore.getState().updateConnectorDraft({ x: 60, y: 60 }, 'A')
+    const id = useFlatStore.getState().commitConnectorDraft()
+    expect(id).toBeNull()
+  })
+
+  it('cancelConnectorDraft로 취소', () => {
+    useFlatStore.getState().beginConnectorFrom('A', { x: 50, y: 50 })
+    useFlatStore.getState().cancelConnectorDraft()
+    expect(useFlatStore.getState().connectorDraft).toBeNull()
+  })
+
   it('addConnector는 undo로 되돌릴 수 있다', () => {
     const before = useFlatStore.getState().flatElements.length
     const id = useFlatStore.getState().addConnector({ start: { elementId: 'A' }, end: { elementId: 'B' } })
