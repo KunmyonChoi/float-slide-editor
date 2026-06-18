@@ -2,6 +2,7 @@ import { useRef, useEffect, useCallback, useState, useMemo } from 'react'
 import { useFlatStore, isBackgroundLayer } from '../store/flatStore'
 import { useEditorStore } from '../store/editorStore'
 import { isBackgroundElement } from '../core/SnapEngine'
+import { resolveConnectors } from '../core/ConnectorRouting'
 import { getRotatedAABB } from '../core/RotationUtils'
 import FlatElementRenderer from './FlatElementRenderer'
 import FlatSelectionOverlay, { FlatGroupOverlay } from './FlatSelectionOverlay'
@@ -85,7 +86,10 @@ export default function FlatCanvas() {
     return () => setCanvasRef(null)
   }, [setCanvasRef])
 
-  const selectedEls = flatElements.filter(e => selectedFlatIds.includes(e.id))
+  // 커넥터 기하(끝점/bbox/points)는 참조 도형에서 유도 — 렌더·선택 모두 해석된 사본 사용.
+  // 도형 이동(previewFlatElement)으로 flatElements가 바뀌면 커넥터도 자동 재계산되어 따라온다.
+  const renderElements = useMemo(() => resolveConnectors(flatElements), [flatElements])
+  const selectedEls = renderElements.filter(e => selectedFlatIds.includes(e.id))
   const selectedEl = selectedEls.length === 1 ? selectedEls[0] : null
 
   // 이미지 data URL로 요소 생성 + 추가
@@ -915,7 +919,7 @@ export default function FlatCanvas() {
             onDoubleClick={drawMode ? handleDrawDoubleClick : undefined}
             onMouseMove={drawMode ? handleDrawMouseMove : undefined}
           >
-            {flatElements.map(el => (
+            {renderElements.map(el => (
               <FlatElementRenderer
                 key={el.id}
                 element={el}

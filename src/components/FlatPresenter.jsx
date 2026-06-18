@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { useFlatStore } from '../store/flatStore'
 import { useEditorStore } from '../store/editorStore'
 import FlatElementRenderer from './FlatElementRenderer'
+import { resolveConnectors } from '../core/ConnectorRouting'
 
 /**
  * FlatPresenter — flat 편집 결과 기반 발표 모드
@@ -51,7 +52,8 @@ export default function FlatPresenter() {
     }
   }, [allPages]) // eslint-disable-line react-hooks/exhaustive-deps
   const page = allPages?.[sortedKeys[currentSlide]]
-  const elements = page?.elements || []
+  // 커넥터 기하는 참조 도형에서 유도 — 발표 모드에서도 해석된 사본으로 렌더
+  const elements = resolveConnectors(page?.elements || [])
   const canvasSize = page?.canvasSize || { w: 1280, h: 720 }
   const fontImports = page?.fontImports || []
 
