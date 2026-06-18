@@ -2366,8 +2366,9 @@ function SlideBackgroundPanel() {
     const bgMaxZ = bgLayers.length > 0
       ? Math.max(...bgLayers.map(e => e.zIndex)) : minZ
     const newEl = {
-      id: nextFlatId(), sourceId: null,
+      id: nextFlatId(), sourceId: '__bg',
       type: 'shape', content: '', isRich: false, merged: false,
+      isBackground: true, // 명시 배경 플래그(크기 추론 제거 후 필수)
       x: 0, y: 0, width: canvasSize.w, height: canvasSize.h,
       zIndex: bgMaxZ + 1,
       locked: true,
@@ -2414,7 +2415,8 @@ function SlideBackgroundPanel() {
     } else {
       const minZ = flatElements.length > 0 ? Math.min(...flatElements.map(e => e.zIndex)) - 1 : 0
       addFlatElement({
-        id: nextFlatId(), sourceId: null, type: 'shape', content: '', isRich: false, merged: false,
+        id: nextFlatId(), sourceId: '__bg', type: 'shape', content: '', isRich: false, merged: false,
+        isBackground: true,
         x: 0, y: 0, width: canvasSize.w, height: canvasSize.h, zIndex: minZ, locked: true,
         styles: { ...BG_DEFAULT_STYLES, ...imgStyles },
       })
@@ -2490,7 +2492,22 @@ function SlideBackgroundPanel() {
                 <span className="text-xs text-slate-300 flex-1">
                   {layerLabel(el, idx)}
                 </span>
-                <span className="text-xs text-slate-600">z{el.zIndex}</span>
+                {bgLayers.length > 1 && (
+                  <>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); useFlatStore.getState().reorderBackground(el.id, 1) }}
+                      disabled={el.zIndex >= Math.max(...bgLayers.map(b => b.zIndex))}
+                      className="text-xs text-slate-400 hover:text-slate-200 px-0.5 disabled:opacity-30 disabled:cursor-not-allowed"
+                      title="앞으로(다른 배경 위)"
+                    >↑</button>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); useFlatStore.getState().reorderBackground(el.id, -1) }}
+                      disabled={el.zIndex <= Math.min(...bgLayers.map(b => b.zIndex))}
+                      className="text-xs text-slate-400 hover:text-slate-200 px-0.5 disabled:opacity-30 disabled:cursor-not-allowed"
+                      title="뒤로(다른 배경 아래)"
+                    >↓</button>
+                  </>
+                )}
                 {bgLayers.length > 1 && (
                   <button
                     onClick={(e) => { e.stopPropagation(); removeLayer(idx) }}

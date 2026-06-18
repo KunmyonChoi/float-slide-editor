@@ -7,7 +7,7 @@ import { DEFAULT_THEME_ID, getTheme, themeBackgroundStyles, themeRoleStyles } fr
 import { highlightCode } from '../core/codeHighlight'
 import { applyAutoFit } from '../core/autoFit'
 
-// 배경 레이어 판정 — SnapEngine의 canonical 헬퍼 재노출(명시 플래그 + 전체캔버스 휴리스틱)
+// 배경 레이어 판정 — SnapEngine의 canonical 헬퍼 재노출(명시 플래그/__bg 기반)
 export { isBackgroundElement as isBackgroundLayer }
 
 // 사용자정의 테마 기본값 — 기본 테마(화이트)를 복제한 가변 토큰
@@ -181,7 +181,8 @@ function _buildStarterLayout(layoutId, cs) {
 /** 테마 배경을 가진 잠긴 전체-캔버스 배경 레이어 요소 생성 (theme 객체 직접 사용) */
 function _buildThemeBgElement(theme, cs) {
   return {
-    id: nextFlatId(), sourceId: null, type: 'shape', content: '', isRich: false, merged: false,
+    id: nextFlatId(), sourceId: '__bg', type: 'shape', content: '', isRich: false, merged: false,
+    isBackground: true,
     x: 0, y: 0, width: cs.w, height: cs.h, zIndex: 0, locked: true,
     styles: {
       backgroundColor: 'rgba(0,0,0,0)', backgroundImage: 'none', borderRadius: '0px',
@@ -1014,7 +1015,8 @@ export const useFlatStore = create((set, get) => ({
     } else {
       const minZ = els.length ? Math.min(...els.map(e => e.zIndex)) : 1
       get().addFlatElement({
-        id: nextFlatId(), sourceId: null, type: 'shape', content: '', isRich: false, merged: false,
+        id: nextFlatId(), sourceId: '__bg', type: 'shape', content: '', isRich: false, merged: false,
+        isBackground: true,
         x: 0, y: 0, width: cs.w, height: cs.h, zIndex: minZ - 1, locked: true,
         styles: {
           backgroundColor: 'rgba(0,0,0,0)', backgroundImage: 'none', borderRadius: '0px',
@@ -1433,6 +1435,26 @@ export const useFlatStore = create((set, get) => ({
     ]})
     const updated = els.map(e =>
       e.id === el.id ? { ...e, zIndex: target } : e
+    )
+    set({ flatElements: updated, canUndo: _history.canUndo, canRedo: _history.canRedo })
+  },
+
+  /** 배경끼리 순서 변경 — dir +1: 앞으로(위), -1: 뒤로(아래). 인접 배경과 zIndex 스왑. */
+  reorderBackground(id, dir) {
+    const els = get().flatElements
+    const bgs = els.filter(e => isBackgroundElement(e)).sort((a, b) => a.zIndex - b.zIndex)
+    const idx = bgs.findIndex(e => e.id === id)
+    if (idx < 0) return
+    const swapIdx = idx + dir
+    if (swapIdx < 0 || swapIdx >= bgs.length) return
+    const a = bgs[idx], b = bgs[swapIdx]
+    if (a.zIndex === b.zIndex) return
+    _history.push({ type: 'zorder', changes: [
+      { id: a.id, oldZ: a.zIndex, newZ: b.zIndex },
+      { id: b.id, oldZ: b.zIndex, newZ: a.zIndex },
+    ]})
+    const updated = els.map(e =>
+      e.id === a.id ? { ...e, zIndex: b.zIndex } : e.id === b.id ? { ...e, zIndex: a.zIndex } : e
     )
     set({ flatElements: updated, canUndo: _history.canUndo, canRedo: _history.canRedo })
   },
