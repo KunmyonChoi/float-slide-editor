@@ -966,6 +966,10 @@ def _add_video(slide, el: dict, x, y, w, h, rotation):
     m = re.match(r'data:([^;]+);base64,(.+)', content)
     if m:
         mime = m.group(1) or 'video/mp4'
+        # octet-stream 등 비-video MIME이면 mp4로 정규화 → 미디어 파트가 .mp4로 임베드돼
+        # PowerPoint에서 재생 가능(.vid 확장자면 재생 안 될 수 있음).
+        if not mime.startswith('video/'):
+            mime = 'video/mp4'
         try:
             raw = base64.b64decode(m.group(2))
             stream = io.BytesIO(raw)
@@ -990,7 +994,10 @@ def _add_video_placeholder(slide, el: dict, x, y, w, h, rotation):
     p = tf.paragraphs[0]
     p.alignment = PP_ALIGN.CENTER
     r = p.add_run()
-    r.text = f'\u25b6 video\n{el.get("content", "")}'
+    # content(\uac70\ub300\ud55c data URL\uc77c \uc218 \uc788\uc74c)\ub97c \uadf8\ub300\ub85c \ub123\uc9c0 \uc54a\ub294\ub2e4 \u2014 XML \ud3ed\ubc1c \ubc29\uc9c0.
+    src = el.get('content', '') or ''
+    label = src if (src and not src.startswith('data:') and len(src) <= 120) else ''
+    r.text = f'\u25b6 video\n{label}' if label else '\u25b6 video'
     r.font.size = Pt(10)
     r.font.color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
 
