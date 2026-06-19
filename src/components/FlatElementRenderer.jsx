@@ -278,7 +278,10 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
             ? <IdbVideo src={content} controls={playNow && !hideControls} autoplay={playNow && autoplay} loop={loop} muted={muted} objectFit={vidFit} />
             : isDirectVideo
             ? <video
-                src={content}
+                // 재생 안 할 때도 첫 프레임을 썸네일로 보이게(없으면 스피커/빈 아이콘만 뜸):
+                // preload=metadata + 미디어 프래그먼트 #t=0.1로 프레임 강제 표시
+                src={playNow ? content : content + '#t=0.1'}
+                preload="metadata"
                 style={{ width: '100%', height: '100%', objectFit: vidFit || 'cover', border: 'none', pointerEvents: (playNow && !hideControls) ? 'auto' : 'none' }}
                 controls={playNow && !hideControls}
                 autoPlay={playNow && autoplay}
@@ -574,7 +577,9 @@ function IdbVideo({ src, controls, autoplay, loop, muted, objectFit }) {
   }
   return (
     <video
-      src={blobUrl}
+      // 재생 안 할 때 첫 프레임 썸네일 강제(#t=0.1)
+      src={autoplay ? blobUrl : blobUrl + '#t=0.1'}
+      preload="metadata"
       style={{ width: '100%', height: '100%', objectFit: objectFit || 'contain', pointerEvents: controls ? 'auto' : 'none' }}
       controls={controls}
       autoPlay={autoplay}
