@@ -40,6 +40,11 @@ const FLAT_PRESETS = {
     content: '', isRich: false, merged: false,
     styles: { ...DEFAULT_STYLES, backgroundColor: '#e2e8f0', textAlign: 'center', alignItems: 'center' },
   },
+  roundRect: {
+    type: 'shape', width: 150, height: 100,
+    content: '', isRich: false, merged: false,
+    styles: { ...DEFAULT_STYLES, backgroundColor: '#e2e8f0', borderRadius: '16px', textAlign: 'center', alignItems: 'center' },
+  },
   circle: {
     type: 'shape', width: 100, height: 100,
     content: '', isRich: false, merged: false,
@@ -333,6 +338,7 @@ export default function EditToolbar() {
             label="도형"
             items={[
               { id: 'rect', icon: <RectIcon />, label: '사각형', action: () => insertFlatPreset('rect') },
+              { id: 'roundRect', icon: <RoundRectIcon />, label: '둥근 사각형', action: () => insertFlatPreset('roundRect') },
               { id: 'circle', icon: <CircleIcon />, label: '원', action: () => insertFlatPreset('circle') },
               { id: 'lineH', icon: <LineHIcon />, label: '가로 선', action: () => insertFlatPreset('lineH') },
               { id: 'lineV', icon: <LineVIcon />, label: '세로 선', action: () => insertFlatPreset('lineV') },
@@ -636,6 +642,14 @@ function RectIcon() {
   return (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
       <rect x="3" y="3" width="18" height="18" rx="2" />
+    </svg>
+  )
+}
+
+function RoundRectIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <rect x="3" y="3" width="18" height="18" rx="7" />
     </svg>
   )
 }

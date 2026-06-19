@@ -29,6 +29,11 @@ const ELEMENT_PRESETS = {
     content: '', isRich: false, merged: false,
     styles: { ...DEFAULT_STYLES, backgroundColor: '#e2e8f0', textAlign: 'center', alignItems: 'center' },
   },
+  roundRect: {
+    type: 'shape', width: 150, height: 100,
+    content: '', isRich: false, merged: false,
+    styles: { ...DEFAULT_STYLES, backgroundColor: '#e2e8f0', borderRadius: '16px', textAlign: 'center', alignItems: 'center' },
+  },
   circle: {
     type: 'shape', width: 100, height: 100,
     content: '', isRich: false, merged: false,
@@ -291,6 +296,7 @@ export default function FlatContextMenu({ x, y, canvasX, canvasY, onClose }) {
       case 'ungroup': useFlatStore.getState().ungroupSelected(); break
       case 'insertText': insertElement('text'); break
       case 'insertRect': insertElement('rect'); break
+      case 'insertRoundRect': insertElement('roundRect'); break
       case 'insertCircle': insertElement('circle'); break
       case 'insertLine': insertElement('lineH'); break
       case 'insertImage': fileInputRef.current?.click(); return // onClose 호출하지 않음
@@ -449,6 +455,7 @@ export default function FlatContextMenu({ x, y, canvasX, canvasY, onClose }) {
       children: [
         { id: 'itext', label: '텍스트', action: 'insertText' },
         { id: 'irect', label: '사각형', action: 'insertRect' },
+        { id: 'iroundrect', label: '둥근 사각형', action: 'insertRoundRect' },
         { id: 'icircle', label: '원', action: 'insertCircle' },
         { id: 'iline', label: '선', action: 'insertLine' },
         { id: 'isep', type: 'separator' },
