@@ -67,13 +67,21 @@ export function setBackendBase(url) {
   _backendAvailable = null
 }
 
+let _backendBuild = null
+/** 마지막 헬스체크에서 받은 백엔드 빌드 버전(실행 중 컨테이너가 최신인지 확인용) */
+export function getBackendBuild() { return _backendBuild }
+
 export async function checkBackend(force = false) {
   if (!force && _backendAvailable !== null) return _backendAvailable
   try {
     const res = await fetch(`${getBackendBase()}/api/health`, { signal: AbortSignal.timeout(2000) })
     _backendAvailable = res.ok
+    if (res.ok) {
+      try { _backendBuild = (await res.json()).build || null } catch { _backendBuild = null }
+    }
   } catch {
     _backendAvailable = false
+    _backendBuild = null
   }
   return _backendAvailable
 }

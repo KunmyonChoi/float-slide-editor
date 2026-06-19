@@ -7,6 +7,9 @@ import pptx as pptx_lib
 from exporter import build_pptx
 from public_adapter import is_public_deck, public_deck_to_internal
 
+# 빌드 버전 — 실행 중인 컨테이너가 최신인지 확인용(헬스/ UI에 노출). 변경 시 갱신.
+BUILD_VERSION = '2026-06-19.3-video-mp4'
+
 app = FastAPI()
 
 # CORS — 공개 프론트(Netlify 등)가 로컬 컨테이너를 직접 호출하므로 허용 필요.
@@ -33,7 +36,7 @@ async def allow_private_network(request: Request, call_next):
 
 @app.get("/api/health")
 def health():
-    return {"status": "ok", "python_pptx": pptx_lib.__version__}
+    return {"status": "ok", "python_pptx": pptx_lib.__version__, "build": BUILD_VERSION}
 
 
 @app.post("/api/export/pptx")

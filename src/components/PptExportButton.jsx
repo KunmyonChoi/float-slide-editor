@@ -4,7 +4,7 @@ import { useFlatStore } from '../store/flatStore'
 import { ToolBtn } from './FloatingToolbar'
 import {
   checkBackend, exportViaPython, dockerRunCommand,
-  getBackendBase, setBackendBase, PPTX_DOCKER_IMAGE,
+  getBackendBase, setBackendBase, PPTX_DOCKER_IMAGE, getBackendBuild,
 } from '../core/PptxBackendClient'
 
 const EMBED_PREF_KEY = 'ppt-embed-fonts'
@@ -264,6 +264,11 @@ function BackendSection({ pythonAvailable, backendUrl, onApplyUrl, onRecheck }) 
         <span>{status.text}</span>
         <button onClick={onRecheck} title="다시 확인" style={iconBtnStyle}>↻</button>
       </div>
+      {pythonAvailable === true && getBackendBuild() && (
+        <div style={{ fontSize: 10.5, color: 'rgba(255,255,255,0.4)' }}>
+          서버 빌드: <code style={{ fontSize: 10.5 }}>{getBackendBuild()}</code>
+        </div>
+      )}
 
       {/* 연결돼 있어도 항상 노출 — 최신 이미지로 덮어쓰기(재다운로드/교체)할 수 있게 */}
       {(
