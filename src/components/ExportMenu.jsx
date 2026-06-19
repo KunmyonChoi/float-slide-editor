@@ -120,6 +120,9 @@ export default function FileMenu({ fallbackSample }) {
   const loadProjectFromFile = useCallback(async (file, handle) => {
     const { loadProjectFile } = await import('../core/ProjectSerializer.js')
     const data = await loadProjectFile(file)
+    // 이전 HTML 덱(slideHtml/요소/reveal 구조) 초기화 — 안 하면 HTML 모드에 이전 프로젝트 내용이 남는다.
+    // (.flatproj는 HTML 원본을 저장하지 않으므로 flat 스크래치 상태로 둔다)
+    useEditorStore.getState().resetDeck()
     loadAllPages(data.pages, data.currentPageKey)
     useFlatStore.getState().setCustomTheme(data.customTheme)
     useFlatStore.getState().setThemeId(data.themeId)
