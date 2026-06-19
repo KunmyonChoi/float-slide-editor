@@ -8,7 +8,7 @@ from exporter import build_pptx
 from public_adapter import is_public_deck, public_deck_to_internal
 
 # 빌드 버전 — 실행 중인 컨테이너가 최신인지 확인용(헬스/ UI에 노출). 변경 시 갱신.
-BUILD_VERSION = '2026-06-19.5-autoplay'
+BUILD_VERSION = '2026-06-19.6-cssbg'
 
 app = FastAPI()
 

@@ -17,6 +17,180 @@ PX_TO_INCH = 1 / 96
 PX_TO_EMU = 914400 / 96  # 9525
 
 
+# ── 복잡한 CSS 배경(radial/repeating/다층) → SVG → PNG 래스터화 ──
+def _split_top(s, sep=','):
+    """괄호 깊이를 고려해 최상위에서만 sep로 분리(rgba(...)의 콤마 보호)."""
+    out, depth, cur = [], 0, ''
+    for ch in s:
+        if ch == '(':
+            depth += 1
+        elif ch == ')':
+            depth -= 1
+        if ch == sep and depth == 0:
+            out.append(cur)
+            cur = ''
+        else:
+            cur += ch
+    if cur.strip():
+        out.append(cur)
+    return [x.strip() for x in out]
+
+
+def _is_complex_bg(bg):
+    """네이티브 fill로 표현 못 하는 배경(radial/repeating/conic/다층)인지."""
+    if not bg or bg == 'none':
+        return False
+    if 'radial-gradient' in bg or 'repeating-' in bg or 'conic-gradient' in bg:
+        return True
+    return len(_split_top(bg)) >= 2  # 다층
+
+
+def _parse_stops(items, length_px):
+    """['color [pos]', ...] → [(rgba, frac|None)]. px는 length 기준 비율로."""
+    stops = []
+    for a in items:
+        m = re.match(r'\s*((?:rgba?|oklch|oklab|hsla?)\([^)]*\)|#[0-9a-fA-F]+|[a-zA-Z]+)\s*(.*)$', a)
+        if not m:
+            continue
+        rgba = css_color_to_rgba(m.group(1))
+        if not rgba:
+            continue
+        positions = m.group(2).split() or [None]
+        for pos in positions:
+            frac = None
+            if pos:
+                try:
+                    if pos.endswith('%'):
+                        frac = float(pos[:-1]) / 100.0
+                    elif pos.endswith('px'):
+                        frac = (float(pos[:-2]) / length_px) if length_px else 0.0
+                    else:
+                        frac = float(pos)
+                except ValueError:
+                    frac = None
+            stops.append([rgba, frac])
+    # None 위치 보간(CSS 규칙 근사): 처음=0, 끝=1, 중간은 균등
+    n = len(stops)
+    for i, st in enumerate(stops):
+        if st[1] is None:
+            st[1] = 0.0 if i == 0 else (1.0 if i == n - 1 else i / (n - 1))
+    # 단조 증가 보정(SVG offset 요구)
+    last = 0.0
+    for st in stops:
+        st[1] = max(0.0, min(1.0, max(st[1], last)))
+        last = st[1]
+    return stops
+
+
+def _svg_stops_xml(stops):
+    out = ''
+    for rgba, frac in stops:
+        out += (f'<stop offset="{frac:.4f}" stop-color="rgb({rgba[0]},{rgba[1]},{rgba[2]})" '
+                f'stop-opacity="{rgba[3]:.3f}"/>')
+    return out
+
+
+def _max_px(items):
+    """스톱 문자열들에서 최대 px 위치값(반복 주기 추정용)."""
+    pxs = [float(x) for x in re.findall(r'([\d.]+)px', ' '.join(items))]
+    return max(pxs) if pxs else 0.0
+
+
+def _layer_to_svg(layer, idx, w, h):
+    """CSS 그라데이션 레이어 한 개 → (defs, rect) SVG 조각. 실패 시 None.
+    userSpaceOnUse(px 좌표)로 그려 종횡비 왜곡·반복(주기) 처리를 정확히 한다."""
+    m = re.match(r'(repeating-)?(linear|radial)-gradient\((.*)\)\s*$', layer, re.S)
+    if not m:
+        return None
+    repeating, kind, inner = bool(m.group(1)), m.group(2), m.group(3)
+    parts = _split_top(inner)
+    if not parts:
+        return None
+    gid = f'g{idx}'
+    head = parts[0].strip()
+    # 첫 토큰이 방향/형태 지정인지(스톱이 아닌지) 판단
+    has_dir = bool(re.match(r'(to\s|[-\d.]+deg|circle|ellipse|closest|farthest|at\s)', head, re.I))
+    stop_items = parts[1:] if has_dir else parts
+    spread = ' spreadMethod="repeat"' if repeating else ''
+    if kind == 'linear':
+        ang = 180.0
+        mdeg = re.search(r'(-?[\d.]+)deg', head)
+        if mdeg:
+            ang = float(mdeg.group(1))
+        elif 'to right' in head:
+            ang = 90.0
+        elif 'to left' in head:
+            ang = 270.0
+        elif 'to top' in head:
+            ang = 0.0
+        rad = math.radians(ang)
+        dx, dy = math.sin(rad), -math.cos(rad)  # CSS 0deg=위(=SVG -y)
+        cx, cy = w / 2.0, h / 2.0
+        extent = abs(dx) * w + abs(dy) * h  # 박스 내 그라데이션 라인 길이(근사)
+        if repeating:
+            period = _max_px(stop_items) or extent
+            stops = _parse_stops(stop_items, period)  # 주기 기준으로 정규화
+            # 벡터 길이 = 1주기. spreadMethod=repeat 가 박스 전체에 타일링.
+            x1, y1 = cx, cy
+            x2, y2 = cx + dx * period, cy + dy * period
+        else:
+            stops = _parse_stops(stop_items, extent)
+            x1, y1 = cx - dx * extent / 2, cy - dy * extent / 2
+            x2, y2 = cx + dx * extent / 2, cy + dy * extent / 2
+        if len(stops) < 2:
+            return None
+        defs = (f'<linearGradient id="{gid}" gradientUnits="userSpaceOnUse" '
+                f'x1="{x1:.2f}" y1="{y1:.2f}" x2="{x2:.2f}" y2="{y2:.2f}"{spread}>'
+                f'{_svg_stops_xml(stops)}</linearGradient>')
+    else:  # radial
+        cx, cy = w / 2.0, h / 2.0
+        mpct = re.search(r'at\s+([\d.]+)%\s+([\d.]+)%', head)
+        mpx = re.search(r'at\s+([\d.]+)px\s+([\d.]+)px', head)
+        if mpct:
+            cx, cy = float(mpct.group(1)) / 100 * w, float(mpct.group(2)) / 100 * h
+        elif mpx:
+            cx, cy = float(mpx.group(1)), float(mpx.group(2))
+        # 반지름: 명시 px가 있으면 최대값, 없으면 박스 대각의 60%
+        r = _max_px(stop_items) or (math.hypot(w, h) * 0.6)
+        stops = _parse_stops(stop_items, r)
+        if len(stops) < 2:
+            return None
+        defs = (f'<radialGradient id="{gid}" gradientUnits="userSpaceOnUse" '
+                f'cx="{cx:.2f}" cy="{cy:.2f}" r="{r:.2f}" fx="{cx:.2f}" fy="{cy:.2f}"{spread}>'
+                f'{_svg_stops_xml(stops)}</radialGradient>')
+    rect = f'<rect x="0" y="0" width="{w}" height="{h}" fill="url(#{gid})"/>'
+    return defs, rect
+
+
+def _css_bg_to_png(bg, w_px, h_px, base_color=None):
+    """복잡한 CSS 배경 → PNG bytes. base_color는 맨 아래 솔리드로 깔림. 실패 시 None."""
+    w, h = max(1, int(round(w_px))), max(1, int(round(h_px)))
+    layers = _split_top(bg)
+    defs, rects = '', ''
+    # 맨 아래: 배경색(있으면)
+    if base_color:
+        brgba = css_color_to_rgba(base_color)
+        if brgba and brgba[3] > 0:
+            rects += (f'<rect x="0" y="0" width="{w}" height="{h}" '
+                      f'fill="rgb({brgba[0]},{brgba[1]},{brgba[2]})" fill-opacity="{brgba[3]:.3f}"/>')
+    # CSS는 첫 레이어가 맨 위 → SVG는 나중에 그린 게 위 → 역순으로 추가
+    for i, layer in enumerate(reversed(layers)):
+        res = _layer_to_svg(layer, i, w, h)
+        if res:
+            defs += res[0]
+            rects += res[1]
+    if not rects:
+        return None
+    svg = (f'<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" '
+           f'viewBox="0 0 {w} {h}"><defs>{defs}</defs>{rects}</svg>')
+    try:
+        import cairosvg
+        return cairosvg.svg2png(bytestring=svg.encode('utf-8'), output_width=w, output_height=h)
+    except Exception as e:
+        print(f'css bg raster failed: {e}')
+        return None
+
+
 def build_pptx(pages: dict, default_canvas_size: dict, fonts: list = None,
                embed_fonts: bool = True, editor_version: str = '', converter_version: str = '') -> bytes:
     prs = Presentation()
@@ -267,6 +441,9 @@ def _is_decorative_bg_layer(el: dict) -> bool:
     # repeating-* gradients are always decorative patterns
     if bg_image and bg_image.startswith('repeating-'):
         return True
+    # radial/conic/다층 등 native fill로 표현 불가한 복잡 배경 → 래스터화 대상(장식)
+    if _is_complex_bg(bg_image):
+        return True
     return False
 
 
@@ -461,6 +638,16 @@ def _add_element(slide, el: dict, cs: dict, font_name_map: dict = None, slide_bg
     elif el_type == 'image':
         _add_image(slide, el, x, y, w, h, rotation)
     elif el_type == 'shape':
+        _bg = s.get('backgroundImage', 'none')
+        if _is_complex_bg(_bg):  # radial/repeating/다층 → 그림으로 래스터화(도형 뒤)
+            png = _css_bg_to_png(_bg, el.get('width', 0), el.get('height', 0),
+                                 base_color=s.get('backgroundColor'))
+            if png:
+                pic = slide.shapes.add_picture(io.BytesIO(png), x, y, w, h)
+                if rotation:
+                    pic.rotation = rotation
+                # 도형은 테두리/텍스트만(배경은 그림이 담당)
+                el = {**el, 'styles': {**s, 'backgroundImage': 'none', 'backgroundColor': 'rgba(0,0,0,0)'}}
         _add_shape(slide, el, x, y, w, h, rotation, cs)
         if el.get('fillRatio') is not None:  # 부분 채우기 → 솔리드 사각형(트랙 위)
             _add_partial_fill(slide, el, x, y, w, h)
