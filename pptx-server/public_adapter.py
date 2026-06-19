@@ -31,6 +31,11 @@ def _public_el_to_internal(pel: dict) -> dict:
         for k in ('autoplay', 'loop', 'muted', 'hideControls'):
             if pel.get(k):
                 out[k] = True
+    if pel.get('type') == 'shape' and pel.get('fillRatio') is not None:  # 부분 채우기
+        out['fillRatio'] = pel.get('fillRatio')
+        out['fillDir'] = pel.get('fillDir') or 'left'
+        if pel.get('fillColor'):
+            out['fillColor'] = pel.get('fillColor')
     for k in ('points', 'link'):
         if pel.get(k) is not None:
             out[k] = pel[k]

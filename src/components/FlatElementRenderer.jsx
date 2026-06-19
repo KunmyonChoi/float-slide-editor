@@ -494,8 +494,10 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
     )
   }
 
+  const partialFill = renderPartialFill(element)
   return (
-    <div style={shapeStyle} onMouseDown={handleMouseDown} onClick={handleClick}>
+    <div style={partialFill ? { ...shapeStyle, overflow: 'hidden' } : shapeStyle} onMouseDown={handleMouseDown} onClick={handleClick}>
+      {partialFill}
       {content && (
         element.isRich
           ? <div style={shapeContentStyle} dangerouslySetInnerHTML={{ __html: content }} />
@@ -503,6 +505,24 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
       )}
     </div>
   )
+}
+
+/**
+ * 부분 채우기(메타속성) — fillRatio(0~1)·fillDir·fillColor로 도형 일부만 솔리드로 채움.
+ * 진행률 막대/악센트용. PPT 변환 시 별도 솔리드 사각형(네이티브 도형)으로 출력.
+ */
+export function renderPartialFill(el) {
+  const r = el.fillRatio
+  if (r == null || !(r > 0) || !el.fillColor) return null
+  const pct = Math.max(0, Math.min(1, r)) * 100
+  const dir = el.fillDir || 'left'
+  const base = { position: 'absolute', background: el.fillColor, pointerEvents: 'none' }
+  let pos
+  if (dir === 'right') pos = { right: 0, top: 0, bottom: 0, width: pct + '%' }
+  else if (dir === 'top') pos = { left: 0, right: 0, top: 0, height: pct + '%' }
+  else if (dir === 'bottom') pos = { left: 0, right: 0, bottom: 0, height: pct + '%' }
+  else pos = { left: 0, top: 0, bottom: 0, width: pct + '%' } // left(기본)
+  return <div style={{ ...base, ...pos }} />
 }
 
 /**

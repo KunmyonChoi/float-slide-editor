@@ -462,6 +462,8 @@ def _add_element(slide, el: dict, cs: dict, font_name_map: dict = None, slide_bg
         _add_image(slide, el, x, y, w, h, rotation)
     elif el_type == 'shape':
         _add_shape(slide, el, x, y, w, h, rotation, cs)
+        if el.get('fillRatio') is not None:  # 부분 채우기 → 솔리드 사각형(트랙 위)
+            _add_partial_fill(slide, el, x, y, w, h)
     elif el_type == 'svg':
         _add_svg(slide, el, x, y, w, h, rotation)
     elif el_type == 'video':
@@ -943,6 +945,39 @@ def _add_shape(slide, el: dict, x, y, w, h, rotation, cs: dict):
 
     # opacity
     _apply_opacity(shape, s)
+
+
+def _add_partial_fill(slide, el: dict, x, y, w, h):
+    """부분 채우기(fillRatio/fillDir/fillColor) → 솔리드 사각형(네이티브 도형)."""
+    r = el.get('fillRatio')
+    color = el.get('fillColor')
+    if r is None or not color:
+        return
+    try:
+        r = max(0.0, min(1.0, float(r)))
+    except (TypeError, ValueError):
+        return
+    if r <= 0:
+        return
+    d = el.get('fillDir') or 'left'
+    if d == 'right':
+        fx, fy, fw, fh = x + int(w * (1 - r)), y, int(w * r), h
+    elif d == 'top':
+        fx, fy, fw, fh = x, y, w, int(h * r)
+    elif d == 'bottom':
+        fx, fy, fw, fh = x, y + int(h * (1 - r)), w, int(h * r)
+    else:  # left
+        fx, fy, fw, fh = x, y, int(w * r), h
+    rgba = css_color_to_rgba(color)
+    if not rgba:
+        return
+    shape = slide.shapes.add_shape(1, fx, fy, fw, fh)  # rectangle
+    _clear_theme_style(shape)
+    shape.fill.solid()
+    shape.fill.fore_color.rgb = RGBColor(rgba[0], rgba[1], rgba[2])
+    if rgba[3] < 1.0:
+        _set_fill_transparency(shape, int(rgba[3] * 100000))
+    shape.line.fill.background()
 
 
 def _add_svg(slide, el: dict, x, y, w, h, rotation):

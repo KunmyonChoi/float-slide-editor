@@ -145,6 +145,13 @@ export default function FlatPropertyContent() {
           </div>
         )}
 
+        {/* 부분 채우기 — normal shape만 (진행률/악센트: 일부만 솔리드. PPT는 솔리드 사각형으로 변환) */}
+        {!el.shapeType && el.type === 'shape' && (
+          <div className="pt-1 border-t border-white/5">
+            <PartialFillSection el={el} update={update} />
+          </div>
+        )}
+
         {/* 테두리 — text, normal shape, image만 (poly shape는 stroke로 처리) */}
         {!el.shapeType && (el.type === 'text' || el.type === 'shape' || el.type === 'image') && (
           <div className="pt-1 border-t border-white/5">
@@ -949,6 +956,51 @@ function parsePadding4(p) {
   if (parts.length === 2) return { t: parts[0], r: parts[1], b: parts[0], l: parts[1] }
   if (parts.length === 3) return { t: parts[0], r: parts[1], b: parts[2], l: parts[1] }
   return { t: parts[0], r: parts[1], b: parts[2], l: parts[3] }
+}
+
+// 부분 채우기 — 도형 일부만 솔리드(진행률/악센트). fillRatio/fillDir/fillColor 메타속성.
+function PartialFillSection({ el, update }) {
+  const on = el.fillRatio != null
+  const dir = el.fillDir || 'left'
+  const pct = Math.round((el.fillRatio ?? 0.5) * 100)
+  const color = el.fillColor || 'rgba(99,102,241,1)'
+  const DIRS = [
+    { id: 'left', label: '왼→오' }, { id: 'right', label: '오→왼' },
+    { id: 'bottom', label: '아래→위' }, { id: 'top', label: '위→아래' },
+  ]
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center justify-between">
+        <SectionTitle>부분 채우기</SectionTitle>
+        <button
+          onClick={() => on ? update({ fillRatio: undefined, fillDir: undefined, fillColor: undefined })
+            : update({ fillRatio: 0.5, fillDir: 'left', fillColor: color })}
+          className="text-xs text-indigo-400 hover:text-indigo-300 px-1"
+        >{on ? '끄기' : '켜기'}</button>
+      </div>
+      {on && (
+        <>
+          <div className="flex gap-1">
+            {DIRS.map(d => (
+              <button key={d.id} onClick={() => update({ fillDir: d.id })}
+                className={[
+                  'flex-1 py-1 rounded-md text-[10px] border transition-colors',
+                  dir === d.id ? 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30'
+                    : 'bg-white/5 text-slate-400 border-white/10 hover:bg-white/10',
+                ].join(' ')}
+              >{d.label}</button>
+            ))}
+          </div>
+          <p className={`${labelClass} mb-0.5`}>채움 비율 <span className="text-slate-600">{pct}%</span></p>
+          <input type="range" min="0" max="100" value={pct}
+            onChange={e => update({ fillRatio: parseInt(e.target.value) / 100 })}
+            className="w-full" style={{ accentColor: '#6366f1' }} />
+          <p className={`${labelClass} mb-0.5`}>채움 색</p>
+          <ColorPicker value={color} onChange={v => update({ fillColor: v })} showOpacity />
+        </>
+      )}
+    </div>
+  )
 }
 
 function FillSection({ styles, updateStyle, updateStyles, previewStyle, isText }) {

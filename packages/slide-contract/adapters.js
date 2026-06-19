@@ -36,6 +36,11 @@ export function internalElementToPublic(el) {
     if (el.muted) out.muted = true
     if (el.hideControls) out.hideControls = true
   }
+  if (el.type === 'shape' && el.fillRatio != null) { // 부분 채우기 → PPT 솔리드 사각형
+    out.fillRatio = el.fillRatio
+    out.fillDir = el.fillDir || 'left'
+    if (el.fillColor) out.fillColor = el.fillColor
+  }
   if (el.points != null) out.points = el.points
   if (el.link != null) out.link = el.link
   if (el.merged) out.merged = true
@@ -70,6 +75,11 @@ export function publicElementToInternal(pel) {
     if (pel.loop) out.loop = true
     if (pel.muted) out.muted = true
     if (pel.hideControls) out.hideControls = true
+  }
+  if (pel.type === 'shape' && pel.fillRatio != null) {
+    out.fillRatio = pel.fillRatio
+    out.fillDir = pel.fillDir || 'left'
+    if (pel.fillColor) out.fillColor = pel.fillColor
   }
   if (pel.points != null) out.points = pel.points
   if (pel.link != null) out.link = pel.link
