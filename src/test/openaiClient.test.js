@@ -4,7 +4,7 @@ import {
   getImageModel, setImageModel, pickImageSize, flexSize, generationSize,
   generateImage, editImage,
   chat, generateImagePrompt, analyzeImageForInfographic,
-  buildImageEnhancePrompt,
+  buildImageEnhancePrompt, generateSpeakerNotes,
   DEFAULT_MODEL, DEFAULT_IMAGE_MODEL,
 } from '../core/OpenAIClient'
 
@@ -325,5 +325,38 @@ describe('generateImagePrompt', () => {
     await generateImagePrompt('팀 협업')
     const body = JSON.parse(fetchMock.mock.calls[0][1].body)
     expect(body.messages[1].content).not.toContain('Required visual style')
+  })
+})
+
+describe('generateSpeakerNotes', () => {
+  beforeEach(() => { localStorage.clear(); setApiKey('sk-test') })
+  afterEach(() => { vi.unstubAllGlobals() })
+
+  it('슬라이드 텍스트→JSON 노트 맵, index별 매핑', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      okResponse('{"notes":[{"index":0,"text":"안녕하세요"},{"index":1,"text":"다음으로"}]}'))
+    vi.stubGlobal('fetch', fetchMock)
+    const out = await generateSpeakerNotes({
+      slides: [{ index: 0, title: '인트로', text: '소개' }, { index: 1, title: '본론', text: '내용' }],
+      tone: 'formal', length: 'short',
+    })
+    expect(out).toEqual({ 0: '안녕하세요', 1: '다음으로' })
+    // JSON 모드 + 시스템/유저 메시지 구성
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body)
+    expect(body.response_format).toEqual({ type: 'json_object' })
+    expect(body.messages[0].content).toContain('speaker notes')
+    expect(body.messages[1].content).toContain('Slide 1: 인트로')
+  })
+
+  it('슬라이드 없으면 호출 전 에러', async () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    await expect(generateSpeakerNotes({ slides: [] })).rejects.toThrow(/슬라이드/)
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('빈 notes 결과는 에러', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(okResponse('{"notes":[]}')))
+    await expect(generateSpeakerNotes({ slides: [{ index: 0, text: 'x' }] })).rejects.toThrow(/비어/)
   })
 })

@@ -316,6 +316,34 @@ export const useFlatStore = create((set, get) => ({
   },
 
   /**
+   * 여러 페이지 노트 일괄 적용 (AI 전체 생성용).
+   * @param {Object} pages getAllPagesAsync 결과(미캐시 페이지 캐시 생성용)
+   * @param {Object} notesByKey { [pageKey]: notesText }
+   */
+  applyNotesToPages(pages, notesByKey) {
+    get()._saveCurrentPage() // 현재 편집/노트 보존
+    for (const key in notesByKey) {
+      if (_pageCache[key]) {
+        _pageCache[key].notes = notesByKey[key]
+      } else if (pages && pages[key]) {
+        const p = pages[key]
+        _pageCache[key] = {
+          elements: p.elements,
+          canvasSize: p.canvasSize,
+          fontImports: p.fontImports || [],
+          history: { stack: [], pointer: -1 },
+          htmlSlideIndex: p.htmlSlideIndex ?? null,
+          notes: notesByKey[key],
+        }
+      }
+    }
+    if (_currentPageKey && _pageCache[_currentPageKey]) {
+      set({ pageNotes: _pageCache[_currentPageKey].notes || '' })
+    }
+    get()._syncPageInfo()
+  },
+
+  /**
    * 슬라이드 목록용 페이지 열거 — 읽기 전용(부작용 없음, _saveCurrentPage 호출 금지).
    * 현재 페이지는 라이브 상태, 그 외는 _pageCache에서 읽는다.
    * @returns {Array<{ key, index, isCurrent, elements, canvasSize, htmlSlideIndex }>}

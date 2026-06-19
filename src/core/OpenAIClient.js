@@ -379,3 +379,57 @@ export async function editImage(imageDataUrl, prompt, { width, height, size, qua
     throwImageErrorWith(res.status, detail, '이미지 편집')
   }
 }
+
+// ── 발표자 노트(발표 원고) 생성 ──
+
+export const NOTES_TONES = [
+  { id: 'friendly', label: '친근하게', hint: '친근하고 자연스러운 구어체' },
+  { id: 'formal', label: '격식 있게', hint: '정중하고 격식 있는 발표 어조' },
+  { id: 'concise', label: '간결하게', hint: '군더더기 없이 핵심만 간결하게' },
+]
+export const NOTES_LENGTHS = [
+  { id: 'short', label: '짧게', hint: '슬라이드당 1~2문장' },
+  { id: 'medium', label: '보통', hint: '슬라이드당 3~5문장' },
+  { id: 'long', label: '길게', hint: '슬라이드당 6문장 이상, 상세히' },
+]
+
+const SPEAKER_NOTES_SYSTEM = `You write speaker notes — the actual words a presenter SAYS out loud — for each slide of a deck.
+Rules:
+- Write a spoken script, NOT a copy of the slide text. Speak TO the audience, naturally.
+- Use the whole deck for flow: add brief, natural transitions between slides where helpful.
+- Keep each slide's notes about that slide only.
+- Write in the SAME language as that slide's content.
+- Tone: {tone}. Length per slide: {length}.
+- No slide numbers, headings, quotes, or markdown inside the note text.
+Output ONLY JSON: {"notes":[{"index":<0-based index>,"text":"<spoken notes>"}]}, one entry for EVERY slide index provided.`
+
+/**
+ * 슬라이드 요약 배열 → 페이지별 발표 원고.
+ * @param {{ slides: {index:number,title?:string,text?:string}[], tone?: string, length?: string, model?: string, signal?: AbortSignal }} opts
+ * @returns {Promise<Record<number,string>>} { [index]: notesText }
+ */
+export async function generateSpeakerNotes({ slides, tone, length, model, signal } = {}) {
+  if (!slides || !slides.length) throw new Error('슬라이드 내용이 없습니다.')
+  const toneHint = (NOTES_TONES.find(t => t.id === tone) || NOTES_TONES[0]).hint
+  const lenHint = (NOTES_LENGTHS.find(l => l.id === length) || NOTES_LENGTHS[1]).hint
+  const system = SPEAKER_NOTES_SYSTEM.replace('{tone}', toneHint).replace('{length}', lenHint)
+  const user = slides
+    .map(s => `# Slide ${s.index + 1}${s.title ? ': ' + s.title : ''}\n${(s.text || '').trim() || '(이 슬라이드에는 텍스트가 없습니다 — 맥락에 맞춰 간단히)'}`)
+    .join('\n\n---\n\n')
+
+  const raw = await chat({
+    system, user, model, temperature: 0.7,
+    responseFormat: { type: 'json_object' }, signal,
+  })
+  let parsed
+  try { parsed = JSON.parse(raw) } catch { throw new Error('AI 응답(JSON)을 해석할 수 없습니다.') }
+  const arr = Array.isArray(parsed?.notes) ? parsed.notes : []
+  const out = {}
+  for (const n of arr) {
+    if (n && typeof n.index === 'number' && typeof n.text === 'string') {
+      out[n.index] = n.text.trim()
+    }
+  }
+  if (!Object.keys(out).length) throw new Error('생성된 발표 원고가 비어 있습니다.')
+  return out
+}
