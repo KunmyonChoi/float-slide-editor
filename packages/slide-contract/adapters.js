@@ -30,6 +30,12 @@ export function internalElementToPublic(el) {
   } else {
     out.src = el.content || ''
   }
+  if (el.type === 'video') { // 영상별 재생 옵션 — 변환기가 PPT 자동재생/반복/음소거에 반영
+    if (el.autoplay) out.autoplay = true
+    if (el.loop) out.loop = true
+    if (el.muted) out.muted = true
+    if (el.hideControls) out.hideControls = true
+  }
   if (el.points != null) out.points = el.points
   if (el.link != null) out.link = el.link
   if (el.merged) out.merged = true
@@ -58,6 +64,12 @@ export function publicElementToInternal(pel) {
   } else {
     out.content = pel.src || ''
     out.isRich = false
+  }
+  if (pel.type === 'video') {
+    if (pel.autoplay) out.autoplay = true
+    if (pel.loop) out.loop = true
+    if (pel.muted) out.muted = true
+    if (pel.hideControls) out.hideControls = true
   }
   if (pel.points != null) out.points = pel.points
   if (pel.link != null) out.link = pel.link

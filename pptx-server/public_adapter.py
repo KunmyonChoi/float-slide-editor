@@ -27,6 +27,10 @@ def _public_el_to_internal(pel: dict) -> dict:
     else:
         out['content'] = pel.get('src') or ''
         out['isRich'] = False
+    if pel.get('type') == 'video':  # 영상별 재생 옵션
+        for k in ('autoplay', 'loop', 'muted', 'hideControls'):
+            if pel.get(k):
+                out[k] = True
     for k in ('points', 'link'):
         if pel.get(k) is not None:
             out[k] = pel[k]

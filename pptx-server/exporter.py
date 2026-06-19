@@ -989,10 +989,40 @@ def _add_video(slide, el: dict, x, y, w, h, rotation):
             movie = slide.shapes.add_movie(stream, x, y, w, h, mime_type=mime)
             if rotation:
                 movie.rotation = rotation
+            # 영상별 재생 옵션을 timing에 반영(autoplay=슬라이드 진입 시 재생, loop, mute)
+            _apply_video_playback(slide, movie.shape_id,
+                                  autoplay=bool(el.get('autoplay')),
+                                  loop=bool(el.get('loop')),
+                                  muted=bool(el.get('muted')))
             return
         except Exception as e:
             print(f'PPT export: video embed failed, placeholder: {e}')
     _add_video_placeholder(slide, el, x, y, w, h, rotation)
+
+
+def _apply_video_playback(slide, shape_id, autoplay=False, loop=False, muted=False):
+    """add_movie가 만든 timing의 해당 영상 노드를 자동재생/반복/음소거로 조정.
+    - autoplay: <p:cond delay="indefinite"/>(클릭 대기) → delay="0"(슬라이드 진입 시 재생)
+    - loop: cMediaNode 내부 cTn에 repeatCount="indefinite"
+    - muted: cMediaNode mute="1"
+    """
+    timing = slide._element.find(qn('p:timing'))
+    if timing is None:
+        return
+    for vid in timing.iter(qn('p:video')):
+        spTgt = vid.find('.//' + qn('p:spTgt'))
+        if spTgt is None or spTgt.get('spid') != str(shape_id):
+            continue
+        cmn = vid.find(qn('p:cMediaNode'))
+        if cmn is not None and muted:
+            cmn.set('mute', '1')
+        ctn = cmn.find(qn('p:cTn')) if cmn is not None else None
+        if ctn is not None and loop:
+            ctn.set('repeatCount', 'indefinite')
+        if autoplay:
+            for cond in vid.iter(qn('p:cond')):
+                if cond.get('delay') == 'indefinite':
+                    cond.set('delay', '0')
 
 
 def _add_video_placeholder(slide, el: dict, x, y, w, h, rotation):
