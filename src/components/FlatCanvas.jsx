@@ -542,6 +542,12 @@ export default function FlatCanvas() {
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return
       if (e.target.contentEditable === 'true') return
 
+      // 패널 접기/펴기: [ = 왼쪽 슬라이드 목록, ] = 오른쪽 속성창 (보조키 없이)
+      if (!e.ctrlKey && !e.metaKey && !e.altKey) {
+        if (e.code === 'BracketLeft') { e.preventDefault(); useFlatStore.getState().toggleSlideListCollapsed(); return }
+        if (e.code === 'BracketRight') { e.preventDefault(); useFlatStore.getState().togglePanelCollapsed(); return }
+      }
+
       const { selectedFlatIds } = useFlatStore.getState()
       const hasSelection = selectedFlatIds.length > 0
       const singleId = selectedFlatIds.length === 1 ? selectedFlatIds[0] : null
