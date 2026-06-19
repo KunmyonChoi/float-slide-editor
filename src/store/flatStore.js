@@ -1893,5 +1893,8 @@ export const useFlatStore = create((set, get) => ({
         currentPageHtmlBacked: page.htmlSlideIndex != null,
       })
     }
+    // 페이지 카운트/인덱스 동기화 — 누락 시 PageBar가 로드 직후 전체 페이지 수를
+    // 1로 표시하고, 페이지 이동을 해야(_syncPageInfo 호출) 정상 갯수가 보였음.
+    get()._syncPageInfo()
   },
 }))

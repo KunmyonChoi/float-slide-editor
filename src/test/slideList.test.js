@@ -37,6 +37,14 @@ describe('getFlatPageList', () => {
     expect(useFlatStore.getState().flatCurrentPage).toBe(before)
     expect(tagsOf()).toEqual(['A', 'B', 'C'])
   })
+
+  it('loadAllPages 직후 flatPageCount/Index 동기화(프로젝트 열면 전체 페이지 수가 1로 보이던 버그)', () => {
+    // 스테일 상태로 만든 뒤 로드 → 페이지 이동 없이도 정확한 카운트가 보여야 함
+    useFlatStore.setState({ flatPageCount: 1, flatCurrentPage: 0 })
+    load(['A', 'B', 'C', 'D'], '2-0')
+    expect(useFlatStore.getState().flatPageCount).toBe(4)
+    expect(useFlatStore.getState().flatCurrentPage).toBe(2)
+  })
 })
 
 describe('reorderPage', () => {
