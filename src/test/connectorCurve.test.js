@@ -1,96 +1,92 @@
 import { describe, it, expect } from 'vitest'
-import {
-  connectorCurveControls,
-  connectorCurvePath,
-  connectorLabelMid,
-  CURVE_STRENGTH,
-} from '../core/PolyShapeUtils'
+import { resolveConnectorCurve, resolveConnectorGeometry } from '../core/ConnectorRouting'
+import { connectorCurvePath, connectorLabelMid } from '../core/PolyShapeUtils'
 
-// 현(chord) a→b 기준, 점 p가 어느 쪽인지 부호(외적). 0이면 직선 위.
-const side = (a, b, p) => Math.sign((b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x))
+const rect = (id, x, y, w = 100, h = 60) => ({ id, type: 'shape', x, y, width: w, height: h })
+const byIdOf = (...els) => Object.fromEntries(els.map(e => [e.id, e]))
 
-describe('connectorCurveControls — 단일 곡선(둥근 엘보)', () => {
-  it('점 2개 미만이면 null', () => {
-    expect(connectorCurveControls([])).toBeNull()
-    expect(connectorCurveControls([{ x: 0, y: 0 }])).toBeNull()
+describe('resolveConnectorCurve — 변 수직 진출/대칭', () => {
+  it('좌우 배치(정렬): 동/서 변에서 수평 진출, 직선(제어점 y=끝점 y)', () => {
+    const A = rect('A', 0, 0), B = rect('B', 300, 0) // 같은 높이
+    const cv = resolveConnectorCurve({ start: { elementId: 'A' }, end: { elementId: 'B' } }, byIdOf(A, B))
+    expect(cv.start).toEqual({ x: 100, y: 30 })   // A 동쪽 변
+    expect(cv.end).toEqual({ x: 300, y: 30 })     // B 서쪽 변
+    // 수평 진출 → 제어점 y가 끝점과 같음(=직선)
+    expect(cv.c1.y).toBe(30)
+    expect(cv.c2.y).toBe(30)
+    expect(cv.c1.x).toBeGreaterThan(cv.start.x)   // 동쪽(바깥)으로
+    expect(cv.c2.x).toBeLessThan(cv.end.x)        // 서쪽(바깥)으로
   })
 
-  it('좌우 정렬(높이 같음) → 제어점이 현 위 → 직선', () => {
-    const a = { x: 0, y: 50 }, b = { x: 200, y: 50 }
-    const { c1, c2 } = connectorCurveControls([a, b])
-    expect(c1.y).toBe(50)
-    expect(c2.y).toBe(50)
-    expect(side(a, b, c1)).toBe(0)
-    expect(side(a, b, c2)).toBe(0)
+  it('좌우 배치(높이 오프셋): 수평 진출은 유지(대칭 S)', () => {
+    const A = rect('A', 0, 0), B = rect('B', 300, 120)
+    const cv = resolveConnectorCurve({ start: { elementId: 'A' }, end: { elementId: 'B' } }, byIdOf(A, B))
+    expect(cv.start.x).toBe(100)  // A 동쪽 변
+    expect(cv.end.x).toBe(300)    // B 서쪽 변
+    // 진출은 여전히 수평(제어점이 끝점과 같은 y) → 끝에서 변에 수직
+    expect(cv.c1.y).toBe(cv.start.y)
+    expect(cv.c2.y).toBe(cv.end.y)
+    // 대칭: 양끝 진출 길이 동일
+    expect(cv.c1.x - cv.start.x).toBeCloseTo(cv.end.x - cv.c2.x, 6)
   })
 
-  it('상하 정렬(가로 같음) → 직선', () => {
-    const a = { x: 50, y: 0 }, b = { x: 50, y: 200 }
-    const { c1, c2 } = connectorCurveControls([a, b])
-    expect(c1.x).toBe(50)
-    expect(c2.x).toBe(50)
+  it('상하 배치: 남/북 변에서 수직 진출', () => {
+    const A = rect('A', 0, 0), B = rect('B', 0, 300)
+    const cv = resolveConnectorCurve({ start: { elementId: 'A' }, end: { elementId: 'B' } }, byIdOf(A, B))
+    expect(cv.start).toEqual({ x: 50, y: 60 })   // A 남쪽
+    expect(cv.end).toEqual({ x: 50, y: 300 })    // B 북쪽
+    expect(cv.c1.x).toBe(50)
+    expect(cv.c2.x).toBe(50)
+    expect(cv.c1.y).toBeGreaterThan(cv.start.y)  // 아래(바깥)로
   })
 
-  it('대각(좌상-우하, 가로 우세) → 코너 향해 한 번만 휨(두 제어점이 같은 쪽 = 변곡 없음)', () => {
-    const a = { x: 0, y: 0 }, b = { x: 200, y: 150 } // |dx|>|dy| → corner (200,0)
-    const { c1, c2 } = connectorCurveControls([a, b])
-    expect(c1).toEqual({ x: 100, y: 0 })   // a + (corner-a)*0.5
-    expect(c2).toEqual({ x: 200, y: 75 })  // b + (corner-b)*0.5
-    // 두 제어점이 현의 같은 쪽 → S자(변곡) 아님
-    const s1 = side(a, b, c1), s2 = side(a, b, c2)
-    expect(s1).not.toBe(0)
-    expect(s1).toBe(s2)
-  })
-
-  it('세로 우세 대각 → 세로 코너 경유, 역시 단일 곡선', () => {
-    const a = { x: 0, y: 0 }, b = { x: 80, y: 200 } // |dy|>|dx| → corner (0,200)
-    const { c1, c2 } = connectorCurveControls([a, b])
-    expect(c1).toEqual({ x: 0, y: 100 })
-    expect(c2).toEqual({ x: 40, y: 200 })
-    const s1 = side(a, b, c1), s2 = side(a, b, c2)
-    expect(s1).toBe(s2)
-  })
-
-  it('strength로 휨 정도 조절', () => {
-    const a = { x: 0, y: 0 }, b = { x: 200, y: 100 }
-    const { c1 } = connectorCurveControls([a, b], 0.25)
-    expect(c1).toEqual({ x: 50, y: 0 })
-  })
-
-  it('같은 점이면 제어점=양끝', () => {
-    const a = { x: 5, y: 5 }
-    expect(connectorCurveControls([a, { ...a }])).toEqual({ c1: a, c2: a })
+  it('자유 끝점도 곡선 폴백 제공', () => {
+    const A = rect('A', 0, 0)
+    const cv = resolveConnectorCurve({ start: { elementId: 'A' }, end: { point: { x: 400, y: 30 } } }, byIdOf(A))
+    expect(cv).toBeTruthy()
+    expect(cv.c1).toBeTruthy()
+    expect(cv.c2).toBeTruthy()
   })
 })
 
-describe('connectorCurvePath', () => {
-  it('곡선은 큐빅 베지어(C) path', () => {
-    const d = connectorCurvePath([{ x: 0, y: 0 }, { x: 200, y: 150 }])
-    expect(d.startsWith('M 0 0 C')).toBe(true)
-    expect(d).toContain('200 150')
+describe('resolveConnectorGeometry — 곡선 라우팅', () => {
+  it('routing=curved면 curve(제어점, bbox 상대) 포함, bbox가 곡선을 포함', () => {
+    const A = rect('A', 0, 0), B = rect('B', 300, 120)
+    const conn = { routing: 'curved', connection: { start: { elementId: 'A' }, end: { elementId: 'B' } } }
+    const geo = resolveConnectorGeometry(conn, byIdOf(A, B))
+    expect(geo.curve).toBeTruthy()
+    expect(geo.points).toHaveLength(2)
+    // 제어점/끝점은 bbox 안(0..width, 0..height)
+    for (const p of [geo.points[0], geo.points[1], geo.curve.c1, geo.curve.c2]) {
+      expect(p.x).toBeGreaterThanOrEqual(-1)
+      expect(p.x).toBeLessThanOrEqual(geo.width + 1)
+    }
   })
-  it('점 부족하면 직선 폴백(빈 문자열)', () => {
-    expect(connectorCurvePath([{ x: 0, y: 0 }])).toBe('')
+
+  it('routing 없으면(직선) curve 없음', () => {
+    const A = rect('A', 0, 0), B = rect('B', 300, 0)
+    const conn = { connection: { start: { elementId: 'A' }, end: { elementId: 'B' } } }
+    const geo = resolveConnectorGeometry(conn, byIdOf(A, B))
+    expect(geo.curve).toBeUndefined()
   })
 })
 
-describe('connectorLabelMid', () => {
-  const a = { x: 0, y: 0 }, b = { x: 200, y: 150 }
-  it('직선은 현의 중점', () => {
-    expect(connectorLabelMid([a, b], false)).toEqual({ x: 100, y: 75 })
+describe('connectorCurvePath / connectorLabelMid', () => {
+  const pts = [{ x: 0, y: 30 }, { x: 200, y: 30 }]
+  const curve = { c1: { x: 80, y: 30 }, c2: { x: 120, y: 30 } }
+
+  it('curve 있으면 큐빅(C), 없으면 직선(L)', () => {
+    expect(connectorCurvePath(pts, curve).startsWith('M 0 30 C')).toBe(true)
+    expect(connectorCurvePath(pts, null)).toBe('M 0 30 L 200 30')
   })
-  it('좌우 정렬 곡선은 직선처럼 정확히 가운데(호 길이 중점)', () => {
-    const mid = connectorLabelMid([{ x: 0, y: 50 }, { x: 200, y: 50 }], true)
-    expect(mid.x).toBeCloseTo(100, 1)
-    expect(mid.y).toBeCloseTo(50, 1)
+
+  it('라벨 중점: 직선이면 현의 중점', () => {
+    expect(connectorLabelMid(pts, null)).toEqual({ x: 100, y: 30 })
   })
-  it('대각 곡선 중점은 코너 쪽(위)으로 치우치되 가로는 대략 가운데', () => {
-    const mid = connectorLabelMid([a, b], true) // corner (200,0) 쪽으로 휨
-    expect(mid.y).toBeLessThan(75)              // 직선 중점(75)보다 위(코너 쪽)
-    expect(mid.x).toBeGreaterThan(60)
-    expect(mid.x).toBeLessThan(160)
-  })
-  it('CURVE_STRENGTH 기본값 노출', () => {
-    expect(CURVE_STRENGTH).toBe(0.5)
+
+  it('라벨 중점: 직선형 곡선(제어점 일직선)도 가운데', () => {
+    const mid = connectorLabelMid(pts, curve)
+    expect(mid.x).toBeCloseTo(100, 0)
+    expect(mid.y).toBeCloseTo(30, 0)
   })
 })

@@ -2,8 +2,7 @@ import { useRef, useEffect, useCallback, useState, useMemo } from 'react'
 import { useFlatStore, isBackgroundLayer } from '../store/flatStore'
 import { useEditorStore } from '../store/editorStore'
 import { isBackgroundElement } from '../core/SnapEngine'
-import { resolveConnectors, resolveConnectorEndpoints, attachTargetAt } from '../core/ConnectorRouting'
-import { connectorCurvePath } from '../core/PolyShapeUtils'
+import { resolveConnectors, resolveConnectorEndpoints, resolveConnectorCurve, attachTargetAt } from '../core/ConnectorRouting'
 import { getRotatedAABB } from '../core/RotationUtils'
 import FlatElementRenderer from './FlatElementRenderer'
 import FlatSelectionOverlay, { FlatGroupOverlay } from './FlatSelectionOverlay'
@@ -1150,18 +1149,20 @@ export default function FlatCanvas() {
               const eps = resolveConnectorEndpoints(conn, byId)
               if (!eps) return null
               const tgt = connectorDraft.targetId ? renderElements.find(e => e.id === connectorDraft.targetId) : null
-              // 기본 라우팅이 곡선이면 미리보기도 곡선으로
+              // 기본 라우팅이 곡선이면 미리보기도 변 수직 진출 곡선으로
               const draftCurved = useFlatStore.getState().connectorDefaults.routing === 'curved'
-              const draftD = draftCurved
-                ? connectorCurvePath([eps.start, eps.end])
+              const cv = draftCurved ? resolveConnectorCurve(conn, byId) : null
+              const draftD = cv
+                ? `M ${cv.start.x} ${cv.start.y} C ${cv.c1.x} ${cv.c1.y} ${cv.c2.x} ${cv.c2.y} ${cv.end.x} ${cv.end.y}`
                 : `M ${eps.start.x} ${eps.start.y} L ${eps.end.x} ${eps.end.y}`
+              const endPt = cv ? cv.end : eps.end
               return (
                 <div data-export-ignore="true">
                   {tgt && <div style={{ position: 'absolute', left: tgt.x, top: tgt.y, width: tgt.width, height: tgt.height,
                     border: '2px solid #6366f1', borderRadius: 4, pointerEvents: 'none', zIndex: 9998 }} />}
                   <svg style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', overflow: 'visible', pointerEvents: 'none', zIndex: 9999 }}>
                     <path d={draftD} stroke="#6366f1" strokeWidth="2" strokeDasharray="5 4" strokeLinecap="round" fill="none" />
-                    <circle cx={eps.end.x} cy={eps.end.y} r="4" fill="#6366f1" stroke="#fff" strokeWidth="1.5" />
+                    <circle cx={endPt.x} cy={endPt.y} r="4" fill="#6366f1" stroke="#fff" strokeWidth="1.5" />
                   </svg>
                 </div>
               )

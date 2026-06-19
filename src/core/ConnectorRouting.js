@@ -80,11 +80,101 @@ export function resolveConnectorEndpoints(connection, byId) {
   return { start, end }
 }
 
+const _clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v))
+
+/** 큐빅 베지어 점 B(t) */
+function _cubic(p0, c1, c2, p1, t) {
+  const u = 1 - t
+  const w0 = u * u * u, w1 = 3 * u * u * t, w2 = 3 * u * t * t, w3 = t * t * t
+  return {
+    x: w0 * p0.x + w1 * c1.x + w2 * c2.x + w3 * p1.x,
+    y: w0 * p0.y + w1 * c1.y + w2 * c2.y + w3 * p1.y,
+  }
+}
+
 /**
- * 커넥터의 유도 기하(bbox + bbox 상대 points) 계산.
- * @returns {{x,y,width,height,points:[{x,y},{x,y}]} | null}
+ * 곡선 커넥터 기하 — draw.io 'curved' 식. 변(side) 기반 수직 진출/진입 + 대칭 제어점.
+ * - 양끝이 도형이면: 상대 위치(분리 큰 축)로 마주보는 변 선택 → 그 변에 **수직**으로
+ *   나가는 대칭 큐빅(정렬=직선, 오프셋=부드러운 대칭 S).
+ * - 한쪽이 자유점이면: 끝점 사이 우세축으로 진출하는 근사 곡선(드래그 중 등).
+ * @returns {{start,end,c1,c2} | null} 모두 절대 좌표
+ */
+export function resolveConnectorCurve(connection, byId) {
+  if (!connection || !connection.start || !connection.end) return null
+  const aEl = endEl(connection.start, byId)
+  const bEl = endEl(connection.end, byId)
+  if (aEl && bEl) {
+    const A = { x: aEl.x, y: aEl.y, w: aEl.width, h: aEl.height }
+    const B = { x: bEl.x, y: bEl.y, w: bEl.width, h: bEl.height }
+    const acx = A.x + A.w / 2, acy = A.y + A.h / 2
+    const bcx = B.x + B.w / 2, bcy = B.y + B.h / 2
+    const dx = bcx - acx, dy = bcy - acy
+    let start, end, nA, nB
+    if (Math.abs(dx) >= Math.abs(dy)) {
+      if (dx >= 0) { // B가 오른쪽 → A 동, B 서
+        start = { x: A.x + A.w, y: _clamp(bcy, A.y, A.y + A.h) }; nA = { x: 1, y: 0 }
+        end = { x: B.x, y: _clamp(acy, B.y, B.y + B.h) }; nB = { x: -1, y: 0 }
+      } else {
+        start = { x: A.x, y: _clamp(bcy, A.y, A.y + A.h) }; nA = { x: -1, y: 0 }
+        end = { x: B.x + B.w, y: _clamp(acy, B.y, B.y + B.h) }; nB = { x: 1, y: 0 }
+      }
+    } else {
+      if (dy >= 0) { // B가 아래 → A 남, B 북
+        start = { x: _clamp(bcx, A.x, A.x + A.w), y: A.y + A.h }; nA = { x: 0, y: 1 }
+        end = { x: _clamp(acx, B.x, B.x + B.w), y: B.y }; nB = { x: 0, y: -1 }
+      } else {
+        start = { x: _clamp(bcx, A.x, A.x + A.w), y: A.y }; nA = { x: 0, y: -1 }
+        end = { x: _clamp(acx, B.x, B.x + B.w), y: B.y + B.h }; nB = { x: 0, y: 1 }
+      }
+    }
+    const dist = Math.hypot(end.x - start.x, end.y - start.y)
+    const d = Math.max(30, Math.min(dist * 0.5, 200)) // 수직 진출 길이(대칭)
+    return {
+      start, end,
+      c1: { x: start.x + nA.x * d, y: start.y + nA.y * d },
+      c2: { x: end.x + nB.x * d, y: end.y + nB.y * d },
+    }
+  }
+  // 자유 끝점 폴백 — 우세축으로 진출
+  const eps = resolveConnectorEndpoints(connection, byId)
+  if (!eps) return null
+  const { start, end } = eps
+  const dx = end.x - start.x, dy = end.y - start.y
+  const d = Math.max(20, Math.min(Math.hypot(dx, dy) * 0.4, 140))
+  if (Math.abs(dx) >= Math.abs(dy)) {
+    const s = Math.sign(dx) || 1
+    return { start, end, c1: { x: start.x + s * d, y: start.y }, c2: { x: end.x - s * d, y: end.y } }
+  }
+  const s = Math.sign(dy) || 1
+  return { start, end, c1: { x: start.x, y: start.y + s * d }, c2: { x: end.x, y: end.y - s * d } }
+}
+
+/**
+ * 커넥터의 유도 기하(bbox + bbox 상대 points[, curve]) 계산.
+ * 곡선(routing==='curved')이면 곡선 샘플로 타이트한 bbox + curve(제어점, bbox 상대) 포함.
+ * @returns {{x,y,width,height,points:[{x,y},{x,y}],curve?:{c1,c2}} | null}
  */
 export function resolveConnectorGeometry(connector, byId, pad = DEFAULT_PAD) {
+  if (connector.routing === 'curved') {
+    const cv = resolveConnectorCurve(connector.connection, byId)
+    if (cv) {
+      // 곡선을 샘플링해 실제 곡선이 포함되는 타이트한 bbox
+      const xs = [], ys = []
+      const N = 16
+      for (let i = 0; i <= N; i++) {
+        const p = _cubic(cv.start, cv.c1, cv.c2, cv.end, i / N)
+        xs.push(p.x); ys.push(p.y)
+      }
+      const x = Math.min(...xs) - pad, y = Math.min(...ys) - pad
+      const width = (Math.max(...xs) - Math.min(...xs)) + pad * 2
+      const height = (Math.max(...ys) - Math.min(...ys)) + pad * 2
+      return {
+        x, y, width, height,
+        points: [{ x: cv.start.x - x, y: cv.start.y - y }, { x: cv.end.x - x, y: cv.end.y - y }],
+        curve: { c1: { x: cv.c1.x - x, y: cv.c1.y - y }, c2: { x: cv.c2.x - x, y: cv.c2.y - y } },
+      }
+    }
+  }
   const eps = resolveConnectorEndpoints(connector.connection, byId)
   if (!eps) return null
   const { start, end } = eps

@@ -2,45 +2,6 @@
  * PolyShapeUtils — 포인트 기반 shape (선, 폴리라인, 폴리곤) 유틸
  */
 
-/** 커넥터 곡선 제어점 세기(코너점까지 당기는 비율) */
-export const CURVE_STRENGTH = 0.5
-
-/**
- * 2점 커넥터의 큐빅 베지어 제어점 계산 — '한 번 꺾인' 둥근 엘보 곡선.
- * 분리가 큰 축의 코너점(가로 우세=(b.x,a.y), 세로 우세=(a.x,b.y))을 향해 양끝을 같은 쪽으로
- * 당겨, 상대 위치에 맞는 유연한 단일 곡선을 만든다(변곡 없음 = S자 안 생김).
- * - 좌우 정렬(높이 같음): 코너가 직선 위 → 직선.
- * - 좌상-우하 등 대각: 코너 쪽으로 한 번만 부드럽게 휨.
- * @returns {{ c1:{x,y}, c2:{x,y} } | null} 점이 2개 미만이면 null
- */
-export function connectorCurveControls(points, strength = CURVE_STRENGTH) {
-  if (!points || points.length < 2) return null
-  const a = points[0], b = points[points.length - 1]
-  const dx = b.x - a.x, dy = b.y - a.y
-  if (Math.abs(dx) < 1e-6 && Math.abs(dy) < 1e-6) return { c1: { ...a }, c2: { ...b } }
-  // 분리가 큰 축으로 먼저 빠져나가는 코너점
-  const corner = Math.abs(dx) >= Math.abs(dy)
-    ? { x: b.x, y: a.y }
-    : { x: a.x, y: b.y }
-  // 양끝을 같은 코너로 당김 → 두 제어점이 현(chord)의 같은 쪽 → 단일 곡선
-  return {
-    c1: { x: a.x + (corner.x - a.x) * strength, y: a.y + (corner.y - a.y) * strength },
-    c2: { x: b.x + (corner.x - b.x) * strength, y: b.y + (corner.y - b.y) * strength },
-  }
-}
-
-/**
- * 2점 커넥터 → 곡선(큐빅 베지어) SVG path d. 점이 2개 미만이면 직선 폴백.
- * @param {{x,y}[]} points
- */
-export function connectorCurvePath(points, strength = CURVE_STRENGTH) {
-  if (!points || points.length < 2) return pointsToSvgPath(points, false)
-  const a = points[0], b = points[points.length - 1]
-  const ctrl = connectorCurveControls(points, strength)
-  if (!ctrl) return pointsToSvgPath(points, false)
-  return `M ${a.x} ${a.y} C ${ctrl.c1.x} ${ctrl.c1.y} ${ctrl.c2.x} ${ctrl.c2.y} ${b.x} ${b.y}`
-}
-
 function cubicPoint(a, c1, c2, b, t) {
   const u = 1 - t
   const w0 = u * u * u, w1 = 3 * u * u * t, w2 = 3 * u * t * t, w3 = t * t * t
@@ -51,20 +12,30 @@ function cubicPoint(a, c1, c2, b, t) {
 }
 
 /**
- * 커넥터 곡선/직선의 시각적 중점 — 라벨 배치용.
- * 직선이면 현의 중점. 곡선이면 호 길이 기준 중점(균일 t는 코너로 치우쳐 라벨이 어긋남).
- * @param {{x,y}[]} points
- * @param {boolean} curved
+ * 커넥터 곡선 SVG path d. curve({c1,c2})가 있으면 큐빅 베지어, 없으면 직선.
+ * 제어점은 ConnectorRouting이 변(side) 수직 진출 기준으로 계산해 넘겨준다(여기선 그리기만).
+ * @param {{x,y}[]} points 끝점 2개(bbox 상대)
+ * @param {{c1:{x,y},c2:{x,y}}} [curve] 제어점(bbox 상대)
  */
-export function connectorLabelMid(points, curved, strength = CURVE_STRENGTH) {
+export function connectorCurvePath(points, curve) {
+  if (!points || points.length < 2) return pointsToSvgPath(points, false)
+  const a = points[0], b = points[points.length - 1]
+  if (!curve || !curve.c1 || !curve.c2) return pointsToSvgPath([a, b], false)
+  return `M ${a.x} ${a.y} C ${curve.c1.x} ${curve.c1.y} ${curve.c2.x} ${curve.c2.y} ${b.x} ${b.y}`
+}
+
+/**
+ * 커넥터의 시각적 중점 — 라벨 배치용.
+ * curve 없으면 현의 중점. 있으면 호 길이 기준 중점(균일 t는 한쪽으로 치우침).
+ * @param {{x,y}[]} points 끝점 2개
+ * @param {{c1,c2}} [curve] 제어점(있으면 곡선)
+ */
+export function connectorLabelMid(points, curve) {
   if (!points || points.length < 2) return points?.[0] || { x: 0, y: 0 }
   const a = points[0], b = points[points.length - 1]
   const chordMid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }
-  if (!curved) return chordMid
-  const ctrl = connectorCurveControls(points, strength)
-  if (!ctrl) return chordMid
-  const { c1, c2 } = ctrl
-  // 호 길이 절반 지점 샘플링
+  if (!curve || !curve.c1 || !curve.c2) return chordMid
+  const { c1, c2 } = curve
   const N = 24
   const samples = [{ p: a, len: 0 }]
   let prev = a, total = 0

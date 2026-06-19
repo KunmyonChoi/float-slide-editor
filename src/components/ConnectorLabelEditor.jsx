@@ -25,8 +25,10 @@ export default function ConnectorLabelEditor({ element }) {
   }
   const cancel = () => useFlatStore.getState().setEditingFlat(null)
 
-  const isCurved = element.routing === 'curved' && !element.closed && (element.points?.length === 2)
-  const mid = connectorLabelMid(element.points || [], isCurved)
+  // 렌더 칩과 동일하게 element.curve(제어점)로 중점 계산 — 직선이면 curve=null로 현의 중점
+  const curve = element.routing === 'curved' && !element.closed && element.points?.length === 2
+    ? element.curve : null
+  const mid = connectorLabelMid(element.points || [], curve)
   const s = element.styles || {}
 
   return (

@@ -344,10 +344,11 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
 
   // 포인트 기반 shape (선, 폴리라인, 폴리곤)
   if (element.shapeType && element.points && element.points.length >= 2) {
-    // 곡선 라우팅 커넥터: 2점 + 미닫힘일 때만 베지어. 그 외(폴리라인/폴리곤/직선)는 직선.
-    const isCurved = element.routing === 'curved' && !element.closed && element.points.length === 2
-    const buildPath = (pts) => isCurved ? connectorCurvePath(pts) : pointsToSvgPath(pts, element.closed)
-    const d = buildPath(element.points)
+    // 곡선 커넥터: ConnectorRouting이 변 수직 진출 기준으로 계산한 element.curve(제어점) 사용.
+    const curve = element.routing === 'curved' && !element.closed && element.points.length === 2
+      ? element.curve : null
+    const isCurved = !!curve
+    const d = isCurved ? connectorCurvePath(element.points, curve) : pointsToSvgPath(element.points, element.closed)
     const sw = parseFloat(styles.strokeWidth || '2')
     const strokeColor = styles.stroke || '#1e293b'
     const startArrow = element.startArrow || 'none'
@@ -377,23 +378,27 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
       const insetStart = endInset(startArrow)
       const insetEnd = endInset(endArrow)
       if ((insetStart <= 0 && insetEnd <= 0) || !pts || pts.length < 2) return d
-      const out = pts.map(p => ({ ...p }))
-      const pull = (ai, bi, inset) => {
-        if (inset <= 0) return
-        const a = out[ai], b = out[bi]
-        const len = Math.hypot(b.x - a.x, b.y - a.y) || 1
+      const moveToward = (p, q, inset) => {
+        const len = Math.hypot(q.x - p.x, q.y - p.y) || 1
         const t = Math.min(inset, len * 0.45) / len
-        out[ai] = { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t }
+        return { x: p.x + (q.x - p.x) * t, y: p.y + (q.y - p.y) * t }
       }
-      pull(0, 1, insetStart)
-      pull(out.length - 1, out.length - 2, insetEnd)
-      // 곡선은 당겨진 끝점으로 베지어 재계산(접선 방향으로 살짝 짧아짐)
-      return buildPath(out)
+      if (isCurved) {
+        // 곡선: 끝점을 접선(제어점) 방향으로 당김 — 제어점은 유지
+        const s = insetStart > 0 ? moveToward(pts[0], curve.c1, insetStart) : pts[0]
+        const e = insetEnd > 0 ? moveToward(pts[1], curve.c2, insetEnd) : pts[1]
+        return connectorCurvePath([s, e], curve)
+      }
+      const out = pts.map(p => ({ ...p }))
+      out[0] = insetStart > 0 ? moveToward(out[0], out[1], insetStart) : out[0]
+      const li = out.length - 1
+      out[li] = insetEnd > 0 ? moveToward(out[li], out[li - 1], insetEnd) : out[li]
+      return pointsToSvgPath(out, element.closed)
     })()
 
     // 라벨(content) — 커넥터 전용. 직선/곡선 중점에 칩으로 표시(클릭은 통과).
     const labelText = element.shapeType === 'connector' ? (element.content || '').trim() : ''
-    const labelMid = labelText ? connectorLabelMid(element.points, isCurved) : null
+    const labelMid = labelText ? connectorLabelMid(element.points, curve) : null
     return (
       <div style={{ ...baseStyle, overflow: 'visible' }} onMouseDown={handleMouseDown} onClick={handleClick} onDoubleClick={handleDoubleClick}>
         <svg
