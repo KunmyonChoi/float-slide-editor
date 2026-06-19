@@ -285,6 +285,10 @@ export const useFlatStore = create((set, get) => ({
   panelCollapsed: false,
   /** 좌측 슬라이드 목록 패널 접힘 여부 (기본 접힘) */
   slideListCollapsed: true,
+  /** 현재 페이지 발표자 노트(페이지별 저장) */
+  pageNotes: '',
+  /** 발표자 노트 영역 접힘 여부 (기본 접힘) */
+  notesCollapsed: true,
   /** 페이지 삭제 실행취소 토스트 상태: null | { seq, index } */
   pageDeleteNotice: null,
   /** 디버그 모드 — 품질/변환검증/Phase 라벨/html·split 뷰 등 진단 UI 노출 */
@@ -304,6 +308,12 @@ export const useFlatStore = create((set, get) => ({
   setFloatingPos(pos) { set({ floatingPos: pos }) },
   togglePanelCollapsed() { set(s => ({ panelCollapsed: !s.panelCollapsed })) },
   toggleSlideListCollapsed() { set(s => ({ slideListCollapsed: !s.slideListCollapsed })) },
+  toggleNotesCollapsed() { set(s => ({ notesCollapsed: !s.notesCollapsed })) },
+  /** 현재 페이지 발표자 노트 설정 (캐시에도 즉시 반영) */
+  setPageNotes(text) {
+    if (_currentPageKey && _pageCache[_currentPageKey]) _pageCache[_currentPageKey].notes = text
+    set({ pageNotes: text })
+  },
 
   /**
    * 슬라이드 목록용 페이지 열거 — 읽기 전용(부작용 없음, _saveCurrentPage 호출 금지).
@@ -377,7 +387,10 @@ export const useFlatStore = create((set, get) => ({
       _pendingEditCommit()
       _pendingEditCommit = null
     }
-    if (!_currentPageKey || get().flatElements.length === 0) return
+    if (!_currentPageKey) return
+    // 노트는 요소가 비어 있어도 기존 캐시 항목에 보존
+    if (_pageCache[_currentPageKey]) _pageCache[_currentPageKey].notes = get().pageNotes
+    if (get().flatElements.length === 0) return
     const existed = _pageCache[_currentPageKey]
     // HTML 소스 슬라이드 인덱스: 기존 항목이 있으면 그 값 유지(flat-only의 null 포함),
     // 없으면(첫 저장) 키에서 파생. 키는 첫 변환 시 슬라이드 인덱스를 인코딩.
@@ -389,6 +402,7 @@ export const useFlatStore = create((set, get) => ({
       fontImports: get().fontImports,
       history: _history.getState(),
       htmlSlideIndex,
+      notes: get().pageNotes,
     }
     get()._syncPageInfo()
   },
@@ -408,6 +422,7 @@ export const useFlatStore = create((set, get) => ({
       canUndo: _history.canUndo,
       canRedo: _history.canRedo,
       currentPageHtmlBacked: cached.htmlSlideIndex != null,
+      pageNotes: cached.notes || '',
     })
     get()._syncPageInfo()
     return true
@@ -438,6 +453,7 @@ export const useFlatStore = create((set, get) => ({
       canUndo: false,
       canRedo: false,
       currentPageHtmlBacked: true, // iframe에서 갓 추출 = HTML 백킹
+      pageNotes: '', // 갓 추출 = 노트 없음
     })
     get()._syncPageInfo()
 
@@ -489,6 +505,7 @@ export const useFlatStore = create((set, get) => ({
       editingFlatId: null,
       canUndo: false,
       canRedo: false,
+      pageNotes: '',
     })
     get()._syncPageInfo()
   },
@@ -612,6 +629,7 @@ export const useFlatStore = create((set, get) => ({
         editingFlatId: null,
         canUndo: false,
         canRedo: false,
+        pageNotes: '',
       })
     }, 150)
   },
@@ -1761,6 +1779,7 @@ export const useFlatStore = create((set, get) => ({
         canvasSize: cached.canvasSize,
         fontImports: cached.fontImports,
         htmlSlideIndex: cached.htmlSlideIndex,
+        notes: cached.notes || '',
       }
     }
     // 현재 페이지가 캐시에 없는 경우 (단일 페이지)
@@ -1770,6 +1789,7 @@ export const useFlatStore = create((set, get) => ({
         canvasSize: get().canvasSize,
         fontImports: get().fontImports,
         htmlSlideIndex: get().currentPageHtmlBacked ? _currentPageKey : null,
+        notes: get().pageNotes || '',
       }
     }
     return { pages, currentPageKey: _currentPageKey }
@@ -1810,6 +1830,7 @@ export const useFlatStore = create((set, get) => ({
         canvasSize: _pageCache[key].canvasSize,
         fontImports: _pageCache[key].fontImports,
         htmlSlideIndex: _pageCache[key].htmlSlideIndex,
+        notes: _pageCache[key].notes || '',
       }
     }
 
@@ -1882,6 +1903,7 @@ export const useFlatStore = create((set, get) => ({
         fontImports: pagesData[key].fontImports || [],
         history: { stack: [], pointer: -1 },
         htmlSlideIndex: hsi,
+        notes: pagesData[key].notes || '',
       }
     }
 
@@ -1899,6 +1921,7 @@ export const useFlatStore = create((set, get) => ({
         canUndo: false,
         canRedo: false,
         currentPageHtmlBacked: page.htmlSlideIndex != null,
+        pageNotes: page.notes || '',
       })
     }
     // 페이지 카운트/인덱스 동기화 — 누락 시 PageBar가 로드 직후 전체 페이지 수를

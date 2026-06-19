@@ -8,6 +8,7 @@ import FlatPresenter from './components/FlatPresenter'
 import ComparePanel from './components/ComparePanel'
 import DebugElementsPanel from './components/DebugElementsPanel'
 import PageBar from './components/PageBar'
+import NotesPanel from './components/NotesPanel'
 import SlideDeleteToast from './components/SlideDeleteToast'
 import { UrlPromptHost } from './components/UrlPrompt'
 import { AiSettingsHost } from './components/AiSettingsModal'
@@ -82,6 +83,7 @@ export default function App() {
         {/* 통합 PropertyPanel — 도킹 시 flex row 마지막, 플로팅 시 fixed */}
         <PropertyPanel />
       </div>
+      <NotesPanel />
       <PageBar />
       <SlideDeleteToast />
       <UrlPromptHost />
