@@ -1,6 +1,7 @@
 /**
  * HtmlToTextRuns — 리치 HTML을 pptxgenjs 텍스트 런으로 변환
  */
+import { cssColorToHex as _cssColorToHex } from './CssColor'
 
 /**
  * HTML 문자열을 pptxgenjs text runs 배열로 변환
@@ -181,23 +182,10 @@ export function applyTextTransform(text, tt) {
 }
 
 /** CSS color → 6자리 hex (# 없이) */
+// hex/rgb(a)/oklch/oklab/named 모두 지원 — 공유 유틸(CssColor)에 위임.
+// (Tailwind v4 oklch 미지원 시 글자·테두리 색이 기본값으로 오변환됨)
 export function cssColorToHex(color) {
-  if (!color) return undefined
-  // 이미 hex
-  if (color.startsWith('#')) {
-    const hex = color.slice(1)
-    if (hex.length === 3) return hex.split('').map(c => c + c).join('')
-    if (hex.length === 6) return hex
-    if (hex.length === 8) return hex.slice(0, 6) // alpha 무시
-    return hex
-  }
-  // rgb/rgba
-  const m = color.match(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/)
-  if (m) {
-    return [m[1], m[2], m[3]].map(n => parseInt(n).toString(16).padStart(2, '0')).join('')
-  }
-  // 이름 색상 → 기본값
-  return undefined
+  return _cssColorToHex(color)
 }
 
 /** px 문자열 → pt 숫자 */

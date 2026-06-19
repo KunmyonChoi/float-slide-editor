@@ -3,6 +3,7 @@
  */
 import { htmlToTextRuns, cssColorToHex, applyTextTransform } from './HtmlToTextRuns'
 import { parseGradient } from './GradientParser'
+import { cssColorToRgba } from './CssColor'
 import { BlobStore } from './BlobStore'
 
 // px → inches (96 DPI 기준)
@@ -372,11 +373,32 @@ async function addShape(slide, el, pos) {
 
   const border = parseBorder(s)
   const shadow = parseShadow(s.boxShadow)
-  const hasGradient = s.backgroundImage && s.backgroundImage !== 'none' &&
-    parseGradient(s.backgroundImage).type !== 'none'
+  const bgImage = s.backgroundImage || 'none'
+  // 복잡 배경(radial/repeating/다층)은 단순 그라데이션 경로 대신 SVG→PNG 래스터화
+  const complexBg = isComplexBg(bgImage)
+  const hasGradient = !complexBg && bgImage !== 'none' &&
+    parseGradient(bgImage).type !== 'none'
   const solidFill = parseSolidFill(s)
 
-  if (!hasGradient && !solidFill && !border && !shadow) return
+  // 복잡 배경 → 그림으로 그려 도형 뒤(먼저)에 배치
+  if (complexBg) {
+    try {
+      const pngData = await cssBgToPng(bgImage, el.width, el.height, s.backgroundColor)
+      if (pngData) {
+        slide.addImage({
+          data: pngData,
+          x: pos.x, y: pos.y, w: pos.w, h: pos.h,
+          ...(pos.rotate ? { rotate: pos.rotate } : {}),
+        })
+      }
+    } catch { /* 실패 시 무시(테두리/부분채움은 아래 계속) */ }
+    // 테두리/부분채움이 없으면 그림만으로 충분
+    const sidePresent2 = (v) => v && v !== 'none' && !v.startsWith('0px')
+    const anyBorder = border || [s.borderTop, s.borderRight, s.borderBottom, s.borderLeft].some(sidePresent2)
+    if (!anyBorder && el.fillRatio == null) return
+  }
+
+  if (!complexBg && !hasGradient && !solidFill && !border && !shadow && el.fillRatio == null) return
 
   // 부분 테두리(일부 변만 있는 장식, 예: .flow-step::after 꺾인 화살표는
   // border-top+border-right + rotate(45deg))는 pptxgenjs 균일 테두리로 표현하면
@@ -438,6 +460,37 @@ async function addShape(slide, el, pos) {
   }
 
   slide.addShape('rect', shapeOpts)
+
+  // 부분 채우기(진행률/악센트) — 트랙 위에 N% 솔리드 사각형 (exporter.py _add_partial_fill 미러)
+  if (el.fillRatio != null) addPartialFill(slide, el, pos)
+}
+
+/** fillRatio/fillDir/fillColor → 네이티브 솔리드 사각형(부분 채움) */
+function addPartialFill(slide, el, pos) {
+  const ratio = Math.max(0, Math.min(1, Number(el.fillRatio) || 0))
+  if (ratio <= 0) return
+  const s = el.styles || {}
+  const dir = el.fillDir || 'left'
+  const rgba = cssColorToRgba(el.fillColor)
+  const color = (rgba && rgba.slice(0, 3).map(n => n.toString(16).padStart(2, '0')).join('')) || parseSolidFill(s)?.color || '4F46E5'
+  let { x, y, w, h } = pos
+  if (dir === 'left' || dir === 'right') {
+    const fw = w * ratio
+    x = dir === 'right' ? x + (w - fw) : x
+    w = fw
+  } else { // top/bottom
+    const fh = h * ratio
+    y = dir === 'bottom' ? y + (h - fh) : y
+    h = fh
+  }
+  const opts = { x, y, w, h, fill: { color } }
+  if (rgba && rgba[3] < 1) opts.transparency = Math.round((1 - rgba[3]) * 100)
+  if (pos.rotate) opts.rotate = pos.rotate
+  if (s.borderRadius && s.borderRadius !== '0px') {
+    const isCircle = s.borderRadius === '50%' || s.borderRadius === '9999px'
+    opts.rectRadius = isCircle ? Math.min(w, h) / 2 : Math.round(parseFloat(s.borderRadius) * PX_TO_INCH * 100) / 100
+  }
+  slide.addShape('rect', opts)
 }
 
 async function addSvg(slide, el, pos) {
@@ -495,6 +548,140 @@ function addVideoPlaceholder(slide, el, pos) {
     valign: 'middle', align: 'center',
     ...(pos.rotate ? { rotate: pos.rotate } : {}),
   })
+}
+
+// ── 복잡 CSS 배경 래스터화(radial/repeating/다층) — exporter.py 미러 ──
+// python-pptx 백엔드와 동일하게, 네이티브로 표현 못 하는 배경을 SVG→PNG로 그려 넣는다.
+
+/** 괄호 깊이를 고려한 top-level 콤마 분리 */
+function splitTop(s, sep = ',') {
+  const out = []
+  let depth = 0, cur = ''
+  for (const ch of s) {
+    if (ch === '(') depth++
+    else if (ch === ')') depth--
+    if (ch === sep && depth === 0) { out.push(cur); cur = '' }
+    else cur += ch
+  }
+  if (cur.trim()) out.push(cur)
+  return out.map(x => x.trim())
+}
+
+/** 네이티브 fill로 표현 못 하는 배경(radial/repeating/conic/다층)인지 */
+function isComplexBg(bg) {
+  if (!bg || bg === 'none') return false
+  if (bg.includes('radial-gradient') || bg.includes('repeating-') || bg.includes('conic-gradient')) return true
+  return splitTop(bg).length >= 2
+}
+
+function maxPx(items) {
+  const pxs = (items.join(' ').match(/([\d.]+)px/g) || []).map(x => parseFloat(x))
+  return pxs.length ? Math.max(...pxs) : 0
+}
+
+/** ['color [pos]', ...] → [[rgba, frac]] (px는 lengthPx 기준 비율) */
+function parseRasterStops(items, lengthPx) {
+  const stops = []
+  for (const a of items) {
+    const m = a.match(/\s*((?:rgba?|oklch|oklab|hsla?)\([^)]*\)|#[0-9a-fA-F]+|[a-zA-Z]+)\s*(.*)$/)
+    if (!m) continue
+    const rgba = cssColorToRgba(m[1])
+    if (!rgba) continue
+    const positions = m[2].trim() ? m[2].trim().split(/\s+/) : [null]
+    for (const pos of positions) {
+      let frac = null
+      if (pos) {
+        if (pos.endsWith('%')) frac = parseFloat(pos) / 100
+        else if (pos.endsWith('px')) frac = lengthPx ? parseFloat(pos) / lengthPx : 0
+        else { const f = parseFloat(pos); frac = Number.isNaN(f) ? null : f }
+      }
+      stops.push([rgba, frac])
+    }
+  }
+  const n = stops.length
+  stops.forEach((st, i) => {
+    if (st[1] === null) st[1] = i === 0 ? 0 : (i === n - 1 ? 1 : i / (n - 1))
+  })
+  let last = 0
+  for (const st of stops) { st[1] = Math.max(0, Math.min(1, Math.max(st[1], last))); last = st[1] }
+  return stops
+}
+
+function svgStopsXml(stops) {
+  return stops.map(([rgba, frac]) =>
+    `<stop offset="${frac.toFixed(4)}" stop-color="rgb(${rgba[0]},${rgba[1]},${rgba[2]})" stop-opacity="${rgba[3].toFixed(3)}"/>`
+  ).join('')
+}
+
+/** CSS 그라데이션 레이어 1개 → { defs, rect } | null */
+function layerToSvg(layer, idx, w, h) {
+  const m = layer.match(/(repeating-)?(linear|radial)-gradient\(([\s\S]*)\)\s*$/)
+  if (!m) return null
+  const repeating = !!m[1], kind = m[2], inner = m[3]
+  const parts = splitTop(inner)
+  if (!parts.length) return null
+  const gid = `g${idx}`
+  const head = parts[0].trim()
+  const hasDir = /^(to\s|-?[\d.]+deg|circle|ellipse|closest|farthest|at\s)/i.test(head)
+  const stopItems = hasDir ? parts.slice(1) : parts
+  const spread = repeating ? ' spreadMethod="repeat"' : ''
+  let defs
+  if (kind === 'linear') {
+    let ang = 180
+    const md = head.match(/(-?[\d.]+)deg/)
+    if (md) ang = parseFloat(md[1])
+    else if (head.includes('to right')) ang = 90
+    else if (head.includes('to left')) ang = 270
+    else if (head.includes('to top')) ang = 0
+    const rad = ang * Math.PI / 180
+    const dx = Math.sin(rad), dy = -Math.cos(rad)
+    const cx = w / 2, cy = h / 2
+    const extent = Math.abs(dx) * w + Math.abs(dy) * h
+    let x1, y1, x2, y2, stops
+    if (repeating) {
+      const period = maxPx(stopItems) || extent
+      stops = parseRasterStops(stopItems, period)
+      x1 = cx; y1 = cy; x2 = cx + dx * period; y2 = cy + dy * period
+    } else {
+      stops = parseRasterStops(stopItems, extent)
+      x1 = cx - dx * extent / 2; y1 = cy - dy * extent / 2
+      x2 = cx + dx * extent / 2; y2 = cy + dy * extent / 2
+    }
+    if (stops.length < 2) return null
+    defs = `<linearGradient id="${gid}" gradientUnits="userSpaceOnUse" x1="${x1.toFixed(2)}" y1="${y1.toFixed(2)}" x2="${x2.toFixed(2)}" y2="${y2.toFixed(2)}"${spread}>${svgStopsXml(stops)}</linearGradient>`
+  } else {
+    let cx = w / 2, cy = h / 2
+    const mpct = head.match(/at\s+([\d.]+)%\s+([\d.]+)%/)
+    const mpx = head.match(/at\s+([\d.]+)px\s+([\d.]+)px/)
+    if (mpct) { cx = parseFloat(mpct[1]) / 100 * w; cy = parseFloat(mpct[2]) / 100 * h }
+    else if (mpx) { cx = parseFloat(mpx[1]); cy = parseFloat(mpx[2]) }
+    const r = maxPx(stopItems) || (Math.hypot(w, h) * 0.6)
+    const stops = parseRasterStops(stopItems, r)
+    if (stops.length < 2) return null
+    defs = `<radialGradient id="${gid}" gradientUnits="userSpaceOnUse" cx="${cx.toFixed(2)}" cy="${cy.toFixed(2)}" r="${r.toFixed(2)}" fx="${cx.toFixed(2)}" fy="${cy.toFixed(2)}"${spread}>${svgStopsXml(stops)}</radialGradient>`
+  }
+  const rect = `<rect x="0" y="0" width="${w}" height="${h}" fill="url(#${gid})"/>`
+  return { defs, rect }
+}
+
+/** 복잡 CSS 배경 → PNG data URL. baseColor는 맨 아래 솔리드. 실패 시 null */
+async function cssBgToPng(bg, wPx, hPx, baseColor) {
+  const w = Math.max(1, Math.round(wPx)), h = Math.max(1, Math.round(hPx))
+  const layers = splitTop(bg)
+  let defs = '', rects = ''
+  if (baseColor) {
+    const b = cssColorToRgba(baseColor)
+    if (b && b[3] > 0) rects += `<rect x="0" y="0" width="${w}" height="${h}" fill="rgb(${b[0]},${b[1]},${b[2]})" fill-opacity="${b[3].toFixed(3)}"/>`
+  }
+  // CSS 첫 레이어 = 맨 위 → SVG는 나중에 그린 게 위 → 역순
+  layers.slice().reverse().forEach((layer, i) => {
+    const res = layerToSvg(layer, i, w, h)
+    if (res) { defs += res.defs; rects += res.rect }
+  })
+  if (!rects) return null
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><defs>${defs}</defs>${rects}</svg>`
+  const dataUrl = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg)
+  return svgToPngDataUrl(dataUrl, w, h)
 }
 
 // ── 헬퍼 ──
