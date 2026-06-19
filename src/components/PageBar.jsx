@@ -17,6 +17,7 @@ export default function PageBar() {
   const viewMode = useFlatStore(s => s.viewMode)
   const flatPageCount = useFlatStore(s => s.flatPageCount)
   const flatCurrentPage = useFlatStore(s => s.flatCurrentPage)
+  const notesCollapsed = useFlatStore(s => s.notesCollapsed)
 
   const isFlatMode = viewMode === 'flat' || viewMode === 'split'
 
@@ -137,7 +138,22 @@ export default function PageBar() {
     const canPrev = flatCurrentPage > 0
     const canNext = flatCurrentPage < flatPageCount - 1
     return (
-      <div style={barStyle}>
+      <div style={{ ...barStyle, position: 'relative' }}>
+        {/* 발표자 노트 토글 — 라인 좌측 끝 */}
+        <button
+          onClick={() => useFlatStore.getState().toggleNotesCollapsed()}
+          title={notesCollapsed ? '발표자 노트 열기' : '발표자 노트 닫기'}
+          style={{
+            position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)',
+            display: 'flex', alignItems: 'center', gap: 4, height: 24, padding: '0 8px',
+            background: notesCollapsed ? 'transparent' : 'rgba(99,102,241,0.18)',
+            border: '1px solid ' + (notesCollapsed ? 'rgba(255,255,255,0.08)' : 'rgba(99,102,241,0.35)'),
+            borderRadius: 6, cursor: 'pointer',
+            color: notesCollapsed ? '#94a3b8' : '#a5b4fc', fontSize: 12, lineHeight: 1,
+          }}
+        >
+          <NoteIcon /> 노트
+        </button>
         <button onClick={() => useFlatStore.getState().navigateFlatPage(-1)} disabled={!canPrev} style={btnStyle(canPrev)}>&#8249;</button>
         <span style={pageLabel}>{flatCurrentPage + 1} / {flatPageCount}</span>
         <button onClick={() => useFlatStore.getState().navigateFlatPage(1)} disabled={!canNext} style={btnStyle(canNext)}>&#8250;</button>
@@ -194,5 +210,16 @@ export default function PageBar() {
       <span style={pageLabel}>{currentPage + 1} / {totalPages}</span>
       <button onClick={handleRight} disabled={currentPage >= totalPages - 1} style={btnStyle(currentPage < totalPages - 1)}>&#8250;</button>
     </div>
+  )
+}
+
+function NoteIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+      strokeLinecap="round" strokeLinejoin="round" style={{ display: 'block' }}>
+      <path d="M4 4h16v12l-4 4H4z" />
+      <line x1="8" y1="9" x2="16" y2="9" />
+      <line x1="8" y1="13" x2="12" y2="13" />
+    </svg>
   )
 }
