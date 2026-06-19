@@ -73,6 +73,9 @@ export async function exportToPptx(pages, defaultCanvasSize, { editorVersion = '
         console.warn(`PPT export: element ${el.id} skipped:`, e.message)
       }
     }
+
+    // 발표자 노트 → 슬라이드 노트
+    if (page.notes) slide.addNotes(page.notes)
   }
 
   const filename = `slide-export.pptx`

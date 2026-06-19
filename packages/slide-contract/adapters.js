@@ -113,6 +113,7 @@ export function pagesToDeck(pages, defaultCanvasSize, fonts = []) {
       const p = pages[k] || {}
       const page = { elements: (p.elements || []).map(internalElementToPublic) }
       if (p.canvasSize) page.canvasSize = p.canvasSize
+      if (p.notes) page.notes = p.notes // 발표자 노트(슬라이드 노트로 export)
       return page
     }),
   })
@@ -129,6 +130,7 @@ export function deckToInternalPages(deck) {
       elements: (p.elements || []).map(publicElementToInternal),
       canvasSize: p.canvasSize || deck.canvasSize,
       fontImports: [], // 공개 계약은 폰트를 deck.fonts(디스크립터)로 운반
+      notes: p.notes || '',
     }
   })
   return { pages, defaultCanvasSize: deck.canvasSize, fonts: deck.fonts || [] }

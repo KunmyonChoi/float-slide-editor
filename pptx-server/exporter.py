@@ -325,6 +325,14 @@ def build_pptx(pages: dict, default_canvas_size: dict, fonts: list = None,
                 except Exception as e:
                     print(f'PPT export: group {gid} skipped: {e}')
 
+        # 발표자 노트 → 슬라이드 노트
+        notes_text = (pages.get(key) or {}).get('notes')
+        if notes_text:
+            try:
+                slide.notes_slide.notes_text_frame.text = notes_text
+            except Exception as e:
+                print(f'PPT export: notes for {key} skipped: {e}')
+
     # ── Embed fonts into PPTX package ──
     if font_records:
         try:

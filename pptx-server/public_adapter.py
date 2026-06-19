@@ -59,6 +59,7 @@ def public_deck_to_internal(deck: dict):
             'elements': [_public_el_to_internal(e) for e in (p.get('elements') or [])],
             'canvasSize': p.get('canvasSize') or default_cs,
             'fontImports': [],
+            'notes': p.get('notes') or '',
         }
     return pages, default_cs, deck.get('fonts') or []
 
