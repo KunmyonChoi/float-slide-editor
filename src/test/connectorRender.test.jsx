@@ -32,6 +32,24 @@ describe('커넥터 렌더 (점 기반 분기 재사용)', () => {
     expect(container.querySelector(`marker#me-C`)).toBeTruthy()
   })
 
+  it('컨테이너는 클릭 통과(pointer-events:none), 선만 히트(stroke)', () => {
+    const A = { id: 'A', type: 'shape', x: 0, y: 0, width: 100, height: 100, zIndex: 1, content: '', styles: {} }
+    const B = { id: 'B', type: 'shape', x: 300, y: 0, width: 100, height: 100, zIndex: 2, content: '', styles: {} }
+    const conn = {
+      id: 'C', type: 'shape', shapeType: 'connector', zIndex: 3,
+      connection: { start: { elementId: 'A' }, end: { elementId: 'B' } },
+      startArrow: 'none', endArrow: 'triangle', styles: { stroke: '#1e293b', strokeWidth: '2', fill: 'none' },
+    }
+    const rc = resolveConnectors([A, B, conn]).find(e => e.id === 'C')
+    const { container } = render(
+      <FlatElementRenderer element={rc} isSelected={true} isEditing={false} scale={1} />
+    )
+    const outer = container.firstChild
+    expect(outer.style.pointerEvents).toBe('none')          // 빈 bbox는 뒤 도형 클릭 통과
+    const hit = container.querySelector('path[stroke="transparent"]') // 투명 히트영역
+    expect(hit.getAttribute('pointer-events')).toBe('stroke') // 선 위에서만 선택
+  })
+
   it('곡선 라우팅 커넥터는 베지어(C) path + 라벨 칩으로 렌더된다', () => {
     const A = { id: 'A', type: 'shape', x: 0, y: 0, width: 100, height: 100, zIndex: 1, content: '', styles: {} }
     const B = { id: 'B', type: 'shape', x: 300, y: 0, width: 100, height: 100, zIndex: 2, content: '', styles: {} }

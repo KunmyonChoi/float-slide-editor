@@ -2,7 +2,7 @@ import { useRef, useEffect, useCallback, useState, useMemo } from 'react'
 import { useFlatStore, isBackgroundLayer } from '../store/flatStore'
 import { useEditorStore } from '../store/editorStore'
 import { isBackgroundElement } from '../core/SnapEngine'
-import { resolveConnectors, resolveConnectorEndpoints, resolveConnectorCurve, attachTargetAt } from '../core/ConnectorRouting'
+import { resolveConnectors, resolveConnectorEndpoints, resolveConnectorCurve, attachTargetAt, connectionPoints, nearestConnectionPoint } from '../core/ConnectorRouting'
 import { getRotatedAABB } from '../core/RotationUtils'
 import FlatElementRenderer from './FlatElementRenderer'
 import FlatSelectionOverlay, { FlatGroupOverlay } from './FlatSelectionOverlay'
@@ -364,7 +364,13 @@ export default function FlatCanvas() {
       const d = st.connectorDraft
       if (!d) return
       const targetId = attachTargetAt(pt.x, pt.y, st.flatElements, { excludeId: d.sourceId, canvasSize: st.canvasSize })
-      st.updateConnectorDraft(pt, targetId)
+      // 대상 도형의 연결점에 가까우면 고정(스냅), 아니면 몸체=플로팅
+      let targetAnchor = null
+      if (targetId) {
+        const tEl = st.flatElements.find(e => e.id === targetId)
+        if (tEl) targetAnchor = nearestConnectionPoint(pt.x, pt.y, tEl, CONNECT_DOT_OUT + 4)
+      }
+      st.updateConnectorDraft(pt, targetId, targetAnchor)
     }
     const onUp = () => useFlatStore.getState().commitConnectorDraft()
     const onKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); useFlatStore.getState().cancelConnectorDraft() } }
@@ -1113,25 +1119,25 @@ export default function FlatCanvas() {
             {diagramMode && !connectorDraft && hoverShapeId && (() => {
               const el = renderElements.find(e => e.id === hoverShapeId)
               if (!el) return null
-              const OUT = CONNECT_DOT_OUT // 도형 변에서 바깥으로 띄우는 거리
-              const dots = [
-                { x: el.x + el.width / 2, y: el.y - OUT },
-                { x: el.x + el.width + OUT, y: el.y + el.height / 2 },
-                { x: el.x + el.width / 2, y: el.y + el.height + OUT },
-                { x: el.x - OUT, y: el.y + el.height / 2 },
-              ]
-              const center = { x: el.x + el.width / 2, y: el.y + el.height / 2 }
-              const R = 7 // 점 반지름(잡기 쉽게)
+              const OUT = CONNECT_DOT_OUT // 변에서 바깥으로 띄워 리사이즈 핸들과 구분
+              const R = 6 // 점 반지름(잡기 쉽게)
+              // 8개 연결점(4변+4모서리) — 표시는 바깥으로 띄우되 부착은 fx/fy 고정점
+              const pts = connectionPoints(el).map(p => {
+                const ox = p.fx === 0 ? -1 : p.fx === 1 ? 1 : 0
+                const oy = p.fy === 0 ? -1 : p.fy === 1 ? 1 : 0
+                const m = Math.hypot(ox, oy) || 1
+                return { fx: p.fx, fy: p.fy, ax: p.x, ay: p.y, dx: p.x + (ox / m) * OUT, dy: p.y + (oy / m) * OUT }
+              })
               return (
                 <div data-export-ignore="true">
                   <div style={{ position: 'absolute', left: el.x, top: el.y, width: el.width, height: el.height,
                     border: '1px dashed rgba(16,185,129,0.8)', borderRadius: 4, pointerEvents: 'none', zIndex: 9998 }} />
-                  {dots.map((p, i) => (
+                  {pts.map((p, i) => (
                     <div key={i}
-                      title="드래그해서 다른 도형에 연결"
+                      title="드래그해서 다른 도형에 연결 (이 지점에 고정)"
                       onMouseDown={(e) => { e.stopPropagation(); e.preventDefault()
-                        useFlatStore.getState().beginConnectorFrom(el.id, center) }}
-                      style={{ position: 'absolute', left: p.x - R, top: p.y - R, width: R * 2, height: R * 2, borderRadius: '50%',
+                        useFlatStore.getState().beginConnectorFrom(el.id, { x: p.ax, y: p.ay }, { fx: p.fx, fy: p.fy }) }}
+                      style={{ position: 'absolute', left: p.dx - R, top: p.dy - R, width: R * 2, height: R * 2, borderRadius: '50%',
                         background: '#10b981', border: '2px solid #fff', boxShadow: '0 0 0 1px rgba(16,185,129,0.5)',
                         cursor: 'crosshair', zIndex: 10001 }} />
                   ))}
@@ -1142,9 +1148,12 @@ export default function FlatCanvas() {
             {connectorDraft && (() => {
               const byId = {}
               for (const e of flatElements) byId[e.id] = e
+              const sa = connectorDraft.startAnchor, ta = connectorDraft.targetAnchor
               const conn = {
-                start: { elementId: connectorDraft.sourceId },
-                end: connectorDraft.targetId ? { elementId: connectorDraft.targetId } : { point: connectorDraft.curPt },
+                start: sa ? { elementId: connectorDraft.sourceId, fx: sa.fx, fy: sa.fy } : { elementId: connectorDraft.sourceId },
+                end: connectorDraft.targetId
+                  ? (ta ? { elementId: connectorDraft.targetId, fx: ta.fx, fy: ta.fy } : { elementId: connectorDraft.targetId })
+                  : { point: connectorDraft.curPt },
               }
               const eps = resolveConnectorEndpoints(conn, byId)
               if (!eps) return null
@@ -1156,13 +1165,20 @@ export default function FlatCanvas() {
                 ? `M ${cv.start.x} ${cv.start.y} C ${cv.c1.x} ${cv.c1.y} ${cv.c2.x} ${cv.c2.y} ${cv.end.x} ${cv.end.y}`
                 : `M ${eps.start.x} ${eps.start.y} L ${eps.end.x} ${eps.end.y}`
               const endPt = cv ? cv.end : eps.end
+              // 대상 도형 연결점 표시(스냅된 점은 강조)
+              const tgtPts = tgt ? connectionPoints(tgt) : []
               return (
                 <div data-export-ignore="true">
                   {tgt && <div style={{ position: 'absolute', left: tgt.x, top: tgt.y, width: tgt.width, height: tgt.height,
                     border: '2px solid #6366f1', borderRadius: 4, pointerEvents: 'none', zIndex: 9998 }} />}
                   <svg style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', overflow: 'visible', pointerEvents: 'none', zIndex: 9999 }}>
                     <path d={draftD} stroke="#6366f1" strokeWidth="2" strokeDasharray="5 4" strokeLinecap="round" fill="none" />
-                    <circle cx={endPt.x} cy={endPt.y} r="4" fill="#6366f1" stroke="#fff" strokeWidth="1.5" />
+                    {tgtPts.map((p, i) => {
+                      const on = ta && ta.fx === p.fx && ta.fy === p.fy
+                      return <circle key={i} cx={p.x} cy={p.y} r={on ? 6 : 3.5}
+                        fill={on ? '#6366f1' : '#fff'} stroke="#6366f1" strokeWidth={on ? 2 : 1.5} />
+                    })}
+                    {!ta && <circle cx={endPt.x} cy={endPt.y} r="4" fill="#6366f1" stroke="#fff" strokeWidth="1.5" />}
                   </svg>
                 </div>
               )

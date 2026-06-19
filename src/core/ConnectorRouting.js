@@ -42,6 +42,65 @@ function endEl(end, byId) {
   return end && end.elementId != null ? (byId[end.elementId] || null) : null
 }
 
+// ── 고정 연결점(핸들) — draw.io식 fixed connection point ──
+// 정규화 좌표(fx,fy)로 도형 둘레의 특정 지점에 부착. 도형 이동/리사이즈해도 상대 위치 유지.
+// 8개: 4변 중점 + 4모서리.
+export const CONNECTION_ANCHORS = [
+  { fx: 0.5, fy: 0 }, { fx: 1, fy: 0.5 }, { fx: 0.5, fy: 1 }, { fx: 0, fy: 0.5 }, // N E S W
+  { fx: 0, fy: 0 }, { fx: 1, fy: 0 }, { fx: 1, fy: 1 }, { fx: 0, fy: 1 },          // NW NE SE SW
+]
+
+/** 끝점이 고정 연결점인지 (elementId + fx/fy 보유) */
+export function isFixedEnd(end) {
+  return !!(end && end.elementId != null && end.fx != null && end.fy != null)
+}
+
+/** 도형 + 정규화 좌표 → 절대 좌표 */
+export function anchorPoint(el, fx, fy) {
+  return { x: el.x + fx * el.width, y: el.y + fy * el.height }
+}
+
+/** 도형의 8개 연결점(절대 좌표 + fx/fy) */
+export function connectionPoints(el) {
+  return CONNECTION_ANCHORS.map(a => ({ fx: a.fx, fy: a.fy, ...anchorPoint(el, a.fx, a.fy) }))
+}
+
+/** (px,py)에서 threshold 내 가장 가까운 연결점 반환(없으면 null) */
+export function nearestConnectionPoint(px, py, el, threshold) {
+  let best = null, bestD = threshold
+  for (const p of connectionPoints(el)) {
+    const d = Math.hypot(px - p.x, py - p.y)
+    if (d <= bestD) { bestD = d; best = p }
+  }
+  return best
+}
+
+/** 고정 연결점(fx,fy)의 바깥 진출 법선. 모서리/내부는 상대편(dx,dy) 우세축으로. */
+function anchorNormal(fx, fy, dx, dy) {
+  const onLeft = fx === 0, onRight = fx === 1, onTop = fy === 0, onBottom = fy === 1
+  const corner = (onLeft || onRight) && (onTop || onBottom)
+  if (corner) {
+    return Math.abs(dx) >= Math.abs(dy)
+      ? { x: onRight ? 1 : -1, y: 0 }
+      : { x: 0, y: onBottom ? 1 : -1 }
+  }
+  if (onLeft) return { x: -1, y: 0 }
+  if (onRight) return { x: 1, y: 0 }
+  if (onTop) return { x: 0, y: -1 }
+  if (onBottom) return { x: 0, y: 1 }
+  return Math.abs(dx) >= Math.abs(dy)
+    ? { x: Math.sign(dx) || 1, y: 0 }
+    : { x: 0, y: Math.sign(dy) || 1 }
+}
+
+/** 끝점의 '참조점'(상대편이 향할 좌표) — 고정점/도형중심/자유점 */
+function endRefPoint(end, byId) {
+  const el = endEl(end, byId)
+  if (el && isFixedEnd(end)) return anchorPoint(el, end.fx, end.fy)
+  if (el) return rectCenter(el)
+  return end && end.point ? { x: end.point.x, y: end.point.y } : null
+}
+
 /**
  * 커넥터 양 끝의 절대 좌표를 계산.
  * - 둘 다 부착: 각 도형 둘레에서 상대 도형 중심을 향한 변 위의 점
@@ -56,27 +115,19 @@ export function resolveConnectorEndpoints(connection, byId) {
   const aEl = endEl(a, byId)
   const bEl = endEl(b, byId)
 
-  // 자유 끝점(부착 안 됨) 또는 참조 도형을 못 찾을 때의 폴백 좌표
-  const aFree = a.point || null
-  const bFree = b.point || null
+  // 상대편이 향할 참조점(고정점/중심/자유점)
+  const aRef = endRefPoint(a, byId)
+  const bRef = endRefPoint(b, byId)
 
-  let start, end
-  if (aEl && bEl) {
-    start = rectBorderPoint(aEl, rectCenter(bEl))
-    end = rectBorderPoint(bEl, rectCenter(aEl))
-  } else if (aEl && !bEl) {
-    if (!bFree) return null
-    start = rectBorderPoint(aEl, bFree)
-    end = { x: bFree.x, y: bFree.y }
-  } else if (!aEl && bEl) {
-    if (!aFree) return null
-    start = { x: aFree.x, y: aFree.y }
-    end = rectBorderPoint(bEl, aFree)
-  } else {
-    if (!aFree || !bFree) return null
-    start = { x: aFree.x, y: aFree.y }
-    end = { x: bFree.x, y: bFree.y }
+  // 각 끝의 위치: 고정점이면 그 점, 부착이면 상대 참조점을 향한 변 위 점, 자유면 그 점
+  const resolveEnd = (end, el, otherRef) => {
+    if (el && isFixedEnd(end)) return anchorPoint(el, end.fx, end.fy)
+    if (el) return otherRef ? rectBorderPoint(el, otherRef) : rectCenter(el)
+    return end && end.point ? { x: end.point.x, y: end.point.y } : null
   }
+  const start = resolveEnd(a, aEl, bRef)
+  const end = resolveEnd(b, bEl, aRef)
+  if (!start || !end) return null
   return { start, end }
 }
 
@@ -93,60 +144,64 @@ function _cubic(p0, c1, c2, p1, t) {
 }
 
 /**
- * 곡선 커넥터 기하 — draw.io 'curved' 식. 변(side) 기반 수직 진출/진입 + 대칭 제어점.
- * - 양끝이 도형이면: 상대 위치(분리 큰 축)로 마주보는 변 선택 → 그 변에 **수직**으로
- *   나가는 대칭 큐빅(정렬=직선, 오프셋=부드러운 대칭 S).
- * - 한쪽이 자유점이면: 끝점 사이 우세축으로 진출하는 근사 곡선(드래그 중 등).
+ * 한 끝점의 위치 + 바깥 진출 법선 계산.
+ * - 고정 연결점(fx/fy): 그 점 + 변 법선(모서리는 상대 우세축).
+ * - 플로팅(부착): 상대 참조점을 향한 우세축 변에 수직(변 위 점은 상대 cross좌표로 클램프).
+ * - 자유점: 상대 향한 우세축.
+ */
+function endpointGeom(end, el, otherRef) {
+  if (el && isFixedEnd(end)) {
+    const pos = anchorPoint(el, end.fx, end.fy)
+    const dx = (otherRef?.x ?? pos.x) - pos.x, dy = (otherRef?.y ?? pos.y) - pos.y
+    return { pos, normal: anchorNormal(end.fx, end.fy, dx, dy) }
+  }
+  if (el) {
+    const cx = el.x + el.width / 2, cy = el.y + el.height / 2
+    const ref = otherRef || { x: cx, y: cy }
+    const dx = ref.x - cx, dy = ref.y - cy
+    if (Math.abs(dx) >= Math.abs(dy)) {
+      const right = dx >= 0
+      return {
+        pos: { x: right ? el.x + el.width : el.x, y: _clamp(ref.y, el.y, el.y + el.height) },
+        normal: { x: right ? 1 : -1, y: 0 },
+      }
+    }
+    const down = dy >= 0
+    return {
+      pos: { x: _clamp(ref.x, el.x, el.x + el.width), y: down ? el.y + el.height : el.y },
+      normal: { x: 0, y: down ? 1 : -1 },
+    }
+  }
+  if (!end || !end.point) return null
+  const pos = { x: end.point.x, y: end.point.y }
+  const dx = (otherRef?.x ?? pos.x) - pos.x, dy = (otherRef?.y ?? pos.y) - pos.y
+  const normal = Math.abs(dx) >= Math.abs(dy)
+    ? { x: Math.sign(dx) || 1, y: 0 }
+    : { x: 0, y: Math.sign(dy) || 1 }
+  return { pos, normal }
+}
+
+/**
+ * 곡선 커넥터 기하 — draw.io 'curved' 식. 변(side) 수직 진출/진입 + 대칭 제어점.
+ * 끝점이 고정 연결점(fx/fy)이면 그 점에서, 플로팅이면 상대 향한 변에서 수직 진출.
  * @returns {{start,end,c1,c2} | null} 모두 절대 좌표
  */
 export function resolveConnectorCurve(connection, byId) {
   if (!connection || !connection.start || !connection.end) return null
-  const aEl = endEl(connection.start, byId)
-  const bEl = endEl(connection.end, byId)
-  if (aEl && bEl) {
-    const A = { x: aEl.x, y: aEl.y, w: aEl.width, h: aEl.height }
-    const B = { x: bEl.x, y: bEl.y, w: bEl.width, h: bEl.height }
-    const acx = A.x + A.w / 2, acy = A.y + A.h / 2
-    const bcx = B.x + B.w / 2, bcy = B.y + B.h / 2
-    const dx = bcx - acx, dy = bcy - acy
-    let start, end, nA, nB
-    if (Math.abs(dx) >= Math.abs(dy)) {
-      if (dx >= 0) { // B가 오른쪽 → A 동, B 서
-        start = { x: A.x + A.w, y: _clamp(bcy, A.y, A.y + A.h) }; nA = { x: 1, y: 0 }
-        end = { x: B.x, y: _clamp(acy, B.y, B.y + B.h) }; nB = { x: -1, y: 0 }
-      } else {
-        start = { x: A.x, y: _clamp(bcy, A.y, A.y + A.h) }; nA = { x: -1, y: 0 }
-        end = { x: B.x + B.w, y: _clamp(acy, B.y, B.y + B.h) }; nB = { x: 1, y: 0 }
-      }
-    } else {
-      if (dy >= 0) { // B가 아래 → A 남, B 북
-        start = { x: _clamp(bcx, A.x, A.x + A.w), y: A.y + A.h }; nA = { x: 0, y: 1 }
-        end = { x: _clamp(acx, B.x, B.x + B.w), y: B.y }; nB = { x: 0, y: -1 }
-      } else {
-        start = { x: _clamp(bcx, A.x, A.x + A.w), y: A.y }; nA = { x: 0, y: -1 }
-        end = { x: _clamp(acx, B.x, B.x + B.w), y: B.y + B.h }; nB = { x: 0, y: 1 }
-      }
-    }
-    const dist = Math.hypot(end.x - start.x, end.y - start.y)
-    const d = Math.max(30, Math.min(dist * 0.5, 200)) // 수직 진출 길이(대칭)
-    return {
-      start, end,
-      c1: { x: start.x + nA.x * d, y: start.y + nA.y * d },
-      c2: { x: end.x + nB.x * d, y: end.y + nB.y * d },
-    }
+  const a = connection.start, b = connection.end
+  const aEl = endEl(a, byId), bEl = endEl(b, byId)
+  const aRef = endRefPoint(a, byId), bRef = endRefPoint(b, byId)
+  const aG = endpointGeom(a, aEl, bRef)
+  const bG = endpointGeom(b, bEl, aRef)
+  if (!aG || !bG) return null
+  const start = aG.pos, end = bG.pos
+  const dist = Math.hypot(end.x - start.x, end.y - start.y)
+  const d = Math.max(30, Math.min(dist * 0.5, 200)) // 수직 진출 길이(대칭)
+  return {
+    start, end,
+    c1: { x: start.x + aG.normal.x * d, y: start.y + aG.normal.y * d },
+    c2: { x: end.x + bG.normal.x * d, y: end.y + bG.normal.y * d },
   }
-  // 자유 끝점 폴백 — 우세축으로 진출
-  const eps = resolveConnectorEndpoints(connection, byId)
-  if (!eps) return null
-  const { start, end } = eps
-  const dx = end.x - start.x, dy = end.y - start.y
-  const d = Math.max(20, Math.min(Math.hypot(dx, dy) * 0.4, 140))
-  if (Math.abs(dx) >= Math.abs(dy)) {
-    const s = Math.sign(dx) || 1
-    return { start, end, c1: { x: start.x + s * d, y: start.y }, c2: { x: end.x - s * d, y: end.y } }
-  }
-  const s = Math.sign(dy) || 1
-  return { start, end, c1: { x: start.x, y: start.y + s * d }, c2: { x: end.x, y: end.y - s * d } }
 }
 
 /**

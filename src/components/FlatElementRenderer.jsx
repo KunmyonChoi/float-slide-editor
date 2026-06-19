@@ -400,7 +400,9 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
     const labelText = element.shapeType === 'connector' ? (element.content || '').trim() : ''
     const labelMid = labelText ? connectorLabelMid(element.points, curve) : null
     return (
-      <div style={{ ...baseStyle, overflow: 'visible' }} onMouseDown={handleMouseDown} onClick={handleClick} onDoubleClick={handleDoubleClick}>
+      // 컨테이너는 클릭 통과(빈 bbox가 뒤 도형을 가리지 않게). 실제 히트는 선/면 path만 받는다.
+      // (path가 pointer-events:auto면 이벤트가 div로 버블되어 onClick/onMouseDown은 정상 동작)
+      <div style={{ ...baseStyle, overflow: 'visible', pointerEvents: 'none' }} onMouseDown={handleMouseDown} onClick={handleClick} onDoubleClick={handleDoubleClick}>
         <svg
           width={width} height={height}
           viewBox={`0 0 ${width} ${height}`}
@@ -426,8 +428,10 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
               </marker>
             )}
           </defs>
-          {/* 전체 길이(투명) — 히트영역 겸 마커(화살표) 캐리어: 끝점/방향 유지 */}
+          {/* 전체 길이(투명) — 히트영역 겸 마커(화살표) 캐리어: 끝점/방향 유지.
+              열린 선=stroke만, 닫힌 도형=면 포함(all) 클릭 가능(빈 bbox는 통과). */}
           <path d={d} stroke="transparent" strokeWidth={Math.max(sw, 10)} fill="none"
+            pointerEvents={element.closed ? 'all' : 'stroke'}
             markerStart={startArrow !== 'none' ? `url(#ms-${markerId})` : undefined}
             markerEnd={endArrow !== 'none' ? `url(#me-${markerId})` : undefined} />
           {/* 보이는 선 — 화살표 있는 끝은 짧게(겹침 방지) */}

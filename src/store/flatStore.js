@@ -663,28 +663,33 @@ export const useFlatStore = create((set, get) => ({
     return el.id
   },
 
-  /** 커넥터 생성 드래그 시작(소스 도형에서) */
-  beginConnectorFrom(sourceId, startPt) {
-    set({ connectorDraft: { sourceId, startPt, curPt: startPt, targetId: null } })
+  /** 커넥터 생성 드래그 시작(소스 도형에서). startAnchor={fx,fy} 있으면 고정 연결점에서 시작 */
+  beginConnectorFrom(sourceId, startPt, startAnchor = null) {
+    set({ connectorDraft: { sourceId, startPt, curPt: startPt, targetId: null, startAnchor, targetAnchor: null } })
   },
-  /** 드래그 중 갱신(커서 위치 + 부착 후보) */
-  updateConnectorDraft(curPt, targetId) {
+  /** 드래그 중 갱신(커서 위치 + 부착 후보 + 대상 연결점) */
+  updateConnectorDraft(curPt, targetId, targetAnchor = null) {
     const d = get().connectorDraft
     if (!d) return
-    set({ connectorDraft: { ...d, curPt, targetId: targetId ?? null } })
+    set({ connectorDraft: { ...d, curPt, targetId: targetId ?? null, targetAnchor: targetAnchor || null } })
   },
   cancelConnectorDraft() {
     if (get().connectorDraft) set({ connectorDraft: null })
   },
-  /** 드래그 종료 → 커넥터 생성(타겟 도형 또는 자유 끝점). 드래그 미미하면 취소. */
+  /** 드래그 종료 → 커넥터 생성. 연결점 드롭=고정, 몸체 드롭=플로팅, 빈 공간/자기자신=취소. */
   commitConnectorDraft() {
     const d = get().connectorDraft
     if (!d) return null
     set({ connectorDraft: null })
-    const { sourceId, targetId } = d
-    // 커넥터는 도형↔도형만. 다른 도형 위에 놓으면 연결, 빈 공간/자기 자신이면 취소.
+    const { sourceId, targetId, startAnchor, targetAnchor } = d
     if (targetId && targetId !== sourceId) {
-      return get().addConnector({ start: { elementId: sourceId }, end: { elementId: targetId } })
+      const start = startAnchor
+        ? { elementId: sourceId, fx: startAnchor.fx, fy: startAnchor.fy }
+        : { elementId: sourceId }
+      const end = targetAnchor
+        ? { elementId: targetId, fx: targetAnchor.fx, fy: targetAnchor.fy }
+        : { elementId: targetId }
+      return get().addConnector({ start, end })
     }
     return null
   },

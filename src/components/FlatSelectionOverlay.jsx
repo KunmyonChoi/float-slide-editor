@@ -3,7 +3,7 @@ import { useFlatStore } from '../store/flatStore'
 import { computeSnapGuides, computeResizeSnapGuides } from '../core/SnapEngine'
 import { computeRotationAngle, snapRotation, normalizeAngle, canvasDeltaToLocal } from '../core/RotationUtils'
 import { pointsToBBox, closestPointOnSegments } from '../core/PolyShapeUtils'
-import { attachTargetAt } from '../core/ConnectorRouting'
+import { attachTargetAt, nearestConnectionPoint } from '../core/ConnectorRouting'
 
 const HANDLE_SIZE = 8
 const ROTATE_HANDLE_OFFSET = 30
@@ -420,7 +420,15 @@ export default function FlatSelectionOverlay({ element, scale, otherRects, canva
                       const st = useFlatStore.getState()
                       const otherId = (which === 'start' ? orig.end : orig.start)?.elementId
                       const targetId = attachTargetAt(p.x, p.y, st.flatElements, { excludeId: otherId, canvasSize: st.canvasSize })
-                      const tempEnd = targetId ? { elementId: targetId } : { point: p }
+                      // 연결점에 가까우면 고정, 아니면 몸체=플로팅
+                      let tempEnd
+                      if (targetId) {
+                        const tEl = st.flatElements.find(el => el.id === targetId)
+                        const ap = tEl ? nearestConnectionPoint(p.x, p.y, tEl, 16) : null
+                        tempEnd = ap ? { elementId: targetId, fx: ap.fx, fy: ap.fy } : { elementId: targetId }
+                      } else {
+                        tempEnd = { point: p }
+                      }
                       const tempConn = which === 'start' ? { start: tempEnd, end: orig.end } : { start: orig.start, end: tempEnd }
                       previewFlatElement(element.id, { connection: tempConn })
                     }
@@ -431,7 +439,10 @@ export default function FlatSelectionOverlay({ element, scale, otherRects, canva
                       const curEnd = cur && (which === 'start' ? cur.connection.start : cur.connection.end)
                       // 원복 후, 도형에 부착(변경)된 경우만 히스토리 커밋. 빈 공간이면 취소(원복 유지).
                       previewFlatElement(element.id, { connection: orig })
-                      if (curEnd && curEnd.elementId && curEnd.elementId !== origMine?.elementId) {
+                      const changed = curEnd && curEnd.elementId && (
+                        curEnd.elementId !== origMine?.elementId ||
+                        curEnd.fx !== origMine?.fx || curEnd.fy !== origMine?.fy)
+                      if (changed) {
                         const finalConn = which === 'start' ? { start: curEnd, end: orig.end } : { start: orig.start, end: curEnd }
                         updateFlatElement(element.id, { connection: finalConn })
                       }
