@@ -2,7 +2,7 @@ import { useCallback, useState, useEffect } from 'react'
 import { useFlatStore, isBackgroundLayer } from '../store/flatStore'
 import { useEditorStore } from '../store/editorStore'
 import { BlobStore } from '../core/BlobStore'
-import { pointsToSvgPath } from '../core/PolyShapeUtils'
+import { pointsToSvgPath, connectorCurvePath, connectorLabelMid } from '../core/PolyShapeUtils'
 import { tableContainerStyle, cellStyle } from '../core/slideTable'
 
 /**
@@ -67,14 +67,14 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
   }, [element.id, isFullCanvasBg, setSelectedFlat, toggleSelectFlat])
 
   const handleDoubleClick = useCallback((e) => {
-    if (element.type === 'text' || element.type === 'table') {
-      e.stopPropagation()
+    if (element.type === 'text' || element.type === 'table' || element.shapeType === 'connector') {
+      e.stopPropagation() // 커넥터: 라벨 인라인 편집 진입
       setEditingFlat(element.id)
     } else if (element.type === 'image') {
       e.stopPropagation()
       useFlatStore.getState().setCroppingFlat(element.id)
     }
-  }, [element.id, element.type, setEditingFlat])
+  }, [element.id, element.type, element.shapeType, setEditingFlat])
 
   const { zIndex, isRich, merged, styles } = element
 
@@ -344,7 +344,10 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
 
   // 포인트 기반 shape (선, 폴리라인, 폴리곤)
   if (element.shapeType && element.points && element.points.length >= 2) {
-    const d = pointsToSvgPath(element.points, element.closed)
+    // 곡선 라우팅 커넥터: 2점 + 미닫힘일 때만 베지어. 그 외(폴리라인/폴리곤/직선)는 직선.
+    const isCurved = element.routing === 'curved' && !element.closed && element.points.length === 2
+    const buildPath = (pts) => isCurved ? connectorCurvePath(pts) : pointsToSvgPath(pts, element.closed)
+    const d = buildPath(element.points)
     const sw = parseFloat(styles.strokeWidth || '2')
     const strokeColor = styles.stroke || '#1e293b'
     const startArrow = element.startArrow || 'none'
@@ -384,10 +387,15 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
       }
       pull(0, 1, insetStart)
       pull(out.length - 1, out.length - 2, insetEnd)
-      return pointsToSvgPath(out, element.closed)
+      // 곡선은 당겨진 끝점으로 베지어 재계산(접선 방향으로 살짝 짧아짐)
+      return buildPath(out)
     })()
+
+    // 라벨(content) — 커넥터 전용. 직선/곡선 중점에 칩으로 표시(클릭은 통과).
+    const labelText = element.shapeType === 'connector' ? (element.content || '').trim() : ''
+    const labelMid = labelText ? connectorLabelMid(element.points, isCurved) : null
     return (
-      <div style={{ ...baseStyle, overflow: 'visible' }} onMouseDown={handleMouseDown} onClick={handleClick}>
+      <div style={{ ...baseStyle, overflow: 'visible' }} onMouseDown={handleMouseDown} onClick={handleClick} onDoubleClick={handleDoubleClick}>
         <svg
           width={width} height={height}
           viewBox={`0 0 ${width} ${height}`}
@@ -429,6 +437,15 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
             opacity={styles.opacity || 1}
           />
         </svg>
+        {labelMid && (
+          <div style={{
+            position: 'absolute', left: labelMid.x, top: labelMid.y, transform: 'translate(-50%, -50%)',
+            padding: '1px 6px', borderRadius: 5, pointerEvents: 'none', whiteSpace: 'nowrap',
+            background: 'rgba(255,255,255,0.92)', color: styles.stroke || '#1e293b',
+            fontSize: styles.fontSize || '13px', fontFamily: styles.fontFamily || 'sans-serif',
+            lineHeight: 1.3, boxShadow: '0 0 0 1px rgba(0,0,0,0.06)',
+          }}>{labelText}</div>
+        )}
       </div>
     )
   }

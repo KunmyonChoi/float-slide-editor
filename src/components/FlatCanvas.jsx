@@ -3,6 +3,7 @@ import { useFlatStore, isBackgroundLayer } from '../store/flatStore'
 import { useEditorStore } from '../store/editorStore'
 import { isBackgroundElement } from '../core/SnapEngine'
 import { resolveConnectors, resolveConnectorEndpoints, attachTargetAt } from '../core/ConnectorRouting'
+import { connectorCurvePath } from '../core/PolyShapeUtils'
 import { getRotatedAABB } from '../core/RotationUtils'
 import FlatElementRenderer from './FlatElementRenderer'
 import FlatSelectionOverlay, { FlatGroupOverlay } from './FlatSelectionOverlay'
@@ -10,6 +11,7 @@ import FlatAiBar from './FlatAiBar'
 import FlatImageAiBar from './FlatImageAiBar'
 import FlatSelectionAiBar from './FlatSelectionAiBar'
 import ConnectorInlineToolbar from './ConnectorInlineToolbar'
+import ConnectorLabelEditor from './ConnectorLabelEditor'
 import FlatInlineEditor from './FlatInlineEditor'
 import FlatTableEditor from './FlatTableEditor'
 import FlatContextMenu from './FlatContextMenu'
@@ -1148,23 +1150,32 @@ export default function FlatCanvas() {
               const eps = resolveConnectorEndpoints(conn, byId)
               if (!eps) return null
               const tgt = connectorDraft.targetId ? renderElements.find(e => e.id === connectorDraft.targetId) : null
+              // 기본 라우팅이 곡선이면 미리보기도 곡선으로
+              const draftCurved = useFlatStore.getState().connectorDefaults.routing === 'curved'
+              const draftD = draftCurved
+                ? connectorCurvePath([eps.start, eps.end])
+                : `M ${eps.start.x} ${eps.start.y} L ${eps.end.x} ${eps.end.y}`
               return (
                 <div data-export-ignore="true">
                   {tgt && <div style={{ position: 'absolute', left: tgt.x, top: tgt.y, width: tgt.width, height: tgt.height,
                     border: '2px solid #6366f1', borderRadius: 4, pointerEvents: 'none', zIndex: 9998 }} />}
                   <svg style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', overflow: 'visible', pointerEvents: 'none', zIndex: 9999 }}>
-                    <line x1={eps.start.x} y1={eps.start.y} x2={eps.end.x} y2={eps.end.y}
-                      stroke="#6366f1" strokeWidth="2" strokeDasharray="5 4" strokeLinecap="round" />
+                    <path d={draftD} stroke="#6366f1" strokeWidth="2" strokeDasharray="5 4" strokeLinecap="round" fill="none" />
                     <circle cx={eps.end.x} cy={eps.end.y} r="4" fill="#6366f1" stroke="#fff" strokeWidth="1.5" />
                   </svg>
                 </div>
               )
             })()}
-            {editingFlatId && flatElements.find(e => e.id === editingFlatId) && (
-              flatElements.find(e => e.id === editingFlatId).type === 'table'
-                ? <FlatTableEditor element={flatElements.find(e => e.id === editingFlatId)} />
-                : <FlatInlineEditor element={flatElements.find(e => e.id === editingFlatId)} />
-            )}
+            {editingFlatId && flatElements.find(e => e.id === editingFlatId) && (() => {
+              const ed = flatElements.find(e => e.id === editingFlatId)
+              if (ed.type === 'table') return <FlatTableEditor element={ed} />
+              // 커넥터: 라벨 인라인 입력(중점 배치 위해 유도 기하가 채워진 요소 사용)
+              if (ed.shapeType === 'connector') {
+                const resolved = renderElements.find(e => e.id === editingFlatId) || ed
+                return <ConnectorLabelEditor element={resolved} />
+              }
+              return <FlatInlineEditor element={ed} />
+            })()}
             {croppingFlatId && flatElements.find(e => e.id === croppingFlatId) && (
               <ImageCropOverlay
                 element={flatElements.find(e => e.id === croppingFlatId)}

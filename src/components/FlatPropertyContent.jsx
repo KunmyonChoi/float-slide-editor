@@ -1993,6 +1993,41 @@ function PolyShapeSection({ el, update, updateStyle, previewStyle }) {
         </div>
       )}
 
+      {/* 라우팅 + 라벨 (커넥터만) */}
+      {el.shapeType === 'connector' && (
+        <>
+          <div>
+            <p className={`${labelClass} mb-0.5`}>모양</p>
+            <div className="flex gap-1">
+              {[
+                { id: 'straight', label: '직선' },
+                { id: 'curved', label: '곡선' },
+              ].map(r => (
+                <button
+                  key={r.id}
+                  onClick={() => update({ routing: r.id })}
+                  className={`flex-1 text-xs py-1 rounded-md border transition-colors ${
+                    (el.routing || 'straight') === r.id
+                      ? 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30'
+                      : 'bg-white/5 text-slate-400 border-white/10 hover:bg-white/10'
+                  }`}
+                >{r.label}</button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <p className={`${labelClass} mb-0.5`}>라벨</p>
+            <input
+              type="text"
+              value={el.content || ''}
+              onChange={e => update({ content: e.target.value })}
+              placeholder="가운데 표시될 텍스트"
+              className="w-full text-xs px-2 py-1 rounded-md bg-white/5 text-slate-200 border border-white/10 focus:border-indigo-500/40 outline-none"
+            />
+          </div>
+        </>
+      )}
+
       {/* 채우기 (폴리곤만) */}
       <div>
         <div className="flex items-center justify-between mb-0.5">

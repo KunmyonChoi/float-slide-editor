@@ -129,6 +129,22 @@ describe('flatStore 커넥터', () => {
     expect(el2.styles.strokeDasharray).toBe('8 4')
   })
 
+  it('addConnector 기본 routing=straight, 변경 시 connectorDefaults에 기억되어 상속', () => {
+    const id = useFlatStore.getState().addConnector({ start: { elementId: 'A' }, end: { elementId: 'B' } })
+    expect(useFlatStore.getState().flatElements.find(e => e.id === id).routing).toBe('straight')
+    // 곡선으로 바꾸면 다음 커넥터가 곡선으로 생성됨
+    useFlatStore.getState().updateFlatElement(id, { routing: 'curved' })
+    expect(useFlatStore.getState().connectorDefaults.routing).toBe('curved')
+    const id2 = useFlatStore.getState().addConnector({ start: { elementId: 'A' }, end: { point: { x: 200, y: 50 } } })
+    expect(useFlatStore.getState().flatElements.find(e => e.id === id2).routing).toBe('curved')
+  })
+
+  it('커넥터 라벨(content) 편집 저장', () => {
+    const id = useFlatStore.getState().addConnector({ start: { elementId: 'A' }, end: { elementId: 'B' } })
+    useFlatStore.getState().updateFlatElement(id, { content: '의존' })
+    expect(useFlatStore.getState().flatElements.find(e => e.id === id).content).toBe('의존')
+  })
+
   it('일반 도형 업데이트는 connectorDefaults에 영향 없음', () => {
     const d0 = { ...useFlatStore.getState().connectorDefaults }
     useFlatStore.getState().updateFlatElement('A', { styles: { strokeDasharray: '2 2' } })

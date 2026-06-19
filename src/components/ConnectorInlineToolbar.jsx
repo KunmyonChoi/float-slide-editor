@@ -45,6 +45,7 @@ export default function ConnectorInlineToolbar({ element, scale, canvasRef }) {
   const startArrow = element.startArrow || 'none'
   const endArrow = element.endArrow || 'none'
   const dashed = !!(element.styles?.strokeDasharray)
+  const curved = element.routing === 'curved'
 
   const btn = {
     display: 'flex', alignItems: 'center', gap: 4,
@@ -76,6 +77,10 @@ export default function ConnectorInlineToolbar({ element, scale, canvasRef }) {
       <div style={{ width: 1, height: 18, background: 'rgba(255,255,255,0.1)' }} />
       <button style={btn} title={dashed ? '실선으로' : '점선으로'} onClick={() => update({ styles: { strokeDasharray: dashed ? '' : '6 4' } })}>
         {dashed ? '┈' : '──'}
+      </button>
+      <button style={curved ? { ...btn, background: 'rgba(99,102,241,0.25)', color: '#c7d2fe' } : btn}
+        title={curved ? '직선으로' : '곡선으로'} onClick={() => update({ routing: curved ? 'straight' : 'curved' })}>
+        {curved ? '⌒' : '⟋'}
       </button>
     </div>,
     document.body
