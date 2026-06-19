@@ -267,6 +267,7 @@ export const useFlatStore = create((set, get) => ({
   connectorDefaults: {
     startArrow: 'none', endArrow: 'triangle',
     stroke: '#1e293b', strokeWidth: '2', strokeDasharray: '',
+    routing: 'straight', // 'straight' | 'curved' — 마지막 사용 라우팅 기억
   },
   /** 커넥터 생성 드래그 진행 상태: null | { sourceId, startPt:{x,y}, curPt:{x,y}, targetId } */
   connectorDraft: null,
@@ -646,7 +647,7 @@ export const useFlatStore = create((set, get) => ({
       id: nextFlatId(), sourceId: null,
       type: 'shape', shapeType: 'connector',
       connection,
-      routing: 'straight',
+      routing: d.routing || 'straight',
       closed: false,
       content: '', isRich: false, merged: false,
       x: 0, y: 0, width: 0, height: 0, points: [{ x: 0, y: 0 }, { x: 0, y: 0 }],
@@ -1190,7 +1191,8 @@ export const useFlatStore = create((set, get) => ({
       const touchesArrow = ('startArrow' in changes) !== ('endArrow' in changes)
       const s = changes.styles || {}
       const touchesLine = 'stroke' in s || 'strokeWidth' in s || 'strokeDasharray' in s
-      if (touchesArrow || touchesLine) {
+      const touchesRouting = 'routing' in changes
+      if (touchesArrow || touchesLine || touchesRouting) {
         const c = updated[idx]
         get().setConnectorDefaults({
           startArrow: c.startArrow ?? 'none',
@@ -1198,6 +1200,7 @@ export const useFlatStore = create((set, get) => ({
           stroke: c.styles?.stroke ?? '#1e293b',
           strokeWidth: c.styles?.strokeWidth ?? '2',
           strokeDasharray: c.styles?.strokeDasharray ?? '',
+          routing: c.routing ?? 'straight',
         })
       }
     }

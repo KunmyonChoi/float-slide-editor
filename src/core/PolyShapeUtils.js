@@ -2,6 +2,61 @@
  * PolyShapeUtils — 포인트 기반 shape (선, 폴리라인, 폴리곤) 유틸
  */
 
+function cubicPoint(a, c1, c2, b, t) {
+  const u = 1 - t
+  const w0 = u * u * u, w1 = 3 * u * u * t, w2 = 3 * u * t * t, w3 = t * t * t
+  return {
+    x: w0 * a.x + w1 * c1.x + w2 * c2.x + w3 * b.x,
+    y: w0 * a.y + w1 * c1.y + w2 * c2.y + w3 * b.y,
+  }
+}
+
+/**
+ * 커넥터 곡선 SVG path d. curve({c1,c2})가 있으면 큐빅 베지어, 없으면 직선.
+ * 제어점은 ConnectorRouting이 변(side) 수직 진출 기준으로 계산해 넘겨준다(여기선 그리기만).
+ * @param {{x,y}[]} points 끝점 2개(bbox 상대)
+ * @param {{c1:{x,y},c2:{x,y}}} [curve] 제어점(bbox 상대)
+ */
+export function connectorCurvePath(points, curve) {
+  if (!points || points.length < 2) return pointsToSvgPath(points, false)
+  const a = points[0], b = points[points.length - 1]
+  if (!curve || !curve.c1 || !curve.c2) return pointsToSvgPath([a, b], false)
+  return `M ${a.x} ${a.y} C ${curve.c1.x} ${curve.c1.y} ${curve.c2.x} ${curve.c2.y} ${b.x} ${b.y}`
+}
+
+/**
+ * 커넥터의 시각적 중점 — 라벨 배치용.
+ * curve 없으면 현의 중점. 있으면 호 길이 기준 중점(균일 t는 한쪽으로 치우침).
+ * @param {{x,y}[]} points 끝점 2개
+ * @param {{c1,c2}} [curve] 제어점(있으면 곡선)
+ */
+export function connectorLabelMid(points, curve) {
+  if (!points || points.length < 2) return points?.[0] || { x: 0, y: 0 }
+  const a = points[0], b = points[points.length - 1]
+  const chordMid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }
+  if (!curve || !curve.c1 || !curve.c2) return chordMid
+  const { c1, c2 } = curve
+  const N = 24
+  const samples = [{ p: a, len: 0 }]
+  let prev = a, total = 0
+  for (let i = 1; i <= N; i++) {
+    const p = cubicPoint(a, c1, c2, b, i / N)
+    total += Math.hypot(p.x - prev.x, p.y - prev.y)
+    samples.push({ p, len: total })
+    prev = p
+  }
+  if (total < 1e-6) return chordMid
+  const half = total / 2
+  for (let i = 1; i < samples.length; i++) {
+    if (samples[i].len >= half) {
+      const s0 = samples[i - 1], s1 = samples[i]
+      const r = (half - s0.len) / ((s1.len - s0.len) || 1)
+      return { x: s0.p.x + (s1.p.x - s0.p.x) * r, y: s0.p.y + (s1.p.y - s0.p.y) * r }
+    }
+  }
+  return cubicPoint(a, c1, c2, b, 0.5)
+}
+
 /**
  * points 배열 → SVG path d 속성
  * @param {{ x: number, y: number }[]} points - bbox 내 상대 좌표

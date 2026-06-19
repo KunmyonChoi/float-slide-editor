@@ -2,7 +2,7 @@ import { useCallback, useState, useEffect } from 'react'
 import { useFlatStore, isBackgroundLayer } from '../store/flatStore'
 import { useEditorStore } from '../store/editorStore'
 import { BlobStore } from '../core/BlobStore'
-import { pointsToSvgPath } from '../core/PolyShapeUtils'
+import { pointsToSvgPath, connectorCurvePath, connectorLabelMid } from '../core/PolyShapeUtils'
 import { tableContainerStyle, cellStyle } from '../core/slideTable'
 
 /**
@@ -67,14 +67,14 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
   }, [element.id, isFullCanvasBg, setSelectedFlat, toggleSelectFlat])
 
   const handleDoubleClick = useCallback((e) => {
-    if (element.type === 'text' || element.type === 'table') {
-      e.stopPropagation()
+    if (element.type === 'text' || element.type === 'table' || element.shapeType === 'connector') {
+      e.stopPropagation() // 커넥터: 라벨 인라인 편집 진입
       setEditingFlat(element.id)
     } else if (element.type === 'image') {
       e.stopPropagation()
       useFlatStore.getState().setCroppingFlat(element.id)
     }
-  }, [element.id, element.type, setEditingFlat])
+  }, [element.id, element.type, element.shapeType, setEditingFlat])
 
   const { zIndex, isRich, merged, styles } = element
 
@@ -344,7 +344,11 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
 
   // 포인트 기반 shape (선, 폴리라인, 폴리곤)
   if (element.shapeType && element.points && element.points.length >= 2) {
-    const d = pointsToSvgPath(element.points, element.closed)
+    // 곡선 커넥터: ConnectorRouting이 변 수직 진출 기준으로 계산한 element.curve(제어점) 사용.
+    const curve = element.routing === 'curved' && !element.closed && element.points.length === 2
+      ? element.curve : null
+    const isCurved = !!curve
+    const d = isCurved ? connectorCurvePath(element.points, curve) : pointsToSvgPath(element.points, element.closed)
     const sw = parseFloat(styles.strokeWidth || '2')
     const strokeColor = styles.stroke || '#1e293b'
     const startArrow = element.startArrow || 'none'
@@ -374,20 +378,29 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
       const insetStart = endInset(startArrow)
       const insetEnd = endInset(endArrow)
       if ((insetStart <= 0 && insetEnd <= 0) || !pts || pts.length < 2) return d
-      const out = pts.map(p => ({ ...p }))
-      const pull = (ai, bi, inset) => {
-        if (inset <= 0) return
-        const a = out[ai], b = out[bi]
-        const len = Math.hypot(b.x - a.x, b.y - a.y) || 1
+      const moveToward = (p, q, inset) => {
+        const len = Math.hypot(q.x - p.x, q.y - p.y) || 1
         const t = Math.min(inset, len * 0.45) / len
-        out[ai] = { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t }
+        return { x: p.x + (q.x - p.x) * t, y: p.y + (q.y - p.y) * t }
       }
-      pull(0, 1, insetStart)
-      pull(out.length - 1, out.length - 2, insetEnd)
+      if (isCurved) {
+        // 곡선: 끝점을 접선(제어점) 방향으로 당김 — 제어점은 유지
+        const s = insetStart > 0 ? moveToward(pts[0], curve.c1, insetStart) : pts[0]
+        const e = insetEnd > 0 ? moveToward(pts[1], curve.c2, insetEnd) : pts[1]
+        return connectorCurvePath([s, e], curve)
+      }
+      const out = pts.map(p => ({ ...p }))
+      out[0] = insetStart > 0 ? moveToward(out[0], out[1], insetStart) : out[0]
+      const li = out.length - 1
+      out[li] = insetEnd > 0 ? moveToward(out[li], out[li - 1], insetEnd) : out[li]
       return pointsToSvgPath(out, element.closed)
     })()
+
+    // 라벨(content) — 커넥터 전용. 직선/곡선 중점에 칩으로 표시(클릭은 통과).
+    const labelText = element.shapeType === 'connector' ? (element.content || '').trim() : ''
+    const labelMid = labelText ? connectorLabelMid(element.points, curve) : null
     return (
-      <div style={{ ...baseStyle, overflow: 'visible' }} onMouseDown={handleMouseDown} onClick={handleClick}>
+      <div style={{ ...baseStyle, overflow: 'visible' }} onMouseDown={handleMouseDown} onClick={handleClick} onDoubleClick={handleDoubleClick}>
         <svg
           width={width} height={height}
           viewBox={`0 0 ${width} ${height}`}
@@ -429,6 +442,15 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
             opacity={styles.opacity || 1}
           />
         </svg>
+        {labelMid && (
+          <div style={{
+            position: 'absolute', left: labelMid.x, top: labelMid.y, transform: 'translate(-50%, -50%)',
+            padding: '1px 6px', borderRadius: 5, pointerEvents: 'none', whiteSpace: 'nowrap',
+            background: 'rgba(255,255,255,0.92)', color: styles.stroke || '#1e293b',
+            fontSize: styles.fontSize || '13px', fontFamily: styles.fontFamily || 'sans-serif',
+            lineHeight: 1.3, boxShadow: '0 0 0 1px rgba(0,0,0,0.06)',
+          }}>{labelText}</div>
+        )}
       </div>
     )
   }
