@@ -1,6 +1,66 @@
 """CSS gradient parser — mirrors GradientParser.js"""
+import math
 import re
 from typing import List, Tuple
+
+_NAMED_COLORS = {
+    'white': (255, 255, 255), 'black': (0, 0, 0), 'red': (255, 0, 0),
+    'green': (0, 128, 0), 'blue': (0, 0, 255), 'gray': (128, 128, 128),
+    'grey': (128, 128, 128), 'silver': (192, 192, 192), 'yellow': (255, 255, 0),
+    'orange': (255, 165, 0),
+}
+
+
+def _oklab_to_srgb(L: float, a: float, b: float) -> Tuple[int, int, int]:
+    """OKLab → sRGB(0~255)."""
+    l_ = L + 0.3963377774 * a + 0.2158037573 * b
+    m_ = L - 0.1055613458 * a - 0.0638541728 * b
+    s_ = L - 0.0894841775 * a - 1.2914855480 * b
+    l, m, s = l_ ** 3, m_ ** 3, s_ ** 3
+    r = 4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s
+    g = -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s
+    bl = -0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s
+
+    def enc(x: float) -> int:
+        x = max(0.0, min(1.0, x))
+        x = 1.055 * (x ** (1 / 2.4)) - 0.055 if x > 0.0031308 else 12.92 * x
+        return max(0, min(255, round(x * 255)))
+
+    return enc(r), enc(g), enc(bl)
+
+
+def _parse_ok(color: str):
+    """oklch()/oklab() → (r,g,b,alpha) | None. Tailwind v4 등 modern 색공간."""
+    m = re.match(r'(oklch|oklab)\(\s*([^)]+)\)', color, re.I)
+    if not m:
+        return None
+    func = m.group(1).lower()
+    body, _, alpha_s = m.group(2).partition('/')
+    toks = body.replace(',', ' ').split()
+    if len(toks) < 3:
+        return None
+
+    def num(t):  # %는 비율(0..1), deg/단위 제거
+        t = t.strip().lower()
+        if t.endswith('%'):
+            return float(t[:-1]) / 100.0
+        return float(re.sub(r'[a-z]+$', '', t))
+
+    try:
+        L = num(toks[0])
+        if func == 'oklch':
+            C = num(toks[1])
+            H = num(toks[2])
+            a = C * math.cos(math.radians(H))
+            b = C * math.sin(math.radians(H))
+        else:
+            a = num(toks[1])
+            b = num(toks[2])
+        r, g, bl = _oklab_to_srgb(L, a, b)
+        alpha = num(alpha_s) if alpha_s.strip() else 1.0
+        return r, g, bl, alpha
+    except (ValueError, IndexError):
+        return None
 
 
 def parse_gradient(css: str) -> dict:
@@ -122,6 +182,17 @@ def css_color_to_rgba(color: str) -> Tuple[int, int, int, float] | None:
     m = re.match(r'rgb\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)', color)
     if m:
         return int(m.group(1)), int(m.group(2)), int(m.group(3)), 1.0
+    # OKLCH/OKLab (Tailwind v4 등 modern 색공간) — 미지원 시 색이 기본값으로 잘못 변환됨
+    if color[:4].lower() in ('oklc', 'okla'):
+        ok = _parse_ok(color)
+        if ok:
+            return ok
+    low = color.lower()
+    if low == 'transparent':
+        return 0, 0, 0, 0.0
+    if low in _NAMED_COLORS:
+        r, g, b = _NAMED_COLORS[low]
+        return r, g, b, 1.0
     return None
 
 
