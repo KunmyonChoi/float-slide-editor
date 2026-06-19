@@ -18,8 +18,21 @@ PX_TO_EMU = 914400 / 96  # 9525
 
 
 def build_pptx(pages: dict, default_canvas_size: dict, fonts: list = None,
-               embed_fonts: bool = True) -> bytes:
+               embed_fonts: bool = True, editor_version: str = '', converter_version: str = '') -> bytes:
     prs = Presentation()
+
+    # 파일 메타정보(코어 속성)에 에디터/변환기 버전 기록 — PowerPoint 파일 속성에서 확인 가능
+    try:
+        import pptx as _pptx_lib
+        cp = prs.core_properties
+        cp.author = 'Genitor'
+        cp.last_modified_by = f'Genitor editor {editor_version}'.strip()
+        cp.comments = (f'editor={editor_version or "unknown"}; '
+                       f'converter=pptx-server {converter_version or "unknown"} '
+                       f'(python-pptx {_pptx_lib.__version__})')
+        cp.category = 'Genitor'
+    except Exception as e:
+        print(f'core_properties set failed: {e}')
 
     first_page = next(iter(pages.values()), None)
     cs = (first_page or {}).get('canvasSize', default_canvas_size) or default_canvas_size

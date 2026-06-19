@@ -138,7 +138,7 @@ function _cssProp(css, prop) {
   return m ? m[1].trim() : null
 }
 
-export async function exportViaPython(pages, defaultCanvasSize, { embedFonts = true } = {}) {
+export async function exportViaPython(pages, defaultCanvasSize, { embedFonts = true, editorVersion = '' } = {}) {
   // idb 미디어(영상 등)를 data URL로 해석 — 서버는 idb를 못 읽으므로 먼저 변환
   pages = await _resolveIdbMedia(pages)
   // 임베딩 OFF면 폰트를 수집/전송하지 않음 → 서버가 다운로드·임베딩을 건너뛰고
@@ -150,7 +150,7 @@ export async function exportViaPython(pages, defaultCanvasSize, { embedFonts = t
   const res = await fetch(`${getBackendBase()}/api/export/pptx`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ deck, embedFonts }),
+    body: JSON.stringify({ deck, embedFonts, editorVersion }),
   })
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }))

@@ -44,6 +44,7 @@ async def export_pptx(request: Request):
     try:
         data = await request.json()
         embed_fonts = data.get("embedFonts", True)
+        editor_version = data.get("editorVersion", "")
         # 입력 형태 라우팅: 공개 SlideDeck(envelope {deck} 또는 raw) vs legacy internal payload
         if is_public_deck(data):
             deck = data["deck"] if isinstance(data.get("deck"), dict) else data
@@ -52,7 +53,8 @@ async def export_pptx(request: Request):
             pages = data.get("pages", {})
             default_cs = data.get("defaultCanvasSize", {"w": 1280, "h": 720})
             fonts = data.get("fonts", [])
-        pptx_bytes = build_pptx(pages, default_cs, fonts=fonts, embed_fonts=embed_fonts)
+        pptx_bytes = build_pptx(pages, default_cs, fonts=fonts, embed_fonts=embed_fonts,
+                                editor_version=editor_version, converter_version=BUILD_VERSION)
         return Response(
             content=pptx_bytes,
             media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",

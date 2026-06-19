@@ -6,6 +6,7 @@ import {
   checkBackend, exportViaPython, dockerRunCommand,
   getBackendBase, setBackendBase, PPTX_DOCKER_IMAGE, getBackendBuild,
 } from '../core/PptxBackendClient'
+import { APP_VERSION } from '../appVersion'
 
 const EMBED_PREF_KEY = 'ppt-embed-fonts'
 
@@ -91,12 +92,12 @@ export default function PptExportButton() {
           `%c[PPT Export] python-pptx 엔진 사용 — 폰트 임베딩 ${embed ? 'ON' : 'OFF'}`,
           'color:#22c55e;font-weight:bold'
         )
-        await exportViaPython(pages, canvasSize, { embedFonts: embed })
+        await exportViaPython(pages, canvasSize, { embedFonts: embed, editorVersion: APP_VERSION })
       } else {
         setStage('브라우저에서 생성 중… (pptxgenjs)')
         console.log('%c[PPT Export] pptxgenjs 엔진 사용 (fallback)', 'color:#f59e0b;font-weight:bold')
         const { exportToPptx } = await import('../core/PptExporter.js')
-        await exportToPptx(pages, canvasSize)
+        await exportToPptx(pages, canvasSize, { editorVersion: APP_VERSION })
       }
     } catch (err) {
       console.error('PPT 내보내기 실패:', err)

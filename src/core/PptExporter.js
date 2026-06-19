@@ -29,9 +29,14 @@ async function contentToDataUrl(content) {
  * @param {Object} pages - { [pageKey]: { elements, canvasSize, fontImports } }
  * @param {Object} defaultCanvasSize - 기본 캔버스 크기
  */
-export async function exportToPptx(pages, defaultCanvasSize) {
+export async function exportToPptx(pages, defaultCanvasSize, { editorVersion = '' } = {}) {
   const PptxGenJS = (await import('pptxgenjs')).default
   const pptx = new PptxGenJS()
+
+  // 파일 메타정보에 에디터/변환기 버전 기록 (변환기=pptxgenjs 폴백)
+  pptx.author = 'Genitor'
+  pptx.company = 'Genitor'
+  pptx.subject = `editor=${editorVersion || 'unknown'}; converter=pptxgenjs`
 
   // 슬라이드 크기 설정 (첫 페이지의 canvasSize 기준)
   const firstPage = Object.values(pages)[0]
