@@ -17,6 +17,16 @@ PX_TO_INCH = 1 / 96
 PX_TO_EMU = 914400 / 96  # 9525
 
 
+def _nowrap_buffer_px(s: dict) -> float:
+    """nowrap 텍스트 박스에 더할 폭 여유(px). 폰트가 클수록 메트릭 편차가 커지므로
+    글자 크기에 비례시키되 최소치를 둔다. (FlatExtractor의 +4px보다 살짝 넉넉하게)"""
+    try:
+        fs = float(str(s.get('fontSize', '16')).replace('px', ''))
+    except (ValueError, TypeError):
+        fs = 16.0
+    return max(8.0, fs * 0.6)
+
+
 # ── 복잡한 CSS 배경(radial/repeating/다층) → SVG → PNG 래스터화 ──
 def _split_top(s, sep=','):
     """괄호 깊이를 고려해 최상위에서만 sep로 분리(rgba(...)의 콤마 보호)."""
@@ -810,17 +820,33 @@ def _add_text(slide, el: dict, x, y, w, h, rotation, font_name_map: dict = None,
         if not is_gradient_text:
             effective_color = s.get('color', '')
 
+    # Detect circular container (for forced centering)
+    br = s.get('borderRadius', '0px')
+    is_circle = _is_ellipse(br, w, h) if br and br not in ('0px', '') else False
+
+    # nowrap 텍스트(FlatExtractor가 단일행으로 판정): PowerPoint 폰트 메트릭이 브라우저보다
+    # 살짝 넓어 빠듯한 박스가 줄바꿈되는 사례가 있다. 박스를 여유분만큼 넓히고(정렬 기준 보정)
+    # 자동 줄바꿈/오토핏 축소를 끈다 → 편집 화면과 동일한 단일행 유지.
+    no_wrap = s.get('whiteSpace') == 'nowrap'
+    if no_wrap:
+        buf = int(_nowrap_buffer_px(s) * PX_TO_EMU)
+        if is_circle or (s.get('isFlex') and s.get('justifyContent') == 'center'):
+            ak = 'center'
+        else:
+            ak = s.get('textAlign', 'left')
+        if ak == 'center':
+            x -= buf // 2
+        elif ak == 'right':
+            x -= buf
+        w += buf
+
     txbox = slide.shapes.add_textbox(x, y, w, h)
     _clear_theme_style(txbox)
     if rotation:
         txbox.rotation = rotation
 
     tf = txbox.text_frame
-    tf.word_wrap = True
-
-    # Detect circular container (for forced centering)
-    br = s.get('borderRadius', '0px')
-    is_circle = _is_ellipse(br, w, h) if br and br not in ('0px', '') else False
+    tf.word_wrap = not no_wrap
 
     # vertical alignment — 편집기와 동일하게 alignItems를 항상 반영(미설정=위).
     # (기존엔 merged/배경 있을 때만 반영해, 배경 없는 가운데정렬 자막이 위로 붙었음)
@@ -849,9 +875,13 @@ def _add_text(slide, el: dict, x, y, w, h, rotation, font_name_map: dict = None,
             existing = body_props.find(qn(auto_tag))
             if existing is not None:
                 body_props.remove(existing)
-        # normAutofit: shrinks font to fit when text overflows, keeps original size when it fits
-        norm_auto = body_props.makeelement(qn('a:normAutofit'), {'fontScale': '100000', 'lnSpcReduction': '0'})
-        body_props.append(norm_auto)
+        if no_wrap:
+            # nowrap: 폭 부족 시에도 폰트를 줄이지 않고 단일행 원본 크기 유지(편집 화면과 동일)
+            body_props.append(body_props.makeelement(qn('a:noAutofit'), {}))
+        else:
+            # normAutofit: shrinks font to fit when text overflows, keeps original size when it fits
+            norm_auto = body_props.makeelement(qn('a:normAutofit'), {'fontScale': '100000', 'lnSpcReduction': '0'})
+            body_props.append(norm_auto)
 
     # background fill
     bg_result = _parse_solid_fill(s)

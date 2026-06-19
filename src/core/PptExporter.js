@@ -9,6 +9,12 @@ import { BlobStore } from './BlobStore'
 // px → inches (96 DPI 기준)
 const PX_TO_INCH = 1 / 96
 
+/** nowrap 텍스트 박스에 더할 폭 여유(px) — exporter.py _nowrap_buffer_px 미러 */
+function nowrapBufferPx(s) {
+  const fs = parseFloat(s.fontSize) || 16
+  return Math.max(8, fs * 0.6)
+}
+
 // 콘텐츠(content)를 base64 data URL로 해석 — data:는 그대로, idb://는 BlobStore에서, http(s)는 fetch.
 async function contentToDataUrl(content) {
   if (!content) return null
@@ -245,20 +251,31 @@ async function addText(slide, el, pos) {
   if (ai === 'center') valign = 'middle'
   else if (ai === 'flex-end') valign = 'bottom'
 
+  // 텍스트 정렬
+  const align = s.textAlign === 'center' ? 'center' : (s.textAlign === 'right' ? 'right' : 'left')
+
+  // nowrap 텍스트(FlatExtractor 단일행 판정): PowerPoint 폰트가 브라우저보다 살짝 넓어
+  // 빠듯한 박스가 줄바꿈되는 사례 방지 — 박스를 여유분만큼 넓히고(정렬 보정) 줄바꿈을 끈다.
+  // (배경/테두리는 원래 박스 기준이므로 텍스트 박스 좌표만 확장한다)
+  const noWrap = s.whiteSpace === 'nowrap'
+  let tx = pos.x, tw = pos.w
+  if (noWrap) {
+    const buf = nowrapBufferPx(s) * PX_TO_INCH
+    if (align === 'center') tx -= buf / 2
+    else if (align === 'right') tx -= buf
+    tw += buf
+  }
+
   const textOpts = {
-    x: pos.x, y: pos.y, w: pos.w, h: pos.h,
+    x: tx, y: pos.y, w: tw, h: pos.h,
     valign,
-    wrap: true,
+    align,
+    wrap: !noWrap,
     shrinkText: false,
     margin: [0, 0, 0, 0],
   }
 
   if (pos.rotate) textOpts.rotate = pos.rotate
-
-  // 텍스트 정렬
-  if (s.textAlign === 'center') textOpts.align = 'center'
-  else if (s.textAlign === 'right') textOpts.align = 'right'
-  else textOpts.align = 'left'
 
   // 배경: 그라데이션이면 PNG로 래스터화해 텍스트 뒤(먼저 추가)에 배치하고,
   // 아니면 solid fill. (pptxgenjs 텍스트 fill은 solid만 지원하므로 그라데이션은 이미지로)

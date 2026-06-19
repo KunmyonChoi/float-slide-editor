@@ -274,20 +274,15 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
           overflow: 'hidden',
           opacity: styles.opacity,
         }}>
-          {BlobStore.isIdbRef(content)
-            ? <IdbVideo src={content} controls={playNow && !hideControls} autoplay={playNow && autoplay} loop={loop} muted={muted} objectFit={vidFit} />
-            : isDirectVideo
-            ? <video
-                // 재생 안 할 때도 첫 프레임을 썸네일로 보이게(없으면 스피커/빈 아이콘만 뜸):
-                // preload=metadata + 미디어 프래그먼트 #t=0.1로 프레임 강제 표시
-                src={playNow ? content : content + '#t=0.1'}
-                preload="metadata"
-                style={{ width: '100%', height: '100%', objectFit: vidFit || 'cover', border: 'none', pointerEvents: (playNow && !hideControls) ? 'auto' : 'none' }}
-                controls={playNow && !hideControls}
-                autoPlay={playNow && autoplay}
+          {(BlobStore.isIdbRef(content) || isDirectVideo)
+            ? <VideoPlayer
+                content={content}
+                playNow={playNow}
+                autoplay={autoplay}
                 loop={loop}
                 muted={muted}
-                playsInline
+                hideControls={hideControls}
+                objectFit={vidFit}
               />
             : <>
                 <iframe
@@ -577,32 +572,85 @@ function resolveBorders(s) {
 }
 
 /**
- * IndexedDB 참조 비디오 — blob URL로 <video> 렌더링
+ * 비디오 첫 프레임을 poster용 PNG data URL로 캡처한다.
+ * #t=0.1 미디어 프래그먼트는 preload=metadata에선 프레임을 디코드·페인트하지 않아
+ * (스피커/빈 미디어 아이콘만 표시됨) 별도 video를 로드해 첫 프레임을 캔버스로 굽는다.
+ * blob:/data: 소스는 taint 없이 캡처 가능, 외부 cross-origin은 실패 시 null(폴백).
  */
-function IdbVideo({ src, controls, autoplay, loop, muted, objectFit }) {
-  const [blobUrl, setBlobUrl] = useState(null)
+function useVideoPoster(url, enabled) {
+  // url을 함께 저장해, 새 영상으로 바뀌면 이전 poster가 잠깐 비치지 않게 한다
+  // (effect 본문에서 동기 setState를 피하려 상태 초기화 대신 url 매칭으로 처리).
+  const [state, setState] = useState({ url: null, poster: null })
   useEffect(() => {
-    if (!BlobStore.isIdbRef(src)) return
+    if (!enabled || !url) return
     let cancelled = false
-    BlobStore.getUrl(BlobStore.parseRef(src)).then(url => {
-      if (!cancelled) setBlobUrl(url)
+    const v = document.createElement('video')
+    v.muted = true
+    v.preload = 'auto'
+    v.crossOrigin = 'anonymous'
+    v.playsInline = true
+    const cleanup = () => {
+      v.removeEventListener('loadeddata', onLoaded)
+      v.removeEventListener('seeked', onSeeked)
+      v.removeAttribute('src')
+      v.load()
+    }
+    const capture = () => {
+      if (cancelled) return
+      try {
+        const c = document.createElement('canvas')
+        c.width = v.videoWidth || 0
+        c.height = v.videoHeight || 0
+        if (c.width && c.height) {
+          c.getContext('2d').drawImage(v, 0, 0)
+          setState({ url, poster: c.toDataURL('image/png') })
+        }
+      } catch { /* taint 등 → 폴백(poster 없음) */ }
+      cleanup()
+    }
+    const onLoaded = () => { try { v.currentTime = Math.min(0.1, (v.duration || 1) / 2) } catch { capture() } }
+    const onSeeked = () => capture()
+    v.addEventListener('loadeddata', onLoaded)
+    v.addEventListener('seeked', onSeeked)
+    v.src = url
+    return () => { cancelled = true; cleanup() }
+  }, [url, enabled])
+  return state.url === url ? state.poster : null
+}
+
+/**
+ * 직접 파일/IndexedDB 참조 비디오 — blob URL 해석 + 첫 프레임 poster 표시.
+ */
+function VideoPlayer({ content, playNow, autoplay, loop, muted, hideControls, objectFit }) {
+  const isIdb = BlobStore.isIdbRef(content)
+  const [idbUrl, setIdbUrl] = useState(null)
+  useEffect(() => {
+    if (!isIdb) return
+    let cancelled = false
+    BlobStore.getUrl(BlobStore.parseRef(content)).then(url => {
+      if (!cancelled) setIdbUrl(url)
     })
     return () => { cancelled = true }
-  }, [src])
+  }, [content, isIdb])
+  const blobUrl = isIdb ? idbUrl : content
+
+  // 재생하지 않을 때만(편집 화면 등) 썸네일 poster를 생성한다.
+  const poster = useVideoPoster(blobUrl, !playNow)
 
   if (!blobUrl) {
     return <div style={{ width: '100%', height: '100%', background: '#1e293b', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
       <span style={{ color: '#475569', fontSize: 12 }}>로딩...</span>
     </div>
   }
+  const controls = playNow && !hideControls
   return (
     <video
-      // 재생 안 할 때 첫 프레임 썸네일 강제(#t=0.1)
-      src={autoplay ? blobUrl : blobUrl + '#t=0.1'}
+      src={playNow ? blobUrl : blobUrl + '#t=0.1'}
+      poster={!playNow && poster ? poster : undefined}
       preload="metadata"
-      style={{ width: '100%', height: '100%', objectFit: objectFit || 'contain', pointerEvents: controls ? 'auto' : 'none' }}
+      style={{ width: '100%', height: '100%', objectFit: objectFit || 'cover', border: 'none', pointerEvents: controls ? 'auto' : 'none' }}
       controls={controls}
-      autoPlay={autoplay}
+      autoPlay={playNow && autoplay}
       loop={loop}
       muted={muted}
       playsInline
