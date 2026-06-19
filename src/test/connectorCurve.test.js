@@ -3,61 +3,94 @@ import {
   connectorCurveControls,
   connectorCurvePath,
   connectorLabelMid,
-  CURVE_CURVATURE,
+  CURVE_STRENGTH,
 } from '../core/PolyShapeUtils'
 
-const A = { x: 0, y: 0 }
-const B = { x: 100, y: 0 }
+// 현(chord) a→b 기준, 점 p가 어느 쪽인지 부호(외적). 0이면 직선 위.
+const side = (a, b, p) => Math.sign((b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x))
 
-describe('connectorCurveControls', () => {
+describe('connectorCurveControls — 단일 곡선(둥근 엘보)', () => {
   it('점 2개 미만이면 null', () => {
     expect(connectorCurveControls([])).toBeNull()
-    expect(connectorCurveControls([A])).toBeNull()
+    expect(connectorCurveControls([{ x: 0, y: 0 }])).toBeNull()
   })
 
-  it('수평선: 제어점이 1/3·2/3 지점에서 같은 수직 방향으로 오프셋', () => {
-    const { c1, c2 } = connectorCurveControls([A, B])
-    expect(c1.x).toBeCloseTo(100 / 3, 3)
-    expect(c2.x).toBeCloseTo(200 / 3, 3)
-    // 같은 부호(같은 쪽으로 휨) + 0이 아님
-    expect(Math.sign(c1.y)).toBe(Math.sign(c2.y))
-    expect(c1.y).not.toBe(0)
-    expect(Math.abs(c1.y)).toBeCloseTo(100 * CURVE_CURVATURE, 1)
+  it('좌우 정렬(높이 같음) → 제어점이 현 위 → 직선', () => {
+    const a = { x: 0, y: 50 }, b = { x: 200, y: 50 }
+    const { c1, c2 } = connectorCurveControls([a, b])
+    expect(c1.y).toBe(50)
+    expect(c2.y).toBe(50)
+    expect(side(a, b, c1)).toBe(0)
+    expect(side(a, b, c2)).toBe(0)
   })
 
-  it('길이 0(같은 점)은 제어점=양끝', () => {
-    const { c1, c2 } = connectorCurveControls([A, { ...A }])
-    expect(c1).toEqual(A)
-    expect(c2).toEqual(A)
+  it('상하 정렬(가로 같음) → 직선', () => {
+    const a = { x: 50, y: 0 }, b = { x: 50, y: 200 }
+    const { c1, c2 } = connectorCurveControls([a, b])
+    expect(c1.x).toBe(50)
+    expect(c2.x).toBe(50)
   })
 
-  it('오프셋은 상한(160px)으로 제한', () => {
-    const far = { x: 100000, y: 0 }
-    const { c1 } = connectorCurveControls([A, far])
-    expect(Math.abs(c1.y)).toBeLessThanOrEqual(160 + 1e-6)
+  it('대각(좌상-우하, 가로 우세) → 코너 향해 한 번만 휨(두 제어점이 같은 쪽 = 변곡 없음)', () => {
+    const a = { x: 0, y: 0 }, b = { x: 200, y: 150 } // |dx|>|dy| → corner (200,0)
+    const { c1, c2 } = connectorCurveControls([a, b])
+    expect(c1).toEqual({ x: 100, y: 0 })   // a + (corner-a)*0.5
+    expect(c2).toEqual({ x: 200, y: 75 })  // b + (corner-b)*0.5
+    // 두 제어점이 현의 같은 쪽 → S자(변곡) 아님
+    const s1 = side(a, b, c1), s2 = side(a, b, c2)
+    expect(s1).not.toBe(0)
+    expect(s1).toBe(s2)
+  })
+
+  it('세로 우세 대각 → 세로 코너 경유, 역시 단일 곡선', () => {
+    const a = { x: 0, y: 0 }, b = { x: 80, y: 200 } // |dy|>|dx| → corner (0,200)
+    const { c1, c2 } = connectorCurveControls([a, b])
+    expect(c1).toEqual({ x: 0, y: 100 })
+    expect(c2).toEqual({ x: 40, y: 200 })
+    const s1 = side(a, b, c1), s2 = side(a, b, c2)
+    expect(s1).toBe(s2)
+  })
+
+  it('strength로 휨 정도 조절', () => {
+    const a = { x: 0, y: 0 }, b = { x: 200, y: 100 }
+    const { c1 } = connectorCurveControls([a, b], 0.25)
+    expect(c1).toEqual({ x: 50, y: 0 })
+  })
+
+  it('같은 점이면 제어점=양끝', () => {
+    const a = { x: 5, y: 5 }
+    expect(connectorCurveControls([a, { ...a }])).toEqual({ c1: a, c2: a })
   })
 })
 
 describe('connectorCurvePath', () => {
   it('곡선은 큐빅 베지어(C) path', () => {
-    const d = connectorCurvePath([A, B])
+    const d = connectorCurvePath([{ x: 0, y: 0 }, { x: 200, y: 150 }])
     expect(d.startsWith('M 0 0 C')).toBe(true)
-    expect(d).toContain('100 0') // 끝점 포함
+    expect(d).toContain('200 150')
   })
-  it('점 부족하면 직선 폴백', () => {
-    expect(connectorCurvePath([A])).toBe('')
+  it('점 부족하면 직선 폴백(빈 문자열)', () => {
+    expect(connectorCurvePath([{ x: 0, y: 0 }])).toBe('')
   })
 })
 
 describe('connectorLabelMid', () => {
+  const a = { x: 0, y: 0 }, b = { x: 200, y: 150 }
   it('직선은 현의 중점', () => {
-    expect(connectorLabelMid([A, B], false)).toEqual({ x: 50, y: 0 })
+    expect(connectorLabelMid([a, b], false)).toEqual({ x: 100, y: 75 })
   })
-  it('곡선은 t=0.5 베지어 점 — 휘는 쪽으로 치우침', () => {
-    const mid = connectorLabelMid([A, B], true)
-    expect(mid.x).toBeCloseTo(50, 3) // 대칭이라 x는 중앙
-    expect(mid.y).not.toBe(0)        // 곡선 쪽으로 이동
-    // B(0.5) = (a + 3c1 + 3c2 + b)/8, 수직 오프셋의 3/4
-    expect(Math.abs(mid.y)).toBeCloseTo(100 * CURVE_CURVATURE * 0.75, 1)
+  it('좌우 정렬 곡선은 직선처럼 정확히 가운데(호 길이 중점)', () => {
+    const mid = connectorLabelMid([{ x: 0, y: 50 }, { x: 200, y: 50 }], true)
+    expect(mid.x).toBeCloseTo(100, 1)
+    expect(mid.y).toBeCloseTo(50, 1)
+  })
+  it('대각 곡선 중점은 코너 쪽(위)으로 치우치되 가로는 대략 가운데', () => {
+    const mid = connectorLabelMid([a, b], true) // corner (200,0) 쪽으로 휨
+    expect(mid.y).toBeLessThan(75)              // 직선 중점(75)보다 위(코너 쪽)
+    expect(mid.x).toBeGreaterThan(60)
+    expect(mid.x).toBeLessThan(160)
+  })
+  it('CURVE_STRENGTH 기본값 노출', () => {
+    expect(CURVE_STRENGTH).toBe(0.5)
   })
 })
