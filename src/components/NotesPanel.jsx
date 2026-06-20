@@ -208,7 +208,6 @@ export default function NotesPanel() {
         value={notes}
         onChange={(e) => setNotes(e.target.value)}
         placeholder="이 슬라이드의 발표자 노트를 입력하세요…  (✨ AI 초안으로 자동 작성 가능)"
-        autoFocus
         spellCheck={false}
         style={{
           display: 'block', width: '100%', height: 140, resize: 'vertical',
