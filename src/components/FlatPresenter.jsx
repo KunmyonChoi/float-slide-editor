@@ -2,8 +2,11 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { useFlatStore } from '../store/flatStore'
 import { useEditorStore } from '../store/editorStore'
 import FlatElementRenderer from './FlatElementRenderer'
+import PresenterInkOverlay from './PresenterInkOverlay'
 import { resolveConnectors } from '../core/ConnectorRouting'
 import { BlobStore } from '../core/BlobStore'
+
+const INK_COLORS = ['#ef4444', '#f59e0b', '#3b82f6', '#ffffff', '#111827']
 
 /**
  * FlatPresenter — flat 편집 결과 기반 발표 모드
@@ -43,6 +46,14 @@ export default function FlatPresenter() {
       return aP - bP || aV - bV
     })
   }, [allPages])
+
+  // ── 발표 잉크(펜 주석) — 임시: 슬라이드별 보관, 종료(언마운트) 시 폐기 ──
+  const [penActive, setPenActive] = useState(false)
+  const [penTool, setPenTool] = useState('pen')     // pen | highlighter | eraser
+  const [penColor, setPenColor] = useState(INK_COLORS[0])
+  const [penWidth, setPenWidth] = useState('thin')  // thin | thick
+  // 슬라이드별 잉크 보관(상태) — 슬라이드 전환 간 유지, 발표 종료(언마운트) 시 자동 폐기
+  const [inkBySlide, setInkBySlide] = useState({}) // { [slideIndex]: strokes[] }
 
   // 발표 시작 인덱스(F5=0, Shift+F5=현재 페이지). 마운트 시 1회 고정.
   const [currentSlide, setCurrentSlide] = useState(() => useEditorStore.getState().presentStartIndex || 0)
@@ -106,11 +117,42 @@ export default function FlatPresenter() {
     setCurrentSlide(c => Math.max(c - 1, 0))
   }, [])
 
+  // 잉크 조작 (현재 슬라이드 기준)
+  const slideStrokes = inkBySlide[currentSlide] || []
+  const commitStroke = useCallback((stroke) => {
+    setInkBySlide(m => ({ ...m, [currentSlide]: [...(m[currentSlide] || []), stroke] }))
+  }, [currentSlide])
+  const eraseStroke = useCallback((id) => {
+    setInkBySlide(m => ({ ...m, [currentSlide]: (m[currentSlide] || []).filter(s => s.id !== id) }))
+  }, [currentSlide])
+  const clearSlideInk = useCallback(() => {
+    setInkBySlide(m => ({ ...m, [currentSlide]: [] }))
+  }, [currentSlide])
+
   // 키보드: ESC 종료, 화살표/스페이스 네비게이션
   useEffect(() => {
     const onKeyDown = (e) => {
+      // 펜 단축키 (PowerPoint 호환)
+      if ((e.ctrlKey || e.metaKey) && (e.code === 'KeyP')) {
+        e.preventDefault()
+        setPenTool('pen'); setPenActive(a => !a)
+        return
+      }
+      if ((e.ctrlKey || e.metaKey) && (e.code === 'KeyE')) {
+        e.preventDefault()
+        setPenTool('eraser'); setPenActive(true)
+        return
+      }
       if (e.key === 'Escape') {
+        // 2단계: 펜이 켜져 있으면 펜만 끄고, 아니면 발표 종료
+        if (penActive) { setPenActive(false); return }
         exitPresentation()
+        return
+      }
+      // E (보조키 없이) → 현재 슬라이드 잉크 전체 지우기
+      if (!e.ctrlKey && !e.metaKey && !e.altKey && e.code === 'KeyE') {
+        e.preventDefault()
+        clearSlideInk()
         return
       }
       if (e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === 'PageDown' || e.key === ' ') {
@@ -132,11 +174,12 @@ export default function FlatPresenter() {
       window.removeEventListener('keydown', onKeyDown)
       iframeDoc?.removeEventListener('keydown', onKeyDown)
     }
-  }, [exitPresentation, goNext, goPrev])
+  }, [exitPresentation, goNext, goPrev, penActive, clearSlideInk])
 
   // 클릭: 좌측 1/4 → 이전, 우측 3/4 → 다음
   // iframe/video/a 등 인터랙티브 요소 위의 클릭은 무시
   const handleClick = useCallback((e) => {
+    if (penActive) return // 펜 모드 중 클릭은 드로잉(오버레이가 처리), 네비 안 함
     const tag = e.target.tagName
     if (tag === 'IFRAME' || tag === 'VIDEO' || tag === 'A' || tag === 'BUTTON') return
     if (e.target.closest('iframe, video, a, button')) return
@@ -145,7 +188,7 @@ export default function FlatPresenter() {
     const x = e.clientX - rect.left
     if (x < rect.width * 0.25) goPrev()
     else goNext()
-  }, [goNext, goPrev])
+  }, [goNext, goPrev, penActive])
 
   // 힌트 자동 숨기기
   useEffect(() => {
@@ -225,6 +268,17 @@ export default function FlatPresenter() {
                 canvasSize={canvasSize}
               />
             ))}
+            <PresenterInkOverlay
+              penActive={penActive}
+              tool={penTool}
+              color={penColor}
+              penWidth={penWidth}
+              scale={scale}
+              canvasSize={canvasSize}
+              strokes={slideStrokes}
+              onCommitStroke={commitStroke}
+              onEraseStroke={eraseStroke}
+            />
           </div>
         </div>
       )}
@@ -261,10 +315,51 @@ export default function FlatPresenter() {
         </div>
       )}
 
+      {/* 펜 도구 모음 (하단 중앙) */}
+      {!loading && (
+        <div
+          onClick={(e) => e.stopPropagation()}
+          style={{
+            position: 'fixed', bottom: 18, left: '50%', transform: 'translateX(-50%)',
+            zIndex: 1011, display: 'flex', alignItems: 'center', gap: 6, padding: '6px 8px',
+            borderRadius: 12, background: 'rgba(15,23,42,0.6)', backdropFilter: 'blur(12px)',
+            border: '1px solid rgba(255,255,255,0.1)',
+            opacity: penActive ? 1 : 0.4, transition: 'opacity 0.2s',
+          }}
+          onMouseEnter={(e) => { e.currentTarget.style.opacity = '1' }}
+          onMouseLeave={(e) => { e.currentTarget.style.opacity = penActive ? '1' : '0.4' }}
+        >
+          <button type="button" title="펜 모드 (Ctrl+P)"
+            onClick={() => { setPenTool('pen'); setPenActive(a => !a) }}
+            style={ctrlBtn(penActive)}>✎</button>
+          {penActive && <>
+            <span style={{ width: 1, height: 18, background: 'rgba(255,255,255,0.12)' }} />
+            <button type="button" title="펜" onClick={() => setPenTool('pen')} style={ctrlBtn(penTool === 'pen')}>✎</button>
+            <button type="button" title="형광펜" onClick={() => setPenTool('highlighter')} style={ctrlBtn(penTool === 'highlighter')}>🖍</button>
+            <button type="button" title="지우개 (Ctrl+E)" onClick={() => setPenTool('eraser')} style={ctrlBtn(penTool === 'eraser')}>⌫</button>
+            <span style={{ width: 1, height: 18, background: 'rgba(255,255,255,0.12)' }} />
+            {INK_COLORS.map(c => (
+              <button key={c} type="button" title={`색 ${c}`} onClick={() => { setPenColor(c); if (penTool === 'eraser') setPenTool('pen') }}
+                style={{
+                  width: 20, height: 20, borderRadius: '50%', cursor: 'pointer', padding: 0,
+                  background: c,
+                  border: penColor === c ? '2px solid #fff' : '1px solid rgba(255,255,255,0.3)',
+                  boxShadow: penColor === c ? '0 0 0 1px rgba(99,102,241,0.8)' : 'none',
+                }} />
+            ))}
+            <span style={{ width: 1, height: 18, background: 'rgba(255,255,255,0.12)' }} />
+            <button type="button" title="가는 선" onClick={() => setPenWidth('thin')} style={ctrlBtn(penWidth === 'thin')}>•</button>
+            <button type="button" title="굵은 선" onClick={() => setPenWidth('thick')} style={ctrlBtn(penWidth === 'thick')}>⬤</button>
+            <span style={{ width: 1, height: 18, background: 'rgba(255,255,255,0.12)' }} />
+            <button type="button" title="현재 슬라이드 잉크 지우기 (E)" onClick={clearSlideInk} style={ctrlBtn(false)}>🗑</button>
+          </>}
+        </div>
+      )}
+
       {/* 페이지 카운터 (다중 페이지만) */}
       {totalSlides > 1 && (
         <div style={{
-          position: 'fixed', bottom: 20, left: '50%',
+          position: 'fixed', bottom: 60, left: '50%',
           transform: 'translateX(-50%)',
           fontSize: 12, color: 'rgba(255,255,255,0.3)',
           zIndex: 1010, pointerEvents: 'none',
