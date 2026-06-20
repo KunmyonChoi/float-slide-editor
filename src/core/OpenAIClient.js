@@ -379,3 +379,122 @@ export async function editImage(imageDataUrl, prompt, { width, height, size, qua
     throwImageErrorWith(res.status, detail, '이미지 편집')
   }
 }
+
+// ── 발표자 노트(발표 원고) 생성 ──
+
+export const NOTES_TONES = [
+  { id: 'friendly', label: '친근하게', hint: '친근하고 자연스러운 구어체' },
+  { id: 'formal', label: '격식 있게', hint: '정중하고 격식 있는 발표 어조' },
+  { id: 'concise', label: '간결하게', hint: '군더더기 없이 핵심만 간결하게' },
+]
+export const NOTES_LENGTHS = [
+  { id: 'short', label: '짧게', hint: '슬라이드당 1~2문장' },
+  { id: 'medium', label: '보통', hint: '슬라이드당 3~5문장' },
+  { id: 'long', label: '길게', hint: '슬라이드당 6문장 이상, 상세히' },
+]
+
+const SPEAKER_NOTES_SYSTEM = `You write speaker notes — the actual words a presenter SAYS out loud — for each slide of a deck.
+Rules:
+- Write a spoken script, NOT a copy of the slide text. Speak TO the audience, naturally.
+- Use the whole deck for flow: add brief, natural transitions between slides where helpful.
+- Keep each slide's notes about that slide only.
+- Write in the SAME language as that slide's content.
+- Tone: {tone}. Length per slide: {length}.
+- No slide numbers, headings, quotes, or markdown inside the note text.
+Output ONLY JSON: {"notes":[{"index":<0-based index>,"text":"<spoken notes>"}]}, one entry for EVERY slide index provided.`
+
+/**
+ * 슬라이드 요약 배열 → 페이지별 발표 원고.
+ * @param {{ slides: {index:number,title?:string,text?:string}[], tone?: string, length?: string, model?: string, signal?: AbortSignal }} opts
+ * @returns {Promise<Record<number,string>>} { [index]: notesText }
+ */
+export async function generateSpeakerNotes({ slides, tone, length, model, signal } = {}) {
+  if (!slides || !slides.length) throw new Error('슬라이드 내용이 없습니다.')
+  const toneHint = (NOTES_TONES.find(t => t.id === tone) || NOTES_TONES[0]).hint
+  const lenHint = (NOTES_LENGTHS.find(l => l.id === length) || NOTES_LENGTHS[1]).hint
+  const system = SPEAKER_NOTES_SYSTEM.replace('{tone}', toneHint).replace('{length}', lenHint)
+  const user = slides
+    .map(s => `# Slide ${s.index + 1}${s.title ? ': ' + s.title : ''}\n${(s.text || '').trim() || '(이 슬라이드에는 텍스트가 없습니다 — 맥락에 맞춰 간단히)'}`)
+    .join('\n\n---\n\n')
+
+  const raw = await chat({
+    system, user, model, temperature: 0.7,
+    responseFormat: { type: 'json_object' }, signal,
+  })
+  let parsed
+  try { parsed = JSON.parse(raw) } catch { throw new Error('AI 응답(JSON)을 해석할 수 없습니다.') }
+  const arr = Array.isArray(parsed?.notes) ? parsed.notes : []
+  const out = {}
+  for (const n of arr) {
+    if (n && typeof n.index === 'number' && typeof n.text === 'string') {
+      out[n.index] = n.text.trim()
+    }
+  }
+  if (!Object.keys(out).length) throw new Error('생성된 발표 원고가 비어 있습니다.')
+  return out
+}
+
+// ── TTS(음성 합성) ──
+
+const TTS_ENDPOINT = 'https://api.openai.com/v1/audio/speech'
+const TTS_MODEL_STORAGE = 'openai-tts-model'
+const TTS_VOICE_STORAGE = 'openai-tts-voice'
+const DEFAULT_TTS_MODEL = 'gpt-4o-mini-tts'
+const DEFAULT_TTS_VOICE = 'alloy'
+
+export const TTS_VOICES = [
+  { id: 'alloy', label: 'Alloy' }, { id: 'echo', label: 'Echo' }, { id: 'fable', label: 'Fable' },
+  { id: 'onyx', label: 'Onyx' }, { id: 'nova', label: 'Nova' }, { id: 'shimmer', label: 'Shimmer' },
+]
+
+export function getTtsModel() {
+  try { return localStorage.getItem(TTS_MODEL_STORAGE) || DEFAULT_TTS_MODEL } catch { return DEFAULT_TTS_MODEL }
+}
+export function setTtsModel(model) {
+  try {
+    const v = (model || '').trim()
+    if (v) localStorage.setItem(TTS_MODEL_STORAGE, v); else localStorage.removeItem(TTS_MODEL_STORAGE)
+  } catch { /* localStorage 비활성 무시 */ }
+}
+export function getTtsVoice() {
+  try { return localStorage.getItem(TTS_VOICE_STORAGE) || DEFAULT_TTS_VOICE } catch { return DEFAULT_TTS_VOICE }
+}
+export function setTtsVoice(voice) {
+  try {
+    const v = (voice || '').trim()
+    if (v) localStorage.setItem(TTS_VOICE_STORAGE, v); else localStorage.removeItem(TTS_VOICE_STORAGE)
+  } catch { /* localStorage 비활성 무시 */ }
+}
+
+/**
+ * 텍스트 → 음성(mp3 Blob). OpenAI /v1/audio/speech.
+ * @param {string} text
+ * @param {{ voice?: string, model?: string, signal?: AbortSignal }} [opts]
+ * @returns {Promise<Blob>} audio/mpeg Blob
+ */
+export async function synthesizeSpeech(text, { voice, model, signal } = {}) {
+  const apiKey = getApiKey()
+  if (!apiKey) throw new Error('OpenAI API 키가 설정되지 않았습니다. 먼저 키를 입력하세요.')
+  if (!text || !text.trim()) throw new Error('음성으로 변환할 노트가 없습니다.')
+
+  let res
+  try {
+    res = await fetch(TTS_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify({ model: model || getTtsModel(), voice: voice || getTtsVoice(), input: text, response_format: 'mp3' }),
+      signal,
+    })
+  } catch (e) {
+    if (e?.name === 'AbortError') throw e
+    throw new Error('OpenAI에 연결할 수 없습니다. 네트워크 연결을 확인하세요.')
+  }
+  if (!res.ok) {
+    let detail = ''
+    try { const j = await res.json(); detail = j?.error?.message || '' } catch { /* 무시 */ }
+    if (res.status === 401) throw new Error('API 키가 유효하지 않습니다. 키를 다시 확인하세요.')
+    if (res.status === 429) throw new Error('요청이 너무 많거나 사용 한도를 초과했습니다. 잠시 후 다시 시도하세요.')
+    throw new Error(`OpenAI TTS 오류 (${res.status})${detail ? ': ' + detail : ''}`)
+  }
+  return await res.blob()
+}

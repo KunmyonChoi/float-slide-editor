@@ -50,4 +50,26 @@ describe('발표자 노트(페이지별)', () => {
     useFlatStore.getState().toggleNotesCollapsed()
     expect(useFlatStore.getState().notesCollapsed).toBe(!before)
   })
+
+  it('노트 음성(idb 참조+해시) 페이지별 저장·전환 보존·직렬화', () => {
+    useFlatStore.getState().setPageNotesAudio('idb://a0', 'h0')
+    expect(useFlatStore.getState().pageNotesAudio).toBe('idb://a0')
+    // 페이지 전환 시 보존
+    useFlatStore.getState().goToFlatPage(1)
+    expect(useFlatStore.getState().pageNotesAudio).toBeNull()
+    useFlatStore.getState().goToFlatPage(0)
+    expect(useFlatStore.getState().pageNotesAudio).toBe('idb://a0')
+    expect(useFlatStore.getState().pageNotesAudioHash).toBe('h0')
+    // getAllPages에 포함
+    const { pages } = useFlatStore.getState().getAllPages()
+    expect(pages['0-0'].notesAudio).toBe('idb://a0')
+    expect(pages['0-0'].notesAudioHash).toBe('h0')
+  })
+
+  it('applyAudioToPages 일괄 적용', () => {
+    useFlatStore.getState().applyAudioToPages({ '0-0': { ref: 'idb://x', hash: 'hx' }, '2-0': { ref: 'idb://z', hash: 'hz' } })
+    expect(useFlatStore.getState().pageNotesAudio).toBe('idb://x') // 현재=0-0
+    const { pages } = useFlatStore.getState().getAllPages()
+    expect(pages['2-0'].notesAudio).toBe('idb://z')
+  })
 })
