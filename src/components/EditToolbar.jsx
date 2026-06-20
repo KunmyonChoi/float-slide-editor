@@ -349,21 +349,6 @@ export default function EditToolbar() {
             ]}
           />
 
-          {/* 다이어그램 모드 토글 — 켜면 도형 호버 시 연결점 표시, 끌어 커넥터 연결 */}
-          <button
-            onClick={() => useFlatStore.getState().setDiagramMode(!diagramMode)}
-            title="다이어그램 모드 (도형 연결선)"
-            className={[
-              'flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-sm transition-colors',
-              diagramMode
-                ? 'bg-indigo-500 text-white shadow-sm'
-                : 'text-slate-300 hover:text-white hover:bg-white/10',
-            ].join(' ')}
-          >
-            <ConnectorIcon />
-            {diagramMode && <span className="text-xs font-medium">연결</span>}
-          </button>
-
           {/* 표 삽입 — 행×열 그리드 피커 */}
           <TableSizeDropdown
             innerRef={tableRef}
@@ -421,6 +406,21 @@ export default function EditToolbar() {
 
           {/* 테마 선택 */}
           <ThemeMenu />
+
+          {/* 다이어그램 모드 토글 — 툴바 끝. 켜면 도형 호버 시 연결점 표시, 끌어 커넥터 연결 */}
+          <button
+            onClick={() => useFlatStore.getState().setDiagramMode(!diagramMode)}
+            title="다이어그램 모드 (도형 연결선)"
+            className={[
+              'flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-sm transition-colors',
+              diagramMode
+                ? 'bg-indigo-500 text-white shadow-sm'
+                : 'text-slate-300 hover:text-white hover:bg-white/10',
+            ].join(' ')}
+          >
+            <ConnectorIcon />
+            {diagramMode && <span className="text-xs font-medium">연결</span>}
+          </button>
         </>
       ) : (
         /* ── HTML 모드: 기존 삽입 드롭다운 ── */
