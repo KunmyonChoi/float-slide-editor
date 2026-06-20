@@ -66,7 +66,9 @@ export function useScrub({ value, step = 1, min, max, sensitivity = 1, onPreview
     const d = drag.current
     if (!d || e.pointerId !== d.id) return
     const dx = e.clientX - d.startX
-    if (!d.moved && Math.abs(dx) < 3) return // 데드존
+    // 데드존 — 터치는 손가락 떨림이 커서 더 크게(탭이 값 변경으로 오인되지 않게)
+    const dead = e.pointerType === 'touch' ? 8 : 3
+    if (!d.moved && Math.abs(dx) < dead) return
     d.moved = true
     const mult = e.shiftKey ? step * 10 : e.altKey ? step * 0.1 : step
     let next = d.startVal + Math.round(dx / sensitivity) * mult
