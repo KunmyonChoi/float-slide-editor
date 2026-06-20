@@ -122,8 +122,8 @@ export default function NotesPanel() {
 
   return (
     <div style={{ flexShrink: 0, background: '#0f172a', borderTop: '1px solid rgba(255,255,255,0.06)', position: 'relative' }}>
-      {/* AI 초안 + 음성 버튼(우상단 오버레이) */}
-      <div style={{ position: 'absolute', top: 6, right: 8, zIndex: 2, display: 'flex', gap: 6 }} data-export-ignore="true">
+      {/* AI 초안 + 음성 버튼(우하단 오버레이 — 텍스트 가림 최소화, 팝업은 위로 열림) */}
+      <div style={{ position: 'absolute', bottom: 10, right: 10, zIndex: 2, display: 'flex', gap: 6 }} data-export-ignore="true">
         {/* 음성(TTS) */}
         <div style={{ position: 'relative' }}>
           <button
@@ -140,7 +140,7 @@ export default function NotesPanel() {
           >🔊 음성{audioStale ? ' ⚠' : ''} ▾</button>
           {audioOpen && !busy && (
             <div style={{
-              position: 'absolute', top: 28, right: 0, padding: 10, width: 210,
+              position: 'absolute', bottom: 30, right: 0, padding: 10, width: 210,
               background: '#1e293b', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 10,
               boxShadow: '0 8px 24px rgba(0,0,0,0.4)', display: 'flex', flexDirection: 'column', gap: 8,
             }}>
@@ -175,7 +175,7 @@ export default function NotesPanel() {
         >✨ {busy ? '생성 중…' : 'AI 초안 ▾'}</button>
         {open && !busy && (
           <div style={{
-            position: 'absolute', top: 28, right: 0, padding: 10, width: 220,
+            position: 'absolute', bottom: 30, right: 0, padding: 10, width: 220,
             background: '#1e293b', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 10,
             boxShadow: '0 8px 24px rgba(0,0,0,0.4)', display: 'flex', flexDirection: 'column', gap: 8,
           }}>
