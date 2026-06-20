@@ -602,10 +602,11 @@ export default function FlatCanvas() {
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return
       if (e.target.contentEditable === 'true') return
 
-      // 패널 접기/펴기: [ = 왼쪽 슬라이드 목록, ] = 오른쪽 속성창 (보조키 없이)
+      // 패널 접기/펴기: [ = 왼쪽 슬라이드 목록, ] = 오른쪽 속성창, \ = 하단 발표자 노트 (보조키 없이)
       if (!e.ctrlKey && !e.metaKey && !e.altKey) {
         if (e.code === 'BracketLeft') { e.preventDefault(); useFlatStore.getState().toggleSlideListCollapsed(); return }
         if (e.code === 'BracketRight') { e.preventDefault(); useFlatStore.getState().togglePanelCollapsed(); return }
+        if (e.code === 'Backslash') { e.preventDefault(); useFlatStore.getState().toggleNotesShortcut(); return }
       }
 
       const { selectedFlatIds } = useFlatStore.getState()

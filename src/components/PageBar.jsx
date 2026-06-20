@@ -142,7 +142,7 @@ export default function PageBar() {
         {/* 발표자 노트 토글 — 라인 좌측 끝 */}
         <button
           onClick={() => useFlatStore.getState().toggleNotesCollapsed()}
-          title={notesCollapsed ? '발표자 노트 열기' : '발표자 노트 닫기'}
+          title={(notesCollapsed ? '발표자 노트 열기' : '발표자 노트 닫기') + '  ( \\ )'}
           style={{
             position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)',
             display: 'flex', alignItems: 'center', gap: 4, height: 24, padding: '0 8px',

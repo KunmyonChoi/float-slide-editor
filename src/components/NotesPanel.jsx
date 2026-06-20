@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useFlatStore } from '../store/flatStore'
 import { useEditorStore } from '../store/editorStore'
 import { hasApiKey, generateSpeakerNotes, NOTES_TONES, NOTES_LENGTHS, synthesizeSpeech, TTS_VOICES, getTtsVoice, setTtsVoice } from '../core/OpenAIClient'
@@ -34,6 +34,16 @@ export default function NotesPanel() {
   const [err, setErr] = useState('')
   const [audioOpen, setAudioOpen] = useState(false)
   const [voice, setVoice] = useState(() => getTtsVoice())
+  const taRef = useRef(null)
+
+  // 단축키(\)로 열렸을 때만 텍스트영역에 포커스 — 버튼으로 열면 포커스 가로채지 않음
+  useEffect(() => {
+    if (collapsed) return
+    if (useFlatStore.getState().notesAutofocus) {
+      taRef.current?.focus()
+      useFlatStore.setState({ notesAutofocus: false })
+    }
+  }, [collapsed])
 
   if (mode === 'present' || collapsed) return null
 
@@ -205,8 +215,10 @@ export default function NotesPanel() {
       )}
 
       <textarea
+        ref={taRef}
         value={notes}
         onChange={(e) => setNotes(e.target.value)}
+        onKeyDown={(e) => { if (e.key === 'Escape') { e.preventDefault(); e.currentTarget.blur() } }}
         placeholder="이 슬라이드의 발표자 노트를 입력하세요…  (✨ AI 초안으로 자동 작성 가능)"
         spellCheck={false}
         style={{

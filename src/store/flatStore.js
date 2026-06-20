@@ -289,6 +289,8 @@ export const useFlatStore = create((set, get) => ({
   pageNotes: '',
   /** 발표자 노트 영역 접힘 여부 (기본 접힘) */
   notesCollapsed: true,
+  /** 노트 단축키로 열 때 텍스트영역에 자동 포커스 요청(일시 플래그) */
+  notesAutofocus: false,
   /** 현재 페이지 노트 TTS 음성 idb 참조(없으면 null) */
   pageNotesAudio: null,
   /** 음성 생성 시점의 노트 해시 — 현재 노트와 다르면 '재생성 필요'(스테일) */
@@ -313,6 +315,13 @@ export const useFlatStore = create((set, get) => ({
   togglePanelCollapsed() { set(s => ({ panelCollapsed: !s.panelCollapsed })) },
   toggleSlideListCollapsed() { set(s => ({ slideListCollapsed: !s.slideListCollapsed })) },
   toggleNotesCollapsed() { set(s => ({ notesCollapsed: !s.notesCollapsed })) },
+  /** 단축키(\)용 노트 토글 — 열릴 때는 텍스트영역 자동 포커스 요청 */
+  toggleNotesShortcut() {
+    set(s => {
+      const opening = s.notesCollapsed
+      return { notesCollapsed: !s.notesCollapsed, notesAutofocus: opening }
+    })
+  },
   /** 현재 페이지 발표자 노트 설정 (캐시에도 즉시 반영) */
   setPageNotes(text) {
     if (_currentPageKey && _pageCache[_currentPageKey]) _pageCache[_currentPageKey].notes = text
