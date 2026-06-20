@@ -926,6 +926,7 @@ export default function FlatCanvas() {
     if (e.button === 2) return // 우클릭은 컨텍스트 메뉴가 처리
     setContextMenu(null) // 좌클릭 시 컨텍스트 메뉴 닫기
     if (panDragRef.current) return // 팬 진행 중이면 마키 무시
+    if (marqueeRef.current) return // 터치 마키 진행 중(합성 mouse 이벤트) 무시
     const st = useFlatStore.getState()
     if (st.editingFlatId) return
     if (st.croppingFlatId) { setCroppingFlat(null); return } // 크롭 중 바깥 클릭 → 크롭 종료
@@ -940,20 +941,55 @@ export default function FlatCanvas() {
     setMarquee({ startX: sx, startY: sy, endX: sx, endY: sy })
   }, [scale, setCroppingFlat])
 
+  // 터치: 손 도구 OFF + 빈 배경 한 손가락 드래그 = 마키 선택.
+  // 전경 요소 위 터치는 e.target이 요소라 제외되고, 배경 레이어는 pointer-events:none이라
+  // e.target이 data-flat-canvas로 잡혀 그 위에서도 시작 가능 — 마우스 경로와 같은 의미.
+  const handleStagePointerDown = useCallback((e) => {
+    if (e.pointerType !== 'touch') return // 마우스/펜은 onMouseDown 경로
+    if (panToolRef.current) return // 손 도구 ON이면 팬이 처리
+    if (marqueeRef.current) { // 마키 중 둘째 손가락 → 마키 폐기(핀치 등에 양보)
+      marqueeRef.current = null
+      setMarquee(null)
+      if (stageRef.current) stageRef.current.style.touchAction = ''
+      return
+    }
+    const t = e.target
+    const isEmptyArea = t === stageRef.current || t === canvasRef.current || t?.dataset?.flatCanvas === 'true'
+    if (!isEmptyArea) return // 요소 위 터치는 마키 시작 안 함(탭 선택은 요소가 처리)
+    const st = useFlatStore.getState()
+    if (st.editingFlatId || st.drawMode) return
+    if (st.croppingFlatId) { setCroppingFlat(null); return }
+    if (!canvasRef.current) return
+    const rect = canvasRef.current.getBoundingClientRect()
+    const sx = (e.clientX - rect.left) / scale
+    const sy = (e.clientY - rect.top) / scale
+    e.preventDefault() // 합성 mouse 이벤트(handleStageMouseDown) 억제
+    marqueeRef.current = { startX: sx, startY: sy, rect, shiftKey: false, pointerId: e.pointerId, touch: true }
+    setMarquee({ startX: sx, startY: sy, endX: sx, endY: sy })
+    const stage = stageRef.current
+    if (stage) {
+      stage.style.touchAction = 'none' // 드래그 중 페이지 스크롤/줌 가로채기 방지
+      try { stage.setPointerCapture(e.pointerId) } catch { /* 무시 */ }
+    }
+  }, [scale, setCroppingFlat])
+
   useEffect(() => {
     const onMove = (e) => {
-      if (!marqueeRef.current) return
-      const { startX, startY, rect } = marqueeRef.current
-      const endX = (e.clientX - rect.left) / scale
-      const endY = (e.clientY - rect.top) / scale
-      marqueeRef.current.endX = endX // onUp에서 store 변경 없이 읽기 위해 ref에 저장
-      marqueeRef.current.endY = endY
-      setMarquee({ startX, startY, endX, endY })
-    }
-    const onUp = () => {
       const m = marqueeRef.current
       if (!m) return
+      if (m.touch && e.pointerId !== m.pointerId) return // 추적 중인 손가락만
+      const endX = (e.clientX - m.rect.left) / scale
+      const endY = (e.clientY - m.rect.top) / scale
+      m.endX = endX // onUp에서 store 변경 없이 읽기 위해 ref에 저장
+      m.endY = endY
+      setMarquee({ startX: m.startX, startY: m.startY, endX, endY })
+    }
+    const onUp = (e) => {
+      const m = marqueeRef.current
+      if (!m) return
+      if (m.touch && e && e.pointerId !== undefined && e.pointerId !== m.pointerId) return
       marqueeRef.current = null
+      if (m.touch && stageRef.current) stageRef.current.style.touchAction = ''
       const { shiftKey, startX, startY } = m
       const endX = m.endX ?? startX
       const endY = m.endY ?? startY
@@ -964,9 +1000,11 @@ export default function FlatCanvas() {
       const y1 = Math.min(startY, endY)
       const x2 = Math.max(startX, endX)
       const y2 = Math.max(startY, endY)
-      // 최소 크기 이하면 단순 클릭 → 빈 영역(배경 위 포함) 클릭이므로 선택 해제.
+      // 최소 크기 이하면 단순 클릭/탭 → 빈 영역(배경 위 포함) 클릭이므로 선택 해제.
       // (배경 레이어는 pointer-events:none이라 배경 click에 위임할 수 없음)
-      if (x2 - x1 < 3 && y2 - y1 < 3) {
+      // 손가락은 굵어 임계치를 키운다.
+      const tapThresh = m.touch ? 8 : 3
+      if (x2 - x1 < tapThresh && y2 - y1 < tapThresh) {
         if (!shiftKey) useFlatStore.getState().setSelectedFlat(null)
         return
       }
@@ -992,11 +1030,20 @@ export default function FlatCanvas() {
         useFlatStore.getState().setSelectedFlat(null)
       }
     }
+    // 터치 경로: pointer 이벤트(마우스는 위 mouse 리스너가 전담)
+    const onPMove = (e) => { if (e.pointerType !== 'mouse') onMove(e) }
+    const onPUp = (e) => { if (e.pointerType !== 'mouse') onUp(e) }
     window.addEventListener('mousemove', onMove)
     window.addEventListener('mouseup', onUp)
+    window.addEventListener('pointermove', onPMove)
+    window.addEventListener('pointerup', onPUp)
+    window.addEventListener('pointercancel', onPUp)
     return () => {
       window.removeEventListener('mousemove', onMove)
       window.removeEventListener('mouseup', onUp)
+      window.removeEventListener('pointermove', onPMove)
+      window.removeEventListener('pointerup', onPUp)
+      window.removeEventListener('pointercancel', onPUp)
     }
   }, [scale])
 
@@ -1029,6 +1076,7 @@ export default function FlatCanvas() {
         background: '#0f172a',
       }}
       onMouseDown={handleStageMouseDown}
+      onPointerDown={handleStagePointerDown}
       onContextMenu={handleContextMenu}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
