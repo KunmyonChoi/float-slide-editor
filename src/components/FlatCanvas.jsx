@@ -855,6 +855,8 @@ export default function FlatCanvas() {
     const onDown = (e) => {
       if (!panToolRef.current) return
       if (useFlatStore.getState().editingFlatId) return
+      // 버튼/입력 등 UI 컨트롤(줌 컨트롤·손 도구 토글 포함) 위에선 팬 시작 안 함 → 클릭 정상 동작
+      if (e.target?.closest?.('button, input, select, textarea, a, [data-no-pan]')) return
       e.preventDefault(); e.stopPropagation()
       pointerPanRef.current = {
         id: e.pointerId, startX: e.clientX, startY: e.clientY,
