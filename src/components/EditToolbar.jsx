@@ -4,6 +4,7 @@ import { useFlatStore } from '../store/flatStore'
 import { nextFlatId } from '../core/FlatExtractor'
 import { SLIDE_LAYOUTS, carryLayoutContent } from '../core/slideLayouts'
 import ThemeMenu from './ThemeMenu'
+import AnchoredMenu from './AnchoredMenu'
 import { themeRoleStyles } from '../core/themes'
 import { SNIPPETS } from '../core/snippets'
 import SnippetMenu from './SnippetMenu'
@@ -487,13 +488,12 @@ function DropdownBtn({ innerRef, open, setOpen, icon, label, items }) {
       <ToolBtn onClick={() => setOpen(v => !v)} title={label}>
         {icon}<span className="text-xs ml-1 tb-label">{label}</span><ChevronDown />
       </ToolBtn>
-      {open && (
+      <AnchoredMenu anchorRef={innerRef} open={open}>
         <div style={{
-          position: 'absolute', top: 'calc(100% + 6px)', left: '50%',
-          transform: 'translateX(-50%)', width: 130,
+          width: 130,
           background: 'rgba(15,23,42,0.97)', backdropFilter: 'blur(16px)',
           border: '1px solid rgba(255,255,255,0.1)', borderRadius: 10,
-          boxShadow: '0 12px 40px rgba(0,0,0,0.6)', zIndex: 100, padding: '4px',
+          boxShadow: '0 12px 40px rgba(0,0,0,0.6)', padding: '4px',
         }}>
           {items.map(item => (
             <button
@@ -506,7 +506,7 @@ function DropdownBtn({ innerRef, open, setOpen, icon, label, items }) {
             </button>
           ))}
         </div>
-      )}
+      </AnchoredMenu>
     </div>
   )
 }
@@ -533,13 +533,11 @@ function TableSizeDropdown({ innerRef, open, setOpen, onPick }) {
       <ToolBtn onClick={() => setOpen(v => !v)} title="표 추가">
         <TableIcon /><span className="text-xs ml-1 tb-label">표</span><ChevronDown />
       </ToolBtn>
-      {open && (
+      <AnchoredMenu anchorRef={innerRef} open={open}>
         <div style={{
-          position: 'absolute', top: 'calc(100% + 6px)', left: '50%',
-          transform: 'translateX(-50%)',
           background: 'rgba(15,23,42,0.97)', backdropFilter: 'blur(16px)',
           border: '1px solid rgba(255,255,255,0.1)', borderRadius: 10,
-          boxShadow: '0 12px 40px rgba(0,0,0,0.6)', zIndex: 100, padding: 10,
+          boxShadow: '0 12px 40px rgba(0,0,0,0.6)', padding: 10,
         }}>
           <div style={{ display: 'grid', gridTemplateColumns: `repeat(${TABLE_PICK_COLS}, ${CELL}px)`, gap: GAP }}>
             {Array.from({ length: TABLE_PICK_ROWS * TABLE_PICK_COLS }, (_, i) => {
@@ -564,7 +562,7 @@ function TableSizeDropdown({ innerRef, open, setOpen, onPick }) {
             {hover.r + 1} × {hover.c + 1}
           </div>
         </div>
-      )}
+      </AnchoredMenu>
     </div>
   )
 }
@@ -584,13 +582,12 @@ function HtmlInsertDropdown({ innerRef, open, setOpen, disabled, onInsert }) {
       <ToolBtn onClick={() => setOpen(v => !v)} disabled={disabled} title="요소 삽입">
         <PlusIcon /><span className="text-xs ml-1 tb-label">삽입</span>
       </ToolBtn>
-      {open && (
+      <AnchoredMenu anchorRef={innerRef} open={open}>
         <div style={{
-          position: 'absolute', top: 'calc(100% + 8px)', left: '50%',
-          transform: 'translateX(-50%)', width: 140,
+          width: 140,
           background: 'rgba(15,23,42,0.97)', backdropFilter: 'blur(16px)',
           border: '1px solid rgba(255,255,255,0.1)', borderRadius: 10,
-          boxShadow: '0 12px 40px rgba(0,0,0,0.6)', zIndex: 100, padding: '4px',
+          boxShadow: '0 12px 40px rgba(0,0,0,0.6)', padding: '4px',
         }}>
           {HTML_INSERT_ITEMS.map(item => (
             <button
@@ -603,7 +600,7 @@ function HtmlInsertDropdown({ innerRef, open, setOpen, disabled, onInsert }) {
             </button>
           ))}
         </div>
-      )}
+      </AnchoredMenu>
     </div>
   )
 }

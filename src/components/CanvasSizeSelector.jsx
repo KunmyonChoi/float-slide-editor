@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { useEditorStore } from '../store/editorStore'
 import { useFlatStore } from '../store/flatStore'
+import AnchoredMenu from './AnchoredMenu'
 
 export const CANVAS_PRESETS = [
   { id: 'auto',      label: '자동 감지',    w: null, h: null,  ratio: null       },
@@ -99,23 +100,20 @@ export default function CanvasSizeSelector() {
         onMouseLeave={e => { if (!open) e.currentTarget.style.background = 'transparent' }}
       >
         <CanvasIcon />
-        <span>{label}</span>
+        <span className="tb-label">{label}</span>
         <ChevronIcon open={open} />
       </button>
 
       {/* 드롭다운 */}
-      {open && (
+      <AnchoredMenu anchorRef={ref} open={open}>
         <div
           style={{
-            position: 'absolute', top: 'calc(100% + 8px)', left: '50%',
-            transform: 'translateX(-50%)',
             width: 232,
             background: 'rgba(15,23,42,0.97)',
             backdropFilter: 'blur(16px)',
             border: '1px solid rgba(255,255,255,0.1)',
             borderRadius: 12,
             boxShadow: '0 16px 48px rgba(0,0,0,0.6)',
-            zIndex: 100,
             overflow: 'hidden',
           }}
         >
@@ -182,7 +180,7 @@ export default function CanvasSizeSelector() {
             )}
           </div>
         </div>
-      )}
+      </AnchoredMenu>
     </div>
   )
 }
