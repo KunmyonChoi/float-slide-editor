@@ -53,7 +53,7 @@ export default function SnippetMenu({ onPick }) {
         title="스니펫(데코 요소) 삽입"
         className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs text-slate-200 hover:bg-white/10 transition-colors"
       >
-        <SnippetIcon /><span>스니펫</span><span className="text-slate-500">▾</span>
+        <SnippetIcon /><span className="tb-label">스니펫</span><span className="text-slate-500">▾</span>
       </button>
 
       <AnchoredMenu anchorRef={ref} open={open} z={10060}>

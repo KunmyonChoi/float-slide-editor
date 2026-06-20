@@ -345,7 +345,7 @@ export default function FileMenu({ fallbackSample }) {
         ].join(' ')}
       >
         <FileIcon />
-        <span className="text-xs ml-1">파일</span>
+        <span className="text-xs ml-1 tb-label">파일</span>
       </button>
 
       {open && (

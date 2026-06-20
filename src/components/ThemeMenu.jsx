@@ -38,7 +38,7 @@ export default function ThemeMenu() {
         className="flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs text-slate-200 bg-white/5 hover:bg-white/10 border border-white/10 transition-colors"
       >
         <span className="w-4 h-4 rounded-sm border border-white/20 shrink-0" style={tileBg(current)} />
-        <span>{current.name}</span>
+        <span className="tb-label">{current.name}</span>
         <span className="text-slate-500">▾</span>
       </button>
 

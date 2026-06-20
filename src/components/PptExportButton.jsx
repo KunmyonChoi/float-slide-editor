@@ -129,7 +129,7 @@ export default function PptExportButton() {
         title={`PPT (전체 페이지) 내보내기 — ${engine} · 폰트 임베딩 ${embedFonts ? 'ON' : 'OFF'}`}
       >
         <PptIcon />
-        <span className="text-xs ml-1">{busy ? 'PPT…' : 'PPT'}</span>
+        <span className="text-xs ml-1 tb-label">{busy ? 'PPT…' : 'PPT'}</span>
       </ToolBtn>
 
       <button
