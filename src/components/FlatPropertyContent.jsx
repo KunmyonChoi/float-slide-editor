@@ -175,7 +175,9 @@ export default function FlatPropertyContent() {
           </div>
         )}
 
-        <div className="pt-1 border-t border-white/5">
+        {/* 삭제 — 스크롤해도 항상 패널 맨 아래 보이도록 고정 푸터 */}
+        <div className="sticky bottom-0 -mx-3 -mb-3 px-3 py-2 border-t border-white/10"
+             style={{ background: 'rgba(15,23,42,0.97)' }}>
           <button
             onClick={() => removeFlatElement(el.id)}
             className="flex items-center justify-center w-full text-xs text-red-400 bg-red-500/10 hover:bg-red-500/20 rounded-lg px-2.5 py-1.5 border border-red-500/20 transition-colors"
@@ -488,8 +490,9 @@ function MultiElementPanel({ elements }) {
           />
         </div>
 
-        {/* 삭제 */}
-        <div className="pt-1 border-t border-white/5">
+        {/* 삭제 — 스크롤해도 항상 패널 맨 아래 보이도록 고정 푸터 */}
+        <div className="sticky bottom-0 -mx-3 -mb-3 px-3 py-2 border-t border-white/10"
+             style={{ background: 'rgba(15,23,42,0.97)' }}>
           <button
             onClick={removeSelectedElements}
             className="flex items-center justify-center w-full text-xs text-red-400 bg-red-500/10 hover:bg-red-500/20 rounded-lg px-2.5 py-1.5 border border-red-500/20 transition-colors"
