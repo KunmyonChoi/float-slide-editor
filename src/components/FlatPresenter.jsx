@@ -431,8 +431,12 @@ function ctrlBtn(active) {
   return {
     width: 26, height: 26, borderRadius: 7, cursor: 'pointer',
     display: 'flex', alignItems: 'center', justifyContent: 'center',
-    background: active ? 'rgba(99,102,241,0.25)' : 'rgba(255,255,255,0.06)',
-    border: '1px solid ' + (active ? 'rgba(99,102,241,0.4)' : 'rgba(255,255,255,0.12)'),
-    color: active ? '#c7d2fe' : '#cbd5e1', fontSize: 13,
+    // 선택 상태는 솔리드 인디고 + 흰색 + 외곽 링으로 또렷하게(비선택은 옅게)
+    background: active ? '#6366f1' : 'rgba(255,255,255,0.06)',
+    border: '1px solid ' + (active ? '#a5b4fc' : 'rgba(255,255,255,0.12)'),
+    boxShadow: active ? '0 0 0 2px rgba(99,102,241,0.45)' : 'none',
+    color: active ? '#ffffff' : '#cbd5e1', fontSize: 13,
+    fontWeight: active ? 700 : 400,
+    transition: 'background 0.12s, box-shadow 0.12s',
   }
 }
