@@ -433,3 +433,68 @@ export async function generateSpeakerNotes({ slides, tone, length, model, signal
   if (!Object.keys(out).length) throw new Error('생성된 발표 원고가 비어 있습니다.')
   return out
 }
+
+// ── TTS(음성 합성) ──
+
+const TTS_ENDPOINT = 'https://api.openai.com/v1/audio/speech'
+const TTS_MODEL_STORAGE = 'openai-tts-model'
+const TTS_VOICE_STORAGE = 'openai-tts-voice'
+const DEFAULT_TTS_MODEL = 'gpt-4o-mini-tts'
+const DEFAULT_TTS_VOICE = 'alloy'
+
+export const TTS_VOICES = [
+  { id: 'alloy', label: 'Alloy' }, { id: 'echo', label: 'Echo' }, { id: 'fable', label: 'Fable' },
+  { id: 'onyx', label: 'Onyx' }, { id: 'nova', label: 'Nova' }, { id: 'shimmer', label: 'Shimmer' },
+]
+
+export function getTtsModel() {
+  try { return localStorage.getItem(TTS_MODEL_STORAGE) || DEFAULT_TTS_MODEL } catch { return DEFAULT_TTS_MODEL }
+}
+export function setTtsModel(model) {
+  try {
+    const v = (model || '').trim()
+    if (v) localStorage.setItem(TTS_MODEL_STORAGE, v); else localStorage.removeItem(TTS_MODEL_STORAGE)
+  } catch { /* localStorage 비활성 무시 */ }
+}
+export function getTtsVoice() {
+  try { return localStorage.getItem(TTS_VOICE_STORAGE) || DEFAULT_TTS_VOICE } catch { return DEFAULT_TTS_VOICE }
+}
+export function setTtsVoice(voice) {
+  try {
+    const v = (voice || '').trim()
+    if (v) localStorage.setItem(TTS_VOICE_STORAGE, v); else localStorage.removeItem(TTS_VOICE_STORAGE)
+  } catch { /* localStorage 비활성 무시 */ }
+}
+
+/**
+ * 텍스트 → 음성(mp3 Blob). OpenAI /v1/audio/speech.
+ * @param {string} text
+ * @param {{ voice?: string, model?: string, signal?: AbortSignal }} [opts]
+ * @returns {Promise<Blob>} audio/mpeg Blob
+ */
+export async function synthesizeSpeech(text, { voice, model, signal } = {}) {
+  const apiKey = getApiKey()
+  if (!apiKey) throw new Error('OpenAI API 키가 설정되지 않았습니다. 먼저 키를 입력하세요.')
+  if (!text || !text.trim()) throw new Error('음성으로 변환할 노트가 없습니다.')
+
+  let res
+  try {
+    res = await fetch(TTS_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify({ model: model || getTtsModel(), voice: voice || getTtsVoice(), input: text, response_format: 'mp3' }),
+      signal,
+    })
+  } catch (e) {
+    if (e?.name === 'AbortError') throw e
+    throw new Error('OpenAI에 연결할 수 없습니다. 네트워크 연결을 확인하세요.')
+  }
+  if (!res.ok) {
+    let detail = ''
+    try { const j = await res.json(); detail = j?.error?.message || '' } catch { /* 무시 */ }
+    if (res.status === 401) throw new Error('API 키가 유효하지 않습니다. 키를 다시 확인하세요.')
+    if (res.status === 429) throw new Error('요청이 너무 많거나 사용 한도를 초과했습니다. 잠시 후 다시 시도하세요.')
+    throw new Error(`OpenAI TTS 오류 (${res.status})${detail ? ': ' + detail : ''}`)
+  }
+  return await res.blob()
+}

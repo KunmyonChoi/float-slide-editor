@@ -3,6 +3,7 @@ import { useFlatStore } from '../store/flatStore'
 import { useEditorStore } from '../store/editorStore'
 import FlatElementRenderer from './FlatElementRenderer'
 import { resolveConnectors } from '../core/ConnectorRouting'
+import { BlobStore } from '../core/BlobStore'
 
 /**
  * FlatPresenter — flat 편집 결과 기반 발표 모드
@@ -152,6 +153,35 @@ export default function FlatPresenter() {
     return () => clearTimeout(t)
   }, [])
 
+  // ── 노트 음성 나레이션 ──
+  const audioElRef = useRef(null)
+  const [narration, setNarration] = useState(true)
+  const [autoAdvance, setAutoAdvance] = useState(false)
+  const audioSrc = page?.notesAudio
+  const hasAudio = !!audioSrc && BlobStore.isIdbRef(audioSrc)
+  // 덱에 음성이 하나라도 있으면 나레이션 컨트롤 노출
+  const deckHasAudio = useMemo(
+    () => sortedKeys.some(k => BlobStore.isIdbRef(allPages?.[k]?.notesAudio)),
+    [allPages, sortedKeys])
+
+  // 슬라이드 진입 시 해당 노트 음성 자동 재생, 이동/종료 시 정지
+  useEffect(() => {
+    const el = audioElRef.current
+    if (!el) return
+    el.pause()
+    el.removeAttribute('src')
+    if (!narration || !hasAudio) return
+    let cancelled = false
+    BlobStore.getUrl(BlobStore.parseRef(audioSrc)).then(url => {
+      if (cancelled || !url || !audioElRef.current) return
+      audioElRef.current.src = url
+      audioElRef.current.play().catch(() => { /* 자동재생 차단/실패 무시 */ })
+    })
+    return () => { cancelled = true }
+  }, [currentSlide, narration, hasAudio, audioSrc])
+
+  const onAudioEnded = useCallback(() => { if (autoAdvance) goNext() }, [autoAdvance, goNext])
+
   return (
     <div
       ref={stageRef}
@@ -196,6 +226,38 @@ export default function FlatPresenter() {
               />
             ))}
           </div>
+        </div>
+      )}
+
+      {/* 노트 음성 재생기(숨김) */}
+      <audio ref={audioElRef} onEnded={onAudioEnded} />
+
+      {/* 나레이션 컨트롤 (좌하단) — 음성이 있는 덱에서만 노출 */}
+      {!loading && deckHasAudio && (
+        <div
+          onClick={(e) => e.stopPropagation()}
+          style={{
+            position: 'fixed', bottom: 20, left: 20, zIndex: 1011,
+            display: 'flex', alignItems: 'center', gap: 6, padding: '6px 8px', borderRadius: 10,
+            background: 'rgba(15,23,42,0.6)', backdropFilter: 'blur(12px)',
+            border: '1px solid rgba(255,255,255,0.1)', color: '#cbd5e1',
+            opacity: 0.45, transition: 'opacity 0.2s', fontSize: 12,
+          }}
+          onMouseEnter={(e) => { e.currentTarget.style.opacity = '1' }}
+          onMouseLeave={(e) => { e.currentTarget.style.opacity = '0.45' }}
+        >
+          <button type="button" title={narration ? '나레이션 끄기' : '나레이션 켜기'}
+            onClick={() => setNarration(n => !n)}
+            style={ctrlBtn(narration)}>{narration ? '🔊' : '🔇'}</button>
+          {hasAudio && (
+            <button type="button" title="이 슬라이드 음성 다시 재생"
+              onClick={() => { const el = audioElRef.current; if (el && el.src) { el.currentTime = 0; el.play().catch(() => {}) } }}
+              style={ctrlBtn(false)}>▶</button>
+          )}
+          <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', color: '#94a3b8' }}>
+            <input type="checkbox" checked={autoAdvance} onChange={e => setAutoAdvance(e.target.checked)} />
+            음성 후 자동 진행
+          </label>
         </div>
       )}
 
@@ -255,4 +317,14 @@ export default function FlatPresenter() {
       </button>
     </div>
   )
+}
+
+function ctrlBtn(active) {
+  return {
+    width: 26, height: 26, borderRadius: 7, cursor: 'pointer',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    background: active ? 'rgba(99,102,241,0.25)' : 'rgba(255,255,255,0.06)',
+    border: '1px solid ' + (active ? 'rgba(99,102,241,0.4)' : 'rgba(255,255,255,0.12)'),
+    color: active ? '#c7d2fe' : '#cbd5e1', fontSize: 13,
+  }
 }

@@ -92,6 +92,17 @@ export async function serializeProject(store) {
         }
       }
     }
+    // 페이지 레벨 노트 음성(idb) 수집
+    const audio = page.notesAudio || ''
+    if (BlobStore.isIdbRef(audio) && !refMap[audio]) {
+      const blob = await BlobStore.get(BlobStore.parseRef(audio))
+      if (blob) {
+        const ext = _guessExtension(blob.type)
+        const filename = `media_${mediaIdx++}${ext}`
+        mediaFolder.file(filename, blob)
+        refMap[audio] = `media/${filename}`
+      }
+    }
   }
 
   // pages 데이터에서 idb:// 참조를 media/ 경로로 변환
@@ -105,6 +116,9 @@ export async function serializeProject(store) {
       if (refMap[bgKey] && el.styles?.backgroundImage) {
         el.styles.backgroundImage = `media-ref:${refMap[bgKey]}`
       }
+    }
+    if (page.notesAudio && refMap[page.notesAudio]) {
+      page.notesAudio = refMap[page.notesAudio]
     }
   }
 
@@ -182,6 +196,9 @@ async function _loadZipProject(file) {
           el.styles.backgroundImage = `url(${bgImgMap[mediaPath]})`
         }
       }
+    }
+    if (page.notesAudio && mediaMap[page.notesAudio]) {
+      page.notesAudio = mediaMap[page.notesAudio]
     }
   }
 

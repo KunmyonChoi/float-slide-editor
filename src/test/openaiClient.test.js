@@ -5,6 +5,7 @@ import {
   generateImage, editImage,
   chat, generateImagePrompt, analyzeImageForInfographic,
   buildImageEnhancePrompt, generateSpeakerNotes,
+  synthesizeSpeech, getTtsVoice, setTtsVoice, getTtsModel, setTtsModel,
   DEFAULT_MODEL, DEFAULT_IMAGE_MODEL,
 } from '../core/OpenAIClient'
 
@@ -358,5 +359,43 @@ describe('generateSpeakerNotes', () => {
   it('빈 notes 결과는 에러', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(okResponse('{"notes":[]}')))
     await expect(generateSpeakerNotes({ slides: [{ index: 0, text: 'x' }] })).rejects.toThrow(/비어/)
+  })
+})
+
+describe('TTS — 설정/합성', () => {
+  beforeEach(() => { localStorage.clear() })
+  afterEach(() => { vi.unstubAllGlobals() })
+
+  it('voice/model 기본값·저장', () => {
+    expect(getTtsVoice()).toBe('alloy')
+    setTtsVoice('nova'); expect(getTtsVoice()).toBe('nova')
+    setTtsModel('tts-1'); expect(getTtsModel()).toBe('tts-1')
+  })
+
+  it('synthesizeSpeech: 텍스트→오디오 Blob, body 구성', async () => {
+    setApiKey('sk-test')
+    const blob = new Blob(['audio'], { type: 'audio/mpeg' })
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, blob: async () => blob })
+    vi.stubGlobal('fetch', fetchMock)
+    const out = await synthesizeSpeech('안녕하세요', { voice: 'echo' })
+    expect(out).toBe(blob)
+    const [url, opts] = fetchMock.mock.calls[0]
+    expect(url).toContain('/audio/speech')
+    const body = JSON.parse(opts.body)
+    expect(body.voice).toBe('echo')
+    expect(body.input).toBe('안녕하세요')
+    expect(body.response_format).toBe('mp3')
+  })
+
+  it('빈 텍스트는 호출 전 에러', async () => {
+    setApiKey('sk-test')
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    await expect(synthesizeSpeech('   ')).rejects.toThrow(/노트/)
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('키 없으면 에러', async () => {
+    await expect(synthesizeSpeech('x')).rejects.toThrow(/키/)
   })
 })

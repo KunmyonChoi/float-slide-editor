@@ -289,6 +289,10 @@ export const useFlatStore = create((set, get) => ({
   pageNotes: '',
   /** 발표자 노트 영역 접힘 여부 (기본 접힘) */
   notesCollapsed: true,
+  /** 현재 페이지 노트 TTS 음성 idb 참조(없으면 null) */
+  pageNotesAudio: null,
+  /** 음성 생성 시점의 노트 해시 — 현재 노트와 다르면 '재생성 필요'(스테일) */
+  pageNotesAudioHash: '',
   /** 페이지 삭제 실행취소 토스트 상태: null | { seq, index } */
   pageDeleteNotice: null,
   /** 디버그 모드 — 품질/변환검증/Phase 라벨/html·split 뷰 등 진단 UI 노출 */
@@ -313,6 +317,34 @@ export const useFlatStore = create((set, get) => ({
   setPageNotes(text) {
     if (_currentPageKey && _pageCache[_currentPageKey]) _pageCache[_currentPageKey].notes = text
     set({ pageNotes: text })
+  },
+
+  /** 현재 페이지 노트 음성(idb 참조 + 생성 시 노트 해시) 설정 */
+  setPageNotesAudio(ref, hash) {
+    if (_currentPageKey && _pageCache[_currentPageKey]) {
+      _pageCache[_currentPageKey].notesAudio = ref
+      _pageCache[_currentPageKey].notesAudioHash = hash
+    }
+    set({ pageNotesAudio: ref, pageNotesAudioHash: hash })
+  },
+
+  /**
+   * 여러 페이지 노트 음성 일괄 적용 (전체 생성용).
+   * @param {Object} audioByKey { [pageKey]: { ref, hash } }
+   */
+  applyAudioToPages(audioByKey) {
+    for (const key in audioByKey) {
+      if (_pageCache[key]) {
+        _pageCache[key].notesAudio = audioByKey[key].ref
+        _pageCache[key].notesAudioHash = audioByKey[key].hash
+      }
+    }
+    if (_currentPageKey && _pageCache[_currentPageKey]) {
+      set({
+        pageNotesAudio: _pageCache[_currentPageKey].notesAudio || null,
+        pageNotesAudioHash: _pageCache[_currentPageKey].notesAudioHash || '',
+      })
+    }
   },
 
   /**
@@ -416,8 +448,12 @@ export const useFlatStore = create((set, get) => ({
       _pendingEditCommit = null
     }
     if (!_currentPageKey) return
-    // 노트는 요소가 비어 있어도 기존 캐시 항목에 보존
-    if (_pageCache[_currentPageKey]) _pageCache[_currentPageKey].notes = get().pageNotes
+    // 노트/노트음성은 요소가 비어 있어도 기존 캐시 항목에 보존
+    if (_pageCache[_currentPageKey]) {
+      _pageCache[_currentPageKey].notes = get().pageNotes
+      _pageCache[_currentPageKey].notesAudio = get().pageNotesAudio
+      _pageCache[_currentPageKey].notesAudioHash = get().pageNotesAudioHash
+    }
     if (get().flatElements.length === 0) return
     const existed = _pageCache[_currentPageKey]
     // HTML 소스 슬라이드 인덱스: 기존 항목이 있으면 그 값 유지(flat-only의 null 포함),
@@ -431,6 +467,8 @@ export const useFlatStore = create((set, get) => ({
       history: _history.getState(),
       htmlSlideIndex,
       notes: get().pageNotes,
+      notesAudio: get().pageNotesAudio,
+      notesAudioHash: get().pageNotesAudioHash,
     }
     get()._syncPageInfo()
   },
@@ -451,6 +489,8 @@ export const useFlatStore = create((set, get) => ({
       canRedo: _history.canRedo,
       currentPageHtmlBacked: cached.htmlSlideIndex != null,
       pageNotes: cached.notes || '',
+      pageNotesAudio: cached.notesAudio || null,
+      pageNotesAudioHash: cached.notesAudioHash || '',
     })
     get()._syncPageInfo()
     return true
@@ -481,7 +521,7 @@ export const useFlatStore = create((set, get) => ({
       canUndo: false,
       canRedo: false,
       currentPageHtmlBacked: true, // iframe에서 갓 추출 = HTML 백킹
-      pageNotes: '', // 갓 추출 = 노트 없음
+      pageNotes: '', pageNotesAudio: null, pageNotesAudioHash: '', // 갓 추출 = 노트/음성 없음
     })
     get()._syncPageInfo()
 
@@ -533,7 +573,7 @@ export const useFlatStore = create((set, get) => ({
       editingFlatId: null,
       canUndo: false,
       canRedo: false,
-      pageNotes: '',
+      pageNotes: '', pageNotesAudio: null, pageNotesAudioHash: '',
     })
     get()._syncPageInfo()
   },
@@ -657,7 +697,7 @@ export const useFlatStore = create((set, get) => ({
         editingFlatId: null,
         canUndo: false,
         canRedo: false,
-        pageNotes: '',
+        pageNotes: '', pageNotesAudio: null, pageNotesAudioHash: '',
       })
     }, 150)
   },
@@ -1808,6 +1848,8 @@ export const useFlatStore = create((set, get) => ({
         fontImports: cached.fontImports,
         htmlSlideIndex: cached.htmlSlideIndex,
         notes: cached.notes || '',
+        notesAudio: cached.notesAudio || null,
+        notesAudioHash: cached.notesAudioHash || '',
       }
     }
     // 현재 페이지가 캐시에 없는 경우 (단일 페이지)
@@ -1818,6 +1860,8 @@ export const useFlatStore = create((set, get) => ({
         fontImports: get().fontImports,
         htmlSlideIndex: get().currentPageHtmlBacked ? _currentPageKey : null,
         notes: get().pageNotes || '',
+        notesAudio: get().pageNotesAudio || null,
+        notesAudioHash: get().pageNotesAudioHash || '',
       }
     }
     return { pages, currentPageKey: _currentPageKey }
@@ -1859,6 +1903,8 @@ export const useFlatStore = create((set, get) => ({
         fontImports: _pageCache[key].fontImports,
         htmlSlideIndex: _pageCache[key].htmlSlideIndex,
         notes: _pageCache[key].notes || '',
+        notesAudio: _pageCache[key].notesAudio || null,
+        notesAudioHash: _pageCache[key].notesAudioHash || '',
       }
     }
 
@@ -1932,6 +1978,8 @@ export const useFlatStore = create((set, get) => ({
         history: { stack: [], pointer: -1 },
         htmlSlideIndex: hsi,
         notes: pagesData[key].notes || '',
+        notesAudio: pagesData[key].notesAudio || null,
+        notesAudioHash: pagesData[key].notesAudioHash || '',
       }
     }
 
@@ -1950,6 +1998,8 @@ export const useFlatStore = create((set, get) => ({
         canRedo: false,
         currentPageHtmlBacked: page.htmlSlideIndex != null,
         pageNotes: page.notes || '',
+        pageNotesAudio: page.notesAudio || null,
+        pageNotesAudioHash: page.notesAudioHash || '',
       })
     }
     // 페이지 카운트/인덱스 동기화 — 누락 시 PageBar가 로드 직후 전체 페이지 수를

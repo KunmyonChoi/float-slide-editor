@@ -1,9 +1,11 @@
 import { useState } from 'react'
 import { useFlatStore } from '../store/flatStore'
 import { useEditorStore } from '../store/editorStore'
-import { hasApiKey, generateSpeakerNotes, NOTES_TONES, NOTES_LENGTHS } from '../core/OpenAIClient'
+import { hasApiKey, generateSpeakerNotes, NOTES_TONES, NOTES_LENGTHS, synthesizeSpeech, TTS_VOICES, getTtsVoice, setTtsVoice } from '../core/OpenAIClient'
 import { openAiSettings } from './AiSettingsModal'
 import { slidePageDigest } from '../core/slideTextDigest'
+import { textHash } from '../core/textHash'
+import { BlobStore } from '../core/BlobStore'
 
 function sortKeys(pages) {
   return Object.keys(pages || {}).sort((a, b) => {
@@ -22,12 +24,16 @@ export default function NotesPanel() {
   const notes = useFlatStore(s => s.pageNotes)
   const collapsed = useFlatStore(s => s.notesCollapsed)
   const setNotes = useFlatStore(s => s.setPageNotes)
+  const audioRef = useFlatStore(s => s.pageNotesAudio)
+  const audioHash = useFlatStore(s => s.pageNotesAudioHash)
 
   const [open, setOpen] = useState(false)
   const [tone, setTone] = useState('friendly')
   const [length, setLength] = useState('medium')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
+  const [audioOpen, setAudioOpen] = useState(false)
+  const [voice, setVoice] = useState(() => getTtsVoice())
 
   if (mode === 'present' || collapsed) return null
 
@@ -66,6 +72,49 @@ export default function NotesPanel() {
     } finally { setBusy(false) }
   }
 
+  const pickVoice = (v) => { setVoice(v); setTtsVoice(v) }
+
+  const genAudioCurrent = async () => {
+    if (!hasApiKey()) { openAiSettings(); return }
+    const text = (useFlatStore.getState().pageNotes || '').trim()
+    if (!text) { setErr('음성으로 만들 노트가 없습니다.'); return }
+    setBusy(true); setErr(''); setAudioOpen(false)
+    try {
+      const blob = await synthesizeSpeech(text, { voice })
+      const key = await BlobStore.put(blob)
+      useFlatStore.getState().setPageNotesAudio(BlobStore.toRef(key), textHash(text))
+    } catch (e) { setErr(e.message || '음성 생성 실패') } finally { setBusy(false) }
+  }
+
+  const genAudioAll = async () => {
+    if (!hasApiKey()) { openAiSettings(); return }
+    setBusy(true); setErr(''); setAudioOpen(false)
+    try {
+      const { pages } = await useFlatStore.getState().getAllPagesAsync()
+      const audioByKey = {}
+      for (const k of sortKeys(pages)) {
+        const text = (pages[k].notes || '').trim()
+        if (!text) continue
+        const blob = await synthesizeSpeech(text, { voice })
+        const key = await BlobStore.put(blob)
+        audioByKey[k] = { ref: BlobStore.toRef(key), hash: textHash(text) }
+      }
+      if (!Object.keys(audioByKey).length) { setErr('음성으로 만들 노트가 없습니다.'); return }
+      useFlatStore.getState().applyAudioToPages(audioByKey)
+    } catch (e) { setErr(e.message || '음성 생성 실패') } finally { setBusy(false) }
+  }
+
+  const previewAudio = async () => {
+    if (!audioRef) return
+    try {
+      const url = await BlobStore.getUrl(BlobStore.parseRef(audioRef))
+      if (url) new Audio(url).play()
+    } catch { /* 재생 실패 무시 */ }
+  }
+
+  // 스테일 판정은 생성 시와 동일하게 trim 기준으로 비교(공백 차이로 오탐 방지)
+  const audioStale = !!audioRef && audioHash !== textHash((notes || '').trim())
+
   const sel = {
     background: 'rgba(255,255,255,0.06)', color: '#e2e8f0', fontSize: 12,
     border: '1px solid rgba(255,255,255,0.1)', borderRadius: 6, padding: '3px 6px', outline: 'none',
@@ -73,10 +122,48 @@ export default function NotesPanel() {
 
   return (
     <div style={{ flexShrink: 0, background: '#0f172a', borderTop: '1px solid rgba(255,255,255,0.06)', position: 'relative' }}>
-      {/* AI 초안 버튼(우상단 오버레이) */}
-      <div style={{ position: 'absolute', top: 6, right: 8, zIndex: 2 }} data-export-ignore="true">
+      {/* AI 초안 + 음성 버튼(우상단 오버레이) */}
+      <div style={{ position: 'absolute', top: 6, right: 8, zIndex: 2, display: 'flex', gap: 6 }} data-export-ignore="true">
+        {/* 음성(TTS) */}
+        <div style={{ position: 'relative' }}>
+          <button
+            onClick={() => { setAudioOpen(o => !o); setOpen(false) }}
+            disabled={busy}
+            title="발표자 노트 음성(TTS)"
+            style={{
+              display: 'flex', alignItems: 'center', gap: 4, height: 24, padding: '0 8px',
+              background: audioRef && !audioStale ? 'rgba(16,185,129,0.2)' : 'rgba(255,255,255,0.06)',
+              border: '1px solid ' + (audioRef && !audioStale ? 'rgba(16,185,129,0.4)' : 'rgba(255,255,255,0.12)'),
+              borderRadius: 6, color: audioRef && !audioStale ? '#6ee7b7' : '#cbd5e1',
+              fontSize: 12, cursor: busy ? 'default' : 'pointer',
+            }}
+          >🔊 음성{audioStale ? ' ⚠' : ''} ▾</button>
+          {audioOpen && !busy && (
+            <div style={{
+              position: 'absolute', top: 28, right: 0, padding: 10, width: 210,
+              background: '#1e293b', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 10,
+              boxShadow: '0 8px 24px rgba(0,0,0,0.4)', display: 'flex', flexDirection: 'column', gap: 8,
+            }}>
+              <label style={{ fontSize: 11, color: '#94a3b8', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                음성
+                <select value={voice} onChange={e => pickVoice(e.target.value)} style={sel}>
+                  {TTS_VOICES.map(v => <option key={v.id} value={v.id}>{v.label}</option>)}
+                </select>
+              </label>
+              {audioRef && (
+                <button onClick={previewAudio} style={{ ...sel, cursor: 'pointer', padding: '5px 0' }}>
+                  ▶ 미리듣기{audioStale ? ' (노트 변경됨 — 재생성 권장)' : ''}
+                </button>
+              )}
+              <div style={{ display: 'flex', gap: 6 }}>
+                <button onClick={genAudioCurrent} style={{ flex: 1, ...sel, background: 'rgba(16,185,129,0.22)', color: '#6ee7b7', cursor: 'pointer', padding: '6px 0' }}>현재 페이지</button>
+                <button onClick={genAudioAll} style={{ flex: 1, ...sel, background: 'rgba(16,185,129,0.22)', color: '#6ee7b7', cursor: 'pointer', padding: '6px 0' }}>전체</button>
+              </div>
+            </div>
+          )}
+        </div>
         <button
-          onClick={() => setOpen(o => !o)}
+          onClick={() => { setOpen(o => !o); setAudioOpen(false) }}
           disabled={busy}
           title="AI 발표 원고 초안"
           style={{
