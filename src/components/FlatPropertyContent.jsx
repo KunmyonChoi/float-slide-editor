@@ -40,7 +40,9 @@ const selectClass = 'w-full text-xs text-slate-200 rounded-lg px-2.5 py-1.5 bord
 const selectStyle = { backgroundColor: '#1e293b' }  // 불투명 배경 — 드롭다운 옵션 가독성
 const labelClass = 'text-xs text-slate-500'
 // 스크럽(드래그로 값 변경) 가능한 레이블 — 점선 밑줄로 일반 레이블과 시각 구분
-const scrubLabelClass = `${labelClass} scrub-handle w-fit mb-0.5 underline decoration-dotted decoration-slate-500 underline-offset-2 hover:text-slate-200 hover:decoration-slate-300`
+// 라벨 전체(숫자 박스 너비)가 스크럽 영역 — 짧은 글자 의존 X, 일관된 큰 가로 타깃.
+// (패딩/마진은 다른 라벨과 행 높이가 어긋나므로 쓰지 않음 — w-full로만 넓힘)
+const scrubLabelClass = `${labelClass} w-full mb-0.5 underline decoration-dotted decoration-slate-500 underline-offset-2 hover:text-slate-200 hover:decoration-slate-300`
 
 /**
  * FlatPropertyContent — Flat 모드 속성 패널 콘텐츠

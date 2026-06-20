@@ -89,10 +89,3 @@ input, textarea, select,
 @media (max-width: 639px) {
   .tb-label { display: none; }
 }
-
-/* 숫자 스크럽 드래그 핸들(라벨) — 터치에서 잡기 쉽게 히트 영역 확대.
-   가로는 음수 마진으로 레이아웃 영향 없이 넓히고, 세로는 패딩으로 키운다. */
-.scrub-handle { display: inline-block; padding: 2px 8px; margin-left: -8px; margin-right: -8px; }
-@media (pointer: coarse) {
-  .scrub-handle { padding: 7px 14px; margin-left: -14px; margin-right: -14px; }
-}
