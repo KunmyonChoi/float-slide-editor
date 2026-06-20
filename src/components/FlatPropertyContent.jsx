@@ -49,8 +49,8 @@ const scrubLabelClass = `${labelClass} w-full mb-0.5 underline decoration-dotted
  * PropertyPanel 셸 안에 렌더링된다.
  */
 export default function FlatPropertyContent() {
-  const { selectedFlatIds, flatElements, updateFlatElement, previewFlatElement, removeFlatElement,
-          batchUpdateFlatElements, removeSelectedElements, editingFlatId } = useFlatStore()
+  const { selectedFlatIds, flatElements, updateFlatElement, previewFlatElement,
+          editingFlatId } = useFlatStore()
   const selectedEls = flatElements.filter(e => selectedFlatIds.includes(e.id))
 
   if (selectedEls.length === 0) return <SlideBackgroundPanel />
@@ -175,17 +175,7 @@ export default function FlatPropertyContent() {
           </div>
         )}
 
-        {/* 삭제 — 스크롤해도 항상 패널 맨 아래 보이도록 고정 푸터 */}
-        <div className="sticky bottom-0 -mx-3 -mb-3 px-3 py-2 border-t border-white/10"
-             style={{ background: 'rgba(15,23,42,0.97)' }}>
-          <button
-            onClick={() => removeFlatElement(el.id)}
-            className="flex items-center justify-center w-full text-xs text-red-400 bg-red-500/10 hover:bg-red-500/20 rounded-lg px-2.5 py-1.5 border border-red-500/20 transition-colors"
-          >
-            <TrashIcon />
-            <span className="ml-1">삭제</span>
-          </button>
-        </div>
+        {/* 삭제 버튼은 PropertyPanel 푸터(스크롤 영역 밖)에서 항상 표시 */}
       </div>
     </>
   )
@@ -194,7 +184,7 @@ export default function FlatPropertyContent() {
 // ── 다중 선택 패널 ──────────────────────────────────
 
 function MultiElementPanel({ elements }) {
-  const { batchUpdateFlatElements, batchUpdateFlatElementsIndividual, removeSelectedElements, selectedFlatIds } = useFlatStore()
+  const { batchUpdateFlatElements, batchUpdateFlatElementsIndividual, selectedFlatIds } = useFlatStore()
 
   // 공통 값 계산 헬퍼: 모든 요소에서 동일하면 그 값, 아니면 null
   const getCommon = (getter) => {
@@ -490,17 +480,7 @@ function MultiElementPanel({ elements }) {
           />
         </div>
 
-        {/* 삭제 — 스크롤해도 항상 패널 맨 아래 보이도록 고정 푸터 */}
-        <div className="sticky bottom-0 -mx-3 -mb-3 px-3 py-2 border-t border-white/10"
-             style={{ background: 'rgba(15,23,42,0.97)' }}>
-          <button
-            onClick={removeSelectedElements}
-            className="flex items-center justify-center w-full text-xs text-red-400 bg-red-500/10 hover:bg-red-500/20 rounded-lg px-2.5 py-1.5 border border-red-500/20 transition-colors"
-          >
-            <TrashIcon />
-            <span className="ml-1">{elements.length}개 삭제</span>
-          </button>
-        </div>
+        {/* 삭제 버튼은 PropertyPanel 푸터(스크롤 영역 밖)에서 항상 표시 */}
       </div>
     </>
   )
@@ -1762,16 +1742,6 @@ function ToggleBtn({ active, mixed, onClick, title, children }) {
         />
       )}
     </button>
-  )
-}
-
-// ── 아이콘 ─────────────────────────────────────────
-
-function TrashIcon() {
-  return (
-    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6" />
-    </svg>
   )
 }
 

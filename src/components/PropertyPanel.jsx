@@ -100,9 +100,10 @@ function FloatingShell({ children, showHtml }) {
         <GripIcon />
       </div>
 
-      <div className="overflow-y-auto thin-scrollbar" style={{ maxHeight: 'calc(100vh - 120px)' }} data-no-drag>
+      <div className="overflow-y-auto thin-scrollbar" style={{ maxHeight: 'calc(100vh - 160px)' }} data-no-drag>
         {children}
       </div>
+      {!showHtml && <DeleteFooter />}
     </div>
   )
 }
@@ -160,7 +161,36 @@ function DockedShell({ children }) {
           </div>
         )}
       </div>
+      {isFlatMode && <DeleteFooter />}
     </div>
+  )
+}
+
+// 선택 요소 삭제 — 스크롤 영역 밖(패널 푸터)에 항상 표시
+function DeleteFooter() {
+  const selectedFlatIds = useFlatStore(s => s.selectedFlatIds)
+  const removeSelectedElements = useFlatStore(s => s.removeSelectedElements)
+  const n = selectedFlatIds.length
+  if (n === 0) return null
+  return (
+    <div className="shrink-0 px-3 py-2 border-t border-white/10">
+      <button
+        onClick={removeSelectedElements}
+        className="flex items-center justify-center w-full text-xs text-red-400 bg-red-500/10 hover:bg-red-500/20 rounded-lg px-2.5 py-1.5 border border-red-500/20 transition-colors"
+      >
+        <TrashIcon />
+        <span className="ml-1">{n > 1 ? `${n}개 삭제` : '삭제'}</span>
+      </button>
+    </div>
+  )
+}
+
+function TrashIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="3 6 5 6 21 6" />
+      <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+    </svg>
   )
 }
 
