@@ -134,9 +134,9 @@ export default function PageBar() {
   const pageLabel = { color: '#94a3b8', fontSize: 13, fontVariantNumeric: 'tabular-nums', userSelect: 'none' }
 
   // ── Flat 모드: flatStore 기반 ──
+  // 페이지 이동·순서변경은 슬라이드 목록 패널에서 직접 하므로 하단 바에는 두지 않음.
+  // 페이지 표시 + 추가/삭제만 유지.
   if (isFlatMode && flatPageCount > 0) {
-    const canPrev = flatCurrentPage > 0
-    const canNext = flatCurrentPage < flatPageCount - 1
     return (
       <div style={{ ...barStyle, position: 'relative' }}>
         {/* 발표자 노트 토글 — 라인 좌측 끝 */}
@@ -154,9 +154,7 @@ export default function PageBar() {
         >
           <NoteIcon /> 노트
         </button>
-        <button onClick={() => useFlatStore.getState().navigateFlatPage(-1)} disabled={!canPrev} style={btnStyle(canPrev)}>&#8249;</button>
         <span style={pageLabel}>{flatCurrentPage + 1} / {flatPageCount}</span>
-        <button onClick={() => useFlatStore.getState().navigateFlatPage(1)} disabled={!canNext} style={btnStyle(canNext)}>&#8250;</button>
         <span style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.1)', margin: '0 4px' }} />
         <button onClick={() => useFlatStore.getState().addPage('titleContent')} style={{ ...btnStyle(true), fontSize: 14, width: 24, height: 24 }} title="페이지 추가 (Ctrl+M)">+</button>
         <button
@@ -165,19 +163,6 @@ export default function PageBar() {
           style={{ ...btnStyle(flatPageCount > 1), fontSize: 14, width: 24, height: 24 }}
           title="페이지 삭제 (Ctrl+Shift+M)"
         >&minus;</button>
-        <span style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.1)', margin: '0 4px' }} />
-        <button
-          onClick={() => useFlatStore.getState().movePageOrder(-1)}
-          disabled={flatCurrentPage <= 0}
-          style={{ ...btnStyle(flatCurrentPage > 0), fontSize: 11, width: 24, height: 24 }}
-          title="페이지 앞으로 이동 (Ctrl+Shift+PageUp)"
-        >&#9664;</button>
-        <button
-          onClick={() => useFlatStore.getState().movePageOrder(1)}
-          disabled={flatCurrentPage >= flatPageCount - 1}
-          style={{ ...btnStyle(flatCurrentPage < flatPageCount - 1), fontSize: 11, width: 24, height: 24 }}
-          title="페이지 뒤로 이동 (Ctrl+Shift+PageDown)"
-        >&#9654;</button>
       </div>
     )
   }
