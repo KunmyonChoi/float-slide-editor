@@ -391,82 +391,118 @@ export default function FlatContextMenu({ x, y, canvasX, canvasY, onClose }) {
     hoverTimeout.current = setTimeout(() => setOpenSubmenu(null), 150)
   }
 
-  // 메뉴 항목 빌드
-  const items = hasSelection ? [
-    { id: 'cut', label: '잘라내기', shortcut: 'Ctrl+X', action: 'cut' },
-    { id: 'copy', label: '복사', shortcut: 'Ctrl+C', action: 'copy' },
-    { id: 'paste', label: '붙여넣기', shortcut: 'Ctrl+V', action: 'paste', disabled: clipboardEmpty },
-    { id: 'pasteClip', label: '클립보드 붙여넣기 (이미지/텍스트)', shortcut: 'Ctrl+Alt+V', action: 'pasteClipboard' },
-    { id: 'copyStyle', label: '서식 복사', shortcut: 'Ctrl+Shift+C', action: 'copyStyle', disabled: !singleId },
-    { id: 'pasteStyle', label: '서식 붙여넣기', shortcut: 'Ctrl+Shift+V', action: 'pasteStyle',
-      disabled: !useFlatStore.getState().styleClipboard },
-    { id: 'dup', label: '복제', shortcut: 'Ctrl+D', action: 'duplicate' },
-    ...(singleImageEl ? [{ id: 'dlImage', label: '이미지 다운로드', action: 'downloadImage' }] : []),
-    { id: 'del', label: '삭제', shortcut: 'Delete', action: 'delete' },
-    { id: 'lock', label: allLocked ? '잠금 해제' : '잠금', action: 'lock' },
-    // 배경으로 변환: 단일 이미지/영상만(이미 배경인 것 제외). 그 외(도형/표/그룹/텍스트)는 비활성
-    ...(selectedEls.length === 1 && !isBackgroundElement(selectedEls[0]) && ['image', 'video'].includes(selectedEls[0].type)
-      ? [{ id: 'toBg', label: '배경으로 변환', action: 'convertToBg' }] : []),
-    // 일반 요소로 복원: 선택이 배경일 때
-    ...(selectedEls.length === 1 && isBackgroundElement(selectedEls[0])
-      ? [{ id: 'restoreBg', label: '일반 요소로 복원', action: 'restoreFromBg' }] : []),
-    ...(singleTextEl ? [{ id: 'themeColor', label: '사용자 테마 색 지정', submenu: 'themeColor',
-      children: [
-        { id: 'asTitle', label: '이 색을 제목색으로', action: 'setThemeTitle' },
-        { id: 'asBody', label: '이 색을 본문색으로', action: 'setThemeBody' },
-      ],
-    }] : []),
-    { id: 'sep1', type: 'separator' },
-    { id: 'zorder', label: '순서', submenu: 'zorder', disabled: !singleId,
-      children: [
-        { id: 'front', label: '맨 앞으로', shortcut: 'Ctrl+Shift+]', action: 'bringToFront' },
-        { id: 'forward', label: '앞으로', shortcut: 'Ctrl+]', action: 'bringForward' },
-        { id: 'backward', label: '뒤로', shortcut: 'Ctrl+[', action: 'sendBackward' },
-        { id: 'back', label: '맨 뒤로', shortcut: 'Ctrl+Shift+[', action: 'sendToBack' },
-      ],
-    },
-    { id: 'align', label: '정렬', submenu: 'align', disabled: selectedFlatIds.length < 2,
-      children: [
-        { id: 'alignLeft', label: '왼쪽 맞춤', action: 'alignLeft' },
-        { id: 'alignCenterH', label: '가로 가운데', action: 'alignCenterH' },
-        { id: 'alignRight', label: '오른쪽 맞춤', action: 'alignRight' },
-        { id: 'sepA', type: 'separator' },
-        { id: 'alignTop', label: '위쪽 맞춤', action: 'alignTop' },
-        { id: 'alignMiddleV', label: '세로 가운데', action: 'alignMiddleV' },
-        { id: 'alignBottom', label: '아래쪽 맞춤', action: 'alignBottom' },
-        ...(selectedFlatIds.length >= 3 ? [
-          { id: 'sepD', type: 'separator' },
-          { id: 'distH', label: '가로 균등 분배', action: 'distributeH' },
-          { id: 'distV', label: '세로 균등 분배', action: 'distributeV' },
-        ] : []),
-      ],
-    },
-    { id: 'group', label: '그룹', shortcut: 'Ctrl+G', action: 'group', disabled: selectedFlatIds.length < 2 },
-    { id: 'ungroup', label: '그룹 해제', shortcut: 'Ctrl+Shift+G', action: 'ungroup', disabled: !selectedEls.some(e => e.groupId) },
-    { id: 'sep2', type: 'separator' },
-    { id: 'all', label: '전체 선택', shortcut: 'Ctrl+A', action: 'selectAll' },
-  ] : [
-    { id: 'paste', label: '붙여넣기', shortcut: 'Ctrl+V', action: 'paste', disabled: clipboardEmpty },
-    { id: 'pasteClip', label: '클립보드 붙여넣기 (이미지/텍스트)', shortcut: 'Ctrl+Alt+V', action: 'pasteClipboard' },
-    { id: 'sep1', type: 'separator' },
-    ...(bgElement ? [{ id: 'formatBg', label: '배경 서식', action: 'formatBackground' }] : []),
-    ...(bgElement ? [{ id: 'bgToTheme', label: '현재 배경을 사용자 테마로', action: 'setThemeBg' }] : []),
-    { id: 'insert', label: '요소 추가', submenu: 'insert',
-      children: [
-        { id: 'itext', label: '텍스트', action: 'insertText' },
-        { id: 'irect', label: '사각형', action: 'insertRect' },
-        { id: 'iroundrect', label: '둥근 사각형', action: 'insertRoundRect' },
-        { id: 'icircle', label: '원', action: 'insertCircle' },
-        { id: 'iline', label: '선', action: 'insertLine' },
-        { id: 'isep', type: 'separator' },
-        { id: 'iimage', label: '이미지', action: 'insertImage' },
-        { id: 'ivideo', label: '영상', action: 'insertVideo' },
-      ],
-    },
-    { id: 'sep2', type: 'separator' },
-    { id: 'aiInfographic', label: 'AI 인포그래픽 변환', action: 'aiInfographic' },
-    { id: 'all', label: '전체 선택', shortcut: 'Ctrl+A', action: 'selectAll' },
-  ]
+  // 메뉴 항목 빌드 — 개념별 그룹 배열을 디바이더로 합침(빈 그룹/연속 디바이더 자동 제거)
+  const joinGroups = (groups) => {
+    const out = []
+    for (const g of groups) {
+      if (!g || g.length === 0) continue
+      if (out.length) out.push({ id: `__sep${out.length}`, type: 'separator' })
+      out.push(...g)
+    }
+    return out
+  }
+
+  const items = hasSelection ? joinGroups([
+    // 편집/클립보드
+    [
+      { id: 'cut', label: '잘라내기', shortcut: 'Ctrl+X', action: 'cut' },
+      { id: 'copy', label: '복사', shortcut: 'Ctrl+C', action: 'copy' },
+      { id: 'paste', label: '붙여넣기', shortcut: 'Ctrl+V', action: 'paste', disabled: clipboardEmpty },
+      { id: 'pasteClip', label: '클립보드 붙여넣기 (이미지/텍스트)', shortcut: 'Ctrl+Alt+V', action: 'pasteClipboard' },
+      { id: 'dup', label: '복제', shortcut: 'Ctrl+D', action: 'duplicate' },
+    ],
+    // 서식
+    [
+      { id: 'copyStyle', label: '서식 복사', shortcut: 'Ctrl+Shift+C', action: 'copyStyle', disabled: !singleId },
+      { id: 'pasteStyle', label: '서식 붙여넣기', shortcut: 'Ctrl+Shift+V', action: 'pasteStyle',
+        disabled: !useFlatStore.getState().styleClipboard },
+      ...(singleTextEl ? [{ id: 'themeColor', label: '사용자 테마 색 지정', submenu: 'themeColor',
+        children: [
+          { id: 'asTitle', label: '이 색을 제목색으로', action: 'setThemeTitle' },
+          { id: 'asBody', label: '이 색을 본문색으로', action: 'setThemeBody' },
+        ],
+      }] : []),
+    ],
+    // 배치
+    [
+      { id: 'zorder', label: '순서', submenu: 'zorder', disabled: !singleId,
+        children: [
+          { id: 'front', label: '맨 앞으로', shortcut: 'Ctrl+Shift+]', action: 'bringToFront' },
+          { id: 'forward', label: '앞으로', shortcut: 'Ctrl+]', action: 'bringForward' },
+          { id: 'backward', label: '뒤로', shortcut: 'Ctrl+[', action: 'sendBackward' },
+          { id: 'back', label: '맨 뒤로', shortcut: 'Ctrl+Shift+[', action: 'sendToBack' },
+        ],
+      },
+      { id: 'align', label: '정렬', submenu: 'align', disabled: selectedFlatIds.length < 2,
+        children: [
+          { id: 'alignLeft', label: '왼쪽 맞춤', action: 'alignLeft' },
+          { id: 'alignCenterH', label: '가로 가운데', action: 'alignCenterH' },
+          { id: 'alignRight', label: '오른쪽 맞춤', action: 'alignRight' },
+          { id: 'sepA', type: 'separator' },
+          { id: 'alignTop', label: '위쪽 맞춤', action: 'alignTop' },
+          { id: 'alignMiddleV', label: '세로 가운데', action: 'alignMiddleV' },
+          { id: 'alignBottom', label: '아래쪽 맞춤', action: 'alignBottom' },
+          ...(selectedFlatIds.length >= 3 ? [
+            { id: 'sepD', type: 'separator' },
+            { id: 'distH', label: '가로 균등 분배', action: 'distributeH' },
+            { id: 'distV', label: '세로 균등 분배', action: 'distributeV' },
+          ] : []),
+        ],
+      },
+      { id: 'group', label: '그룹', shortcut: 'Ctrl+G', action: 'group', disabled: selectedFlatIds.length < 2 },
+      { id: 'ungroup', label: '그룹 해제', shortcut: 'Ctrl+Shift+G', action: 'ungroup', disabled: !selectedEls.some(e => e.groupId) },
+    ],
+    // 변환/상태
+    [
+      { id: 'lock', label: allLocked ? '잠금 해제' : '잠금', action: 'lock' },
+      ...(singleImageEl ? [{ id: 'dlImage', label: '이미지 다운로드', action: 'downloadImage' }] : []),
+      // 배경으로 변환: 단일 이미지/영상만(이미 배경인 것 제외)
+      ...(selectedEls.length === 1 && !isBackgroundElement(selectedEls[0]) && ['image', 'video'].includes(selectedEls[0].type)
+        ? [{ id: 'toBg', label: '배경으로 변환', action: 'convertToBg' }] : []),
+      // 일반 요소로 복원: 선택이 배경일 때
+      ...(selectedEls.length === 1 && isBackgroundElement(selectedEls[0])
+        ? [{ id: 'restoreBg', label: '일반 요소로 복원', action: 'restoreFromBg' }] : []),
+    ],
+    // 삭제
+    [
+      { id: 'del', label: '삭제', shortcut: 'Delete', action: 'delete' },
+    ],
+    // 선택
+    [
+      { id: 'all', label: '전체 선택', shortcut: 'Ctrl+A', action: 'selectAll' },
+    ],
+  ]) : joinGroups([
+    // 붙여넣기
+    [
+      { id: 'paste', label: '붙여넣기', shortcut: 'Ctrl+V', action: 'paste', disabled: clipboardEmpty },
+      { id: 'pasteClip', label: '클립보드 붙여넣기 (이미지/텍스트)', shortcut: 'Ctrl+Alt+V', action: 'pasteClipboard' },
+    ],
+    // 배경
+    [
+      ...(bgElement ? [{ id: 'formatBg', label: '배경 서식', action: 'formatBackground' }] : []),
+      ...(bgElement ? [{ id: 'bgToTheme', label: '현재 배경을 사용자 테마로', action: 'setThemeBg' }] : []),
+    ],
+    // 추가
+    [
+      { id: 'insert', label: '요소 추가', submenu: 'insert',
+        children: [
+          { id: 'itext', label: '텍스트', action: 'insertText' },
+          { id: 'irect', label: '사각형', action: 'insertRect' },
+          { id: 'iroundrect', label: '둥근 사각형', action: 'insertRoundRect' },
+          { id: 'icircle', label: '원', action: 'insertCircle' },
+          { id: 'iline', label: '선', action: 'insertLine' },
+          { id: 'isep', type: 'separator' },
+          { id: 'iimage', label: '이미지', action: 'insertImage' },
+          { id: 'ivideo', label: '영상', action: 'insertVideo' },
+        ],
+      },
+      { id: 'aiInfographic', label: 'AI 인포그래픽 변환', action: 'aiInfographic' },
+    ],
+    // 선택
+    [
+      { id: 'all', label: '전체 선택', shortcut: 'Ctrl+A', action: 'selectAll' },
+    ],
+  ])
 
   return (
     <div
