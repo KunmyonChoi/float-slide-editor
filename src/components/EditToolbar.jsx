@@ -446,9 +446,7 @@ export default function EditToolbar() {
             다이어그램 모드
             <span className="text-slate-500 ml-1">도형 호버→초록 연결점 드래그(또는 Alt/⌘+드래그)</span>
           </span>
-          <ToolBtn onClick={() => useFlatStore.getState().setDiagramMode(false)} title="다이어그램 모드 종료">
-            <span className="text-xs text-red-400">종료</span>
-          </ToolBtn>
+          <ExitModeBtn onClick={() => useFlatStore.getState().setDiagramMode(false)} title="다이어그램 모드 종료" label="종료" />
         </>
       )}
 
@@ -460,9 +458,7 @@ export default function EditToolbar() {
             {useFlatStore.getState().drawMode === 'line' ? '선 그리기' : useFlatStore.getState().drawMode === 'polyline' ? '폴리라인' : '폴리곤'}
             <span className="text-slate-500 ml-1">(ESC 취소)</span>
           </span>
-          <ToolBtn onClick={() => useFlatStore.getState().setDrawMode(null)} title="그리기 취소">
-            <span className="text-xs text-red-400">취소</span>
-          </ToolBtn>
+          <ExitModeBtn onClick={() => useFlatStore.getState().setDrawMode(null)} title="그리기 모드 종료 (ESC)" label="종료" />
         </>
       )}
 
@@ -697,6 +693,27 @@ function VideoIcon() {
       <polygon points="23 7 16 12 23 17 23 7" />
       <rect x="1" y="5" width="15" height="14" rx="2" />
     </svg>
+  )
+}
+
+function CloseIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+      <line x1="6" y1="6" x2="18" y2="18" /><line x1="18" y1="6" x2="6" y2="18" />
+    </svg>
+  )
+}
+
+// 모드(그리기/다이어그램) 종료 버튼 — X 아이콘 + 라벨의 danger 톤 알약으로 '나가기'를 직관화
+function ExitModeBtn({ onClick, title, label = '종료' }) {
+  return (
+    <button
+      onClick={onClick}
+      title={title}
+      className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs text-red-300 border border-red-500/30 bg-red-500/10 hover:bg-red-500/20 hover:text-red-200 transition-colors"
+    >
+      <CloseIcon />{label}
+    </button>
   )
 }
 
