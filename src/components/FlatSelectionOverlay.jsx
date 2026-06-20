@@ -61,6 +61,7 @@ export default function FlatSelectionOverlay({ element, scale, otherRects, canva
     const st = useFlatStore.getState()
     if (st.drawMode) return // 그리기 모드 중 이동 차단
     if (editingFlatId) return
+    if (dragRef.current) return // 이미 드래그 중(둘째 손가락 등) → 무시
     // 다이어그램 모드 + Alt/⌘(Cmd) 드래그 → 이 도형(선택됨)에서 커넥터 시작(이동 대신)
     if (st.diagramMode && (e.altKey || e.metaKey) && element.shapeType !== 'connector') {
       e.stopPropagation(); e.preventDefault()
@@ -108,6 +109,11 @@ export default function FlatSelectionOverlay({ element, scale, otherRects, canva
       startX: element.x,
       startY: element.y,
       otherRects: otherRects || [],
+      pointerId: e.pointerType ? e.pointerId : undefined,
+    }
+    // 터치: 포인터 캡처로 손가락이 요소를 벗어나도 이동 지속
+    if (e.pointerType === 'touch' && e.currentTarget?.setPointerCapture) {
+      try { e.currentTarget.setPointerCapture(e.pointerId) } catch { /* 무시 */ }
     }
   }, [element, editingFlatId, scale, flatElements, canvasSize, otherRects, setSelectedFlat, toggleSelectFlat])
 
@@ -162,6 +168,9 @@ export default function FlatSelectionOverlay({ element, scale, otherRects, canva
     const onMove = (e) => {
       const d = dragRef.current
       if (!d) return
+      // 마우스 PointerEvent는 mousemove가 처리(중복 방지). 터치/펜만 포인터 경로로.
+      if (e.pointerType === 'mouse') return
+      if (d.pointerId != null && e.pointerId !== d.pointerId) return
 
       if (d.mode === 'rotate') {
         // canvasRef(scale 적용된 부모)의 rect에서 캔버스 좌표 계산
@@ -260,9 +269,12 @@ export default function FlatSelectionOverlay({ element, scale, otherRects, canva
       }
     }
 
-    const onUp = () => {
+    const onUp = (e) => {
       const d = dragRef.current
       if (!d) return
+      // 마우스 PointerEvent의 pointerup은 mouseup이 처리(중복 방지)
+      if (e && e.pointerType === 'mouse') return
+      if (e && d.pointerId != null && e.pointerId != null && e.pointerId !== d.pointerId) return
       dragRef.current = null
       if (onSnapGuides) onSnapGuides([])
 
@@ -302,9 +314,16 @@ export default function FlatSelectionOverlay({ element, scale, otherRects, canva
 
     window.addEventListener('mousemove', onMove)
     window.addEventListener('mouseup', onUp)
+    // 터치/펜: 같은 onMove/onUp 재사용(내부에서 pointerType==='mouse'는 무시)
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+    window.addEventListener('pointercancel', onUp)
     return () => {
       window.removeEventListener('mousemove', onMove)
       window.removeEventListener('mouseup', onUp)
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+      window.removeEventListener('pointercancel', onUp)
     }
   }, [element.id, scale, previewFlatElement, updateFlatElement])
 
@@ -340,10 +359,13 @@ export default function FlatSelectionOverlay({ element, scale, otherRects, canva
         // 커넥터는 본체 이동이 없고 bbox가 (대각선이면) 크다 → 컨테이너가 아래 도형 클릭을
         // 막지 않도록 pointer 통과. 끝점 핸들만 따로 auto로 받는다.
         pointerEvents: (locked || isConnector) ? 'none' : 'auto',
+        // 터치로 선택 요소를 끌어 이동 — 브라우저 기본 제스처(스크롤 등) 차단
+        touchAction: (locked || isConnector) ? undefined : 'none',
         transform: rot ? `rotate(${rot}deg)` : undefined,
         transformOrigin: rot ? 'center center' : undefined,
       }}
       onMouseDown={handleMoveStart}
+      onPointerDown={(e) => { if (e.pointerType === 'touch') handleMoveStart(e) }}
       onDoubleClick={handleDoubleClick}
     >
       {!locked && (
