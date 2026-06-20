@@ -4,6 +4,7 @@ import { computeSnapGuides, computeResizeSnapGuides } from '../core/SnapEngine'
 import { computeRotationAngle, snapRotation, normalizeAngle, canvasDeltaToLocal } from '../core/RotationUtils'
 import { pointsToBBox, closestPointOnSegments } from '../core/PolyShapeUtils'
 import { attachTargetAt, nearestConnectionPoint } from '../core/ConnectorRouting'
+import { useIsTouch } from '../core/pointerEnv'
 
 const HANDLE_SIZE = 8
 const ROTATE_HANDLE_OFFSET = 30
@@ -46,6 +47,8 @@ const HANDLES = [
 export default function FlatSelectionOverlay({ element, scale, otherRects, canvasSize, onSnapGuides }) {
   const { previewFlatElement, updateFlatElement, editingFlatId, setEditingFlat,
           setSelectedFlat, toggleSelectFlat, flatElements } = useFlatStore()
+  const diagramMode = useFlatStore(s => s.diagramMode)
+  const isTouch = useIsTouch()
   const dragRef = useRef(null)
 
   // 더블클릭 → 텍스트 편집 모드 진입 (text + shape)
@@ -120,6 +123,7 @@ export default function FlatSelectionOverlay({ element, scale, otherRects, canva
   // 리사이즈 시작
   const handleResizeStart = useCallback((e, dir) => {
     if (editingFlatId || element.locked) return
+    if (dragRef.current) return
     e.stopPropagation()
     e.preventDefault()
     dragRef.current = {
@@ -133,12 +137,17 @@ export default function FlatSelectionOverlay({ element, scale, otherRects, canva
       startH: element.height,
       startRotation: element.rotation || 0,
       otherRects: otherRects || [],
+      pointerId: e.pointerType ? e.pointerId : undefined,
     }
-  }, [element, otherRects])
+    if (e.pointerType === 'touch' && e.currentTarget?.setPointerCapture) {
+      try { e.currentTarget.setPointerCapture(e.pointerId) } catch { /* 무시 */ }
+    }
+  }, [element, editingFlatId, otherRects])
 
   // 회전 시작
   const handleRotateStart = useCallback((e) => {
     if (editingFlatId || element.locked) return
+    if (dragRef.current) return
     e.stopPropagation()
     e.preventDefault()
     dragRef.current = {
@@ -146,6 +155,10 @@ export default function FlatSelectionOverlay({ element, scale, otherRects, canva
       startRotation: element.rotation || 0,
       cx: element.x + element.width / 2,
       cy: element.y + element.height / 2,
+      pointerId: e.pointerType ? e.pointerId : undefined,
+    }
+    if (e.pointerType === 'touch' && e.currentTarget?.setPointerCapture) {
+      try { e.currentTarget.setPointerCapture(e.pointerId) } catch { /* 무시 */ }
     }
   }, [element, editingFlatId])
 
@@ -370,35 +383,38 @@ export default function FlatSelectionOverlay({ element, scale, otherRects, canva
     >
       {!locked && (
         <>
-          {/* 회전 핸들 (커넥터는 회전 무의미 → 숨김) */}
-          {!isConnector && <>
-          <div
-            data-resize-handle="true"
-            onMouseDown={handleRotateStart}
-            style={{
-              position: 'absolute',
-              left: width / 2 - 5,
-              top: -ROTATE_HANDLE_OFFSET,
-              width: 10,
-              height: 10,
-              background: '#6366f1',
-              border: '1.5px solid #fff',
-              borderRadius: '50%',
-              cursor: 'grab',
-              zIndex: 10001,
-            }}
-          />
-          {/* 회전 핸들 연결선 */}
-          <div style={{
-            position: 'absolute',
-            left: width / 2,
-            top: -(ROTATE_HANDLE_OFFSET - 10),
-            width: 1,
-            height: ROTATE_HANDLE_OFFSET - 10,
-            background: 'rgba(99,102,241,0.5)',
-            pointerEvents: 'none',
-          }} />
-          </>}
+          {/* 회전 핸들 (커넥터는 회전 무의미 → 숨김. 모바일은 일반 모드에서만) */}
+          {!isConnector && !(isTouch && diagramMode) && (() => {
+            const rsz = isTouch ? 22 / scale : 10
+            const roff = isTouch ? ROTATE_HANDLE_OFFSET / scale : ROTATE_HANDLE_OFFSET
+            return <>
+              <div
+                data-resize-handle="true"
+                onMouseDown={handleRotateStart}
+                onPointerDown={(e) => { if (e.pointerType === 'touch') handleRotateStart(e) }}
+                style={{
+                  position: 'absolute',
+                  left: width / 2 - rsz / 2,
+                  top: -roff,
+                  width: rsz, height: rsz,
+                  background: '#6366f1',
+                  border: `${(isTouch ? 2 : 1.5) / (isTouch ? scale : 1)}px solid #fff`,
+                  borderRadius: '50%',
+                  cursor: 'grab', touchAction: 'none',
+                  zIndex: 10001,
+                }}
+              />
+              <div style={{
+                position: 'absolute',
+                left: width / 2,
+                top: -(roff - rsz),
+                width: 1 / (isTouch ? scale : 1),
+                height: roff - rsz,
+                background: 'rgba(99,102,241,0.5)',
+                pointerEvents: 'none',
+              }} />
+            </>
+          })()}
           {/* 모서리 둥글기 핸들 (좌상단 안쪽 다이아몬드) */}
           {showRadiusHandle && (
             <div
@@ -540,6 +556,35 @@ export default function FlatSelectionOverlay({ element, scale, otherRects, canva
                 }}
               />
             ))
+          ) : isTouch ? (
+            /* 모바일: 우하단(SE) 한 점만 — 좌상단 고정 자유 변형. 화면 기준 일정 크기. */
+            (() => {
+              const H = 24 / scale
+              return (
+                <div
+                  data-resize-handle="true"
+                  onMouseDown={(e) => handleResizeStart(e, 'se')}
+                  onPointerDown={(e) => { if (e.pointerType === 'touch') handleResizeStart(e, 'se') }}
+                  style={{
+                    position: 'absolute',
+                    left: width - H / 2,
+                    top: height - H / 2,
+                    width: H, height: H,
+                    background: '#6366f1',
+                    border: `${2 / scale}px solid #fff`,
+                    borderRadius: 6 / scale,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    cursor: 'nwse-resize', touchAction: 'none',
+                    zIndex: 10000,
+                  }}
+                >
+                  <svg width={H * 0.55} height={H * 0.55} viewBox="0 0 12 12" fill="none"
+                    stroke="#fff" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M3 9 H9 V3" />
+                  </svg>
+                </div>
+              )
+            })()
           ) : (
             HANDLES.map(h => (
               <div
