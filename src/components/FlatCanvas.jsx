@@ -17,6 +17,7 @@ import FlatTableEditor from './FlatTableEditor'
 import FlatContextMenu from './FlatContextMenu'
 import ImageCropOverlay from './ImageCropOverlay'
 import { nextFlatId, isFontUrl } from '../core/FlatExtractor'
+import { isBundlerHtml } from '../core/BundlerUnpacker'
 import { pointsToBBox, absoluteToRelativePoints, pointsToSvgPath } from '../core/PolyShapeUtils'
 import { confirmDialog } from './ConfirmDialog'
 import { bumpFontSizePx } from '../core/TextStyleScope'
@@ -24,6 +25,15 @@ import { copyElementToSystemClipboard } from '../core/SystemClipboard'
 
 // 다이어그램 모드 연결점을 도형 변에서 바깥으로 띄우는 거리(리사이즈 핸들과 구분)
 const CONNECT_DOT_OUT = 14
+
+// 클립보드/드롭 문자열이 '온전한 슬라이드 HTML 문서'인지 판별.
+// 웹페이지 일부 복사(리치텍스트 조각: <meta>+fragment)와 구분하려고 doctype/<html> 래퍼나
+// 번들 시그니처를 요구한다 → 일반 텍스트 붙여넣기를 덱 가져오기로 오인하지 않음.
+function looksLikeDeckHtml(s) {
+  if (!s || typeof s !== 'string') return false
+  if (isBundlerHtml(s)) return true
+  return /<!doctype\s+html|<html[\s>]|<\/html\s*>/i.test(s)
+}
 
 /**
  * FlatCanvas
@@ -445,6 +455,30 @@ export default function FlatCanvas() {
         e.preventDefault()
         const file = imageItem.getAsFile()
         if (file) insertImageFromFile(file)
+        return
+      }
+
+      // 2.5순위: 온전한 슬라이드 HTML 문서 → 덱 가져오기 (Claude 등 외부 산출물 붙여넣기)
+      // 아티팩트 '소스 복사'는 text/plain에 풀 HTML이 옴 → 렌더 조각(text/html)보다 소스 우선.
+      const htmlSrc = e.clipboardData?.getData('text/html')
+      const plainHtml = e.clipboardData?.getData('text/plain')
+      const deckSrc = looksLikeDeckHtml(plainHtml) ? plainHtml : (looksLikeDeckHtml(htmlSrc) ? htmlSrc : null)
+      if (deckSrc) {
+        e.preventDefault()
+        ;(async () => {
+          const st = useFlatStore.getState()
+          const hasContent = st.flatElements.length > 0 || st.flatPageCount > 1
+          if (hasContent) {
+            const ok = await confirmDialog({
+              title: 'HTML 슬라이드 붙여넣기',
+              message: '붙여넣은 HTML 슬라이드로 현재 작업이 대체됩니다.\n저장하지 않았다면 먼저 저장하세요. 계속할까요?',
+              confirmText: '가져오기', cancelText: '취소', danger: true,
+            })
+            if (!ok) return
+          }
+          st.clearPageCache()
+          useEditorStore.getState().loadHtml(deckSrc, { imported: true })
+        })()
         return
       }
 
