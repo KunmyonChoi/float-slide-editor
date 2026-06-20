@@ -329,11 +329,11 @@ export default function FlatPresenter() {
           onMouseEnter={(e) => { e.currentTarget.style.opacity = '1' }}
           onMouseLeave={(e) => { e.currentTarget.style.opacity = penActive ? '1' : '0.4' }}
         >
-          <button type="button" title="펜 모드 (Ctrl+P)"
-            onClick={() => { setPenTool('pen'); setPenActive(a => !a) }}
-            style={ctrlBtn(penActive)}>✎</button>
-          {penActive && <>
-            <span style={{ width: 1, height: 18, background: 'rgba(255,255,255,0.12)' }} />
+          {!penActive ? (
+            <button type="button" title="펜 모드 켜기 (Ctrl+P)"
+              onClick={() => { setPenTool('pen'); setPenActive(true) }}
+              style={ctrlBtn(false)}>✎</button>
+          ) : (<>
             <button type="button" title="펜" onClick={() => setPenTool('pen')} style={ctrlBtn(penTool === 'pen')}>✎</button>
             <button type="button" title="형광펜" onClick={() => setPenTool('highlighter')} style={ctrlBtn(penTool === 'highlighter')}>🖍</button>
             <button type="button" title="지우개 (Ctrl+E)" onClick={() => setPenTool('eraser')} style={ctrlBtn(penTool === 'eraser')}>⌫</button>
@@ -352,7 +352,20 @@ export default function FlatPresenter() {
             <button type="button" title="굵은 선" onClick={() => setPenWidth('thick')} style={ctrlBtn(penWidth === 'thick')}>⬤</button>
             <span style={{ width: 1, height: 18, background: 'rgba(255,255,255,0.12)' }} />
             <button type="button" title="현재 슬라이드 잉크 지우기 (E)" onClick={clearSlideInk} style={ctrlBtn(false)}>🗑</button>
-          </>}
+            <span style={{ width: 1, height: 18, background: 'rgba(255,255,255,0.12)' }} />
+            {/* 펜 모드 종료 — X 아이콘 danger 알약으로 명확히 */}
+            <button type="button" title="펜 모드 종료 (Esc)" onClick={() => setPenActive(false)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 4, height: 26, padding: '0 8px',
+                borderRadius: 7, cursor: 'pointer', fontSize: 12,
+                background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.4)', color: '#fca5a5',
+              }}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                <line x1="6" y1="6" x2="18" y2="18" /><line x1="18" y1="6" x2="6" y2="18" />
+              </svg>
+              종료
+            </button>
+          </>)}
         </div>
       )}
 
