@@ -38,6 +38,10 @@ export default function FlatCanvas() {
   const fitModeRef = useRef(true)      // true면 리사이즈 시 자동 맞춤 유지
   const spaceDownRef = useRef(false)   // 스페이스 누름(팬 모드)
   const panDragRef = useRef(null)      // 스페이스+드래그 팬 진행 상태
+  const [panTool, setPanTool] = useState(false) // ✋ 손 도구(한 손가락/마우스 드래그 팬 — 모바일용)
+  const panToolRef = useRef(false)
+  panToolRef.current = panTool
+  const pointerPanRef = useRef(null)   // 손 도구 포인터 드래그 진행 상태
   const [marquee, setMarquee] = useState(null)
   const marqueeRef = useRef(null) // 마키 시작 좌표 기억
   const [contextMenu, setContextMenu] = useState(null)
@@ -843,6 +847,55 @@ export default function FlatCanvas() {
     return () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp) }
   }, [clampPan])
 
+  // ✋ 손 도구: 포인터 드래그 팬 (터치/마우스 공통). 모드 ON일 때만 동작.
+  // 캡처 단계에서 가로채 요소 선택/이동 대신 팬. touch-action:none은 stage 스타일에서 모드 ON시 적용.
+  useEffect(() => {
+    const stage = stageRef.current
+    if (!stage) return
+    const onDown = (e) => {
+      if (!panToolRef.current) return
+      if (useFlatStore.getState().editingFlatId) return
+      e.preventDefault(); e.stopPropagation()
+      pointerPanRef.current = {
+        id: e.pointerId, startX: e.clientX, startY: e.clientY,
+        startPanX: panRef.current.x, startPanY: panRef.current.y,
+      }
+      try { stage.setPointerCapture(e.pointerId) } catch { /* 무시 */ }
+      stage.style.cursor = 'grabbing'
+    }
+    const onMove = (e) => {
+      const d = pointerPanRef.current
+      if (!d || d.id !== e.pointerId) return
+      setPan(clampPan({ x: d.startPanX + (e.clientX - d.startX), y: d.startPanY + (e.clientY - d.startY) }, scaleRef.current))
+    }
+    const onUp = (e) => {
+      const d = pointerPanRef.current
+      if (d && d.id === e.pointerId) {
+        pointerPanRef.current = null
+        stage.style.cursor = panToolRef.current ? 'grab' : ''
+      }
+    }
+    stage.addEventListener('pointerdown', onDown, true)
+    stage.addEventListener('pointermove', onMove)
+    stage.addEventListener('pointerup', onUp)
+    stage.addEventListener('pointercancel', onUp)
+    return () => {
+      stage.removeEventListener('pointerdown', onDown, true)
+      stage.removeEventListener('pointermove', onMove)
+      stage.removeEventListener('pointerup', onUp)
+      stage.removeEventListener('pointercancel', onUp)
+    }
+  }, [clampPan])
+
+  // 손 도구 켜짐/꺼짐에 따라 stage 커서 + 터치 제스처 차단
+  useEffect(() => {
+    const stage = stageRef.current
+    if (!stage) return
+    stage.style.cursor = panTool ? 'grab' : ''
+    stage.style.touchAction = panTool ? 'none' : ''
+    return () => { if (stage) { stage.style.cursor = ''; stage.style.touchAction = '' } }
+  }, [panTool])
+
   // 마키 선택: mousedown → mousemove → mouseup
   // 배경 요소는 stopPropagation 안 하므로 여기까지 버블링됨
   // 선택 해제는 mouseup에서 판단 (드래그 없고 배경도 안 눌렸으면 해제)
@@ -1310,13 +1363,15 @@ export default function FlatCanvas() {
           onZoomOut={() => applyZoom(scaleRef.current / 1.2)}
           onFit={fitToWindow}
           on100={zoomTo100}
+          panTool={panTool}
+          onTogglePan={() => setPanTool(v => !v)}
         />
       )}
     </div>
   )
 }
 
-function ZoomControl({ scale, onZoomIn, onZoomOut, onFit, on100 }) {
+function ZoomControl({ scale, onZoomIn, onZoomOut, onFit, on100, panTool, onTogglePan }) {
   // mousedown preventDefault → 버튼이 포커스를 가져가지 않음(클릭 후 Space/Enter가
   // 버튼에 먹히는 현상 방지). 클릭(onClick)은 그대로 동작.
   const stop = (e) => { e.stopPropagation(); e.preventDefault() }
@@ -1336,11 +1391,28 @@ function ZoomControl({ scale, onZoomIn, onZoomOut, onFit, on100 }) {
         border: '1px solid rgba(255,255,255,0.1)', boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
       }}
     >
+      <button
+        style={panTool
+          ? { ...btn, background: 'rgba(99,102,241,0.3)', borderColor: 'rgba(99,102,241,0.5)', color: '#c7d2fe' }
+          : btn}
+        onClick={onTogglePan}
+        title={panTool ? '손 도구 끄기' : '손 도구 — 드래그로 화면 이동'}
+      >
+        <HandIcon />
+      </button>
       <button style={btn} onClick={onZoomOut} title="축소 (Ctrl+휠)">−</button>
       <button style={txt} onClick={on100} title="100%">{Math.round(scale * 100)}%</button>
       <button style={btn} onClick={onZoomIn} title="확대 (Ctrl+휠)">+</button>
       <div style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.12)' }} />
       <button style={txt} onClick={onFit} title="창에 맞춤">맞춤</button>
     </div>
+  )
+}
+
+function HandIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M18 11V6a1.5 1.5 0 0 0-3 0v5M15 6V4.5a1.5 1.5 0 0 0-3 0V11M12 5.5a1.5 1.5 0 0 0-3 0V12M9 7.5a1.5 1.5 0 0 0-3 0V14c0 3.3 2.7 6 6 6h1a6 6 0 0 0 6-6v-3" />
+    </svg>
   )
 }
