@@ -236,7 +236,7 @@ export const useFlatStore = create((set, get) => ({
   /** 뷰 모드: 'html' | 'flat' | 'split' */
   viewMode: 'flat',
   /** 캔버스 크기 */
-  canvasSize: { w: 1280, h: 800 },
+  canvasSize: { w: 1920, h: 1080 },
   /** 폰트 임포트 CSS (원본 문서에서 추출) */
   fontImports: [],
   /** 추출 시 사용한 iframeRef 캐시 (페이지 변경 시 재추출용) */
@@ -543,7 +543,7 @@ export const useFlatStore = create((set, get) => ({
 
   /** iframe 없이 1페이지(시작 레이아웃) flat 프로젝트 생성 — 최초 빈 실행 시 사용 */
   startScratchProject(layoutId = 'title') {
-    const cs = { w: 1280, h: 720 }
+    const cs = { w: 1920, h: 1080 }
     const theme = get()._currentTheme()
     const layoutEls = _applyThemeRoles(_buildStarterLayout(layoutId, cs), theme)
     const elements = [_buildThemeBgElement(theme, cs), ...layoutEls] // 테마 배경 + 테마색 텍스트

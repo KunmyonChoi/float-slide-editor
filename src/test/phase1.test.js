@@ -437,8 +437,8 @@ describe('CanvasSizeSelector — 캔버스 크기 프리셋', () => {
     expect(CANVAS_PRESETS[0].h).toBeNull()
   })
 
-  it('기본 해상도 1280×800이 존재하고 (기본) 표시가 있다', () => {
-    const p = CANVAS_PRESETS.find((p) => p.w === 1280 && p.h === 800)
+  it('기본 해상도 1920×1080(FHD)이 존재하고 (기본) 표시가 있다', () => {
+    const p = CANVAS_PRESETS.find((p) => p.w === 1920 && p.h === 1080)
     expect(p).toBeDefined()
     expect(p.ratio).toContain('기본')
   })
