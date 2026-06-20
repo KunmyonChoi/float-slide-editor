@@ -51,6 +51,7 @@ export default function AnchoredMenu({ anchorRef, open, children, gap = 6, margi
     <div
       ref={ref}
       onMouseDown={(e) => e.stopPropagation()}
+      onPointerDown={(e) => e.stopPropagation()}
       style={{
         position: 'fixed',
         left: pos ? pos.left : -9999,

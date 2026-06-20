@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { useFlatStore } from '../store/flatStore'
 import { THEMES, getTheme } from '../core/themes'
+import AnchoredMenu from './AnchoredMenu'
 
 // 테마 배경 → 미리보기 타일 배경 스타일
 function tileBg(theme) {
@@ -41,10 +42,10 @@ export default function ThemeMenu() {
         <span className="text-slate-500">▾</span>
       </button>
 
-      {open && (
+      <AnchoredMenu anchorRef={ref} open={open} z={10060}>
         <div
-          className="absolute right-0 mt-1 z-[10060] p-2 rounded-xl bg-slate-900/97 border border-white/10 shadow-xl"
-          style={{ width: 300, backdropFilter: 'blur(8px)' }}
+          className="p-2 rounded-xl bg-slate-900/97 border border-white/10 shadow-xl"
+          style={{ width: 300, maxWidth: 'calc(100vw - 16px)', backdropFilter: 'blur(8px)' }}
         >
           <p className="text-[10px] text-slate-500 mb-1.5 px-0.5">테마 — 현재 슬라이드에 적용</p>
           <div className="grid grid-cols-4 gap-1.5">
@@ -65,7 +66,7 @@ export default function ThemeMenu() {
             현재 테마를 모든 슬라이드에 적용
           </button>
         </div>
-      )}
+      </AnchoredMenu>
     </div>
   )
 }
