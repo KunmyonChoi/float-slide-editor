@@ -148,7 +148,7 @@ export default function FloatingToolbar() {
     >
       <span className="flex items-center gap-2 px-1 mr-1 select-none" title="Genitor — generative editor">
         <Logo />
-        <span className="font-semibold text-[15px] tracking-tight" style={{
+        <span className="font-semibold text-[15px] tracking-tight tb-label" style={{
           background: 'linear-gradient(90deg,#c4b5fd,#818cf8)',
           WebkitBackgroundClip: 'text', backgroundClip: 'text', color: 'transparent',
         }}>Genitor</span>
@@ -172,7 +172,7 @@ export default function FloatingToolbar() {
         title="발표 모드 (F5) — 전체화면, 슬라이드 자체 네비게이션 동작"
         highlight
       >
-        <PresentIcon /><span className="text-xs ml-1">발표</span>
+        <PresentIcon /><span className="text-xs ml-1 tb-label">발표</span>
       </ToolBtn>
 
       <Divider />
@@ -198,7 +198,7 @@ export default function FloatingToolbar() {
         title={isFullscreen ? '전체화면 종료 (Esc)' : '브라우저 전체화면'}
       >
         {isFullscreen ? <FullscreenExitIcon /> : <FullscreenIcon />}
-        <span className="text-xs ml-1">{isFullscreen ? '창' : '전체화면'}</span>
+        <span className="text-xs ml-1 tb-label">{isFullscreen ? '창' : '전체화면'}</span>
       </ToolBtn>
 
       <Divider />
@@ -215,7 +215,7 @@ export default function FloatingToolbar() {
           disabled={!slideHtml || viewMode === 'html'}
           title="전체 슬라이드 품질 분석"
         >
-          <QualityIcon /><span className="text-xs ml-1">품질</span>
+          <QualityIcon /><span className="text-xs ml-1 tb-label">품질</span>
         </ToolBtn>
       )}
 

@@ -326,7 +326,7 @@ export default function EditToolbar() {
         <>
           {/* ── Flat 모드: 요소 추가 버튼들 ── */}
           <ToolBtn onClick={() => insertFlatPreset('text')} title="텍스트 추가">
-            <TextIcon /><span className="text-xs ml-1">텍스트</span>
+            <TextIcon /><span className="text-xs ml-1 tb-label">텍스트</span>
           </ToolBtn>
 
           {/* 도형 드롭다운 */}
@@ -372,7 +372,7 @@ export default function EditToolbar() {
           />
 
           <ToolBtn onClick={() => imageInputRef.current?.click()} title="이미지 추가">
-            <ImageIcon /><span className="text-xs ml-1">이미지</span>
+            <ImageIcon /><span className="text-xs ml-1 tb-label">이미지</span>
           </ToolBtn>
           <input
             ref={imageInputRef}
@@ -485,7 +485,7 @@ function DropdownBtn({ innerRef, open, setOpen, icon, label, items }) {
   return (
     <div ref={innerRef} style={{ position: 'relative' }}>
       <ToolBtn onClick={() => setOpen(v => !v)} title={label}>
-        {icon}<span className="text-xs ml-1">{label}</span><ChevronDown />
+        {icon}<span className="text-xs ml-1 tb-label">{label}</span><ChevronDown />
       </ToolBtn>
       {open && (
         <div style={{
@@ -531,7 +531,7 @@ function TableSizeDropdown({ innerRef, open, setOpen, onPick }) {
   return (
     <div ref={innerRef} style={{ position: 'relative' }}>
       <ToolBtn onClick={() => setOpen(v => !v)} title="표 추가">
-        <TableIcon /><span className="text-xs ml-1">표</span><ChevronDown />
+        <TableIcon /><span className="text-xs ml-1 tb-label">표</span><ChevronDown />
       </ToolBtn>
       {open && (
         <div style={{
@@ -582,7 +582,7 @@ function HtmlInsertDropdown({ innerRef, open, setOpen, disabled, onInsert }) {
   return (
     <div ref={innerRef} style={{ position: 'relative' }}>
       <ToolBtn onClick={() => setOpen(v => !v)} disabled={disabled} title="요소 삽입">
-        <PlusIcon /><span className="text-xs ml-1">삽입</span>
+        <PlusIcon /><span className="text-xs ml-1 tb-label">삽입</span>
       </ToolBtn>
       {open && (
         <div style={{
