@@ -711,13 +711,13 @@ function DrawLineIcon() {
 }
 
 function ConnectorIcon() {
-  // 두 노드 + 화살표 연결선
+  // 위→아래 조직도: 상단 노드 1 + 하단 노드 2, 선으로 연결
   return (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="2" y="3" width="7" height="6" rx="1" />
-      <rect x="15" y="15" width="7" height="6" rx="1" />
-      <path d="M9 6h5a4 4 0 0 1 4 4v5" />
-      <path d="M15 12l3 3 3-3" />
+      <rect x="9" y="2" width="6" height="5" rx="1" />
+      <rect x="2" y="17" width="6" height="5" rx="1" />
+      <rect x="16" y="17" width="6" height="5" rx="1" />
+      <path d="M12 7v4M5 11h14M5 11v6M19 11v6" />
     </svg>
   )
 }
