@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useMemo } from 'react'
 import { useFlatStore } from '../store/flatStore'
 import { SNIPPETS } from '../core/snippets'
 import { SlideThumbnail } from './SlideListPanel'
+import AnchoredMenu from './AnchoredMenu'
 
 // 스니펫 build 결과를 미리보기용으로 bbox에 맞춰 정렬(여백 포함) + id 부여
 function previewOf(snippet, theme) {
@@ -55,10 +56,10 @@ export default function SnippetMenu({ onPick }) {
         <SnippetIcon /><span>스니펫</span><span className="text-slate-500">▾</span>
       </button>
 
-      {open && (
+      <AnchoredMenu anchorRef={ref} open={open} z={10060}>
         <div
-          className="thin-scrollbar absolute left-0 mt-1 z-[10060] rounded-xl border border-white/10 shadow-xl overflow-y-auto"
-          style={{ width: 380, maxHeight: 440, backgroundColor: '#1e293b' }}
+          className="thin-scrollbar rounded-xl border border-white/10 shadow-xl overflow-y-auto"
+          style={{ width: 380, maxWidth: 'calc(100vw - 16px)', maxHeight: 440, backgroundColor: '#1e293b' }}
         >
           {GROUPS.map(g => (
             <div key={g}>
@@ -85,7 +86,7 @@ export default function SnippetMenu({ onPick }) {
             </div>
           ))}
         </div>
-      )}
+      </AnchoredMenu>
     </div>
   )
 }
