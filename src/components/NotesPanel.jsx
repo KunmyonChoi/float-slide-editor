@@ -213,7 +213,7 @@ export default function NotesPanel() {
           display: 'block', width: '100%', height: 140, resize: 'vertical',
           boxSizing: 'border-box', margin: 0, padding: '8px 10px',
           background: 'rgba(255,255,255,0.05)',
-          border: '1px solid rgba(255,255,255,0.08)', borderRadius: 8,
+          border: '1px solid rgba(255,255,255,0.08)', borderRadius: 0,
           color: '#e2e8f0', fontSize: 13, lineHeight: 1.5, outline: 'none', fontFamily: 'inherit',
         }}
       />
