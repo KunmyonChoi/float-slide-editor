@@ -2,6 +2,7 @@ import { useRef, useEffect, useCallback, useState, useMemo } from 'react'
 import { useFlatStore, isBackgroundLayer } from '../store/flatStore'
 import { useEditorStore } from '../store/editorStore'
 import { isBackgroundElement } from '../core/SnapEngine'
+import { useIsTouch } from '../core/pointerEnv'
 import { resolveConnectors, resolveConnectorEndpoints, resolveConnectorCurve, attachTargetAt, connectionPoints, nearestConnectionPoint } from '../core/ConnectorRouting'
 import { getRotatedAABB } from '../core/RotationUtils'
 import FlatElementRenderer from './FlatElementRenderer'
@@ -55,6 +56,7 @@ export default function FlatCanvas() {
           diagramMode, connectorDraft } = useFlatStore()
   const [dragOver, setDragOver] = useState(false)
   const [hoverShapeId, setHoverShapeId] = useState(null) // 다이어그램 모드 연결점 표시용
+  const isTouch = useIsTouch()
   const [drawPoints, setDrawPoints] = useState([])     // 그리기 중 확정된 점들
   const [drawPreview, setDrawPreview] = useState(null)  // 마우스 위치 (프리뷰용)
   const { currentPage, revealV, mode } = useEditorStore()
@@ -378,12 +380,21 @@ export default function FlatCanvas() {
     }
     const onUp = () => useFlatStore.getState().commitConnectorDraft()
     const onKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); useFlatStore.getState().cancelConnectorDraft() } }
+    // 터치/펜: 같은 핸들러 재사용(마우스 PointerEvent는 mousemove가 처리하므로 무시 → 중복 방지)
+    const onPMove = (e) => { if (e.pointerType !== 'mouse') onMove(e) }
+    const onPUp = (e) => { if (e.pointerType !== 'mouse') onUp(e) }
     window.addEventListener('mousemove', onMove)
     window.addEventListener('mouseup', onUp)
+    window.addEventListener('pointermove', onPMove)
+    window.addEventListener('pointerup', onPUp)
+    window.addEventListener('pointercancel', onPUp)
     window.addEventListener('keydown', onKey)
     return () => {
       window.removeEventListener('mousemove', onMove)
       window.removeEventListener('mouseup', onUp)
+      window.removeEventListener('pointermove', onPMove)
+      window.removeEventListener('pointerup', onPUp)
+      window.removeEventListener('pointercancel', onPUp)
       window.removeEventListener('keydown', onKey)
     }
   }, [connectorDragging, canvasPt])
@@ -1174,34 +1185,17 @@ export default function FlatCanvas() {
             )}
             {/* 다이어그램 모드: 호버 도형 연결점 — 리사이즈 핸들(인디고 사각, 변 위)과
                 구분되도록 초록 원으로 도형 '바깥쪽'에 띄워 표시(드래그 시작점) */}
-            {diagramMode && !connectorDraft && hoverShapeId && (() => {
+            {/* 데스크톱: 호버한 도형의 연결점 */}
+            {diagramMode && !connectorDraft && hoverShapeId && hoverShapeId !== selectedEl?.id && (() => {
               const el = renderElements.find(e => e.id === hoverShapeId)
-              if (!el) return null
-              const OUT = CONNECT_DOT_OUT // 변에서 바깥으로 띄워 리사이즈 핸들과 구분
-              const R = 6 // 점 반지름(잡기 쉽게)
-              // 8개 연결점(4변+4모서리) — 표시는 바깥으로 띄우되 부착은 fx/fy 고정점
-              const pts = connectionPoints(el).map(p => {
-                const ox = p.fx === 0 ? -1 : p.fx === 1 ? 1 : 0
-                const oy = p.fy === 0 ? -1 : p.fy === 1 ? 1 : 0
-                const m = Math.hypot(ox, oy) || 1
-                return { fx: p.fx, fy: p.fy, ax: p.x, ay: p.y, dx: p.x + (ox / m) * OUT, dy: p.y + (oy / m) * OUT }
-              })
-              return (
-                <div data-export-ignore="true">
-                  <div style={{ position: 'absolute', left: el.x, top: el.y, width: el.width, height: el.height,
-                    border: '1px dashed rgba(16,185,129,0.8)', borderRadius: 4, pointerEvents: 'none', zIndex: 9998 }} />
-                  {pts.map((p, i) => (
-                    <div key={i}
-                      title="드래그해서 다른 도형에 연결 (이 지점에 고정)"
-                      onMouseDown={(e) => { e.stopPropagation(); e.preventDefault()
-                        useFlatStore.getState().beginConnectorFrom(el.id, { x: p.ax, y: p.ay }, { fx: p.fx, fy: p.fy }) }}
-                      style={{ position: 'absolute', left: p.dx - R, top: p.dy - R, width: R * 2, height: R * 2, borderRadius: '50%',
-                        background: '#10b981', border: '2px solid #fff', boxShadow: '0 0 0 1px rgba(16,185,129,0.5)',
-                        cursor: 'crosshair', zIndex: 10001 }} />
-                  ))}
-                </div>
-              )
+              return el ? <ConnectionMarkers el={el} touch={isTouch} /> : null
             })()}
+            {/* 모바일/공통: 선택한 도형의 연결점(호버 없이도 탭→연결) */}
+            {diagramMode && !connectorDraft && selectedEl
+              && selectedEl.shapeType !== 'connector' && !selectedEl.locked
+              && !isBackgroundElement(selectedEl) && (
+              <ConnectionMarkers el={selectedEl} touch={isTouch} />
+            )}
             {/* 다이어그램 모드: 커넥터 생성 드래그 프리뷰 */}
             {connectorDraft && (() => {
               const byId = {}
@@ -1372,6 +1366,37 @@ export default function FlatCanvas() {
           onTogglePan={() => setPanTool(v => !v)}
         />
       )}
+    </div>
+  )
+}
+
+// 다이어그램 모드 연결점 마커(8개) — 마우스/터치 공통(onPointerDown). 마커에서 드래그 시작 → 커넥터.
+function ConnectionMarkers({ el, touch }) {
+  const OUT = CONNECT_DOT_OUT
+  const R = touch ? 11 : 6 // 터치는 크게
+  const pts = connectionPoints(el).map(p => {
+    const ox = p.fx === 0 ? -1 : p.fx === 1 ? 1 : 0
+    const oy = p.fy === 0 ? -1 : p.fy === 1 ? 1 : 0
+    const m = Math.hypot(ox, oy) || 1
+    return { fx: p.fx, fy: p.fy, ax: p.x, ay: p.y, dx: p.x + (ox / m) * OUT, dy: p.y + (oy / m) * OUT }
+  })
+  const start = (e, p) => {
+    e.stopPropagation(); e.preventDefault()
+    try { e.currentTarget.setPointerCapture?.(e.pointerId) } catch { /* 무시 */ }
+    useFlatStore.getState().beginConnectorFrom(el.id, { x: p.ax, y: p.ay }, { fx: p.fx, fy: p.fy })
+  }
+  return (
+    <div data-export-ignore="true">
+      <div style={{ position: 'absolute', left: el.x, top: el.y, width: el.width, height: el.height,
+        border: '1px dashed rgba(16,185,129,0.8)', borderRadius: 4, pointerEvents: 'none', zIndex: 9998 }} />
+      {pts.map((p, i) => (
+        <div key={i}
+          title="드래그해서 다른 도형에 연결 (이 지점에 고정)"
+          onPointerDown={(e) => start(e, p)}
+          style={{ position: 'absolute', left: p.dx - R, top: p.dy - R, width: R * 2, height: R * 2, borderRadius: '50%',
+            background: '#10b981', border: '2px solid #fff', boxShadow: '0 0 0 1px rgba(16,185,129,0.5)',
+            cursor: 'crosshair', touchAction: 'none', zIndex: 10001 }} />
+      ))}
     </div>
   )
 }
