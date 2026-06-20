@@ -306,7 +306,7 @@ export default function EditToolbar() {
 
   return (
     <div
-      className="flex items-center gap-1 px-3 py-1 shrink-0 relative z-20"
+      className="flex flex-wrap items-center gap-1 px-3 py-1 shrink-0 relative z-20"
       style={{
         background: 'rgba(15,23,42,0.9)',
         backdropFilter: 'blur(16px)',

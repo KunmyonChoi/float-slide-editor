@@ -139,7 +139,7 @@ export default function FloatingToolbar() {
   return (
     <>
     <div
-      className="flex items-center gap-1 px-3 py-1.5 shrink-0 relative z-30"
+      className="flex flex-wrap items-center gap-1 px-3 py-1.5 shrink-0 relative z-30"
       style={{
         background: 'rgba(15,23,42,0.9)',
         backdropFilter: 'blur(16px)',
@@ -219,7 +219,7 @@ export default function FloatingToolbar() {
         </ToolBtn>
       )}
 
-      <div className="flex-1" />
+      <div className="flex-1 hidden sm:block" />
 
     </div>
 
