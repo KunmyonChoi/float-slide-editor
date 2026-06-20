@@ -788,7 +788,10 @@ export default function FlatCanvas() {
         return
       }
       e.preventDefault()
-      const factor = Math.exp(-e.deltaY * 0.0015)
+      // 핀치(macOS 트랙패드)는 ctrlKey가 합성되며 deltaY가 작아 같은 민감도면 줌이 느림 →
+      // ctrlKey일 때 민감도를 높여 휠 스와이프 줌처럼 시원하게.
+      const sensitivity = e.ctrlKey ? 0.01 : 0.0015
+      const factor = Math.exp(-e.deltaY * sensitivity)
       applyZoom(scaleRef.current * factor, { clientX: e.clientX, clientY: e.clientY })
     }
     stage.addEventListener('wheel', onWheel, { passive: false })
