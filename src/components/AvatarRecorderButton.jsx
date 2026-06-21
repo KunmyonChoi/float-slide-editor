@@ -3,9 +3,10 @@ import { useFlatStore } from '../store/flatStore'
 import { BlobStore } from '../core/BlobStore'
 import { nextFlatId } from '../core/FlatExtractor'
 
-// avatar-recorder 연동 규약(integration-api.md): 팝업 + postMessage. Genitor는 호출자(opener).
-const RECORDER_URL = 'https://avatar-recorder.netlify.app'
-const RECORDER_ORIGIN = 'https://avatar-recorder.netlify.app'
+// avatar-recoder 연동 규약(integration-api.md): 팝업 + postMessage. Genitor는 호출자(opener).
+// 실제 배포 주소는 'avatar-recoder'(문서의 'avatar-recorder'는 오타 — 404).
+const RECORDER_URL = 'https://avatar-recoder.netlify.app'
+const RECORDER_ORIGIN = 'https://avatar-recoder.netlify.app'
 
 // 결과 Blob → 현재 슬라이드에 비디오 요소로 삽입(기존 비디오 삽입 경로와 동일 구성)
 async function insertVideoBlob(blob, filename) {
