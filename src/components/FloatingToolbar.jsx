@@ -6,6 +6,7 @@ import QualityDashboard from './QualityDashboard'
 import FileMenu from './ExportMenu'
 import PptExportButton from './PptExportButton'
 import ShortcutsButton from './ShortcutsButton'
+import AvatarRecorderButton from './AvatarRecorderButton'
 
 const FALLBACK_SAMPLE = `<!DOCTYPE html>
 <html lang="ko">
@@ -175,6 +176,9 @@ export default function FloatingToolbar() {
       >
         <PresentIcon /><span className="text-xs ml-1 tb-label">발표</span>
       </ToolBtn>
+
+      {/* 튜토리얼 녹화(avatar-recorder 연동) — 화면+음성 녹화 결과를 현재 슬라이드에 삽입 */}
+      <AvatarRecorderButton />
 
       <Divider />
 
