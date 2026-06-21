@@ -52,6 +52,7 @@ export default function FlatPresenter() {
   const [penTool, setPenTool] = useState('pen')     // pen | highlighter | eraser
   const [penColor, setPenColor] = useState(INK_COLORS[0])
   const [penWidth, setPenWidth] = useState('thin')  // thin | thick
+  const prevToolRef = useRef('pen')  // 펜 버튼(지우개 토글) 복귀용 직전 도구
   // 슬라이드별 잉크 보관(상태) — 슬라이드 전환 간 유지, 발표 종료(언마운트) 시 자동 폐기
   const [inkBySlide, setInkBySlide] = useState({}) // { [slideIndex]: strokes[] }
   const [blackout, setBlackout] = useState(false)  // 슬라이드 블랙아웃(잉크만 보이게)
@@ -196,6 +197,19 @@ export default function FlatPresenter() {
       iframeDoc?.removeEventListener('keydown', onKeyDown)
     }
   }, [exitPresentation, goNext, goPrev, penActive, clearSlideInk])
+
+  // S펜 측면 버튼: 이 기기/브라우저에선 버튼이 보조-버튼 비트가 아니라 contextmenu로
+  // 들어온다(또한 접촉을 끊어 '버튼+드래그 동시'는 불가). → 버튼 누름 = 지우개 토글.
+  useEffect(() => {
+    if (!penActive) return
+    const onCtx = (e) => {
+      e.preventDefault()
+      if (penTool === 'eraser') setPenTool(prevToolRef.current || 'pen')
+      else { prevToolRef.current = penTool; setPenTool('eraser') }
+    }
+    window.addEventListener('contextmenu', onCtx)
+    return () => window.removeEventListener('contextmenu', onCtx)
+  }, [penActive, penTool])
 
   // 클릭: 좌측 1/4 → 이전, 우측 3/4 → 다음
   // iframe/video/a 등 인터랙티브 요소 위의 클릭은 무시
