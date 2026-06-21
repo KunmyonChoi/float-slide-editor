@@ -133,34 +133,20 @@ export default function FlatPresenter() {
   // 키보드: ESC 종료, 화살표/스페이스 네비게이션
   useEffect(() => {
     const onKeyDown = (e) => {
-      // 펜 단축키 (PowerPoint 호환)
-      if ((e.ctrlKey || e.metaKey) && (e.code === 'KeyP')) {
-        e.preventDefault()
-        setPenTool('pen'); setPenActive(a => !a); setBlackout(false)
-        return
-      }
-      if ((e.ctrlKey || e.metaKey) && (e.code === 'KeyE')) {
-        e.preventDefault()
-        setPenTool('eraser'); setPenActive(true); setBlackout(false)
-        return
-      }
       if (e.key === 'Escape') {
-        // 2단계: 펜이 켜져 있으면 펜만 끄고, 아니면 발표 종료
-        if (penActive) { setPenActive(false); return }
+        // 2단계: 펜이 켜져 있으면 펜만 끄고(+블랙아웃 해제), 아니면 발표 종료
+        if (penActive) { setPenActive(false); setBlackout(false); return }
         exitPresentation()
         return
       }
-      // B (보조키 없이, 펜 모드) → 블랙아웃 토글(슬라이드 가리고 잉크만)
-      if (penActive && !e.ctrlKey && !e.metaKey && !e.altKey && e.code === 'KeyB') {
-        e.preventDefault()
-        setBlackout(b => !b)
-        return
-      }
-      // E (보조키 없이) → 현재 슬라이드 잉크 전체 지우기
-      if (!e.ctrlKey && !e.metaKey && !e.altKey && e.code === 'KeyE') {
-        e.preventDefault()
-        clearSlideInk()
-        return
+      // 발표 그리기 단축키 — 단일 키로 도구 직접 선택(+필요 시 드로잉 자동 진입).
+      // 도구 전환 시 블랙아웃은 유지(전환마다 풀리지 않도록); 해제는 펜 종료(Esc/종료 버튼)에서.
+      if (!e.ctrlKey && !e.metaKey && !e.altKey) {
+        if (e.code === 'KeyP') { e.preventDefault(); setPenActive(true); setPenTool('pen'); return }
+        if (e.code === 'KeyH') { e.preventDefault(); setPenActive(true); setPenTool('highlighter'); return }
+        if (e.code === 'KeyE') { e.preventDefault(); setPenActive(true); setPenTool('eraser'); return }
+        if (e.code === 'KeyC') { e.preventDefault(); clearSlideInk(); return } // 현재 슬라이드 잉크 전체 지우기
+        if (e.code === 'KeyB') { e.preventDefault(); setPenActive(true); setBlackout(b => !b); return } // 블랙아웃 토글
       }
       if (e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === 'PageDown' || e.key === ' ') {
         e.preventDefault()
@@ -341,13 +327,13 @@ export default function FlatPresenter() {
           onMouseLeave={(e) => { e.currentTarget.style.opacity = penActive ? '1' : '0.4' }}
         >
           {!penActive ? (
-            <button type="button" title="펜 모드 켜기 (Ctrl+P)"
-              onClick={() => { setPenTool('pen'); setPenActive(true); setBlackout(false) }}
+            <button type="button" title="펜 모드 켜기 (P)"
+              onClick={() => { setPenTool('pen'); setPenActive(true) }}
               style={ctrlBtn(false)}>✎</button>
           ) : (<>
-            <button type="button" title="펜" onClick={() => setPenTool('pen')} style={ctrlBtn(penTool === 'pen')}>✎</button>
-            <button type="button" title="형광펜" onClick={() => setPenTool('highlighter')} style={ctrlBtn(penTool === 'highlighter')}>🖍</button>
-            <button type="button" title="지우개 (Ctrl+E)" onClick={() => setPenTool('eraser')} style={ctrlBtn(penTool === 'eraser')}>⌫</button>
+            <button type="button" title="펜 (P)" onClick={() => setPenTool('pen')} style={ctrlBtn(penTool === 'pen')}>✎</button>
+            <button type="button" title="형광펜 (H)" onClick={() => setPenTool('highlighter')} style={ctrlBtn(penTool === 'highlighter')}>🖍</button>
+            <button type="button" title="지우개 (E)" onClick={() => setPenTool('eraser')} style={ctrlBtn(penTool === 'eraser')}>⌫</button>
             <span style={{ width: 1, height: 18, background: 'rgba(255,255,255,0.12)' }} />
             {INK_COLORS.map(c => (
               <button key={c} type="button" title={`색 ${c}`} onClick={() => { setPenColor(c); if (penTool === 'eraser') setPenTool('pen') }}
@@ -362,12 +348,12 @@ export default function FlatPresenter() {
             <button type="button" title="가는 선" onClick={() => setPenWidth('thin')} style={ctrlBtn(penWidth === 'thin')}>•</button>
             <button type="button" title="굵은 선" onClick={() => setPenWidth('thick')} style={ctrlBtn(penWidth === 'thick')}>⬤</button>
             <span style={{ width: 1, height: 18, background: 'rgba(255,255,255,0.12)' }} />
-            <button type="button" title="현재 슬라이드 잉크 지우기 (E)" onClick={clearSlideInk} style={ctrlBtn(false)}>🗑</button>
+            <button type="button" title="현재 슬라이드 잉크 전체 지우기 (C)" onClick={clearSlideInk} style={ctrlBtn(false)}>🗑</button>
             <span style={{ width: 1, height: 18, background: 'rgba(255,255,255,0.12)' }} />
             <button type="button" title="블랙아웃 — 슬라이드 가리고 잉크만 (B)" onClick={() => setBlackout(b => !b)} style={ctrlBtn(blackout)}>◼</button>
             <span style={{ width: 1, height: 18, background: 'rgba(255,255,255,0.12)' }} />
             {/* 펜 모드 종료 — X 아이콘 danger 알약으로 명확히 */}
-            <button type="button" title="펜 모드 종료 (Esc)" onClick={() => setPenActive(false)}
+            <button type="button" title="펜 모드 종료 (Esc)" onClick={() => { setPenActive(false); setBlackout(false) }}
               style={{
                 display: 'flex', alignItems: 'center', gap: 4, height: 26, padding: '0 8px',
                 borderRadius: 7, cursor: 'pointer', fontSize: 12,
