@@ -138,7 +138,7 @@ function _cssProp(css, prop) {
   return m ? m[1].trim() : null
 }
 
-export async function exportViaPython(pages, defaultCanvasSize, { embedFonts = true, editorVersion = '' } = {}) {
+export async function exportViaPython(pages, defaultCanvasSize, { embedFonts = true, editorVersion = '', filename = 'slide-export.pptx' } = {}) {
   // idb 미디어(영상 등)를 data URL로 해석 — 서버는 idb를 못 읽으므로 먼저 변환
   pages = await _resolveIdbMedia(pages)
   // 임베딩 OFF면 폰트를 수집/전송하지 않음 → 서버가 다운로드·임베딩을 건너뛰고
@@ -160,7 +160,7 @@ export async function exportViaPython(pages, defaultCanvasSize, { embedFonts = t
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
-  a.download = 'slide-export.pptx'
+  a.download = filename || 'slide-export.pptx'
   document.body.appendChild(a)
   a.click()
   document.body.removeChild(a)

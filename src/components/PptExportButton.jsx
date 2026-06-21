@@ -7,8 +7,16 @@ import {
   getBackendBase, setBackendBase, PPTX_DOCKER_IMAGE, getBackendBuild,
 } from '../core/PptxBackendClient'
 import { APP_VERSION } from '../appVersion'
+import { promptUrl } from './UrlPrompt'
 
 const EMBED_PREF_KEY = 'ppt-embed-fonts'
+
+// 사용자 입력 파일명 → 안전한 .pptx 파일명 (경로문자 제거, 확장자 보정)
+function normalizePptxName(raw) {
+  let n = (raw || '').trim().replace(/[\\/:*?"<>|]/g, '').replace(/\.pptx$/i, '').trim()
+  if (!n) n = 'slide-export'
+  return `${n}.pptx`
+}
 
 function loadEmbedPref() {
   try {
@@ -78,6 +86,11 @@ export default function PptExportButton() {
 
   const runExport = useCallback(async (embed) => {
     if (busy) return
+    // 파일명 입력 — 기본값은 저장/HTML/프로젝트 공통 base name(없으면 slide-export)
+    const base = useFlatStore.getState().getExportBaseName() || 'slide-export'
+    const picked = await promptUrl({ title: 'PPT 파일 이름', placeholder: '파일 이름', initialValue: base })
+    if (picked == null) return // 취소
+    const filename = normalizePptxName(picked)
     setBusy(true)
     setElapsed(0)
     setStage('페이지 수집 중…')
@@ -92,12 +105,12 @@ export default function PptExportButton() {
           `%c[PPT Export] python-pptx 엔진 사용 — 폰트 임베딩 ${embed ? 'ON' : 'OFF'}`,
           'color:#22c55e;font-weight:bold'
         )
-        await exportViaPython(pages, canvasSize, { embedFonts: embed, editorVersion: APP_VERSION })
+        await exportViaPython(pages, canvasSize, { embedFonts: embed, editorVersion: APP_VERSION, filename })
       } else {
         setStage('브라우저에서 생성 중… (pptxgenjs)')
         console.log('%c[PPT Export] pptxgenjs 엔진 사용 (fallback)', 'color:#f59e0b;font-weight:bold')
         const { exportToPptx } = await import('../core/PptExporter.js')
-        await exportToPptx(pages, canvasSize, { editorVersion: APP_VERSION })
+        await exportToPptx(pages, canvasSize, { editorVersion: APP_VERSION, filename })
       }
     } catch (err) {
       console.error('PPT 내보내기 실패:', err)

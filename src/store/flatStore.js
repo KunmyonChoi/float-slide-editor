@@ -256,6 +256,8 @@ export const useFlatStore = create((set, get) => ({
   clipboard: null,
   /** 현재 프로젝트 파일명/핸들 — 열기·저장 시 기억해 같은 파일에 재저장(Ctrl+S) */
   projectFileName: null,
+  /** HTML 로드/드롭 출처 파일명(내보내기 기본 파일명 도출용) */
+  htmlSourceName: null,
   projectFileHandle: null,
   /** 스타일 복사용 클립보드 */
   styleClipboard: null,
@@ -1383,6 +1385,16 @@ export const useFlatStore = create((set, get) => ({
   },
 
   /** 현재 프로젝트 파일(핸들/이름) 기억 — 열기·저장 시 호출. null이면 초기화. */
+  /** 현재 덱의 출처 파일명(HTML 로드/드롭 시). 내보내기·저장 기본 파일명 도출에 사용 */
+  setHtmlSourceName(name) { set({ htmlSourceName: name || null }) },
+
+  /** 내보내기/저장 공통 기본 파일명(확장자 제거). 프로젝트명 우선, 없으면 HTML 출처명 */
+  getExportBaseName() {
+    const st = get()
+    const strip = (n) => (n ? n.replace(/\.(flatproj|html?|json)$/i, '').trim() : '')
+    return strip(st.projectFileName) || strip(st.htmlSourceName) || ''
+  },
+
   setProjectFile(handle, name) {
     set({ projectFileHandle: handle || null, projectFileName: name || null })
   },
@@ -1400,7 +1412,7 @@ export const useFlatStore = create((set, get) => ({
     const blob = await serializeProject(get())
     const handle = (!saveAs && st.projectFileHandle) ? st.projectFileHandle : null
     const used = await saveBlob(blob, {
-      suggestedName: st.projectFileName || 'project.flatproj',
+      suggestedName: (get().getExportBaseName() || 'project') + '.flatproj',
       description: 'Genitor 프로젝트',
       accept: { 'application/zip': ['.flatproj'] }, // .flatproj는 ZIP — 콘텐츠 타입 일치
       handle,
