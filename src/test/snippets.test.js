@@ -173,7 +173,12 @@ describe('snippets', () => {
   })
 
   it('묶음4: 터미널/파일칩/말풍선/리본/비교막대/아바타', () => {
-    expect(getSnippet('terminalOutput').build(cs, theme)[1].content).toContain('$')
+    const term = getSnippet('terminalOutput').build(cs, theme)
+    expect(term.length).toBe(1)                              // 단일 요소
+    expect(term[0].content).toContain('$')
+    expect(term[0].styles.backgroundColor).toBe('#0a0e14')   // 다크 박스 병합
+    expect(term[0].styles.padding).toContain('14px')         // 인셋=패딩
+    expect(term[0].autoHeight).toBeUndefined()               // 자동 높이 신축 없음
     expect(getSnippet('fileChip').build(cs, theme)[0].content).toContain('📄')
     const bubble = getSnippet('speechBubble').build(cs, theme)
     expect(bubble[1].rotation).toBe(45) // 꼬리

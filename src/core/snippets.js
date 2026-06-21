@@ -496,27 +496,27 @@ SNIPPETS.push({
   },
 })
 
-// 터미널 출력 — 다크 박스 + $ 프롬프트 + 모노 (복합)
+// 터미널 출력 — 다크 박스 + $ 프롬프트 + 모노. 단일 요소.
+// 코드 블록과 동일 원리: 다크 박스 시각 스타일을 텍스트 요소에 병합, 인셋은 padding으로 확보.
+// 크기는 수동 조정(자동 높이 신축 없음) — 출력이 길면 사용자가 직접 늘린다.
 SNIPPETS.push({
   id: 'terminalOutput', group: '코드', label: '터미널 출력', desc: '$ 프롬프트 + 다크 모노',
   build: (cs) => {
     const w = 520, h = 120
     const { x, y } = center(cs, w, h)
-    const win = shapeSpec({ x, y, w, h, bg: '#0a0e14', radius: 10, shadow: '0 6px 20px rgba(0,0,0,0.35)' })
-    // 오토핏: 출력이 길어지면 창이 신축(시스템바 없음 → top 패딩=텍스트 인셋)
-    win.afContainer = true; win.afPad = { top: 14, right: 16, bottom: 14, left: 16 }; win.afGap = 0
     const text = {
-      type: 'text', x: x + 16, y: y + 14, width: w - 32, height: h - 28,
-      content: '$ npm run build\n✓ built in 320ms', isRich: false, afContent: true, autoHeight: true, merged: false, placeholder: '',
+      type: 'text', x, y, width: w, height: h,
+      content: '$ npm run build\n✓ built in 320ms', isRich: false, merged: false, placeholder: '',
       styles: {
-        backgroundColor: 'rgba(0,0,0,0)', backgroundImage: 'none', color: '#86efac',
+        backgroundColor: '#0a0e14', color: '#86efac',
         fontSize: '14px', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
         fontWeight: '400', fontStyle: 'normal', textAlign: 'left', letterSpacing: 'normal',
         lineHeight: '1.6', textDecoration: 'none', textTransform: 'none',
-        borderRadius: '0px', border: '0px none', boxShadow: 'none', opacity: '1', padding: '0px', whiteSpace: 'pre-wrap',
+        borderRadius: '10px', border: '0px none', boxShadow: '0 6px 20px rgba(0,0,0,0.35)', opacity: '1',
+        padding: '14px 16px', whiteSpace: 'pre-wrap',
       },
     }
-    return [win, text]
+    return [text]
   },
 })
 
