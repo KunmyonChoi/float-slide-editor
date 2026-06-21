@@ -57,8 +57,12 @@ export default function PresenterInkOverlay({
     e.preventDefault()
     e.stopPropagation()
     const p = toCanvas(e)
-    // 오른쪽 버튼 드래그 = 도구와 무관하게 즉석 지우개(빠른 인터랙션)
-    const erasing = tool === 'eraser' || e.button === 2
+    // 즉석 지우개(도구 무관): 마우스 오른쪽 버튼 + S펜 버튼(배럴)/지우개.
+    // 펜은 팁이 닿는 순간 button=0이고 버튼 상태는 buttons 비트마스크에 들어오므로
+    // button 값과 buttons 비트를 함께 검사한다. (2=보조/배럴, 32=지우개, button 5=지우개)
+    const secondaryBtn = e.button === 2 || (e.buttons & 2) === 2
+    const eraserBtn = e.button === 5 || (e.buttons & 32) === 32
+    const erasing = tool === 'eraser' || secondaryBtn || eraserBtn
     if (erasing) {
       drawRef.current = { eraser: true, pointerId: e.pointerId }
       eraseAt(p)
