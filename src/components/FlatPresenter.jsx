@@ -7,6 +7,8 @@ import { resolveConnectors } from '../core/ConnectorRouting'
 import { BlobStore } from '../core/BlobStore'
 
 const INK_COLORS = ['#ef4444', '#f59e0b', '#3b82f6', '#ffffff', '#111827']
+// 펜 툴바 그룹(도구/팔레트/굵기) — nowrap로 묶어 그룹 내부는 줄바꿈되지 않게
+const TOOL_CLUSTER = { display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'nowrap' }
 
 /**
  * FlatPresenter — flat 편집 결과 기반 발표 모드
@@ -319,8 +321,8 @@ export default function FlatPresenter() {
           style={{
             position: 'fixed', bottom: 18, left: '50%', transform: 'translateX(-50%)',
             zIndex: 1011, display: 'flex', alignItems: 'center', justifyContent: 'center',
-            flexWrap: 'wrap', gap: 6, padding: '6px 8px',
-            maxWidth: 'calc(100vw - 16px)', // 좁은 화면에서 양옆 잘림 방지 → 줄바꿈
+            flexWrap: 'wrap', gap: 8, padding: '6px 8px',
+            maxWidth: 'calc(100vw - 16px)', // 좁은 화면에서 양옆 잘림 방지 → 그룹 단위 줄바꿈
             borderRadius: 12, background: 'rgba(15,23,42,0.6)', backdropFilter: 'blur(12px)',
             border: '1px solid rgba(255,255,255,0.1)',
             opacity: penActive ? 1 : 0.4, transition: 'opacity 0.2s',
@@ -333,27 +335,31 @@ export default function FlatPresenter() {
               onClick={() => { setPenTool('pen'); setPenActive(true) }}
               style={ctrlBtn(false)}>✎</button>
           ) : (<>
-            <button type="button" title="펜 (P)" onClick={() => setPenTool('pen')} style={ctrlBtn(penTool === 'pen')}>✎</button>
-            <button type="button" title="형광펜 (H)" onClick={() => setPenTool('highlighter')} style={ctrlBtn(penTool === 'highlighter')}>🖍</button>
-            <button type="button" title="지우개 (E)" onClick={() => setPenTool('eraser')} style={ctrlBtn(penTool === 'eraser')}>⌫</button>
-            <span style={{ width: 1, height: 18, background: 'rgba(255,255,255,0.12)' }} />
-            {INK_COLORS.map(c => (
-              <button key={c} type="button" title={`색 ${c}`} onClick={() => { setPenColor(c); if (penTool === 'eraser') setPenTool('pen') }}
-                style={{
-                  width: 20, height: 20, borderRadius: '50%', cursor: 'pointer', padding: 0,
-                  background: c,
-                  border: penColor === c ? '2px solid #fff' : '1px solid rgba(255,255,255,0.3)',
-                  boxShadow: penColor === c ? '0 0 0 1px rgba(99,102,241,0.8)' : 'none',
-                }} />
-            ))}
-            <span style={{ width: 1, height: 18, background: 'rgba(255,255,255,0.12)' }} />
-            <button type="button" title="가는 선" onClick={() => setPenWidth('thin')} style={ctrlBtn(penWidth === 'thin')}>•</button>
-            <button type="button" title="굵은 선" onClick={() => setPenWidth('thick')} style={ctrlBtn(penWidth === 'thick')}>⬤</button>
-            <span style={{ width: 1, height: 18, background: 'rgba(255,255,255,0.12)' }} />
+            {/* 도구 그룹 */}
+            <div style={TOOL_CLUSTER}>
+              <button type="button" title="펜 (P)" onClick={() => setPenTool('pen')} style={ctrlBtn(penTool === 'pen')}>✎</button>
+              <button type="button" title="형광펜 (H)" onClick={() => setPenTool('highlighter')} style={ctrlBtn(penTool === 'highlighter')}>🖍</button>
+              <button type="button" title="지우개 (E)" onClick={() => setPenTool('eraser')} style={ctrlBtn(penTool === 'eraser')}>⌫</button>
+            </div>
+            {/* 색상 팔레트 그룹 — 중간에 줄바꿈되지 않게 한 덩어리 */}
+            <div style={TOOL_CLUSTER}>
+              {INK_COLORS.map(c => (
+                <button key={c} type="button" title={`색 ${c}`} onClick={() => { setPenColor(c); if (penTool === 'eraser') setPenTool('pen') }}
+                  style={{
+                    width: 20, height: 20, borderRadius: '50%', cursor: 'pointer', padding: 0,
+                    background: c,
+                    border: penColor === c ? '2px solid #fff' : '1px solid rgba(255,255,255,0.3)',
+                    boxShadow: penColor === c ? '0 0 0 1px rgba(99,102,241,0.8)' : 'none',
+                  }} />
+              ))}
+            </div>
+            {/* 굵기 그룹 */}
+            <div style={TOOL_CLUSTER}>
+              <button type="button" title="가는 선" onClick={() => setPenWidth('thin')} style={ctrlBtn(penWidth === 'thin')}>•</button>
+              <button type="button" title="굵은 선" onClick={() => setPenWidth('thick')} style={ctrlBtn(penWidth === 'thick')}>⬤</button>
+            </div>
             <button type="button" title="현재 슬라이드 잉크 전체 지우기 (C)" onClick={clearSlideInk} style={ctrlBtn(false)}>🗑</button>
-            <span style={{ width: 1, height: 18, background: 'rgba(255,255,255,0.12)' }} />
             <button type="button" title="블랙아웃 — 슬라이드 가리고 잉크만 (B)" onClick={() => setBlackout(b => !b)} style={ctrlBtn(blackout)}>◼</button>
-            <span style={{ width: 1, height: 18, background: 'rgba(255,255,255,0.12)' }} />
             {/* 펜 모드 종료 — X 아이콘 danger 알약으로 명확히 */}
             <button type="button" title="펜 모드 종료 (Esc)" onClick={() => { setPenActive(false); setBlackout(false) }}
               style={{
