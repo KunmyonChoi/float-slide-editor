@@ -151,7 +151,13 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
           ...baseStyle,
           backgroundColor: styles.backgroundColor,
           // 그래디언트 텍스트가 아닐 때만 외부 div에 backgroundImage 적용
-          ...(!isGradientText ? { backgroundImage: styles.backgroundImage } : {}),
+          // (코드 블록 신호등 등 배경 SVG는 size/position/repeat까지 따라가야 타일링·늘어남 방지)
+          ...(!isGradientText ? {
+            backgroundImage: styles.backgroundImage,
+            backgroundRepeat: styles.backgroundRepeat,
+            backgroundSize: styles.backgroundSize,
+            backgroundPosition: styles.backgroundPosition,
+          } : {}),
           color: showPlaceholder ? 'rgba(100,116,139,0.6)' : styles.color,
           fontSize: styles.fontSize,
           fontFamily: styles.fontFamily,

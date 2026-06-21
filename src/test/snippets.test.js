@@ -88,18 +88,23 @@ describe('snippets', () => {
     expect(els[0].y).toBeLessThan(els[1].y)                // 뱃지가 제목 위
   })
 
-  it('코드 블록: 다크 윈도우 + 3색 점 + 모노스페이스 코드', () => {
+  it('코드 블록: 단일 요소 — 다크 배경 + 신호등 배경SVG + 모노스페이스 코드', () => {
     const els = getSnippet('codeBlock').build(cs, theme)
-    expect(els.length).toBe(3)
-    expect(els[0].type).toBe('shape')                      // 윈도우
-    expect(els[0].styles.backgroundColor).toBe('#0f172a')  // 다크
-    expect(els[1].content).toContain('#ff5f56')            // 빨강 점
-    expect(els[2].styles.fontFamily).toContain('monospace')// 코드 모노
-    expect(els[2].content).toContain('function')
-    expect(els[2].styles.whiteSpace).toBe('pre-wrap')
-    expect(els[2].isCode).toBe(true)                       // 코드 모드 활성
-    expect(els[2].code).toContain('function greet')        // 원본 보존
-    expect(els[2].content).toContain('<span style="color:')// 하이라이트(인라인 색)
+    expect(els.length).toBe(1)                             // 단일 요소
+    const code = els[0]
+    expect(code.type).toBe('text')
+    expect(code.styles.backgroundColor).toBe('#0f172a')    // 다크
+    expect(code.styles.backgroundImage).toContain('data:image/svg+xml') // 신호등 배경 베이크
+    expect(code.styles.backgroundImage).toContain('ff5f56')// 빨강 점(인코딩됨)
+    expect(code.styles.backgroundRepeat).toBe('no-repeat') // 타일링 방지
+    expect(code.styles.padding).toContain('46px')          // 상단바 자리 = 패딩
+    expect(code.styles.fontFamily).toContain('monospace')  // 코드 모노
+    expect(code.content).toContain('function')
+    expect(code.styles.whiteSpace).toBe('pre-wrap')
+    expect(code.isCode).toBe(true)                         // 코드 모드 활성
+    expect(code.autoHeight).toBe(true)                     // 내용 맞춰 자체 신축
+    expect(code.code).toContain('function greet')          // 원본 보존
+    expect(code.content).toContain('<span style="color:')  // 하이라이트(인라인 색)
   })
 
   it('프로그레스 바: 트랙 + 채움(accent, 더 좁음) + 라벨', () => {
