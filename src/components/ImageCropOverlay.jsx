@@ -15,9 +15,11 @@ export default function ImageCropOverlay({ element, scale }) {
   const parseObjPos = (pos) => {
     if (!pos || pos === 'center center') return { px: 50, py: 50 }
     const parts = pos.trim().split(/\s+/)
+    // 0%는 falsy라 `|| 50`이면 0이 50으로 둔갑 → 가장자리(상/좌) 위치가 망가진다.
+    const fx = parseFloat(parts[0]), fy = parseFloat(parts[1])
     return {
-      px: parseFloat(parts[0]) || 50,
-      py: parseFloat(parts[1]) || 50,
+      px: Number.isFinite(fx) ? fx : 50,
+      py: Number.isFinite(fy) ? fy : 50,
     }
   }
 
