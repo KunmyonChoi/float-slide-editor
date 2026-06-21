@@ -5,6 +5,7 @@ import CanvasSizeSelector from './CanvasSizeSelector'
 import QualityDashboard from './QualityDashboard'
 import FileMenu from './ExportMenu'
 import PptExportButton from './PptExportButton'
+import ShortcutsButton from './ShortcutsButton'
 
 const FALLBACK_SAMPLE = `<!DOCTYPE html>
 <html lang="ko">
@@ -220,6 +221,9 @@ export default function FloatingToolbar() {
       )}
 
       <div className="flex-1 hidden sm:block" />
+
+      {/* 우상단 끝: 단축키 목록 팝업 토글 */}
+      <ShortcutsButton />
 
     </div>
 

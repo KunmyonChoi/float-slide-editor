@@ -438,17 +438,7 @@ export default function EditToolbar() {
         />
       )}
 
-      {/* 다이어그램 모드 표시 */}
-      {diagramMode && (
-        <>
-          <Divider />
-          <span className="text-xs text-indigo-300 px-2">
-            다이어그램 모드
-            <span className="text-slate-500 ml-1">도형 호버→초록 연결점 드래그(또는 Alt/⌘+드래그)</span>
-          </span>
-          <ExitModeBtn onClick={() => useFlatStore.getState().setDiagramMode(false)} title="다이어그램 모드 종료" label="종료" />
-        </>
-      )}
+      {/* 다이어그램 모드: 토글 버튼(위)이 켜짐 상태/끄기를 겸하므로 별도 안내·종료 표시 없음 */}
 
       {/* 그리기 모드 표시 */}
       {useFlatStore.getState().drawMode && (
