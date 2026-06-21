@@ -370,7 +370,9 @@ export default function FlatPresenter() {
           onClick={(e) => e.stopPropagation()}
           style={{
             position: 'fixed', bottom: 18, left: '50%', transform: 'translateX(-50%)',
-            zIndex: 1011, display: 'flex', alignItems: 'center', gap: 6, padding: '6px 8px',
+            zIndex: 1011, display: 'flex', alignItems: 'center', justifyContent: 'center',
+            flexWrap: 'wrap', gap: 6, padding: '6px 8px',
+            maxWidth: 'calc(100vw - 16px)', // 좁은 화면에서 양옆 잘림 방지 → 줄바꿈
             borderRadius: 12, background: 'rgba(15,23,42,0.6)', backdropFilter: 'blur(12px)',
             border: '1px solid rgba(255,255,255,0.1)',
             opacity: penActive ? 1 : 0.4, transition: 'opacity 0.2s',
