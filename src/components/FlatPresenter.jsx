@@ -52,38 +52,9 @@ export default function FlatPresenter() {
   const [penTool, setPenTool] = useState('pen')     // pen | highlighter | eraser
   const [penColor, setPenColor] = useState(INK_COLORS[0])
   const [penWidth, setPenWidth] = useState('thin')  // thin | thick
-  const prevToolRef = useRef('pen')  // 펜 버튼(지우개 토글) 복귀용 직전 도구
   // 슬라이드별 잉크 보관(상태) — 슬라이드 전환 간 유지, 발표 종료(언마운트) 시 자동 폐기
   const [inkBySlide, setInkBySlide] = useState({}) // { [slideIndex]: strokes[] }
   const [blackout, setBlackout] = useState(false)  // 슬라이드 블랙아웃(잉크만 보이게)
-  const debugMode = useFlatStore(s => s.debugMode)  // 디버그: 화면에 펜 이벤트 로그 표시
-  const [penLog, setPenLog] = useState([])
-
-  // 디버그 모드: 모바일에서 콘솔 대신 화면으로 포인터/펜 이벤트 값 확인
-  // (pointerType / button / buttons / pressure). 버튼 비트가 잠깐만 떠도 잡도록
-  // 다운·업·취소·컨텍스트메뉴와 buttons 변하는 이동을 롤링 로그로 남긴다.
-  useEffect(() => {
-    if (!debugMode) return
-    let lastBtns = -1
-    const push = (line) => setPenLog(l => [...l.slice(-7), line])
-    const fmt = (e) => `${e.type.replace('pointer', 'p')} ${e.pointerType || '-'} btn=${e.button} buttons=${e.buttons} pr=${(e.pressure ?? 0).toFixed(2)}`
-    const onDown = (e) => { lastBtns = e.buttons; push(fmt(e)) }
-    const onUpCancel = (e) => { lastBtns = e.buttons; push(fmt(e)) }
-    const onMove = (e) => { if (e.buttons !== lastBtns) { lastBtns = e.buttons; push(fmt(e)) } }
-    const onCtx = (e) => push(`contextmenu ${e.pointerType || '-'} btn=${e.button} buttons=${e.buttons}`)
-    window.addEventListener('pointerdown', onDown, true)
-    window.addEventListener('pointerup', onUpCancel, true)
-    window.addEventListener('pointercancel', onUpCancel, true)
-    window.addEventListener('pointermove', onMove, true)
-    window.addEventListener('contextmenu', onCtx, true)
-    return () => {
-      window.removeEventListener('pointerdown', onDown, true)
-      window.removeEventListener('pointerup', onUpCancel, true)
-      window.removeEventListener('pointercancel', onUpCancel, true)
-      window.removeEventListener('pointermove', onMove, true)
-      window.removeEventListener('contextmenu', onCtx, true)
-    }
-  }, [debugMode])
 
   // 발표 시작 인덱스(F5=0, Shift+F5=현재 페이지). 마운트 시 1회 고정.
   const [currentSlide, setCurrentSlide] = useState(() => useEditorStore.getState().presentStartIndex || 0)
@@ -198,19 +169,6 @@ export default function FlatPresenter() {
     }
   }, [exitPresentation, goNext, goPrev, penActive, clearSlideInk])
 
-  // S펜 측면 버튼: 이 기기/브라우저에선 버튼이 보조-버튼 비트가 아니라 contextmenu로
-  // 들어온다(또한 접촉을 끊어 '버튼+드래그 동시'는 불가). → 버튼 누름 = 지우개 토글.
-  useEffect(() => {
-    if (!penActive) return
-    const onCtx = (e) => {
-      e.preventDefault()
-      if (penTool === 'eraser') setPenTool(prevToolRef.current || 'pen')
-      else { prevToolRef.current = penTool; setPenTool('eraser') }
-    }
-    window.addEventListener('contextmenu', onCtx)
-    return () => window.removeEventListener('contextmenu', onCtx)
-  }, [penActive, penTool])
-
   // 클릭: 좌측 1/4 → 이전, 우측 3/4 → 다음
   // iframe/video/a 등 인터랙티브 요소 위의 클릭은 무시
   const handleClick = useCallback((e) => {
@@ -270,16 +228,6 @@ export default function FlatPresenter() {
       }}
       onClick={handleClick}
     >
-      {/* 디버그: 펜/포인터 이벤트 값 화면 표시 (모바일 콘솔 대체) */}
-      {debugMode && (
-        <div style={{
-          position: 'fixed', top: 8, left: 8, zIndex: 2147483647, maxWidth: '92vw',
-          background: 'rgba(0,0,0,0.82)', color: '#7CFC00', font: '11px/1.45 monospace',
-          padding: '6px 8px', borderRadius: 6, pointerEvents: 'none', whiteSpace: 'pre-wrap',
-        }}>
-          {penLog.length ? penLog.join('\n') : '펜 디버그: 펜으로 화면을 그어보세요 (버튼 누른 채로도)'}
-        </div>
-      )}
       {/* 로딩 중 */}
       {loading && (
         <div style={{
