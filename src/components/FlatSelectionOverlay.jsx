@@ -679,6 +679,10 @@ export function FlatGroupOverlay({ elements, scale, otherRects, canvasSize, onSn
       startPositions: movableElements.map(el => ({ id: el.id, x: el.x, y: el.y })),
       bbox: { ...bbox },
       otherRects: otherRects || [],
+      pointerId: e.pointerType ? e.pointerId : undefined,
+    }
+    if (e.pointerType === 'touch' && e.currentTarget?.setPointerCapture) {
+      try { e.currentTarget.setPointerCapture(e.pointerId) } catch { /* 무시 */ }
     }
   }, [movableElements, bbox, otherRects])
 
@@ -697,6 +701,10 @@ export function FlatGroupOverlay({ elements, scale, otherRects, canvasSize, onSn
         id: el.id, x: el.x, y: el.y, width: el.width, height: el.height,
       })),
       otherRects: otherRects || [],
+      pointerId: e.pointerType ? e.pointerId : undefined,
+    }
+    if (e.pointerType === 'touch' && e.currentTarget?.setPointerCapture) {
+      try { e.currentTarget.setPointerCapture(e.pointerId) } catch { /* 무시 */ }
     }
   }, [movableElements, bbox, otherRects])
 
@@ -704,6 +712,9 @@ export function FlatGroupOverlay({ elements, scale, otherRects, canvasSize, onSn
     const onMove = (e) => {
       const d = dragRef.current
       if (!d) return
+      // 마우스 PointerEvent는 mousemove가 처리(중복 방지). 터치/펜만 포인터 경로로.
+      if (e.pointerType === 'mouse') return
+      if (d.pointerId != null && e.pointerId !== d.pointerId) return
 
       const dx = (e.clientX - d.startMouseX) / scale
       const dy = (e.clientY - d.startMouseY) / scale
@@ -787,9 +798,12 @@ export function FlatGroupOverlay({ elements, scale, otherRects, canvasSize, onSn
       }
     }
 
-    const onUp = () => {
+    const onUp = (e) => {
       const d = dragRef.current
       if (!d) return
+      // 마우스 PointerEvent의 pointerup은 mouseup이 처리(중복 방지)
+      if (e && e.pointerType === 'mouse') return
+      if (e && d.pointerId != null && e.pointerId != null && e.pointerId !== d.pointerId) return
       dragRef.current = null
       if (onSnapGuides) onSnapGuides([])
 
@@ -836,9 +850,16 @@ export function FlatGroupOverlay({ elements, scale, otherRects, canvasSize, onSn
 
     window.addEventListener('mousemove', onMove)
     window.addEventListener('mouseup', onUp)
+    // 터치/펜: 같은 onMove/onUp 재사용(내부에서 pointerType==='mouse'는 무시)
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+    window.addEventListener('pointercancel', onUp)
     return () => {
       window.removeEventListener('mousemove', onMove)
       window.removeEventListener('mouseup', onUp)
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+      window.removeEventListener('pointercancel', onUp)
     }
   }, [scale, batchPreviewFlatElements, batchUpdateFlatElementsIndividual])
 
@@ -854,9 +875,12 @@ export function FlatGroupOverlay({ elements, scale, otherRects, canvasSize, onSn
         zIndex: 9999,
         cursor: movableElements.length === 0 ? 'default' : 'move',
         pointerEvents: 'auto',
+        // 터치로 그룹을 끌어 이동 — 브라우저 기본 제스처(스크롤 등) 차단
+        touchAction: movableElements.length === 0 ? undefined : 'none',
         border: '2px dashed rgba(99,102,241,0.6)',
       }}
       onMouseDown={handleMoveStart}
+      onPointerDown={(e) => { if (e.pointerType === 'touch') handleMoveStart(e) }}
       onDoubleClick={handleDoubleClick}
     >
       {movableElements.length > 0 && GROUP_HANDLES.map(h => (
@@ -864,6 +888,7 @@ export function FlatGroupOverlay({ elements, scale, otherRects, canvasSize, onSn
           key={h.dir}
           data-resize-handle="true"
           onMouseDown={(e) => handleResizeStart(e, h.dir)}
+          onPointerDown={(e) => { if (e.pointerType === 'touch') handleResizeStart(e, h.dir) }}
           style={{
             position: 'absolute',
             left: h.x * bbox.w - GROUP_HANDLE_SIZE / 2,
@@ -874,6 +899,7 @@ export function FlatGroupOverlay({ elements, scale, otherRects, canvasSize, onSn
             border: '1px solid #fff',
             borderRadius: 2,
             cursor: h.cursor,
+            touchAction: 'none',
             zIndex: 10000,
           }}
         />
