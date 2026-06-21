@@ -68,6 +68,7 @@ export default function FlatContextMenu({ x, y, canvasX, canvasY, onClose }) {
   const allLocked = selectedEls.length > 0 && selectedEls.every(e => e.locked)
   const singleTextEl = selectedEls.length === 1 && selectedEls[0].type === 'text' ? selectedEls[0] : null
   const singleImageEl = selectedEls.length === 1 && selectedEls[0].type === 'image' ? selectedEls[0] : null
+  const singleVideoEl = selectedEls.length === 1 && selectedEls[0].type === 'video' ? selectedEls[0] : null
 
   // 배경 요소 찾기 — 명시 배경(플래그/__bg)만
   const bgElement = useMemo(() => flatElements.find(el => isBackgroundElement(el)), [flatElements])
@@ -256,22 +257,27 @@ export default function FlatContextMenu({ x, y, canvasX, canvasY, onClose }) {
     })
   }, [canvasSize, insertCustomElement])
 
-  // 선택한 이미지 다운로드 (data URL / idb:// / 외부 URL 모두 처리)
-  const downloadSelectedImage = useCallback(async () => {
+  // 선택한 미디어(이미지/비디오) 다운로드 (data URL / idb:// / 외부 URL 모두 처리)
+  const downloadSelectedMedia = useCallback(async () => {
     const el = flatElements.find(e => e.id === singleId)
-    if (!el || el.type !== 'image' || !el.content) return
+    if (!el || (el.type !== 'image' && el.type !== 'video') || !el.content) return
+    const isVideo = el.type === 'video'
+    const pfx = isVideo ? 'video/' : 'image/'
     let src = el.content
     if (BlobStore.isIdbRef(src)) src = await BlobStore.getUrl(BlobStore.parseRef(src))
-    let url = src, revoke = false, ext = 'png'
+    let url = src, revoke = false, ext = isVideo ? 'mp4' : 'png'
     try {
       const resp = await fetch(src)
       const blob = await resp.blob()
-      if (blob.type.startsWith('image/')) ext = (blob.type.split('/')[1] || 'png').split('+')[0]
+      // video/webm;codecs=... → 'webm'만 추출
+      if (blob.type.startsWith(pfx)) ext = (blob.type.split('/')[1] || ext).split(';')[0].split('+')[0]
       url = URL.createObjectURL(blob); revoke = true
     } catch { /* fetch 실패 시 원본 src로 직접 시도 */ }
+    // 녹화 삽입 등으로 filename이 있으면 우선 사용
+    const name = el.filename || `${isVideo ? 'video' : 'image'}.${ext}`
     const a = document.createElement('a')
     a.href = url
-    a.download = `image.${ext}`
+    a.download = name
     document.body.appendChild(a); a.click(); a.remove()
     if (revoke) setTimeout(() => URL.revokeObjectURL(url), 1000)
   }, [flatElements, singleId])
@@ -322,7 +328,7 @@ export default function FlatContextMenu({ x, y, canvasX, canvasY, onClose }) {
           useFlatStore.getState().updateCustomTheme({ bg })
         }
         break
-      case 'downloadImage': downloadSelectedImage(); break
+      case 'downloadMedia': downloadSelectedMedia(); break
       case 'aiInfographic': openInfographic(); break
       case 'convertToBg': {
         // 단일 이미지/영상만 배경으로 변환(타입 유지). 원래 위치/크기는 _restore에 보관.
@@ -380,7 +386,7 @@ export default function FlatContextMenu({ x, y, canvasX, canvasY, onClose }) {
       removeSelectedElements, selectAllFlats, bringForward, sendBackward,
       bringToFront, sendToBack, insertElement, insertVideo, onClose, allLocked,
       flatElements, selectedFlatIds, batchUpdateFlatElementsIndividual,
-      updateFlatElement, batchUpdateFlatElements, bgElement, setSelectedFlat, singleTextEl, downloadSelectedImage, pasteFromClipboard])
+      updateFlatElement, batchUpdateFlatElements, bgElement, setSelectedFlat, singleTextEl, downloadSelectedMedia, pasteFromClipboard])
 
   // 서브메뉴 hover
   const enterSubmenu = (key) => {
@@ -455,7 +461,8 @@ export default function FlatContextMenu({ x, y, canvasX, canvasY, onClose }) {
     // 변환/상태
     [
       { id: 'lock', label: allLocked ? '잠금 해제' : '잠금', action: 'lock' },
-      ...(singleImageEl ? [{ id: 'dlImage', label: '이미지 다운로드', action: 'downloadImage' }] : []),
+      ...(singleImageEl ? [{ id: 'dlImage', label: '이미지 다운로드', action: 'downloadMedia' }] : []),
+      ...(singleVideoEl ? [{ id: 'dlVideo', label: '비디오 다운로드', action: 'downloadMedia' }] : []),
       // 배경으로 변환: 단일 이미지/영상만(이미 배경인 것 제외)
       ...(selectedEls.length === 1 && !isBackgroundElement(selectedEls[0]) && ['image', 'video'].includes(selectedEls[0].type)
         ? [{ id: 'toBg', label: '배경으로 변환', action: 'convertToBg' }] : []),
