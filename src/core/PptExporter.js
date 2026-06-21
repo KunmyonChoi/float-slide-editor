@@ -36,7 +36,7 @@ async function contentToDataUrl(content) {
  * @param {Object} pages - { [pageKey]: { elements, canvasSize, fontImports } }
  * @param {Object} defaultCanvasSize - 기본 캔버스 크기
  */
-export async function exportToPptx(pages, defaultCanvasSize, { editorVersion = '' } = {}) {
+export async function exportToPptx(pages, defaultCanvasSize, { editorVersion = '', filename = 'slide-export.pptx' } = {}) {
   const PptxGenJS = (await import('pptxgenjs')).default
   const pptx = new PptxGenJS()
 
@@ -78,7 +78,6 @@ export async function exportToPptx(pages, defaultCanvasSize, { editorVersion = '
     if (page.notes) slide.addNotes(page.notes)
   }
 
-  const filename = `slide-export.pptx`
   await pptx.writeFile({ fileName: filename })
 }
 

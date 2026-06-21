@@ -266,6 +266,8 @@ export default function FlatCanvas() {
         }
         const text = await htmlFile.text()
         useFlatStore.getState().clearPageCache()
+        useFlatStore.getState().setProjectFile(null, null)        // .flatproj 아님
+        useFlatStore.getState().setHtmlSourceName(htmlFile.name)  // 저장/PPT 기본 파일명 도출
         useEditorStore.getState().loadHtml(text, { imported: true })
       })()
       return

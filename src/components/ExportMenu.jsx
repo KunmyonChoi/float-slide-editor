@@ -73,6 +73,7 @@ export default function FileMenu({ fallbackSample }) {
     const text = await file.text()
     clearPageCache()
     useFlatStore.getState().setProjectFile(null, null) // .flatproj 아님 → 재저장 대상 초기화
+    useFlatStore.getState().setHtmlSourceName(file.name) // 저장/PPT 기본 파일명 도출
     loadHtml(text, { imported: true })
   }, [clearPageCache, loadHtml])
 
@@ -127,6 +128,7 @@ export default function FileMenu({ fallbackSample }) {
     useFlatStore.getState().setCustomTheme(data.customTheme)
     useFlatStore.getState().setThemeId(data.themeId)
     useFlatStore.getState().setProjectFile(handle, file.name)
+    useFlatStore.getState().setHtmlSourceName(null) // 프로젝트명이 기본 파일명 기준이 됨
     useEditorStore.getState().setHtmlImported(false)
     if (useFlatStore.getState().viewMode === 'html') setViewMode('flat')
     const { addRecent } = await import('../core/RecentProjects.js')
