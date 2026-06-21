@@ -69,8 +69,10 @@ export default function ImageCropOverlay({ element, scale }) {
       // px 이동을 % 변화로 변환 (요소 크기 대비)
       const dpx = (dx / element.width) * 100
       const dpy = (dy / element.height) * 100
-      const newPx = Math.max(0, Math.min(100, d.startPx + dpx))
-      const newPy = Math.max(0, Math.min(100, d.startPy + dpy))
+      // object-fit:cover에서 objectPosition%↑ = 보이는 창이 반대편으로 이동(=이미지가 반대로 움직임).
+      // "이미지를 잡아서 끈다"(커서와 같은 방향) 느낌을 주려면 부호를 반대로.
+      const newPx = Math.max(0, Math.min(100, d.startPx - dpx))
+      const newPy = Math.max(0, Math.min(100, d.startPy - dpy))
       setPosX(newPx)
       setPosY(newPy)
       previewFlatElement(element.id, {
@@ -129,6 +131,9 @@ export default function ImageCropOverlay({ element, scale }) {
           height: element.height,
           zIndex: 9991,
           cursor: 'move',
+          // 컨테이너의 pointerEvents:'none' 상속 차단 — 안 주면 드래그가 프레임을 통과해
+          // 뒤의 백드롭(크롭 종료)으로 가서 드래그 대신 모드가 닫힌다.
+          pointerEvents: 'auto',
           overflow: 'hidden',
           transform: rot ? `rotate(${rot}deg)` : undefined,
           transformOrigin: rot ? 'center center' : undefined,
