@@ -2161,20 +2161,30 @@ export function extractFlatElements(doc, win) {
       }
     }
     const ph = (slot.getAttribute('placeholder') || '').trim()
-    if (ph) {
-      result.push({
-        id: nextFlatId(), sourceId: null, type: 'text',
-        x: slotRect.left, y: slotRect.top, width: slotRect.width, height: slotRect.height,
-        zIndex: 0, _domOrder: zCounter++, _originalZIndex: baseZ,
-        content: ph, isRich: false,
-        styles: {
-          color: slotCs.color || 'rgba(0,0,0,0.55)',
-          fontSize: slotCs.fontSize || '13px',
-          fontFamily: slotCs.fontFamily || 'sans-serif',
-          textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center',
-          padding: '8px', backgroundColor: 'rgba(0,0,0,0)',
-        },
-      })
+    if (sr && ph) {
+      // 안내문은 shadow의 실제 텍스트 요소(div.cap 등) 위치로 추출 — 슬롯 전체에
+      // flex-center로 넣으면 박스 중앙(=아이콘 위치)에 와 아이콘과 겹친다.
+      let capEl = null
+      for (const el of sr.querySelectorAll('*')) {
+        if (el.children.length === 0 && (el.textContent || '').trim() === ph) { capEl = el; break }
+      }
+      const tr = capEl ? unscaleRect(capEl.getBoundingClientRect(), transformScale, originRect) : slotRect
+      const capCs = capEl ? win.getComputedStyle(capEl) : slotCs
+      if (tr.width >= 1 && tr.height >= 1) {
+        result.push({
+          id: nextFlatId(), sourceId: null, type: 'text',
+          x: tr.left, y: tr.top, width: tr.width, height: tr.height,
+          zIndex: 0, _domOrder: zCounter++, _originalZIndex: baseZ,
+          content: ph, isRich: false,
+          styles: {
+            color: capCs.color || 'rgba(0,0,0,0.55)',
+            fontSize: capCs.fontSize || '13px',
+            fontFamily: capCs.fontFamily || 'sans-serif',
+            lineHeight: capCs.lineHeight && capCs.lineHeight !== 'normal' ? capCs.lineHeight : '1.3',
+            textAlign: 'center', whiteSpace: 'nowrap', backgroundColor: 'rgba(0,0,0,0)',
+          },
+        })
+      }
     }
   }
 
