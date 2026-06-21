@@ -1041,6 +1041,7 @@ export default function FlatCanvas() {
       const tapThresh = m.touch ? 8 : 3
       if (x2 - x1 < tapThresh && y2 - y1 < tapThresh) {
         if (!shiftKey) useFlatStore.getState().setSelectedFlat(null)
+        setHoverShapeId(null) // 다이어그램 모드: 빈 영역 탭 시 stale 호버 연결점 제거
         return
       }
 
@@ -1273,7 +1274,9 @@ export default function FlatCanvas() {
             {/* 다이어그램 모드: 호버 도형 연결점 — 리사이즈 핸들(인디고 사각, 변 위)과
                 구분되도록 초록 원으로 도형 '바깥쪽'에 띄워 표시(드래그 시작점) */}
             {/* 데스크톱: 호버한 도형의 연결점 */}
-            {diagramMode && !connectorDraft && hoverShapeId && hoverShapeId !== selectedEl?.id && (() => {
+            {/* 호버 연결점은 마우스 전용. 터치는 합성 mousemove로 hoverShapeId가 stale해져
+                선택 해제 후에도 점선 박스+연결점이 남는 문제가 있어 제외(선택 마커가 대체). */}
+            {diagramMode && !connectorDraft && !isTouch && hoverShapeId && hoverShapeId !== selectedEl?.id && (() => {
               const el = renderElements.find(e => e.id === hoverShapeId)
               return el ? <ConnectionMarkers el={el} touch={isTouch} scale={scale} /> : null
             })()}
