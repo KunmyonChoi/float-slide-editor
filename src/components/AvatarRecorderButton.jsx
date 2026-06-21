@@ -4,9 +4,11 @@ import { BlobStore } from '../core/BlobStore'
 import { nextFlatId } from '../core/FlatExtractor'
 
 // avatar-recoder 연동 규약(integration-api.md): 팝업 + postMessage. Genitor는 호출자(opener).
-// 실제 배포 주소는 'avatar-recoder'(문서의 'avatar-recorder'는 오타 — 404).
+// 주의: 도메인은 'avatar-recoder'(r 없음)인데 메시지 타입 네임스페이스는
+// 'avatar-recorder:'(r 있음)로 규격상 다르다 — 오타 아님, 둘 다 규격대로.
 const RECORDER_URL = 'https://avatar-recoder.netlify.app'
 const RECORDER_ORIGIN = 'https://avatar-recoder.netlify.app'
+const MSG = 'avatar-recorder' // 메시지 타입 접두사(규격)
 
 // 결과 Blob → 현재 슬라이드에 비디오 요소로 삽입(기존 비디오 삽입 경로와 동일 구성)
 async function insertVideoBlob(blob, filename) {
@@ -68,21 +70,16 @@ export default function AvatarRecorderButton() {
       if (e.origin !== RECORDER_ORIGIN) return
       const { type, sessionId, blob, filename } = e.data || {}
       if (sessionRef.current && sessionId && sessionId !== sessionRef.current) return
-      switch (type) {
-        case 'avatar-recorder:result':
-          if (blob) {
-            try { await insertVideoBlob(blob, filename) }
-            catch (err) { console.warn('[avatar-recorder] 삽입 실패:', err?.message) }
-          }
-          cleanup(true)
-          break
-        case 'avatar-recorder:cancelled':
-        case 'avatar-recorder:error':
-          cleanup(false)
-          break
-        // ready / recording-started / recording-stopped: 팝업 UI가 제어하므로 별도 처리 없음
-        default: break
+      if (type === `${MSG}:result`) {
+        if (blob) {
+          try { await insertVideoBlob(blob, filename) }
+          catch (err) { console.warn('[avatar-recoder] 삽입 실패:', err?.message) }
+        }
+        cleanup(true)
+      } else if (type === `${MSG}:cancelled` || type === `${MSG}:error`) {
+        cleanup(false)
       }
+      // ready / recording-started / recording-stopped: 팝업 UI가 제어하므로 별도 처리 없음
     }
     window.addEventListener('message', onMsg)
     return () => window.removeEventListener('message', onMsg)
