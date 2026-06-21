@@ -57,7 +57,9 @@ export default function PresenterInkOverlay({
     e.preventDefault()
     e.stopPropagation()
     const p = toCanvas(e)
-    if (tool === 'eraser') {
+    // 오른쪽 버튼 드래그 = 도구와 무관하게 즉석 지우개(빠른 인터랙션)
+    const erasing = tool === 'eraser' || e.button === 2
+    if (erasing) {
       drawRef.current = { eraser: true, pointerId: e.pointerId }
       eraseAt(p)
       try { svgRef.current.setPointerCapture(e.pointerId) } catch { /* 무시 */ }
@@ -115,6 +117,7 @@ export default function PresenterInkOverlay({
       onPointerMove={onPointerMove}
       onPointerUp={finishStroke}
       onPointerCancel={finishStroke}
+      onContextMenu={(e) => e.preventDefault()}
       style={{
         position: 'absolute', inset: 0, width: '100%', height: '100%',
         pointerEvents: penActive ? 'auto' : 'none',
