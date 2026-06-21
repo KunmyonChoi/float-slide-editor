@@ -3,9 +3,10 @@ import { useFlatStore } from '../store/flatStore'
 import { BlobStore } from '../core/BlobStore'
 import { nextFlatId } from '../core/FlatExtractor'
 
-// avatar-recorder 연동 규약(integration-api.md): 팝업 + postMessage. Genitor는 호출자(opener).
-const RECORDER_URL = 'https://avatar-recorder.netlify.app'
-const RECORDER_ORIGIN = 'https://avatar-recorder.netlify.app'
+// avatar-recoder 연동 규약(integration-api.md): 팝업 + postMessage. Genitor는 호출자(opener).
+const RECORDER_URL = 'https://avatar-recoder.netlify.app'
+const RECORDER_ORIGIN = 'https://avatar-recoder.netlify.app'
+const MSG = 'avatar-recoder' // 메시지 타입 접두사(규격) — 도메인과 동일 철자
 
 // 결과 Blob → 현재 슬라이드에 비디오 요소로 삽입(기존 비디오 삽입 경로와 동일 구성)
 async function insertVideoBlob(blob, filename) {
@@ -44,7 +45,7 @@ async function insertVideoBlob(blob, filename) {
 }
 
 /**
- * 튜토리얼 녹화 — avatar-recorder 팝업을 열어(음성+화면 녹화) 결과 영상을
+ * 튜토리얼 녹화 — avatar-recoder 팝업을 열어(음성+화면 녹화) 결과 영상을
  * 현재 슬라이드에 비디오 요소로 삽입한다. 녹화 제어/해상도 선택은 팝업 자체 UI가 담당.
  */
 export default function AvatarRecorderButton() {
@@ -67,21 +68,16 @@ export default function AvatarRecorderButton() {
       if (e.origin !== RECORDER_ORIGIN) return
       const { type, sessionId, blob, filename } = e.data || {}
       if (sessionRef.current && sessionId && sessionId !== sessionRef.current) return
-      switch (type) {
-        case 'avatar-recorder:result':
-          if (blob) {
-            try { await insertVideoBlob(blob, filename) }
-            catch (err) { console.warn('[avatar-recorder] 삽입 실패:', err?.message) }
-          }
-          cleanup(true)
-          break
-        case 'avatar-recorder:cancelled':
-        case 'avatar-recorder:error':
-          cleanup(false)
-          break
-        // ready / recording-started / recording-stopped: 팝업 UI가 제어하므로 별도 처리 없음
-        default: break
+      if (type === `${MSG}:result`) {
+        if (blob) {
+          try { await insertVideoBlob(blob, filename) }
+          catch (err) { console.warn('[avatar-recoder] 삽입 실패:', err?.message) }
+        }
+        cleanup(true)
+      } else if (type === `${MSG}:cancelled` || type === `${MSG}:error`) {
+        cleanup(false)
       }
+      // ready / recording-started / recording-stopped: 팝업 UI가 제어하므로 별도 처리 없음
     }
     window.addEventListener('message', onMsg)
     return () => window.removeEventListener('message', onMsg)
@@ -106,7 +102,7 @@ export default function AvatarRecorderButton() {
     sessionRef.current = sessionId
     const params = new URLSearchParams({ mode: 'popup', origin: window.location.origin, session: sessionId })
     // noopener=0 필수 — opener 참조 유지(결과 postMessage 수신)
-    const w = window.open(`${RECORDER_URL}?${params}`, 'avatar-recorder', 'width=1280,height=800,noopener=0')
+    const w = window.open(`${RECORDER_URL}?${params}`, 'avatar-recoder', 'width=1280,height=800,noopener=0')
     if (!w) {
       sessionRef.current = null
       alert('팝업이 차단되었습니다. 이 사이트의 팝업을 허용한 뒤 다시 시도하세요.')
