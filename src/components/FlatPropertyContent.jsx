@@ -1367,7 +1367,9 @@ function ImageSection({ styles, updateStyle, previewStyle, elementId }) {
   const parsePos = (pos) => {
     if (!pos || pos === 'center center') return { px: 50, py: 50 }
     const parts = pos.trim().split(/\s+/)
-    return { px: parseFloat(parts[0]) || 50, py: parseFloat(parts[1]) || 50 }
+    // 0%는 falsy라 `|| 50`이면 0이 50으로 둔갑 → 상/좌 프리셋이 활성표시·숫자 반영 안 됨.
+    const fx = parseFloat(parts[0]), fy = parseFloat(parts[1])
+    return { px: Number.isFinite(fx) ? fx : 50, py: Number.isFinite(fy) ? fy : 50 }
   }
   const { px, py } = parsePos(objPos)
 
