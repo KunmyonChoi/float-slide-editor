@@ -2122,6 +2122,62 @@ export function extractFlatElements(doc, win) {
     })
   }
 
+  // image-slot(섀도우 DOM 이미지 플레이스홀더): 박스(호스트)는 컨테이너로 이미 추출됨.
+  // 아이콘/안내문/실제 이미지는 shadow DOM 안에 있어 [data-editor-id] 워크가 못 봄
+  // → shadowRoot를 직접 읽어 합성 추출(섀도우 요소도 getBoundingClientRect는 동작).
+  for (const slot of doc.querySelectorAll('image-slot')) {
+    if (revealPresent && !revealPresent.contains(slot)) continue
+    if (isHiddenByAncestor(slot)) continue
+    const slotCs = win.getComputedStyle(slot)
+    if (slotCs.display === 'none') continue
+    const slotRect = unscaleRect(slot.getBoundingClientRect(), transformScale, originRect)
+    if (slotRect.width < 1 || slotRect.height < 1) continue
+    const sr = slot.shadowRoot
+    const baseZ = getEffectiveZIndex(slot)
+    // 1) 실제 이미지가 채워진 슬롯 → 이미지 요소
+    const img = sr && sr.querySelector('img')
+    const imgSrc = img && (img.currentSrc || img.getAttribute('src'))
+    if (imgSrc && /^(https?:|data:|blob:)/i.test(imgSrc)) {
+      result.push({
+        id: nextFlatId(), sourceId: null, type: 'image',
+        x: slotRect.left, y: slotRect.top, width: slotRect.width, height: slotRect.height,
+        zIndex: 0, _domOrder: zCounter++, _originalZIndex: baseZ,
+        content: imgSrc, isRich: false,
+        styles: { objectFit: slot.getAttribute('fit') || 'cover', borderRadius: slotCs.borderRadius || '0px' },
+      })
+      continue
+    }
+    // 2) 빈 플레이스홀더 → 아이콘(svg) + 안내문(placeholder 속성)
+    const phSvg = sr && sr.querySelector('svg')
+    if (phSvg) {
+      const r = unscaleRect(phSvg.getBoundingClientRect(), transformScale, originRect)
+      if (r.width >= 1 && r.height >= 1) {
+        result.push({
+          id: nextFlatId(), sourceId: null, type: 'svg',
+          x: r.left, y: r.top, width: r.width, height: r.height,
+          zIndex: 0, _domOrder: zCounter++, _originalZIndex: baseZ,
+          content: phSvg.outerHTML, isRich: false, styles: {},
+        })
+      }
+    }
+    const ph = (slot.getAttribute('placeholder') || '').trim()
+    if (ph) {
+      result.push({
+        id: nextFlatId(), sourceId: null, type: 'text',
+        x: slotRect.left, y: slotRect.top, width: slotRect.width, height: slotRect.height,
+        zIndex: 0, _domOrder: zCounter++, _originalZIndex: baseZ,
+        content: ph, isRich: false,
+        styles: {
+          color: slotCs.color || 'rgba(0,0,0,0.55)',
+          fontSize: slotCs.fontSize || '13px',
+          fontFamily: slotCs.fontFamily || 'sans-serif',
+          textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center',
+          padding: '8px', backgroundColor: 'rgba(0,0,0,0)',
+        },
+      })
+    }
+  }
+
   // 아이콘 폰트 요소 추출 — data-editor-id 없는 <i> / <span>의 ::before 글리프를
   // 텍스트 요소로 별도 스캔. <i>가 text 컨테이너의 인라인 자식이면 이미 F2(getRichTextContent)에서
   // 처리되었으므로, 가장 가까운 [data-editor-id] 조상이 'text' 타입이면 스킵한다.
