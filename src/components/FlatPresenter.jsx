@@ -9,6 +9,9 @@ import { BlobStore } from '../core/BlobStore'
 const INK_COLORS = ['#ef4444', '#f59e0b', '#3b82f6', '#ffffff', '#111827']
 // 펜 툴바 그룹(도구/팔레트/굵기) — nowrap로 묶어 그룹 내부는 줄바꿈되지 않게
 const TOOL_CLUSTER = { display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'nowrap' }
+// 매크로 그룹 — 좁을 때 이 경계에서만 줄바꿈(넓으면 한 줄):
+//  ① 도구+팔레트  ② 굵기+휴지통+블랙아웃+종료
+const TOOL_MACRO = { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'nowrap' }
 
 /**
  * FlatPresenter — flat 편집 결과 기반 발표 모드
@@ -335,43 +338,46 @@ export default function FlatPresenter() {
               onClick={() => { setPenTool('pen'); setPenActive(true) }}
               style={ctrlBtn(false)}>✎</button>
           ) : (<>
-            {/* 도구 그룹 */}
-            <div style={TOOL_CLUSTER}>
-              <button type="button" title="펜 (P)" onClick={() => setPenTool('pen')} style={ctrlBtn(penTool === 'pen')}>✎</button>
-              <button type="button" title="형광펜 (H)" onClick={() => setPenTool('highlighter')} style={ctrlBtn(penTool === 'highlighter')}>🖍</button>
-              <button type="button" title="지우개 (E)" onClick={() => setPenTool('eraser')} style={ctrlBtn(penTool === 'eraser')}>⌫</button>
+            {/* 그룹① 도구 + 색상 팔레트 (좁으면 이게 1줄) */}
+            <div style={TOOL_MACRO}>
+              <div style={TOOL_CLUSTER}>
+                <button type="button" title="펜 (P)" onClick={() => setPenTool('pen')} style={ctrlBtn(penTool === 'pen')}>✎</button>
+                <button type="button" title="형광펜 (H)" onClick={() => setPenTool('highlighter')} style={ctrlBtn(penTool === 'highlighter')}>🖍</button>
+                <button type="button" title="지우개 (E)" onClick={() => setPenTool('eraser')} style={ctrlBtn(penTool === 'eraser')}>⌫</button>
+              </div>
+              <div style={TOOL_CLUSTER}>
+                {INK_COLORS.map(c => (
+                  <button key={c} type="button" title={`색 ${c}`} onClick={() => { setPenColor(c); if (penTool === 'eraser') setPenTool('pen') }}
+                    style={{
+                      width: 20, height: 20, borderRadius: '50%', cursor: 'pointer', padding: 0,
+                      background: c,
+                      border: penColor === c ? '2px solid #fff' : '1px solid rgba(255,255,255,0.3)',
+                      boxShadow: penColor === c ? '0 0 0 1px rgba(99,102,241,0.8)' : 'none',
+                    }} />
+                ))}
+              </div>
             </div>
-            {/* 색상 팔레트 그룹 — 중간에 줄바꿈되지 않게 한 덩어리 */}
-            <div style={TOOL_CLUSTER}>
-              {INK_COLORS.map(c => (
-                <button key={c} type="button" title={`색 ${c}`} onClick={() => { setPenColor(c); if (penTool === 'eraser') setPenTool('pen') }}
-                  style={{
-                    width: 20, height: 20, borderRadius: '50%', cursor: 'pointer', padding: 0,
-                    background: c,
-                    border: penColor === c ? '2px solid #fff' : '1px solid rgba(255,255,255,0.3)',
-                    boxShadow: penColor === c ? '0 0 0 1px rgba(99,102,241,0.8)' : 'none',
-                  }} />
-              ))}
+            {/* 그룹② 굵기 + 휴지통 + 블랙아웃 + 종료 (좁으면 다음 줄) */}
+            <div style={TOOL_MACRO}>
+              <div style={TOOL_CLUSTER}>
+                <button type="button" title="가는 선" onClick={() => setPenWidth('thin')} style={ctrlBtn(penWidth === 'thin')}>•</button>
+                <button type="button" title="굵은 선" onClick={() => setPenWidth('thick')} style={ctrlBtn(penWidth === 'thick')}>⬤</button>
+              </div>
+              <button type="button" title="현재 슬라이드 잉크 전체 지우기 (C)" onClick={clearSlideInk} style={ctrlBtn(false)}>🗑</button>
+              <button type="button" title="블랙아웃 — 슬라이드 가리고 잉크만 (B)" onClick={() => setBlackout(b => !b)} style={ctrlBtn(blackout)}>◼</button>
+              {/* 펜 모드 종료 — X 아이콘 danger 알약으로 명확히 */}
+              <button type="button" title="펜 모드 종료 (Esc)" onClick={() => { setPenActive(false); setBlackout(false) }}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 4, height: 26, padding: '0 8px',
+                  borderRadius: 7, cursor: 'pointer', fontSize: 12,
+                  background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.4)', color: '#fca5a5',
+                }}>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                  <line x1="6" y1="6" x2="18" y2="18" /><line x1="18" y1="6" x2="6" y2="18" />
+                </svg>
+                종료
+              </button>
             </div>
-            {/* 굵기 그룹 */}
-            <div style={TOOL_CLUSTER}>
-              <button type="button" title="가는 선" onClick={() => setPenWidth('thin')} style={ctrlBtn(penWidth === 'thin')}>•</button>
-              <button type="button" title="굵은 선" onClick={() => setPenWidth('thick')} style={ctrlBtn(penWidth === 'thick')}>⬤</button>
-            </div>
-            <button type="button" title="현재 슬라이드 잉크 전체 지우기 (C)" onClick={clearSlideInk} style={ctrlBtn(false)}>🗑</button>
-            <button type="button" title="블랙아웃 — 슬라이드 가리고 잉크만 (B)" onClick={() => setBlackout(b => !b)} style={ctrlBtn(blackout)}>◼</button>
-            {/* 펜 모드 종료 — X 아이콘 danger 알약으로 명확히 */}
-            <button type="button" title="펜 모드 종료 (Esc)" onClick={() => { setPenActive(false); setBlackout(false) }}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 4, height: 26, padding: '0 8px',
-                borderRadius: 7, cursor: 'pointer', fontSize: 12,
-                background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.4)', color: '#fca5a5',
-              }}>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-                <line x1="6" y1="6" x2="18" y2="18" /><line x1="18" y1="6" x2="6" y2="18" />
-              </svg>
-              종료
-            </button>
           </>)}
         </div>
       )}
