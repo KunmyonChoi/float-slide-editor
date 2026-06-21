@@ -54,6 +54,7 @@ export default function FlatPresenter() {
   const [penWidth, setPenWidth] = useState('thin')  // thin | thick
   // 슬라이드별 잉크 보관(상태) — 슬라이드 전환 간 유지, 발표 종료(언마운트) 시 자동 폐기
   const [inkBySlide, setInkBySlide] = useState({}) // { [slideIndex]: strokes[] }
+  const [blackout, setBlackout] = useState(false)  // 슬라이드 블랙아웃(잉크만 보이게)
 
   // 발표 시작 인덱스(F5=0, Shift+F5=현재 페이지). 마운트 시 1회 고정.
   const [currentSlide, setCurrentSlide] = useState(() => useEditorStore.getState().presentStartIndex || 0)
@@ -135,18 +136,24 @@ export default function FlatPresenter() {
       // 펜 단축키 (PowerPoint 호환)
       if ((e.ctrlKey || e.metaKey) && (e.code === 'KeyP')) {
         e.preventDefault()
-        setPenTool('pen'); setPenActive(a => !a)
+        setPenTool('pen'); setPenActive(a => !a); setBlackout(false)
         return
       }
       if ((e.ctrlKey || e.metaKey) && (e.code === 'KeyE')) {
         e.preventDefault()
-        setPenTool('eraser'); setPenActive(true)
+        setPenTool('eraser'); setPenActive(true); setBlackout(false)
         return
       }
       if (e.key === 'Escape') {
         // 2단계: 펜이 켜져 있으면 펜만 끄고, 아니면 발표 종료
         if (penActive) { setPenActive(false); return }
         exitPresentation()
+        return
+      }
+      // B (보조키 없이, 펜 모드) → 블랙아웃 토글(슬라이드 가리고 잉크만)
+      if (penActive && !e.ctrlKey && !e.metaKey && !e.altKey && e.code === 'KeyB') {
+        e.preventDefault()
+        setBlackout(b => !b)
         return
       }
       // E (보조키 없이) → 현재 슬라이드 잉크 전체 지우기
@@ -268,6 +275,10 @@ export default function FlatPresenter() {
                 canvasSize={canvasSize}
               />
             ))}
+            {/* 블랙아웃: 슬라이드 내용을 가리는 검은 레이어 (잉크 오버레이보다 아래, 펜 모드에서만) */}
+            {penActive && blackout && (
+              <div style={{ position: 'absolute', inset: 0, background: '#000', zIndex: 2147482000, pointerEvents: 'none' }} />
+            )}
             <PresenterInkOverlay
               penActive={penActive}
               tool={penTool}
@@ -331,7 +342,7 @@ export default function FlatPresenter() {
         >
           {!penActive ? (
             <button type="button" title="펜 모드 켜기 (Ctrl+P)"
-              onClick={() => { setPenTool('pen'); setPenActive(true) }}
+              onClick={() => { setPenTool('pen'); setPenActive(true); setBlackout(false) }}
               style={ctrlBtn(false)}>✎</button>
           ) : (<>
             <button type="button" title="펜" onClick={() => setPenTool('pen')} style={ctrlBtn(penTool === 'pen')}>✎</button>
@@ -352,6 +363,8 @@ export default function FlatPresenter() {
             <button type="button" title="굵은 선" onClick={() => setPenWidth('thick')} style={ctrlBtn(penWidth === 'thick')}>⬤</button>
             <span style={{ width: 1, height: 18, background: 'rgba(255,255,255,0.12)' }} />
             <button type="button" title="현재 슬라이드 잉크 지우기 (E)" onClick={clearSlideInk} style={ctrlBtn(false)}>🗑</button>
+            <span style={{ width: 1, height: 18, background: 'rgba(255,255,255,0.12)' }} />
+            <button type="button" title="블랙아웃 — 슬라이드 가리고 잉크만 (B)" onClick={() => setBlackout(b => !b)} style={ctrlBtn(blackout)}>◼</button>
             <span style={{ width: 1, height: 18, background: 'rgba(255,255,255,0.12)' }} />
             {/* 펜 모드 종료 — X 아이콘 danger 알약으로 명확히 */}
             <button type="button" title="펜 모드 종료 (Esc)" onClick={() => setPenActive(false)}
