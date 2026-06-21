@@ -656,6 +656,12 @@ function extractStyles(cs, el) {
     boxShadow: cs.boxShadow,
     opacity: cs.opacity,
     backgroundImage: cs.backgroundImage,
+    // 배경 이미지 배치(코드 블록 신호등 SVG 등) — 이미지 있을 때만 보존(없으면 기본값 노이즈 방지)
+    ...(cs.backgroundImage && cs.backgroundImage !== 'none' ? {
+      backgroundRepeat: cs.backgroundRepeat,
+      backgroundSize: cs.backgroundSize,
+      backgroundPosition: cs.backgroundPosition,
+    } : {}),
     backgroundClip: cs.backgroundClip || cs.webkitBackgroundClip,
     webkitBackgroundClip: cs.webkitBackgroundClip,
     webkitTextFillColor: cs.webkitTextFillColor,

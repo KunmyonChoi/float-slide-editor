@@ -678,7 +678,7 @@ function CodeSection({ el }) {
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between">
-        <SectionTitle>코드 모드</SectionTitle>
+        <SectionTitle>코드 하이라이트</SectionTitle>
         <button
           onClick={isCode ? disable : enable}
           className={`text-xs px-2 py-0.5 rounded border transition-colors ${

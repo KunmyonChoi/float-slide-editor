@@ -88,18 +88,23 @@ describe('snippets', () => {
     expect(els[0].y).toBeLessThan(els[1].y)                // 뱃지가 제목 위
   })
 
-  it('코드 블록: 다크 윈도우 + 3색 점 + 모노스페이스 코드', () => {
+  it('코드 블록: 단일 요소 — 다크 배경 + 신호등 배경SVG + 모노스페이스 코드', () => {
     const els = getSnippet('codeBlock').build(cs, theme)
-    expect(els.length).toBe(3)
-    expect(els[0].type).toBe('shape')                      // 윈도우
-    expect(els[0].styles.backgroundColor).toBe('#0f172a')  // 다크
-    expect(els[1].content).toContain('#ff5f56')            // 빨강 점
-    expect(els[2].styles.fontFamily).toContain('monospace')// 코드 모노
-    expect(els[2].content).toContain('function')
-    expect(els[2].styles.whiteSpace).toBe('pre-wrap')
-    expect(els[2].isCode).toBe(true)                       // 코드 모드 활성
-    expect(els[2].code).toContain('function greet')        // 원본 보존
-    expect(els[2].content).toContain('<span style="color:')// 하이라이트(인라인 색)
+    expect(els.length).toBe(1)                             // 단일 요소
+    const code = els[0]
+    expect(code.type).toBe('text')
+    expect(code.styles.backgroundColor).toBe('#0f172a')    // 다크
+    expect(code.styles.backgroundImage).toContain('data:image/svg+xml') // 신호등 배경 베이크
+    expect(code.styles.backgroundImage).toContain('ff5f56')// 빨강 점(인코딩됨)
+    expect(code.styles.backgroundRepeat).toBe('no-repeat') // 타일링 방지
+    expect(code.styles.padding).toContain('46px')          // 상단바 자리 = 패딩
+    expect(code.styles.fontFamily).toContain('monospace')  // 코드 모노
+    expect(code.content).toContain('function')
+    expect(code.styles.whiteSpace).toBe('pre-wrap')
+    expect(code.isCode).toBe(true)                         // 코드 모드 활성
+    expect(code.autoHeight).toBeUndefined()                // 자동 높이 신축 없음(수동 조정)
+    expect(code.code).toContain('function greet')          // 원본 보존
+    expect(code.content).toContain('<span style="color:')  // 하이라이트(인라인 색)
   })
 
   it('프로그레스 바: 트랙 + 채움(accent, 더 좁음) + 라벨', () => {
@@ -168,7 +173,12 @@ describe('snippets', () => {
   })
 
   it('묶음4: 터미널/파일칩/말풍선/리본/비교막대/아바타', () => {
-    expect(getSnippet('terminalOutput').build(cs, theme)[1].content).toContain('$')
+    const term = getSnippet('terminalOutput').build(cs, theme)
+    expect(term.length).toBe(1)                              // 단일 요소
+    expect(term[0].content).toContain('$')
+    expect(term[0].styles.backgroundColor).toBe('#0a0e14')   // 다크 박스 병합
+    expect(term[0].styles.padding).toContain('14px')         // 인셋=패딩
+    expect(term[0].autoHeight).toBeUndefined()               // 자동 높이 신축 없음
     expect(getSnippet('fileChip').build(cs, theme)[0].content).toContain('📄')
     const bubble = getSnippet('speechBubble').build(cs, theme)
     expect(bubble[1].rotation).toBe(45) // 꼬리

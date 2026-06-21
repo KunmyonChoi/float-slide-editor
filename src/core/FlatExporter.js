@@ -279,9 +279,14 @@ function flatStyle(el) {
 }
 
 function textStyleBase(s, includeGradient, excludeTextShadow) {
+  // 배경 이미지 있을 때만 배치(repeat/size/position)도 함께 — 없으면 타일링·늘어남
+  const hasBg = includeGradient && s.backgroundImage && s.backgroundImage !== 'none'
   return [
     s.backgroundColor && s.backgroundColor !== 'rgba(0, 0, 0, 0)' ? `background-color:${s.backgroundColor}` : '',
-    includeGradient && s.backgroundImage && s.backgroundImage !== 'none' ? `background-image:${s.backgroundImage}` : '',
+    hasBg ? `background-image:${s.backgroundImage}` : '',
+    hasBg && s.backgroundRepeat ? `background-repeat:${s.backgroundRepeat}` : '',
+    hasBg && s.backgroundSize ? `background-size:${s.backgroundSize}` : '',
+    hasBg && s.backgroundPosition ? `background-position:${s.backgroundPosition}` : '',
     s.color ? `color:${s.color}` : '',
     s.fontSize ? `font-size:${s.fontSize}` : '',
     s.fontFamily ? `font-family:${s.fontFamily.replace(/"/g, "'")}` : '',

@@ -448,9 +448,12 @@ export default function FlatInlineEditor({ element }) {
     padding: (isShape && (!styles.padding || styles.padding === '0px')) ? '8px' : styles.padding,
     whiteSpace: 'pre-wrap',
     wordBreak: 'break-word',
-    // 배경 + 테두리
+    // 배경 + 테두리 (코드 블록 신호등 배경 SVG가 편집 중에도 동일 위치/크기로 보이게)
     backgroundColor: styles.backgroundColor || 'transparent',
     backgroundImage: styles.backgroundImage,
+    backgroundRepeat: styles.backgroundRepeat,
+    backgroundSize: styles.backgroundSize,
+    backgroundPosition: styles.backgroundPosition,
     borderRadius: styles.borderRadius,
     border: styles.border,
     boxShadow: styles.boxShadow,

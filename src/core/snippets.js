@@ -206,46 +206,39 @@ SNIPPETS.push({
   },
 })
 
-// 코드 블록(맥 터미널) — 다크 윈도우 + 상단 3색 점 + 모노스페이스 코드. 복합(그룹).
+// 코드 블록(맥 터미널) — 다크 윈도우 + 상단 3색 점 + 모노스페이스 코드. 단일 요소.
+// 신호등(시스템 버튼)은 배경 SVG로 좌상단 고정(리사이즈에도 안 깨짐), 상단바 공간은 padding-top으로 확보.
+// 크기는 수동 조정(자동 높이 신축 없음) — 코드가 길면 사용자가 직접 늘린다.
+const CODEBLOCK_DOTS_SVG = "<svg xmlns='http://www.w3.org/2000/svg' width='52' height='12'>" +
+  "<circle cx='6' cy='6' r='6' fill='#ff5f56'/>" +
+  "<circle cx='26' cy='6' r='6' fill='#ffbd2e'/>" +
+  "<circle cx='46' cy='6' r='6' fill='#27c93f'/></svg>"
+const CODEBLOCK_DOTS_BG = `url("data:image/svg+xml,${encodeURIComponent(CODEBLOCK_DOTS_SVG)}")`
 SNIPPETS.push({
   id: 'codeBlock', group: '코드', label: '코드 블록(맥 터미널)', desc: '상단 3색 점 + 다크 라운드 + 모노 코드',
   build: (cs) => {
     const w = 560, h = 220
     const x = Math.round((cs.w - w) / 2), y = Math.round((cs.h - h) / 2)
-    const win = {
-      type: 'shape', x, y, width: w, height: h, content: '', isRich: false, merged: false,
-      // 오토핏 컨테이너: 코드(콘텐츠)를 감싸도록 높이 신축. top 패딩=시스템바 영역.
-      afContainer: true, afPad: { top: 46, right: 20, bottom: 14, left: 20 }, afGap: 0,
-      styles: {
-        backgroundColor: '#0f172a', backgroundImage: 'none', borderRadius: '12px',
-        border: '1px solid rgba(255,255,255,0.08)', boxShadow: '0 8px 28px rgba(0,0,0,0.35)', opacity: '1',
-      },
-    }
-    const dot = (c) => `<span style="color:${c}">●</span>`
-    const dots = {
-      type: 'text', x: x + 16, y: y + 12, width: 90, height: 18,
-      content: `${dot('#ff5f56')} ${dot('#ffbd2e')} ${dot('#27c93f')}`, isRich: true, merged: false, placeholder: '',
-      styles: {
-        backgroundColor: 'rgba(0,0,0,0)', backgroundImage: 'none', color: '#e2e8f0',
-        fontSize: '14px', fontFamily: 'inherit', fontWeight: '400', fontStyle: 'normal',
-        textAlign: 'left', letterSpacing: '2px', lineHeight: '1', textDecoration: 'none', textTransform: 'none',
-        borderRadius: '0px', border: '0px none', boxShadow: 'none', opacity: '1', padding: '0px',
-      },
-    }
     const rawCode = 'function greet(name) {\n  return `Hello, ${name}!`\n}'
     const { html: codeHtml, lang } = highlightCode(rawCode, 'auto')
     const code = {
-      type: 'text', x: x + 20, y: y + 46, width: w - 40, height: h - 62,
-      content: codeHtml, isRich: true, isCode: true, lang, code: rawCode, afContent: true, autoHeight: true, merged: false, placeholder: '',
+      type: 'text', x, y, width: w, height: h,
+      content: codeHtml, isRich: true, isCode: true, lang, code: rawCode, merged: false, placeholder: '',
       styles: {
-        backgroundColor: 'rgba(0,0,0,0)', backgroundImage: 'none', color: '#c0caf5',
-        fontSize: '15px', fontFamily: CODE_FONT,
+        backgroundColor: '#0f172a',
+        // 신호등(시스템 버튼)을 배경으로 베이크 — 좌상단 고정, 크기 불변, 리사이즈에도 안 깨짐
+        backgroundImage: CODEBLOCK_DOTS_BG, backgroundRepeat: 'no-repeat',
+        backgroundPosition: '20px 17px', backgroundSize: '52px 12px',
+        color: '#c0caf5', fontSize: '15px', fontFamily: CODE_FONT,
         fontWeight: '400', fontStyle: 'normal',
         textAlign: 'left', letterSpacing: 'normal', lineHeight: '1.6', textDecoration: 'none', textTransform: 'none',
-        borderRadius: '0px', border: '0px none', boxShadow: 'none', opacity: '1', padding: '0px', whiteSpace: 'pre-wrap',
+        borderRadius: '12px', border: '1px solid rgba(255,255,255,0.08)',
+        boxShadow: '0 8px 28px rgba(0,0,0,0.35)', opacity: '1',
+        // 상단 46px=시스템바 자리, 좌우 20·하단 14 — 코드 영역도 패딩으로 일괄 관리
+        padding: '46px 20px 14px 20px', whiteSpace: 'pre-wrap',
       },
     }
-    return [win, dots, code]
+    return [code]
   },
 })
 
@@ -503,27 +496,27 @@ SNIPPETS.push({
   },
 })
 
-// 터미널 출력 — 다크 박스 + $ 프롬프트 + 모노 (복합)
+// 터미널 출력 — 다크 박스 + $ 프롬프트 + 모노. 단일 요소.
+// 코드 블록과 동일 원리: 다크 박스 시각 스타일을 텍스트 요소에 병합, 인셋은 padding으로 확보.
+// 크기는 수동 조정(자동 높이 신축 없음) — 출력이 길면 사용자가 직접 늘린다.
 SNIPPETS.push({
   id: 'terminalOutput', group: '코드', label: '터미널 출력', desc: '$ 프롬프트 + 다크 모노',
   build: (cs) => {
     const w = 520, h = 120
     const { x, y } = center(cs, w, h)
-    const win = shapeSpec({ x, y, w, h, bg: '#0a0e14', radius: 10, shadow: '0 6px 20px rgba(0,0,0,0.35)' })
-    // 오토핏: 출력이 길어지면 창이 신축(시스템바 없음 → top 패딩=텍스트 인셋)
-    win.afContainer = true; win.afPad = { top: 14, right: 16, bottom: 14, left: 16 }; win.afGap = 0
     const text = {
-      type: 'text', x: x + 16, y: y + 14, width: w - 32, height: h - 28,
-      content: '$ npm run build\n✓ built in 320ms', isRich: false, afContent: true, autoHeight: true, merged: false, placeholder: '',
+      type: 'text', x, y, width: w, height: h,
+      content: '$ npm run build\n✓ built in 320ms', isRich: false, merged: false, placeholder: '',
       styles: {
-        backgroundColor: 'rgba(0,0,0,0)', backgroundImage: 'none', color: '#86efac',
+        backgroundColor: '#0a0e14', color: '#86efac',
         fontSize: '14px', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
         fontWeight: '400', fontStyle: 'normal', textAlign: 'left', letterSpacing: 'normal',
         lineHeight: '1.6', textDecoration: 'none', textTransform: 'none',
-        borderRadius: '0px', border: '0px none', boxShadow: 'none', opacity: '1', padding: '0px', whiteSpace: 'pre-wrap',
+        borderRadius: '10px', border: '0px none', boxShadow: '0 6px 20px rgba(0,0,0,0.35)', opacity: '1',
+        padding: '14px 16px', whiteSpace: 'pre-wrap',
       },
     }
-    return [win, text]
+    return [text]
   },
 })
 
