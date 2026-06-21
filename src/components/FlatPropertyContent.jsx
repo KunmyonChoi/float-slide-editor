@@ -1394,8 +1394,8 @@ function ImageSection({ styles, updateStyle, previewStyle, elementId }) {
         <div>
           <p className={`${labelClass} mb-0.5`}>위치</p>
           <div className="flex items-center gap-2">
-            {/* 9 포인트 그리드 */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 2, width: 42 }}>
+            {/* 9 포인트 그리드 — 버튼이 셀을 꽉 채워 클릭 영역 확보(작은 점은 미스클릭 유발) */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 3, width: 54 }}>
               {[
                 { px: 0, py: 0 }, { px: 50, py: 0 }, { px: 100, py: 0 },
                 { px: 0, py: 50 }, { px: 50, py: 50 }, { px: 100, py: 50 },
@@ -1406,7 +1406,7 @@ function ImageSection({ styles, updateStyle, previewStyle, elementId }) {
                   <button key={i}
                     onClick={() => updateStyle('objectPosition', `${pos.px}% ${pos.py}%`)}
                     style={{
-                      width: 12, height: 12, borderRadius: 2,
+                      width: '100%', height: 16, borderRadius: 3,
                       background: isActive ? 'rgba(99, 102, 241, 0.6)' : 'rgba(255, 255, 255, 0.1)',
                       border: `1px solid ${isActive ? 'rgba(99, 102, 241, 0.8)' : 'rgba(255, 255, 255, 0.15)'}`,
                       cursor: 'pointer',
