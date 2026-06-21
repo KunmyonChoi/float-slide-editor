@@ -89,3 +89,8 @@ input, textarea, select,
 @media (max-width: 768px) {
   .tb-label { display: none; }
 }
+
+/* 모바일 세로(≤768px portrait): 키보드 단축키 버튼은 무의미 → 숨김 */
+@media (max-width: 768px) and (orientation: portrait) {
+  .hide-mobile-portrait { display: none; }
+}
