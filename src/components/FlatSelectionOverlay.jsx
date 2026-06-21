@@ -315,8 +315,6 @@ export default function FlatSelectionOverlay({ element, scale, otherRects, canva
           const newVals = { x: current.x, y: current.y, width: current.width, height: current.height }
           previewFlatElement(element.id, { x: d.startX, y: d.startY, width: d.startW, height: d.startH })
           updateFlatElement(element.id, newVals)
-          // autoHeight 요소(코드 블록 등): 폭 변경 → 내용 재줄바꿈 → 높이 자동 재계산
-          if (current.autoHeight) useFlatStore.getState().reflowAutoFit()
         }
       } else if (d.mode === 'radius') {
         const newRadius = parseFloat(current.styles?.borderRadius) || 0

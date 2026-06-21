@@ -102,7 +102,7 @@ describe('snippets', () => {
     expect(code.content).toContain('function')
     expect(code.styles.whiteSpace).toBe('pre-wrap')
     expect(code.isCode).toBe(true)                         // 코드 모드 활성
-    expect(code.autoHeight).toBe(true)                     // 내용 맞춰 자체 신축
+    expect(code.autoHeight).toBeUndefined()                // 자동 높이 신축 없음(수동 조정)
     expect(code.code).toContain('function greet')          // 원본 보존
     expect(code.content).toContain('<span style="color:')  // 하이라이트(인라인 색)
   })

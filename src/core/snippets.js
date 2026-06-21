@@ -208,7 +208,7 @@ SNIPPETS.push({
 
 // 코드 블록(맥 터미널) — 다크 윈도우 + 상단 3색 점 + 모노스페이스 코드. 단일 요소.
 // 신호등(시스템 버튼)은 배경 SVG로 좌상단 고정(리사이즈에도 안 깨짐), 상단바 공간은 padding-top으로 확보.
-// 코드는 요소 자신의 텍스트 — autoHeight로 내용에 맞춰 높이 자동 신축(그룹/컨테이너 불필요).
+// 크기는 수동 조정(자동 높이 신축 없음) — 코드가 길면 사용자가 직접 늘린다.
 const CODEBLOCK_DOTS_SVG = "<svg xmlns='http://www.w3.org/2000/svg' width='52' height='12'>" +
   "<circle cx='6' cy='6' r='6' fill='#ff5f56'/>" +
   "<circle cx='26' cy='6' r='6' fill='#ffbd2e'/>" +
@@ -223,7 +223,7 @@ SNIPPETS.push({
     const { html: codeHtml, lang } = highlightCode(rawCode, 'auto')
     const code = {
       type: 'text', x, y, width: w, height: h,
-      content: codeHtml, isRich: true, isCode: true, lang, code: rawCode, autoHeight: true, merged: false, placeholder: '',
+      content: codeHtml, isRich: true, isCode: true, lang, code: rawCode, merged: false, placeholder: '',
       styles: {
         backgroundColor: '#0f172a',
         // 신호등(시스템 버튼)을 배경으로 베이크 — 좌상단 고정, 크기 불변, 리사이즈에도 안 깨짐

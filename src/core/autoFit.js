@@ -19,17 +19,6 @@ export function estimateCodeHeight(code, { width, fontSizePx = 15, lineHeightRat
   return Math.ceil(total * fontSizePx * lineHeightRatio)
 }
 
-/** CSS padding 단축 문자열 → {top,right,bottom,left} (px 가정, 1~4값 모두 처리) */
-export function parsePadding(padding) {
-  const zero = { top: 0, right: 0, bottom: 0, left: 0 }
-  if (!padding || typeof padding !== 'string') return zero
-  const v = padding.trim().split(/\s+/).map(p => parseFloat(p) || 0)
-  if (v.length === 1) return { top: v[0], right: v[0], bottom: v[0], left: v[0] }
-  if (v.length === 2) return { top: v[0], right: v[1], bottom: v[0], left: v[1] }
-  if (v.length === 3) return { top: v[0], right: v[1], bottom: v[2], left: v[1] }
-  return { top: v[0], right: v[1], bottom: v[2], left: v[3] }
-}
-
 function plainOf(el) {
   if (el.isCode) return el.code || ''
   if (!el.isRich) return el.content || ''
@@ -82,25 +71,5 @@ export function applyAutoFit(elements, measured = {}) {
     const totalH = Math.round((cursorY - gap) - container.y + pad.bottom)
     if (Math.abs(totalH - container.height) > 0.5) patch(container.id, { height: totalH })
   }
-
-  // 단독(그룹 없음) autoHeight 요소: 자신의 패딩 안에서 내용 높이만큼 자체 신축.
-  // 코드 블록(단일 요소) 등 — 편집 중엔 measured(scrollHeight), 아니면 추정값.
-  // afContent(컨테이너가 배치하는 콘텐츠)는 제외 — 그룹 해제로 groupId만 떨어진 잔여
-  // afContent 요소를 0패딩으로 잘못 줄이지 않도록(자기 패딩이 없어 윈도우와 분리됨).
-  for (const el of elements) {
-    if (el.groupId || el.afContent || !el.autoHeight) continue
-    const pad = parsePadding(el.styles?.padding)
-    let h
-    if (measured[el.id] != null) {
-      h = Math.round(measured[el.id]) // scrollHeight = 콘텐츠 + 패딩
-    } else {
-      const cw = Math.max(1, el.width - pad.left - pad.right)
-      const fs = parseFloat(el.styles?.fontSize) || 15
-      const lh = parseFloat(el.styles?.lineHeight) || 1.6
-      h = estimateCodeHeight(plainOf(el), { width: cw, fontSizePx: fs, lineHeightRatio: lh }) + pad.top + pad.bottom
-    }
-    if (Math.abs(h - el.height) > 0.5) patch(el.id, { height: h })
-  }
-
   return changed ? out : elements
 }
