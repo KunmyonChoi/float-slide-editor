@@ -53,6 +53,7 @@ export default function FlatCanvas() {
   const panToolRef = useRef(false)
   panToolRef.current = panTool
   const pointerPanRef = useRef(null)   // 손 도구 포인터 드래그 진행 상태
+  const pendingTapDeselectRef = useRef(null) // 손 도구: 편집 중 빈영역 탭 → 편집 종료 후 선택 해제 예약
   const [marquee, setMarquee] = useState(null)
   const marqueeRef = useRef(null) // 마키 시작 좌표 기억
   const [contextMenu, setContextMenu] = useState(null)
@@ -905,15 +906,23 @@ export default function FlatCanvas() {
   useEffect(() => {
     const stage = stageRef.current
     if (!stage) return
+    const isEmptyTarget = (t) => t === stageRef.current || t === canvasRef.current || t?.dataset?.flatCanvas === 'true'
     const onDown = (e) => {
       if (!panToolRef.current) return
-      if (useFlatStore.getState().editingFlatId) return
-      // 버튼/입력 등 UI 컨트롤(줌 컨트롤·손 도구 토글 포함) 위에선 팬 시작 안 함 → 클릭 정상 동작
+      // 버튼/입력 등 UI 컨트롤(줌 컨트롤·손 도구 토글 포함) 위에선 개입 안 함 → 클릭 정상 동작
       if (e.target?.closest?.('button, input, select, textarea, a, [data-no-pan]')) return
+      if (useFlatStore.getState().editingFlatId) {
+        // 편집 중에는 팬/캡처하지 않아 contentEditable 블러로 편집이 종료되게 둔다.
+        // 단, 빈 영역 탭이면 종료 후 선택까지 해제하도록 예약(손 도구에선 빈영역 클릭으로
+        // 선택 해제할 다른 경로가 없으므로 — 마키/배경 클릭이 팬에 막힘).
+        if (isEmptyTarget(e.target)) pendingTapDeselectRef.current = { id: e.pointerId, x: e.clientX, y: e.clientY }
+        return
+      }
       e.preventDefault(); e.stopPropagation()
       pointerPanRef.current = {
         id: e.pointerId, startX: e.clientX, startY: e.clientY,
         startPanX: panRef.current.x, startPanY: panRef.current.y,
+        empty: isEmptyTarget(e.target),
       }
       try { stage.setPointerCapture(e.pointerId) } catch { /* 무시 */ }
       stage.style.cursor = 'grabbing'
@@ -923,11 +932,27 @@ export default function FlatCanvas() {
       if (!d || d.id !== e.pointerId) return
       setPan(clampPan({ x: d.startPanX + (e.clientX - d.startX), y: d.startPanY + (e.clientY - d.startY) }, scaleRef.current))
     }
+    const TAP = 6 // 화면 px — 이동이 이보다 작으면 탭(팬 아님)으로 간주
     const onUp = (e) => {
+      // 편집 종료 직후 빈영역 탭 → 선택 해제
+      const pd = pendingTapDeselectRef.current
+      if (pd && pd.id === e.pointerId) {
+        pendingTapDeselectRef.current = null
+        if (Math.hypot(e.clientX - pd.x, e.clientY - pd.y) < TAP) {
+          useFlatStore.getState().setSelectedFlat(null)
+          setHoverShapeId(null)
+        }
+        return
+      }
       const d = pointerPanRef.current
       if (d && d.id === e.pointerId) {
         pointerPanRef.current = null
         stage.style.cursor = panToolRef.current ? 'grab' : ''
+        // 빈 영역을 끌지 않고 탭만 했으면 선택 해제(손 도구에서 선택 해제 경로 제공)
+        if (d.empty && Math.hypot(e.clientX - d.startX, e.clientY - d.startY) < TAP) {
+          useFlatStore.getState().setSelectedFlat(null)
+          setHoverShapeId(null)
+        }
       }
     }
     stage.addEventListener('pointerdown', onDown, true)
