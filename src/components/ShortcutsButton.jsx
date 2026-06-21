@@ -69,7 +69,7 @@ export default function ShortcutsButton() {
   }, [open])
 
   return (
-    <div ref={ref} className="relative">
+    <div ref={ref} className="relative hide-mobile-portrait">
       <button
         onClick={() => setOpen(o => !o)}
         title="단축키 목록"
