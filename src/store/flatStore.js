@@ -292,6 +292,9 @@ export const useFlatStore = create((set, get) => ({
   pageNotes: '',
   /** 현재 페이지 슬라이드 전환(페이지별 저장). null=없음, { type:'fade'|'slide'|'zoom', durationMs } */
   pageTransition: null,
+  /** 속성창 '애니메이션' 탭 활성 여부 — 켜지면 캔버스에 순서 배지 표시 */
+  animPanelOpen: false,
+  setAnimPanelOpen(v) { set({ animPanelOpen: !!v }) },
   /** 발표자 노트 영역 접힘 여부 (기본 접힘) */
   notesCollapsed: true,
   /** 노트 단축키로 열 때 텍스트영역에 자동 포커스 요청(일시 플래그) */

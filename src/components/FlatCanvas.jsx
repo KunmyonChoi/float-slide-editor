@@ -5,6 +5,7 @@ import { isBackgroundElement } from '../core/SnapEngine'
 import { useIsTouch } from '../core/pointerEnv'
 import { resolveConnectors, resolveConnectorEndpoints, resolveConnectorCurve, attachTargetAt, connectionPoints, nearestConnectionPoint } from '../core/ConnectorRouting'
 import { getRotatedAABB } from '../core/RotationUtils'
+import { computeSteps } from '../core/slideAnimation'
 import FlatElementRenderer from './FlatElementRenderer'
 import FlatSelectionOverlay, { FlatGroupOverlay } from './FlatSelectionOverlay'
 import FlatAiBar from './FlatAiBar'
@@ -40,6 +41,35 @@ function looksLikeDeckHtml(s) {
  * FlatElement 배열을 절대 배치로 렌더링하는 캔버스.
  * SlideCanvas와 동일한 스케일링 로직 사용.
  */
+// 애니메이션 탭 활성 시 캔버스에 진행 순서 배지(①②③) 표시 — 같은 단계는 같은 번호.
+function AnimationBadges({ elements, scale }) {
+  const info = computeSteps(elements)
+  const s = Math.max(0.4, scale || 1)
+  return (
+    <>
+      {elements.map(el => {
+        const step = info.stepOf[el.id]
+        if (step == null) return null
+        const exit = el.anim?.effect?.endsWith('Out')
+        return (
+          <div key={el.id} style={{
+            position: 'absolute', left: el.x, top: el.y, zIndex: 9998, pointerEvents: 'none',
+            transform: `translate(-35%, -35%) scale(${1 / s})`, transformOrigin: 'top left',
+          }}>
+            <span style={{
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+              minWidth: 18, height: 18, padding: '0 4px', borderRadius: 9,
+              fontSize: 11, fontWeight: 700, color: '#fff',
+              background: exit ? '#ef4444' : '#6366f1',
+              border: '1.5px solid #fff', boxShadow: '0 1px 4px rgba(0,0,0,0.4)',
+            }}>{step + 1}</span>
+          </div>
+        )
+      })}
+    </>
+  )
+}
+
 export default function FlatCanvas() {
   const stageRef = useRef(null)
   const canvasRef = useRef(null)
@@ -65,6 +95,7 @@ export default function FlatCanvas() {
           bringForward, sendBackward, bringToFront, sendToBack, setCroppingFlat,
           addFlatElement, setCanvasRef, preloadProgress, drawMode, setDrawMode, flatPageCount,
           diagramMode, connectorDraft } = useFlatStore()
+  const animPanelOpen = useFlatStore(s => s.animPanelOpen)
   const [dragOver, setDragOver] = useState(false)
   const [hoverShapeId, setHoverShapeId] = useState(null) // 다이어그램 모드 연결점 표시용
   const isTouch = useIsTouch()
@@ -1187,6 +1218,7 @@ export default function FlatCanvas() {
                 scale={scale}
               />
             ))}
+            {animPanelOpen && <AnimationBadges elements={renderElements} scale={scale} />}
             {/* 크롭 중에는 선택 오버레이를 숨김 — 안 그러면 그 위(zIndex 9999)에서 드래그를
                 가로채 크롭(objectPosition) 대신 요소 자체가 이동한다. */}
             {selectedEls.length === 1 && selectedEl && !croppingFlatId && (
