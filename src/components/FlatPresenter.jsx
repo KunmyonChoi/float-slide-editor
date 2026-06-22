@@ -5,6 +5,7 @@ import FlatElementRenderer from './FlatElementRenderer'
 import PresenterInkOverlay from './PresenterInkOverlay'
 import { resolveConnectors } from '../core/ConnectorRouting'
 import { BlobStore } from '../core/BlobStore'
+import { computeSteps, isHiddenAt, animationCss, directionVars } from '../core/slideAnimation'
 
 const INK_COLORS = ['#ef4444', '#f59e0b', '#3b82f6', '#ffffff', '#111827']
 // 펜 툴바 그룹(도구/팔레트/굵기) — nowrap로 묶어 그룹 내부는 줄바꿈되지 않게
@@ -77,11 +78,15 @@ export default function FlatPresenter() {
       setCurrentSlide(c => Math.max(0, Math.min(c, sortedKeys.length - 1)))
     }
   }, [allPages]) // eslint-disable-line react-hooks/exhaustive-deps
+  // 요소 애니메이션 빌드 단계 (현재 슬라이드)
+  const [revealed, setRevealed] = useState(0)       // 진행한 빌드 단계 수(0..stepCount)
+  const [playingStep, setPlayingStep] = useState(-1) // 지금 재생 중인 단계(-1=없음)
   const page = allPages?.[sortedKeys[currentSlide]]
   // 커넥터 기하는 참조 도형에서 유도 — 발표 모드에서도 해석된 사본으로 렌더
   const elements = resolveConnectors(page?.elements || [])
   const canvasSize = page?.canvasSize || { w: 1280, h: 720 }
   const fontImports = page?.fontImports || []
+  const animInfo = useMemo(() => computeSteps(elements), [elements])
 
   const totalSlides = sortedKeys.length
 
@@ -122,14 +127,30 @@ export default function FlatPresenter() {
     return () => window.removeEventListener('resize', recalcScale)
   }, [recalcScale])
 
-  // 네비게이션
+  // 네비게이션 — 빌드 단계 먼저 진행, 다 끝나면 슬라이드 이동
   const goNext = useCallback(() => {
-    setCurrentSlide(c => Math.min(c + 1, totalSlides - 1))
-  }, [totalSlides])
+    if (revealed < animInfo.stepCount) {
+      setPlayingStep(revealed)   // 막 진입하는 단계 재생
+      setRevealed(revealed + 1)
+    } else if (currentSlide < totalSlides - 1) {
+      setPlayingStep(-1)
+      setRevealed(0)
+      setCurrentSlide(currentSlide + 1)
+    }
+  }, [revealed, animInfo.stepCount, currentSlide, totalSlides])
 
   const goPrev = useCallback(() => {
-    setCurrentSlide(c => Math.max(c - 1, 0))
-  }, [])
+    if (revealed > 0) {
+      setPlayingStep(-1)         // 되감기는 즉시(애니메이션 없음)
+      setRevealed(revealed - 1)
+    } else if (currentSlide > 0) {
+      // 이전 슬라이드는 끝까지 진행된 상태로 진입
+      const prevEls = resolveConnectors(allPages?.[sortedKeys[currentSlide - 1]]?.elements || [])
+      setPlayingStep(-1)
+      setRevealed(computeSteps(prevEls).stepCount)
+      setCurrentSlide(currentSlide - 1)
+    }
+  }, [revealed, currentSlide, allPages, sortedKeys])
 
   // 잉크 조작 (현재 슬라이드 기준)
   const slideStrokes = inkBySlide[currentSlide] || []
@@ -271,16 +292,31 @@ export default function FlatPresenter() {
               animation: slideTransitionCss(page?.transition),
             }}
           >
-            {elements.map(el => (
-              <FlatElementRenderer
-                key={el.id}
-                element={el}
-                isSelected={false}
-                isEditing={false}
-                scale={scale}
-                canvasSize={canvasSize}
-              />
-            ))}
+            {elements.map(el => {
+              const step = animInfo.stepOf[el.id]
+              const playing = playingStep >= 0 && step === playingStep
+              const showHidden = isHiddenAt(animInfo, el, revealed) && !playing
+              // 애니메이션 없는 요소는 래퍼 없이 그대로(레이아웃/스태킹 영향 최소화)
+              if (step == null) {
+                return (
+                  <FlatElementRenderer key={el.id} element={el} isSelected={false}
+                    isEditing={false} scale={scale} canvasSize={canvasSize} />
+                )
+              }
+              return (
+                <div key={el.id} style={{
+                  position: 'absolute', left: el.x, top: el.y, width: el.width, height: el.height,
+                  transformOrigin: 'center center',
+                  opacity: showHidden ? 0 : undefined,
+                  visibility: showHidden ? 'hidden' : undefined,
+                  animation: playing ? animationCss(el.anim, animInfo.offsetOf[el.id]) : undefined,
+                  ...(playing ? (directionVars(el.anim) || {}) : {}),
+                }}>
+                  <FlatElementRenderer element={{ ...el, x: 0, y: 0 }} isSelected={false}
+                    isEditing={false} scale={scale} canvasSize={canvasSize} />
+                </div>
+              )
+            })}
             {/* 블랙아웃: 슬라이드 내용을 가리는 검은 레이어 (잉크 오버레이보다 아래, 펜 모드에서만) */}
             {penActive && blackout && (
               <div style={{ position: 'absolute', inset: 0, background: '#000', zIndex: 2147482000, pointerEvents: 'none' }} />

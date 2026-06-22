@@ -19,6 +19,7 @@ import { BACKGROUND_STYLES, BACKGROUND_GROUPS, DEFAULT_BACKGROUND_STYLE_ID, getB
 import { detectBgColor, applyChromaKey } from '../core/chromaKey'
 import { highlightCode, CODE_FONT } from '../core/codeHighlight'
 import { renderMarkdown } from '../core/markdown'
+import { EFFECTS, effectHasDir } from '../core/slideAnimation'
 
 // ── 글꼴 크기 프리셋 ────────────────────────────────
 
@@ -54,6 +55,14 @@ export default function FlatPropertyContent() {
           editingFlatId } = useFlatStore()
   const selectedEls = flatElements.filter(e => selectedFlatIds.includes(e.id))
 
+  const [animTab, setAnimTab] = useState(false)
+  const singleSel = selectedEls.length === 1
+  // 애니메이션 탭이 단일 선택 상태에서 활성일 때만 캔버스 순서 배지 표시
+  useEffect(() => {
+    useFlatStore.getState().setAnimPanelOpen(animTab && singleSel)
+    return () => useFlatStore.getState().setAnimPanelOpen(false)
+  }, [animTab, singleSel])
+
   if (selectedEls.length === 0) return <SlideBackgroundPanel />
   if (selectedEls.length > 1) return <MultiElementPanel elements={selectedEls} />
 
@@ -84,7 +93,26 @@ export default function FlatPropertyContent() {
         </button>
       </div>
 
-      <div className="p-3 space-y-3">
+      {/* 탭: 속성 / 애니메이션 (정보 과다 방지) */}
+      <div className="flex border-b border-white/5 px-2">
+        {[['props', '속성'], ['anim', '애니메이션']].map(([k, label]) => {
+          const active = (k === 'anim') === animTab
+          return (
+            <button key={k} onClick={() => setAnimTab(k === 'anim')}
+              className={`text-xs px-3 py-1.5 -mb-px border-b-2 transition-colors ${
+                active ? 'border-indigo-400 text-white' : 'border-transparent text-slate-400 hover:text-slate-200'}`}
+            >{label}</button>
+          )
+        })}
+      </div>
+
+      {animTab && (
+        <div className="p-3">
+          <AnimationTab el={el} />
+        </div>
+      )}
+
+      <div className="p-3 space-y-3" style={animTab ? { display: 'none' } : undefined}>
         <PositionSection el={el} update={update} preview={(changes) => previewFlatElement(el.id, changes)} />
 
         <div className="pt-1 border-t border-white/5">
@@ -2457,6 +2485,120 @@ function AiBackgroundSection({ onApply }) {
       >{loading ? '생성 중…' : '✨ AI 배경 생성'}</button>
       {error && <p className="text-[10px] text-red-400">{error}</p>}
       <p className="text-[9px] text-slate-600">한 장 생성(비용 발생). 텍스트 자리를 비운 16:9 배경입니다.</p>
+    </div>
+  )
+}
+
+// 요소 애니메이션 탭 — 효과·방향·시간·트리거 지정. (발표 모드/미리보기에서 재생)
+const TRIGGER_MODES = [['click', '클릭 시'], ['after', '다음에'], ['with', '동시에']]
+const DIRS = [['up', '↑'], ['down', '↓'], ['left', '←'], ['right', '→']]
+function effectLabel(id) { return (EFFECTS.find(e => e.id === id) || {}).label || id }
+function shortDesc(el) {
+  if (el.type === 'text') {
+    const t = (el.md || el.code || el.content || '').replace(/<[^>]+>/g, '').trim()
+    return t ? t.slice(0, 12) : '텍스트'
+  }
+  return { image: '이미지', shape: '도형', video: '영상', table: '표', svg: 'SVG' }[el.type] || el.type
+}
+function AnimationTab({ el }) {
+  const flatElements = useFlatStore(s => s.flatElements)
+  const setEl = (anim) => useFlatStore.getState().updateFlatElement(el.id, { anim })
+  const anim = el.anim || null
+  const effect = anim?.effect || 'none'
+  const hasAnim = effect !== 'none'
+
+  const setEffect = (eff) => {
+    if (eff === 'none') { setEl(undefined); return }
+    if (!hasAnim) {
+      const maxSeq = Math.max(0, ...flatElements.filter(e => e.anim?.seq != null).map(e => e.anim.seq))
+      setEl({ effect: eff, durationMs: 500, delayMs: 0, trigger: { mode: 'click', ref: null }, seq: maxSeq + 1, dir: 'left' })
+    } else {
+      setEl({ ...anim, effect: eff })
+    }
+  }
+  const patch = (changes) => setEl({ ...anim, ...changes })
+
+  // 트리거 대상 후보: 나 외 애니메이션 요소(작성 순)
+  const targets = flatElements
+    .filter(e => e.id !== el.id && e.anim?.effect && e.anim.effect !== 'none')
+    .sort((a, b) => (a.anim.seq || 0) - (b.anim.seq || 0))
+
+  const setMode = (mode) => {
+    if (mode === 'click') { patch({ trigger: { mode: 'click', ref: null } }); return }
+    const ref = anim.trigger?.ref && targets.some(t => t.id === anim.trigger.ref)
+      ? anim.trigger.ref : (targets[targets.length - 1]?.id || null)
+    patch({ trigger: { mode, ref } })
+  }
+
+  return (
+    <div className="space-y-3">
+      <div>
+        <p className={`${labelClass} mb-0.5`}>효과</p>
+        <select value={effect} onChange={e => setEffect(e.target.value)} className={selectClass} style={selectStyle}>
+          <option value="none">없음</option>
+          <optgroup label="등장">
+            {EFFECTS.filter(e => e.kind === 'enter').map(e => <option key={e.id} value={e.id}>{e.label}</option>)}
+          </optgroup>
+          <optgroup label="퇴장">
+            {EFFECTS.filter(e => e.kind === 'exit').map(e => <option key={e.id} value={e.id}>{e.label}</option>)}
+          </optgroup>
+        </select>
+      </div>
+
+      {hasAnim && (
+        <>
+          {effectHasDir(effect) && (
+            <div>
+              <p className={`${labelClass} mb-0.5`}>방향</p>
+              <div className="grid grid-cols-4 gap-1">
+                {DIRS.map(([d, label]) => (
+                  <button key={d} onClick={() => patch({ dir: d })}
+                    className={`text-xs py-1 rounded border transition-colors ${
+                      (anim.dir || 'left') === d ? 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30'
+                        : 'bg-white/5 text-slate-400 border-white/10 hover:bg-white/10'}`}
+                  >{label}</button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="grid grid-cols-2 gap-1.5">
+            <NumInput label="시간" unit="ms" min={50} max={5000} step={50}
+              value={anim.durationMs || 500} onChange={v => patch({ durationMs: v })} />
+            <NumInput label="지연" unit="ms" min={0} max={5000} step={50}
+              value={anim.delayMs || 0} onChange={v => patch({ delayMs: v })} />
+          </div>
+
+          <div>
+            <p className={`${labelClass} mb-0.5`}>시작</p>
+            <div className="grid grid-cols-3 gap-1">
+              {TRIGGER_MODES.map(([m, label]) => (
+                <button key={m} onClick={() => setMode(m)}
+                  className={`text-xs py-1 rounded border transition-colors ${
+                    (anim.trigger?.mode || 'click') === m ? 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30'
+                      : 'bg-white/5 text-slate-400 border-white/10 hover:bg-white/10'}`}
+                >{label}</button>
+              ))}
+            </div>
+            {(anim.trigger?.mode === 'after' || anim.trigger?.mode === 'with') && (
+              <div className="mt-1.5">
+                <p className={`${labelClass} mb-0.5`}>대상 애니메이션</p>
+                {targets.length === 0 ? (
+                  <p className="text-[10px] text-slate-600">대상이 없습니다 — 다른 요소에 먼저 애니메이션을 추가하세요.</p>
+                ) : (
+                  <select value={anim.trigger.ref || ''} onChange={e => patch({ trigger: { ...anim.trigger, ref: e.target.value } })}
+                    className={selectClass} style={selectStyle}>
+                    {targets.map((t, i) => (
+                      <option key={t.id} value={t.id}>{i + 1}. {effectLabel(t.anim.effect)} — {shortDesc(t)}</option>
+                    ))}
+                  </select>
+                )}
+              </div>
+            )}
+          </div>
+          <p className="text-[10px] text-slate-600">발표 모드에서 클릭(또는 ←/→)으로 단계 진행됩니다. 캔버스의 번호는 진행 순서입니다.</p>
+        </>
+      )}
     </div>
   )
 }

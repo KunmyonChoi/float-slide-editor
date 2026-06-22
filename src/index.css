@@ -130,3 +130,25 @@ input, textarea, select,
 @media (prefers-reduced-motion: reduce) {
   .fe-slide-anim { animation: none !important; }
 }
+
+/* 요소 등장/퇴장 애니메이션 — 슬라이드 계열은 --fe-dx/--fe-dy(방향) 인라인 설정 */
+@keyframes feElFadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes feElFadeOut { from { opacity: 1; } to { opacity: 0; } }
+@keyframes feElScaleIn { from { opacity: 0; transform: scale(0); } to { opacity: 1; transform: scale(1); } }
+@keyframes feElScaleOut { from { opacity: 1; transform: scale(1); } to { opacity: 0; transform: scale(0); } }
+@keyframes feElSlideIn {
+  from { opacity: 0; transform: translate(var(--fe-dx, -34%), var(--fe-dy, 0)); }
+  to { opacity: 1; transform: translate(0, 0); }
+}
+@keyframes feElSlideOut {
+  from { opacity: 1; transform: translate(0, 0); }
+  to { opacity: 0; transform: translate(var(--fe-dx, 34%), var(--fe-dy, 0)); }
+}
+@keyframes feElPop {
+  0% { opacity: 0; transform: scale(0.6); }
+  60% { opacity: 1; transform: scale(1.08); }
+  100% { opacity: 1; transform: scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .fe-el-anim { animation: none !important; }
+}
