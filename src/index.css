@@ -121,3 +121,12 @@ input, textarea, select,
 .flat-md hr { border: none; border-top: 1px solid rgba(128,128,128,0.4); margin: 0.6em 0; }
 .flat-md > *:first-child { margin-top: 0; }
 .flat-md > *:last-child { margin-bottom: 0; }
+
+/* 슬라이드 전환 — 발표 모드에서 들어오는 슬라이드 콘텐츠에 적용 */
+@keyframes feSlideFade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes feSlideSlide { from { opacity: 0; transform: translateX(6%); } to { opacity: 1; transform: translateX(0); } }
+@keyframes feSlideZoom { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: scale(1); } }
+/* 접근성: 동작 줄이기 설정이면 전환 생략 */
+@media (prefers-reduced-motion: reduce) {
+  .fe-slide-anim { animation: none !important; }
+}

@@ -2461,6 +2461,34 @@ function AiBackgroundSection({ onApply }) {
   )
 }
 
+// 슬라이드 전환 — 현재 슬라이드별 개별 지정. 발표 모드에서 들어올 때 적용.
+const TRANSITION_TYPES = [['none', '없음'], ['fade', '페이드'], ['slide', '슬라이드'], ['zoom', '줌']]
+function SlideTransitionSection() {
+  const t = useFlatStore(s => s.pageTransition)
+  const setT = useFlatStore(s => s.setPageTransition)
+  const type = t?.type || 'none'
+  const dur = t?.durationMs || 400
+  const setType = (v) => setT(v === 'none' ? null : { type: v, durationMs: dur })
+  return (
+    <div className="space-y-1.5">
+      <SectionTitle>슬라이드 전환</SectionTitle>
+      <div className="grid grid-cols-4 gap-1">
+        {TRANSITION_TYPES.map(([v, label]) => (
+          <button key={v} onClick={() => setType(v)}
+            className={`text-xs px-1 py-1 rounded border transition-colors ${
+              type === v ? 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30'
+                : 'bg-white/5 text-slate-400 border-white/10 hover:bg-white/10'}`}
+          >{label}</button>
+        ))}
+      </div>
+      {type !== 'none' && (
+        <NumInput label="시간" unit="ms" min={50} max={3000} step={50}
+          value={dur} onChange={(v) => setT({ type, durationMs: v })} />
+      )}
+    </div>
+  )
+}
+
 function SlideBackgroundPanel() {
   const { flatElements, canvasSize, updateFlatElement, previewFlatElement,
           addFlatElement, removeFlatElement } = useFlatStore()
@@ -2591,8 +2619,11 @@ function SlideBackgroundPanel() {
       {/* 스크롤은 패널 셸(DockedShell/FloatingShell)이 담당 — 내부 overflow를 두면 스크롤바가 중첩됨 */}
       <div className="p-3 space-y-3">
 
+        {/* ── 슬라이드 전환 ── */}
+        <SlideTransitionSection />
+
         {/* ── 레이어 목록 ── */}
-        <div className="space-y-1.5">
+        <div className="space-y-1.5 pt-3 border-t border-white/5">
           <div className="flex items-center justify-between">
             <SectionTitle>배경 레이어</SectionTitle>
             <button

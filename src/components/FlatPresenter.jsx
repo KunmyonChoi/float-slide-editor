@@ -13,6 +13,14 @@ const TOOL_CLUSTER = { display: 'flex', alignItems: 'center', gap: 4, flexWrap: 
 //  ① 도구+팔레트  ② 굵기+휴지통+블랙아웃+종료
 const TOOL_MACRO = { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'nowrap' }
 
+// 슬라이드 전환 → CSS animation 문자열 (없으면 undefined). 들어오는 슬라이드에 적용.
+const TRANSITION_KEYFRAMES = { fade: 'feSlideFade', slide: 'feSlideSlide', zoom: 'feSlideZoom' }
+export function slideTransitionCss(t) {
+  if (!t || !TRANSITION_KEYFRAMES[t.type]) return undefined
+  const dur = Math.max(50, t.durationMs || 400)
+  return `${TRANSITION_KEYFRAMES[t.type]} ${dur}ms ease-out`
+}
+
 /**
  * FlatPresenter — flat 편집 결과 기반 발표 모드
  * 전체화면, 편집 UI 없음, 페이지 네비게이션 (화살표/클릭)
@@ -255,7 +263,14 @@ export default function FlatPresenter() {
           transformOrigin: 'center center',
           background: '#fff',
         }}>
-          <div style={{ position: 'relative', width: '100%', height: '100%', overflow: 'hidden' }}>
+          <div
+            key={currentSlide}
+            className="fe-slide-anim"
+            style={{
+              position: 'relative', width: '100%', height: '100%', overflow: 'hidden',
+              animation: slideTransitionCss(page?.transition),
+            }}
+          >
             {elements.map(el => (
               <FlatElementRenderer
                 key={el.id}
