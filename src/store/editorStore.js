@@ -254,6 +254,12 @@ export const useEditorStore = create((set, get) => ({
     try {
       if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {})
     } catch { /* 무시 */ }
+    // 발표 진입 때 iframe.contentWindow로 옮긴 키보드 포커스를 상위 창으로 복귀.
+    // 안 하면 종료 직후 페이지 이동 단축키가 (숨은) iframe에 먹혀 동작하지 않는다.
+    try {
+      iframeRef?.current?.blur?.()
+      window.focus()
+    } catch { /* 무시 */ }
   },
 
   // ── DOM 읽기 헬퍼 (Phase 3) ────────────────────────────────
