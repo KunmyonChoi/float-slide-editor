@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { slideTransitionCss } from '../components/FlatPresenter'
+import { slideTransitionCss, slideTransitionVars } from '../components/FlatPresenter'
 
 describe('slideTransitionCss', () => {
   it('타입별 keyframe + 지속시간 매핑', () => {
@@ -18,5 +18,17 @@ describe('slideTransitionCss', () => {
     expect(slideTransitionCss({ type: 'none' })).toBeUndefined()
     expect(slideTransitionCss({ type: 'spin' })).toBeUndefined()
     expect(slideTransitionCss(undefined)).toBeUndefined()
+  })
+})
+
+describe('slideTransitionVars — slide 방향', () => {
+  it('slide만 방향 변수, 기본 right', () => {
+    expect(slideTransitionVars({ type: 'slide', dir: 'left' })).toEqual({ '--fe-sx': '-30%', '--fe-sy': '0' })
+    expect(slideTransitionVars({ type: 'slide', dir: 'down' })).toEqual({ '--fe-sx': '0', '--fe-sy': '30%' })
+    expect(slideTransitionVars({ type: 'slide' })).toEqual({ '--fe-sx': '30%', '--fe-sy': '0' }) // 기본 right
+  })
+  it('slide 아닌 타입은 null', () => {
+    expect(slideTransitionVars({ type: 'fade' })).toBeNull()
+    expect(slideTransitionVars(null)).toBeNull()
   })
 })

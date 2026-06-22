@@ -2615,7 +2615,8 @@ function SlideTransitionSection() {
   const setT = useFlatStore(s => s.setPageTransition)
   const type = t?.type || 'none'
   const dur = t?.durationMs || 400
-  const setType = (v) => setT(v === 'none' ? null : { type: v, durationMs: dur })
+  const dir = t?.dir || 'right'
+  const setType = (v) => setT(v === 'none' ? null : { type: v, durationMs: dur, ...(v === 'slide' ? { dir } : {}) })
   return (
     <div className="space-y-1.5">
       <SectionTitle>슬라이드 전환</SectionTitle>
@@ -2628,9 +2629,23 @@ function SlideTransitionSection() {
           >{label}</button>
         ))}
       </div>
+      {type === 'slide' && (
+        <div>
+          <p className={`${labelClass} mb-0.5`}>방향(들어오는 쪽)</p>
+          <div className="grid grid-cols-4 gap-1">
+            {DIRS.map(([d, label]) => (
+              <button key={d} onClick={() => setT({ type, durationMs: dur, dir: d })}
+                className={`text-xs py-1 rounded border transition-colors ${
+                  dir === d ? 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30'
+                    : 'bg-white/5 text-slate-400 border-white/10 hover:bg-white/10'}`}
+              >{label}</button>
+            ))}
+          </div>
+        </div>
+      )}
       {type !== 'none' && (
         <NumInput label="시간" unit="ms" min={50} max={3000} step={50}
-          value={dur} onChange={(v) => setT({ type, durationMs: v })} />
+          value={dur} onChange={(v) => setT({ type, durationMs: v, ...(type === 'slide' ? { dir } : {}) })} />
       )}
     </div>
   )
