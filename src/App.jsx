@@ -10,6 +10,7 @@ import DebugElementsPanel from './components/DebugElementsPanel'
 import PageBar from './components/PageBar'
 import NotesPanel from './components/NotesPanel'
 import SlideDeleteToast from './components/SlideDeleteToast'
+import InstallAppBanner from './components/InstallAppBanner'
 import { UrlPromptHost } from './components/UrlPrompt'
 import { AiSettingsHost } from './components/AiSettingsModal'
 import { InfographicHost } from './components/InfographicModal'
@@ -86,6 +87,7 @@ export default function App() {
       <NotesPanel />
       <PageBar />
       <SlideDeleteToast />
+      <InstallAppBanner />
       <UrlPromptHost />
       <AiSettingsHost />
       <InfographicHost />
