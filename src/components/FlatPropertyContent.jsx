@@ -2622,7 +2622,7 @@ function SlideTransitionSection() {
       <SectionTitle>슬라이드 전환</SectionTitle>
       <div className="grid grid-cols-4 gap-1">
         {TRANSITION_TYPES.map(([v, label]) => (
-          <button key={v} onClick={() => setType(v)}
+          <button key={v} onClick={() => setType(v)} onMouseDown={e => e.preventDefault()}
             className={`text-xs px-1 py-1 rounded border transition-colors ${
               type === v ? 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30'
                 : 'bg-white/5 text-slate-400 border-white/10 hover:bg-white/10'}`}
@@ -2634,7 +2634,7 @@ function SlideTransitionSection() {
           <p className={`${labelClass} mb-0.5`}>방향(들어오는 쪽)</p>
           <div className="grid grid-cols-4 gap-1">
             {DIRS.map(([d, label]) => (
-              <button key={d} onClick={() => setT({ type, durationMs: dur, dir: d })}
+              <button key={d} onClick={() => setT({ type, durationMs: dur, dir: d })} onMouseDown={e => e.preventDefault()}
                 className={`text-xs py-1 rounded border transition-colors ${
                   dir === d ? 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30'
                     : 'bg-white/5 text-slate-400 border-white/10 hover:bg-white/10'}`}
@@ -2655,11 +2655,19 @@ function SlideBackgroundPanel() {
   const { flatElements, canvasSize, updateFlatElement, previewFlatElement,
           addFlatElement, removeFlatElement } = useFlatStore()
   const [activeLayer, setActiveLayer] = useState(0)
+  const listRef = useRef(null)
+  // 드래그 재정렬 상태: { id, order }(order = 화면 표시 순서 = 앞→뒤 id 배열)
+  const [drag, setDrag] = useState(null)
 
-  // 모든 배경 레이어 찾기 (z-index 순)
+  // 모든 배경 레이어 찾기 — 표시 순서는 z-index 내림차순(맨 위 = 가장 앞, 디자인 툴 관례).
   const bgLayers = flatElements
     .filter(el => isBackgroundElement(el, canvasSize))
-    .sort((a, b) => a.zIndex - b.zIndex)
+    .sort((a, b) => b.zIndex - a.zIndex)
+
+  // 드래그 중에는 로컬 order로, 아니면 실제 z-순서로 렌더
+  const displayLayers = drag
+    ? drag.order.map(id => bgLayers.find(e => e.id === id)).filter(Boolean)
+    : bgLayers
 
   // 레이어 추가
   const addLayer = useCallback(() => {
@@ -2678,8 +2686,46 @@ function SlideBackgroundPanel() {
       styles: { ...BG_DEFAULT_STYLES, backgroundColor: 'rgba(0,0,0,0)' },
     }
     addFlatElement(newEl)
-    setActiveLayer(bgLayers.length) // 새 레이어 선택
+    setActiveLayer(0) // 새 레이어는 최상위 z → 목록 맨 위(idx 0)
   }, [flatElements, bgLayers, canvasSize, addFlatElement])
+
+  // ── 드래그 재정렬 (포인터 기반 — 마우스+터치) ──
+  const beginDrag = useCallback((e, id) => {
+    e.stopPropagation()
+    if (e.pointerType === 'mouse' && e.button !== 0) return
+    e.currentTarget.setPointerCapture?.(e.pointerId)
+    setDrag({ id, order: bgLayers.map(b => b.id) })
+  }, [bgLayers])
+
+  const moveDrag = useCallback((e) => {
+    setDrag(prev => {
+      if (!prev) return prev
+      const rows = listRef.current ? Array.from(listRef.current.children) : []
+      const y = e.clientY
+      // 포인터가 지나친 행 수 = 삽입 위치(행 중앙선 기준)
+      let target = rows.length
+      for (let i = 0; i < rows.length; i++) {
+        const r = rows[i].getBoundingClientRect()
+        if (y < r.top + r.height / 2) { target = i; break }
+      }
+      const without = prev.order.filter(id => id !== prev.id)
+      const cur = prev.order.indexOf(prev.id)
+      let insert = cur < target ? target - 1 : target // 끌던 항목 제거로 인한 인덱스 보정
+      insert = Math.max(0, Math.min(insert, without.length))
+      without.splice(insert, 0, prev.id)
+      return without.join() === prev.order.join() ? prev : { id: prev.id, order: without }
+    })
+  }, [])
+
+  const endDrag = useCallback((e) => {
+    e.currentTarget.releasePointerCapture?.(e.pointerId)
+    if (drag) {
+      // order는 앞→뒤(z 내림차순). store는 뒤→앞(z 오름차순)을 받음.
+      useFlatStore.getState().setBackgroundOrder([...drag.order].reverse())
+      setActiveLayer(drag.order.indexOf(drag.id)) // 끌어놓은 레이어를 계속 선택
+    }
+    setDrag(null)
+  }, [drag])
 
   // 레이어 삭제 (0개까지 허용 — 배경 없음=투명/흰 캔버스)
   const removeLayer = useCallback((idx) => {
@@ -2795,8 +2841,14 @@ function SlideBackgroundPanel() {
             >+ 추가</button>
           </div>
 
-          <div className="space-y-1">
-            {bgLayers.map((el, idx) => (
+          {bgLayers.length > 1 && (
+            <p className="text-[10px] text-slate-600">맨 위가 가장 앞(앞쪽) · 손잡이를 끌어 순서 변경</p>
+          )}
+          <div className="space-y-1" ref={listRef}>
+            {displayLayers.map((el) => {
+              const idx = bgLayers.indexOf(el) // 실제 z-순서 기준 인덱스(선택/삭제용)
+              const dragging = drag?.id === el.id
+              return (
               <div
                 key={el.id}
                 onClick={() => setActiveLayer(idx)}
@@ -2804,8 +2856,20 @@ function SlideBackgroundPanel() {
                   idx === safeIdx
                     ? 'bg-indigo-500/20 border border-indigo-500/30'
                     : 'bg-white/5 border border-transparent hover:bg-white/10'
-                }`}
+                } ${dragging ? 'opacity-60 ring-1 ring-indigo-400/50' : ''}`}
               >
+                {bgLayers.length > 1 && (
+                  <button
+                    onPointerDown={(e) => beginDrag(e, el.id)}
+                    onPointerMove={moveDrag}
+                    onPointerUp={endDrag}
+                    onPointerCancel={endDrag}
+                    onClick={(e) => e.stopPropagation()}
+                    className="text-slate-500 hover:text-slate-300 cursor-grab active:cursor-grabbing px-0.5 -ml-0.5 leading-none"
+                    style={{ touchAction: 'none' }}
+                    title="끌어서 순서 변경"
+                  >⠿</button>
+                )}
                 {/* 미리보기 썸네일 */}
                 <div style={{
                   width: 28, height: 18, borderRadius: 3, flexShrink: 0,
@@ -2822,29 +2886,14 @@ function SlideBackgroundPanel() {
                     title="일반 요소로 복원"
                   >↩</button>
                 )}
-                {bgLayers.length > 1 && (
-                  <>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); useFlatStore.getState().reorderBackground(el.id, 1) }}
-                      disabled={el.zIndex >= Math.max(...bgLayers.map(b => b.zIndex))}
-                      className="text-xs text-slate-400 hover:text-slate-200 px-0.5 disabled:opacity-30 disabled:cursor-not-allowed"
-                      title="앞으로(다른 배경 위)"
-                    >↑</button>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); useFlatStore.getState().reorderBackground(el.id, -1) }}
-                      disabled={el.zIndex <= Math.min(...bgLayers.map(b => b.zIndex))}
-                      className="text-xs text-slate-400 hover:text-slate-200 px-0.5 disabled:opacity-30 disabled:cursor-not-allowed"
-                      title="뒤로(다른 배경 아래)"
-                    >↓</button>
-                  </>
-                )}
                 <button
                   onClick={(e) => { e.stopPropagation(); removeLayer(idx) }}
                   className="text-xs text-slate-600 hover:text-red-400 px-0.5"
                   title="레이어 삭제"
                 >&times;</button>
               </div>
-            ))}
+              )
+            })}
           </div>
 
           {bgLayers.length === 0 && (

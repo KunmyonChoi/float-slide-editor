@@ -1711,22 +1711,26 @@ export const useFlatStore = create((set, get) => ({
   },
 
   /** 배경끼리 순서 변경 — dir +1: 앞으로(위), -1: 뒤로(아래). 인접 배경과 zIndex 스왑. */
-  reorderBackground(id, dir) {
+  /** 배경 레이어 순서를 통째로 지정. orderedIds = 뒤→앞(z 오름차순) 순서의 배경 id 배열.
+   *  기존 배경 z 값 집합은 그대로 두고, 어떤 요소가 어느 z를 갖는지만 재배치한다
+   *  (배경이 항상 일반 콘텐츠보다 뒤에 깔리는 불변식 유지). undo/redo 지원. */
+  setBackgroundOrder(orderedIds) {
     const els = get().flatElements
-    const bgs = els.filter(e => isBackgroundElement(e)).sort((a, b) => a.zIndex - b.zIndex)
-    const idx = bgs.findIndex(e => e.id === id)
-    if (idx < 0) return
-    const swapIdx = idx + dir
-    if (swapIdx < 0 || swapIdx >= bgs.length) return
-    const a = bgs[idx], b = bgs[swapIdx]
-    if (a.zIndex === b.zIndex) return
-    _history.push({ type: 'zorder', changes: [
-      { id: a.id, oldZ: a.zIndex, newZ: b.zIndex },
-      { id: b.id, oldZ: b.zIndex, newZ: a.zIndex },
-    ]})
-    const updated = els.map(e =>
-      e.id === a.id ? { ...e, zIndex: b.zIndex } : e.id === b.id ? { ...e, zIndex: a.zIndex } : e
-    )
+    const bgs = els.filter(e => isBackgroundElement(e))
+    if (bgs.length < 2) return
+    const idSet = new Set(bgs.map(e => e.id))
+    // orderedIds가 배경 id 전체를 정확히 한 번씩 포함하는지 검증(부분/중복/외부 id 방지)
+    if (orderedIds.length !== bgs.length || new Set(orderedIds).size !== bgs.length
+        || !orderedIds.every(id => idSet.has(id))) return
+    const zsAsc = bgs.map(e => e.zIndex).sort((a, b) => a - b)
+    const newZ = {}
+    orderedIds.forEach((id, i) => { newZ[id] = zsAsc[i] })
+    const changes = bgs
+      .filter(e => newZ[e.id] !== e.zIndex)
+      .map(e => ({ id: e.id, oldZ: e.zIndex, newZ: newZ[e.id] }))
+    if (!changes.length) return
+    _history.push({ type: 'zorder', changes })
+    const updated = els.map(e => (newZ[e.id] != null ? { ...e, zIndex: newZ[e.id] } : e))
     set({ flatElements: updated, canUndo: _history.canUndo, canRedo: _history.canRedo })
   },
 
