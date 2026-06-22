@@ -105,6 +105,9 @@ export default function FlatInlineEditor({ element }) {
     if (element.isCode) {
       // 코드 모드: 색칠 content 대신 원본 code(plain)를 편집
       ref.current.innerHTML = escapePlain(element.code || '')
+    } else if (element.isMarkdown) {
+      // 마크다운 모드: 렌더 content 대신 원본 md(plain)를 편집
+      ref.current.innerHTML = escapePlain(element.md || '')
     } else if (element.isRich) {
       ref.current.innerHTML = content || ''
     } else {
@@ -135,6 +138,10 @@ export default function FlatInlineEditor({ element }) {
         // 코드 모드: 편집기 → 원본 텍스트(줄바꿈 보존)로 추출 후 재색칠 커밋
         const raw = editorToPlain(ref.current)
         useFlatStore.getState().commitCodeEdit(element.id, raw)
+        return
+      }
+      if (element.isMarkdown) {
+        useFlatStore.getState().commitMarkdownEdit(element.id, editorToPlain(ref.current))
         return
       }
       const html = (ref.current?.innerHTML || '').trim()
@@ -338,10 +345,14 @@ export default function FlatInlineEditor({ element }) {
       useFlatStore.getState().commitCodeEdit(element.id, editorToPlain(ref.current))
       return
     }
+    if (element.isMarkdown) {
+      useFlatStore.getState().commitMarkdownEdit(element.id, editorToPlain(ref.current))
+      return
+    }
     const html = (ref.current?.innerHTML || '').trim()
     const hasHtmlTags = /<[a-z][\s\S]*>/i.test(html)
     commitTextEdit(element.id, html, hasHtmlTags)
-  }, [element.id, element.isCode, commitTextEdit])
+  }, [element.id, element.isCode, element.isMarkdown, commitTextEdit])
 
   // 오토핏 요소: 입력마다 에디터 실제 높이로 컨테이너 라이브 신축(히스토리 없이, 캐럿 안전)
   const handleInput = useCallback(() => {

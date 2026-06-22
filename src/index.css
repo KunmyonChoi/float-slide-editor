@@ -94,3 +94,30 @@ input, textarea, select,
 @media (max-width: 768px) and (orientation: portrait) {
   .hide-mobile-portrait { display: none; }
 }
+
+/* 마크다운 요소 렌더 스타일 — 요소에 스코프(.flat-md). 본문 글꼴/색은 요소 styles 상속,
+   제목/리스트는 상대 스케일. 코드/인용 배경은 명/암 양쪽에서 보이게 회색 알파 사용. */
+.flat-md h1, .flat-md h2, .flat-md h3,
+.flat-md h4, .flat-md h5, .flat-md h6 { font-weight: 700; line-height: 1.25; margin: 0.4em 0 0.3em; }
+.flat-md h1 { font-size: 1.8em; }
+.flat-md h2 { font-size: 1.5em; }
+.flat-md h3 { font-size: 1.25em; }
+.flat-md h4 { font-size: 1.1em; }
+.flat-md h5, .flat-md h6 { font-size: 1em; opacity: 0.85; }
+.flat-md p { margin: 0 0 0.5em; }
+.flat-md ul, .flat-md ol { margin: 0 0 0.5em; padding-left: 1.4em; }
+.flat-md li { margin: 0.12em 0; }
+.flat-md li > ul, .flat-md li > ol { margin: 0.12em 0; }
+.flat-md a { color: #6366f1; text-decoration: underline; }
+.flat-md strong { font-weight: 700; }
+.flat-md em { font-style: italic; }
+.flat-md code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  background: rgba(128,128,128,0.18); padding: 0.1em 0.3em; border-radius: 4px; font-size: 0.9em; }
+.flat-md pre { background: rgba(128,128,128,0.18); padding: 0.6em 0.8em; border-radius: 6px;
+  overflow: auto; margin: 0 0 0.5em; }
+.flat-md pre code { background: none; padding: 0; font-size: 0.88em; }
+.flat-md blockquote { border-left: 3px solid rgba(128,128,128,0.5); margin: 0 0 0.5em;
+  padding-left: 0.8em; opacity: 0.85; }
+.flat-md hr { border: none; border-top: 1px solid rgba(128,128,128,0.4); margin: 0.6em 0; }
+.flat-md > *:first-child { margin-top: 0; }
+.flat-md > *:last-child { margin-bottom: 0; }

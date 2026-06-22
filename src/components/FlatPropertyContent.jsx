@@ -18,6 +18,7 @@ import { openAiSettings } from './AiSettingsModal'
 import { BACKGROUND_STYLES, BACKGROUND_GROUPS, DEFAULT_BACKGROUND_STYLE_ID, getBackgroundStyle, buildBackgroundPrompt } from '../core/backgroundStyles'
 import { detectBgColor, applyChromaKey } from '../core/chromaKey'
 import { highlightCode, CODE_FONT } from '../core/codeHighlight'
+import { renderMarkdown } from '../core/markdown'
 
 // ── 글꼴 크기 프리셋 ────────────────────────────────
 
@@ -104,6 +105,12 @@ export default function FlatPropertyContent() {
         {el.type === 'text' && (
           <div className="pt-1 border-t border-white/5">
             <CodeSection el={el} update={update} />
+          </div>
+        )}
+
+        {el.type === 'text' && (
+          <div className="pt-1 border-t border-white/5">
+            <MarkdownSection el={el} />
           </div>
         )}
 
@@ -667,7 +674,7 @@ function CodeSection({ el }) {
   const enable = () => {
     const raw = rawText()
     const { html, lang } = highlightCode(raw, 'auto')
-    update({ isCode: true, code: raw, content: html, isRich: true, lang, styles: { fontFamily: CODE_FONT, whiteSpace: 'pre-wrap' } })
+    update({ isCode: true, isMarkdown: false, code: raw, content: html, isRich: true, lang, styles: { fontFamily: CODE_FONT, whiteSpace: 'pre-wrap' } })
   }
   const disable = () => {
     update({ isCode: false, content: el.code || rawText(), isRich: false })
@@ -695,6 +702,47 @@ function CodeSection({ el }) {
           </select>
           <p className="text-[10px] text-slate-600 mt-1">더블클릭하면 원본 코드로 편집, 끝내면 자동 색칠됩니다.</p>
         </div>
+      )}
+    </div>
+  )
+}
+
+// 마크다운 — 텍스트 박스를 마크다운으로(편집=원본, 표시=렌더, 커밋 시 재렌더). 코드 모드와 상호배타.
+function MarkdownSection({ el }) {
+  const isMd = !!el.isMarkdown
+  const update = (changes) => useFlatStore.getState().updateFlatElement(el.id, changes)
+  const rawText = () => {
+    if (el.isRich && el.content) {
+      try { return new DOMParser().parseFromString(`<body>${el.content}</body>`, 'text/html').body.textContent || '' }
+      catch { return '' }
+    }
+    return el.content || ''
+  }
+  const enable = () => {
+    const raw = el.md || rawText()
+    // 렌더 HTML이 블록 흐름(위→아래)으로 쌓이도록 flex/세로정렬 잔재 제거
+    update({
+      isMarkdown: true, isCode: false, md: raw, content: renderMarkdown(raw), isRich: true, merged: false,
+      styles: { whiteSpace: 'normal', display: undefined, alignItems: undefined, justifyContent: undefined, isFlex: undefined },
+    })
+  }
+  const disable = () => {
+    update({ isMarkdown: false, content: el.md || rawText(), isRich: false, styles: { whiteSpace: 'pre-wrap' } })
+  }
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <SectionTitle>마크다운</SectionTitle>
+        <button
+          onClick={isMd ? disable : enable}
+          className={`text-xs px-2 py-0.5 rounded border transition-colors ${
+            isMd ? 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30'
+              : 'bg-white/5 text-slate-400 border-white/10 hover:bg-white/10'
+          }`}
+        >{isMd ? 'ON' : 'OFF'}</button>
+      </div>
+      {isMd && (
+        <p className="text-[10px] text-slate-600">더블클릭하면 마크다운 원본으로 편집, 끝내면 렌더됩니다. (# 제목, **굵게**, - 목록, &gt; 인용)</p>
       )}
     </div>
   )
