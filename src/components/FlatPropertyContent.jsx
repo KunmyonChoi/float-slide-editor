@@ -2532,6 +2532,11 @@ function AnimationTab({ el }) {
 
   return (
     <div className="space-y-3">
+      <button
+        onClick={() => useFlatStore.getState().playAnimPreview()}
+        className="w-full text-xs py-1.5 rounded-lg border border-indigo-500/30 bg-indigo-500/10 text-indigo-300 hover:bg-indigo-500/20 transition-colors"
+        title="이 슬라이드의 애니메이션을 순서대로 미리 재생"
+      >▶ 슬라이드 애니메이션 미리보기</button>
       <div>
         <p className={`${labelClass} mb-0.5`}>효과</p>
         <select value={effect} onChange={e => setEffect(e.target.value)} className={selectClass} style={selectStyle}>

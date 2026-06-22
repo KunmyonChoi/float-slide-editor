@@ -5,7 +5,7 @@ import FlatElementRenderer from './FlatElementRenderer'
 import PresenterInkOverlay from './PresenterInkOverlay'
 import { resolveConnectors } from '../core/ConnectorRouting'
 import { BlobStore } from '../core/BlobStore'
-import { computeSteps, isHiddenAt, animationCss, directionVars } from '../core/slideAnimation'
+import { computeSteps, isHiddenAt, animationCss, directionVars, stepDurations } from '../core/slideAnimation'
 
 const INK_COLORS = ['#ef4444', '#f59e0b', '#3b82f6', '#ffffff', '#111827']
 // 펜 툴바 그룹(도구/팔레트/굵기) — nowrap로 묶어 그룹 내부는 줄바꿈되지 않게
@@ -251,6 +251,21 @@ export default function FlatPresenter() {
   }, [currentSlide, narration, hasAudio, audioSrc])
 
   const onAudioEnded = useCallback(() => { if (autoAdvance) goNext() }, [autoAdvance, goNext])
+
+  // 음성 있는 슬라이드: 클릭 트리거를 자동으로 — 단계마다 이전 종료 후 0.3초 텀 자동 진행.
+  // (슬라이드→슬라이드 자동 전환은 별도 '음성 후 자동 진행' 토글이 담당)
+  const AUDIO_TERM = 300
+  useEffect(() => {
+    if (!(narration && hasAudio) || animInfo.stepCount === 0) return
+    const durs = stepDurations(animInfo, elements)
+    const timers = []
+    let t = AUDIO_TERM
+    for (let s = 0; s < animInfo.stepCount; s++) {
+      timers.push(setTimeout(() => { setPlayingStep(s); setRevealed(s + 1) }, t))
+      t += durs[s] + AUDIO_TERM
+    }
+    return () => timers.forEach(clearTimeout)
+  }, [currentSlide, narration, hasAudio, animInfo, elements])
 
   return (
     <div

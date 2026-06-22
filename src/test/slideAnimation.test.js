@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   computeSteps, isHiddenAt, isPlayingAt, animationCss, directionVars,
-  isEntrance, isExit, effectHasDir,
+  isEntrance, isExit, effectHasDir, stepDurations,
 } from '../core/slideAnimation'
 
 const mk = (id, anim) => ({ id, anim })
@@ -68,6 +68,20 @@ describe('표시 상태', () => {
     expect(isPlayingAt(info, elIn, 1)).toBe(true)  // revealed1 → step0 재생
     expect(isPlayingAt(info, elIn, 2)).toBe(false)
     expect(isPlayingAt(info, elOut, 2)).toBe(true) // revealed2 → step1 재생
+  })
+})
+
+describe('stepDurations — 자동 진행 타이밍', () => {
+  it('단계별 max(offset+duration), 최소 300', () => {
+    const els = [
+      mk('a', { effect: 'fadeIn', seq: 0, durationMs: 500, trigger: { mode: 'click' } }),
+      mk('b', { effect: 'fadeIn', seq: 1, durationMs: 300, delayMs: 100, trigger: { mode: 'after', ref: 'a' } }),
+      mk('c', { effect: 'fadeIn', seq: 2, durationMs: 200, trigger: { mode: 'click' } }),
+    ]
+    const info = computeSteps(els)
+    const durs = stepDurations(info, els)
+    expect(durs[0]).toBe(900)   // b: offset(600)+dur(300)
+    expect(durs[1]).toBe(300)   // c: 200 → 최소 300
   })
 })
 

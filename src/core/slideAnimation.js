@@ -63,6 +63,19 @@ export function computeSteps(elements) {
   return { stepCount, stepOf, offsetOf, order: animated.map(e => e.id) }
 }
 
+/** 단계별 총 소요시간(ms) — 자동 진행(음성/미리보기) 타이밍용. offset+duration 최대값. */
+export function stepDurations(info, elements) {
+  const byId = {}
+  for (const e of (elements || [])) byId[e.id] = e
+  const durs = new Array(info.stepCount).fill(300)
+  for (const id of info.order) {
+    const s = info.stepOf[id], el = byId[id]
+    if (s == null || !el) continue
+    durs[s] = Math.max(durs[s], (info.offsetOf[id] || 0) + (el.anim?.durationMs || DEFAULT_DUR))
+  }
+  return durs
+}
+
 /** revealed 단계(클릭 수) 기준 요소가 숨김인지. 비애니 요소는 항상 보임(false). */
 export function isHiddenAt(info, el, revealed) {
   if (!el?.anim || !el.anim.effect || el.anim.effect === 'none') return false
