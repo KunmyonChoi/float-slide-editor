@@ -47,8 +47,8 @@ export default function ImageCropOverlay({ element, scale }) {
     return () => window.removeEventListener('keydown', onKeyDown, true)
   }, [setCroppingFlat])
 
-  // 드래그로 objectPosition 변경
-  const handleMouseDown = useCallback((e) => {
+  // 드래그 시작 — 마우스+터치(포인터) 공통. 터치는 setPointerCapture로 프레임 밖 이동도 추적.
+  const handleDown = useCallback((e) => {
     e.stopPropagation()
     e.preventDefault()
     const startObjPos = element.styles.objectPosition || 'center center'
@@ -59,15 +59,22 @@ export default function ImageCropOverlay({ element, scale }) {
       startPx: px,
       startPy: py,
       startObjPos,
+      pointerId: e.pointerType ? e.pointerId : undefined,
     }
+    if (e.pointerType === 'touch' && e.currentTarget?.setPointerCapture) {
+      try { e.currentTarget.setPointerCapture(e.pointerId) } catch { /* 무시 */ }
+    }
+  }, [element])
 
-    const onMove = (ev) => {
-      if (!dragRef.current) return
+  // 이동/종료 리스너 — 마우스+포인터(터치/펜) 공통. 마우스 PointerEvent는 mouse* 가 처리(중복 방지).
+  useEffect(() => {
+    const onMove = (e) => {
       const d = dragRef.current
-      // 마우스 이동 → objectPosition 변경
-      // 이미지를 "잡아서 끈다" → 마우스 방향과 동일하게 이동
-      const dx = (ev.clientX - d.startClientX) / scale
-      const dy = (ev.clientY - d.startClientY) / scale
+      if (!d) return
+      if (e.pointerType === 'mouse') return
+      if (d.pointerId != null && e.pointerId !== d.pointerId) return
+      const dx = (e.clientX - d.startClientX) / scale
+      const dy = (e.clientY - d.startClientY) / scale
       // px 이동을 % 변화로 변환 (요소 크기 대비)
       const dpx = (dx / element.width) * 100
       const dpy = (dy / element.height) * 100
@@ -81,24 +88,32 @@ export default function ImageCropOverlay({ element, scale }) {
         styles: { objectPosition: `${newPx.toFixed(1)}% ${newPy.toFixed(1)}%` }
       })
     }
-
-    const onUp = () => {
-      window.removeEventListener('mousemove', onMove)
-      window.removeEventListener('mouseup', onUp)
-      if (!dragRef.current) return
+    const onUp = (e) => {
       const d = dragRef.current
-      const current = useFlatStore.getState().flatElements.find(e => e.id === element.id)
-      const newObjPos = current?.styles?.objectPosition || 'center center'
+      if (!d) return
+      if (e && e.pointerType === 'mouse') return
+      if (e && d.pointerId != null && e.pointerId != null && e.pointerId !== d.pointerId) return
       dragRef.current = null
+      const current = useFlatStore.getState().flatElements.find(x => x.id === element.id)
+      const newObjPos = current?.styles?.objectPosition || 'center center'
       if (newObjPos !== d.startObjPos) {
         // revert preview → commit with history
         previewFlatElement(element.id, { styles: { objectPosition: d.startObjPos } })
         updateFlatElement(element.id, { styles: { objectPosition: newObjPos } })
       }
     }
-
     window.addEventListener('mousemove', onMove)
     window.addEventListener('mouseup', onUp)
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+    window.addEventListener('pointercancel', onUp)
+    return () => {
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+      window.removeEventListener('pointercancel', onUp)
+    }
   }, [element, scale, previewFlatElement, updateFlatElement])
 
   // 외부 클릭 감지 (오버레이 밖)
@@ -120,8 +135,10 @@ export default function ImageCropOverlay({ element, scale }) {
           zIndex: 9990,
           cursor: 'default',
           pointerEvents: 'auto',
+          touchAction: 'none',
         }}
         onMouseDown={handleOverlayClick}
+        onPointerDown={(e) => { if (e.pointerType === 'touch') handleOverlayClick(e) }}
       />
       {/* 이미지 프레임 (밝게) — 드래그로 이미지 위치 조정 */}
       <div
@@ -136,6 +153,8 @@ export default function ImageCropOverlay({ element, scale }) {
           // 컨테이너의 pointerEvents:'none' 상속 차단 — 안 주면 드래그가 프레임을 통과해
           // 뒤의 백드롭(크롭 종료)으로 가서 드래그 대신 모드가 닫힌다.
           pointerEvents: 'auto',
+          // 터치로 이미지를 끌어 위치 조정 — 브라우저 기본 제스처(스크롤 등) 차단
+          touchAction: 'none',
           overflow: 'hidden',
           transform: rot ? `rotate(${rot}deg)` : undefined,
           transformOrigin: rot ? 'center center' : undefined,
@@ -143,7 +162,8 @@ export default function ImageCropOverlay({ element, scale }) {
           outlineOffset: -1,
           borderRadius: element.styles.borderRadius,
         }}
-        onMouseDown={handleMouseDown}
+        onMouseDown={handleDown}
+        onPointerDown={(e) => { if (e.pointerType === 'touch') handleDown(e) }}
       >
         <img
           src={element.content}
