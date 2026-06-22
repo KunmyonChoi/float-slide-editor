@@ -21,11 +21,14 @@ describe('slideTransitionCss', () => {
   })
 })
 
-describe('slideTransitionVars — slide 방향', () => {
-  it('slide만 방향 변수, 기본 right', () => {
-    expect(slideTransitionVars({ type: 'slide', dir: 'left' })).toEqual({ '--fe-sx': '-30%', '--fe-sy': '0' })
-    expect(slideTransitionVars({ type: 'slide', dir: 'down' })).toEqual({ '--fe-sx': '0', '--fe-sy': '30%' })
-    expect(slideTransitionVars({ type: 'slide' })).toEqual({ '--fe-sx': '30%', '--fe-sy': '0' }) // 기본 right
+describe('slideTransitionVars — slide 방향(화살표=이동 방향)', () => {
+  it('slide만 방향 변수, 기본 right. 시작 오프셋은 이동의 반대편', () => {
+    // left(←): 왼쪽으로 이동 → 오른쪽(+30%)에서 시작
+    expect(slideTransitionVars({ type: 'slide', dir: 'left' })).toEqual({ '--fe-sx': '30%', '--fe-sy': '0' })
+    // down(↓): 아래로 이동 → 위(-30%)에서 시작
+    expect(slideTransitionVars({ type: 'slide', dir: 'down' })).toEqual({ '--fe-sx': '0', '--fe-sy': '-30%' })
+    // 기본 right(→): 오른쪽으로 이동 → 왼쪽(-30%)에서 시작
+    expect(slideTransitionVars({ type: 'slide' })).toEqual({ '--fe-sx': '-30%', '--fe-sy': '0' })
   })
   it('slide 아닌 타입은 null', () => {
     expect(slideTransitionVars({ type: 'fade' })).toBeNull()

@@ -2631,7 +2631,7 @@ function SlideTransitionSection() {
       </div>
       {type === 'slide' && (
         <div>
-          <p className={`${labelClass} mb-0.5`}>방향(들어오는 쪽)</p>
+          <p className={`${labelClass} mb-0.5`}>방향(이동 방향)</p>
           <div className="grid grid-cols-4 gap-1">
             {DIRS.map(([d, label]) => (
               <button key={d} onClick={() => setT({ type, durationMs: dur, dir: d })} onMouseDown={e => e.preventDefault()}

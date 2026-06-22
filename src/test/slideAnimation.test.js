@@ -91,9 +91,14 @@ describe('CSS 생성', () => {
     expect(animationCss({ effect: 'slideOut', durationMs: 600 }, 200)).toBe('feElSlideOut 600ms ease-out 200ms both')
     expect(animationCss({ effect: 'none' })).toBeNull()
   })
-  it('directionVars: 슬라이드만, 방향별 translate', () => {
-    expect(directionVars({ effect: 'slideIn', dir: 'left' })).toEqual({ '--fe-dx': '-34%', '--fe-dy': '0' })
-    expect(directionVars({ effect: 'slideIn', dir: 'down' })).toEqual({ '--fe-dx': '0', '--fe-dy': '34%' })
+  it('directionVars: 화살표=이동 방향. slideIn은 -M(시작 오프셋), slideOut은 +M(끝 오프셋)', () => {
+    // slideIn left(←): 왼쪽으로 이동 → 오른쪽(+34%)에서 시작해 0으로
+    expect(directionVars({ effect: 'slideIn', dir: 'left' })).toEqual({ '--fe-dx': '34%', '--fe-dy': '0' })
+    // slideIn down(↓): 아래로 이동 → 위(-34%)에서 시작
+    expect(directionVars({ effect: 'slideIn', dir: 'down' })).toEqual({ '--fe-dx': '0', '--fe-dy': '-34%' })
+    // slideOut left(←): 왼쪽으로 이동 → 0에서 왼쪽(-34%)으로 빠짐
+    expect(directionVars({ effect: 'slideOut', dir: 'left' })).toEqual({ '--fe-dx': '-34%', '--fe-dy': '0' })
+    expect(directionVars({ effect: 'slideOut', dir: 'up' })).toEqual({ '--fe-dx': '0', '--fe-dy': '-34%' })
     expect(directionVars({ effect: 'fadeIn' })).toBeNull()
   })
 })

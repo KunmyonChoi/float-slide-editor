@@ -106,16 +106,16 @@ export function animationCss(anim, offsetMs = 0) {
   return `${name} ${dur}ms ease-out ${delay}ms both`
 }
 
-/** 슬라이드 계열 방향 → translate CSS 변수(--fe-dx/--fe-dy). 등장은 들어오는 방향, 퇴장은 나가는 방향. */
+/** 슬라이드 계열 방향 → translate CSS 변수(--fe-dx/--fe-dy).
+ *  화살표 = 요소가 이동하는 방향(M). up은 화면상 -y, down은 +y.
+ *  keyframe상 등장(slideIn)은 시작 오프셋=이동의 반대편(-M)에서 0으로,
+ *  퇴장(slideOut)은 0에서 끝 오프셋=이동 방향(+M)으로 움직이므로 부호를 분기한다. */
 export function directionVars(anim) {
   if (!effectHasDir(anim?.effect)) return null
-  const OFF = '34%'
-  const NEG = '-34%'
-  switch (anim.dir) {
-    case 'left': return { '--fe-dx': NEG, '--fe-dy': '0' }
-    case 'right': return { '--fe-dx': OFF, '--fe-dy': '0' }
-    case 'up': return { '--fe-dx': '0', '--fe-dy': NEG }
-    case 'down': return { '--fe-dx': '0', '--fe-dy': OFF }
-    default: return { '--fe-dx': NEG, '--fe-dy': '0' }
-  }
+  const OFF = 34
+  const M = { left: [-OFF, 0], right: [OFF, 0], up: [0, -OFF], down: [0, OFF] }[anim.dir]
+    || [-OFF, 0]
+  const s = KIND[anim.effect] === 'enter' ? -1 : 1
+  const fmt = (v) => (v === 0 ? '0' : `${v}%`)
+  return { '--fe-dx': fmt(M[0] * s), '--fe-dy': fmt(M[1] * s) }
 }
