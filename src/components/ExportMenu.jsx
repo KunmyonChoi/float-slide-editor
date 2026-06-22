@@ -5,6 +5,7 @@ import { exportFlatHtml, exportFlatHtmlAllPages, downloadHtml } from '../core/Fl
 import { openAiSettings } from './AiSettingsModal'
 import { openFile } from '../core/FilePicker'
 import { confirmDialog } from './ConfirmDialog'
+import { usePwaInstall } from '../core/pwaInstall'
 
 // .flatproj는 실제로 ZIP 패키지 → MIME을 application/zip으로 맞춰야 OS 열기 패널에서
 // 콘텐츠 타입 매칭으로 회색(선택 불가) 처리되지 않는다.
@@ -26,8 +27,15 @@ export default function FileMenu({ fallbackSample }) {
   const { flatElements, canvasSize, fontImports,
           setViewMode, loadAllPages, clearPageCache, regenerateAllPages, debugMode, setDebugMode } = useFlatStore()
   const { loadHtml, htmlImported } = useEditorStore()
+  const { canInstall } = usePwaInstall()
 
   const hasContent = flatElements.length > 0
+
+  // "앱 설치" — InstallAppBanner가 플랫폼별로 처리(안드로이드 네이티브 창 / iOS 안내 시트)
+  const handleInstallApp = useCallback(() => {
+    setOpen(false)
+    window.dispatchEvent(new CustomEvent('genitor:open-install'))
+  }, [])
 
   // 메뉴 열릴 때 최근 프로젝트 목록 로드
   useEffect(() => {
@@ -328,6 +336,7 @@ export default function FileMenu({ fallbackSample }) {
     // 외부 HTML을 가져온 경우에만 노출 — 처음 가져온 원본으로 되돌리기
     ...(htmlImported ? [{ id: 'revertOriginal', label: '원본으로 되돌리기', action: handleRevertToOriginal }] : []),
     { id: 'sepAi', type: 'separator' },
+    ...(canInstall ? [{ id: 'installApp', label: '앱 설치', shortcut: '홈 화면', action: handleInstallApp }] : []),
     { id: 'aiSettings', label: 'AI 설정', shortcut: 'OpenAI', action: openAiSettings },
     { id: 'sepDebug', type: 'separator' },
     // 샘플 슬라이드는 디버그/데모용 — 디버그 모드일 때만 노출
