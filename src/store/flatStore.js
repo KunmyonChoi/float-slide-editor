@@ -295,6 +295,11 @@ export const useFlatStore = create((set, get) => ({
   /** 속성창 '애니메이션' 탭 활성 여부 — 켜지면 캔버스에 순서 배지 표시 */
   animPanelOpen: false,
   setAnimPanelOpen(v) { set({ animPanelOpen: !!v }) },
+  /** 에디터 애니메이션 미리보기 — null 또는 { revealed, playingStep }. tick은 재생 트리거. */
+  animPreview: null,
+  animPreviewTick: 0,
+  playAnimPreview() { set(s => ({ animPreview: { revealed: 0, playingStep: -1 }, animPreviewTick: s.animPreviewTick + 1 })) },
+  _setAnimPreview(v) { set({ animPreview: v }) },
   /** 발표자 노트 영역 접힘 여부 (기본 접힘) */
   notesCollapsed: true,
   /** 노트 단축키로 열 때 텍스트영역에 자동 포커스 요청(일시 플래그) */

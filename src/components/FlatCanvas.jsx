@@ -5,7 +5,7 @@ import { isBackgroundElement } from '../core/SnapEngine'
 import { useIsTouch } from '../core/pointerEnv'
 import { resolveConnectors, resolveConnectorEndpoints, resolveConnectorCurve, attachTargetAt, connectionPoints, nearestConnectionPoint } from '../core/ConnectorRouting'
 import { getRotatedAABB } from '../core/RotationUtils'
-import { computeSteps } from '../core/slideAnimation'
+import { computeSteps, isHiddenAt, animationCss, directionVars, stepDurations } from '../core/slideAnimation'
 import FlatElementRenderer from './FlatElementRenderer'
 import FlatSelectionOverlay, { FlatGroupOverlay } from './FlatSelectionOverlay'
 import FlatAiBar from './FlatAiBar'
@@ -96,6 +96,8 @@ export default function FlatCanvas() {
           addFlatElement, setCanvasRef, preloadProgress, drawMode, setDrawMode, flatPageCount,
           diagramMode, connectorDraft } = useFlatStore()
   const animPanelOpen = useFlatStore(s => s.animPanelOpen)
+  const animPreview = useFlatStore(s => s.animPreview)
+  const animPreviewTick = useFlatStore(s => s.animPreviewTick)
   const [dragOver, setDragOver] = useState(false)
   const [hoverShapeId, setHoverShapeId] = useState(null) // 다이어그램 모드 연결점 표시용
   const isTouch = useIsTouch()
@@ -146,6 +148,24 @@ export default function FlatCanvas() {
   const renderElements = useMemo(() => resolveConnectors(flatElements), [flatElements])
   const selectedEls = renderElements.filter(e => selectedFlatIds.includes(e.id))
   const selectedEl = selectedEls.length === 1 ? selectedEls[0] : null
+  const animInfo = useMemo(() => computeSteps(renderElements), [renderElements])
+
+  // 애니메이션 미리보기 — 재생 버튼(playAnimPreview) 누르면 단계별 자동 진행 후 정상 복귀
+  useEffect(() => {
+    if (!animPreviewTick) return
+    const info = computeSteps(renderElements)
+    if (info.stepCount === 0) { useFlatStore.getState()._setAnimPreview(null); return }
+    const durs = stepDurations(info, renderElements)
+    const setP = (v) => useFlatStore.getState()._setAnimPreview(v)
+    const timers = []
+    let t = 200
+    for (let s = 0; s < info.stepCount; s++) {
+      timers.push(setTimeout(() => setP({ revealed: s + 1, playingStep: s }), t))
+      t += durs[s] + 350
+    }
+    timers.push(setTimeout(() => setP(null), t))
+    return () => timers.forEach(clearTimeout)
+  }, [animPreviewTick]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // 이미지 data URL로 요소 생성 + 추가
   const insertImageFromDataUrl = useCallback((dataUrl, dropX, dropY) => {
@@ -1209,19 +1229,41 @@ export default function FlatCanvas() {
             onMouseMove={drawMode ? handleDrawMouseMove : (diagramMode ? handleDiagramHover : undefined)}
             onMouseLeave={diagramMode ? () => setHoverShapeId(null) : undefined}
           >
-            {renderElements.map(el => (
-              <FlatElementRenderer
-                key={el.id}
-                element={el}
-                isSelected={selectedFlatIds.includes(el.id)}
-                isEditing={el.id === editingFlatId}
-                scale={scale}
-              />
-            ))}
-            {animPanelOpen && <AnimationBadges elements={renderElements} scale={scale} />}
+            {renderElements.map(el => {
+              // 미리보기 중: 발표 모드와 동일하게 등장/퇴장 적용
+              if (animPreview) {
+                const step = animInfo.stepOf[el.id]
+                if (step != null) {
+                  const playing = animPreview.playingStep >= 0 && step === animPreview.playingStep
+                  const showHidden = isHiddenAt(animInfo, el, animPreview.revealed) && !playing
+                  return (
+                    <div key={el.id} style={{
+                      position: 'absolute', left: el.x, top: el.y, width: el.width, height: el.height,
+                      transformOrigin: 'center center',
+                      opacity: showHidden ? 0 : undefined,
+                      visibility: showHidden ? 'hidden' : undefined,
+                      animation: playing ? animationCss(el.anim, animInfo.offsetOf[el.id]) : undefined,
+                      ...(playing ? (directionVars(el.anim) || {}) : {}),
+                    }}>
+                      <FlatElementRenderer element={{ ...el, x: 0, y: 0 }} isSelected={false} isEditing={false} scale={scale} />
+                    </div>
+                  )
+                }
+              }
+              return (
+                <FlatElementRenderer
+                  key={el.id}
+                  element={el}
+                  isSelected={!animPreview && selectedFlatIds.includes(el.id)}
+                  isEditing={el.id === editingFlatId}
+                  scale={scale}
+                />
+              )
+            })}
+            {animPanelOpen && !animPreview && <AnimationBadges elements={renderElements} scale={scale} />}
             {/* 크롭 중에는 선택 오버레이를 숨김 — 안 그러면 그 위(zIndex 9999)에서 드래그를
                 가로채 크롭(objectPosition) 대신 요소 자체가 이동한다. */}
-            {selectedEls.length === 1 && selectedEl && !croppingFlatId && (
+            {selectedEls.length === 1 && selectedEl && !croppingFlatId && !animPreview && (
               <FlatSelectionOverlay element={selectedEl} scale={scale}
                 otherRects={otherRects} canvasSize={canvasSize} onSnapGuides={setSnapGuides} />
             )}
