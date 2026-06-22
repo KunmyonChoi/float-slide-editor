@@ -12,6 +12,18 @@
   NODE_VERSION = "20"
   # VITE_PPTX_BACKEND_URL = "https://your-backend.example.com"  # 클라우드 백엔드 사용 시
 
+# PWA 매니페스트 MIME 교정(기본 octet-stream → 규격 타입)
+[[headers]]
+  for = "/manifest.webmanifest"
+  [headers.values]
+    Content-Type = "application/manifest+json"
+
+# 서비스워커는 항상 최신 확인(stale SW 고착 방지)
+[[headers]]
+  for = "/sw.js"
+  [headers.values]
+    Cache-Control = "no-cache"
+
 # SPA: 모든 경로를 index.html로 (클라이언트 라우팅 대비)
 [[redirects]]
   from = "/*"
