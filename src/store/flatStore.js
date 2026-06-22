@@ -290,6 +290,8 @@ export const useFlatStore = create((set, get) => ({
   slideListCollapsed: true,
   /** 현재 페이지 발표자 노트(페이지별 저장) */
   pageNotes: '',
+  /** 현재 페이지 슬라이드 전환(페이지별 저장). null=없음, { type:'fade'|'slide'|'zoom', durationMs } */
+  pageTransition: null,
   /** 발표자 노트 영역 접힘 여부 (기본 접힘) */
   notesCollapsed: true,
   /** 노트 단축키로 열 때 텍스트영역에 자동 포커스 요청(일시 플래그) */
@@ -326,6 +328,12 @@ export const useFlatStore = create((set, get) => ({
     })
   },
   /** 현재 페이지 발표자 노트 설정 (캐시에도 즉시 반영) */
+  /** 현재 페이지 슬라이드 전환 설정(없으면 null). 페이지별 저장 + 직렬화 라운드트립 */
+  setPageTransition(t) {
+    if (_currentPageKey && _pageCache[_currentPageKey]) _pageCache[_currentPageKey].transition = t
+    set({ pageTransition: t })
+  },
+
   setPageNotes(text) {
     if (_currentPageKey && _pageCache[_currentPageKey]) _pageCache[_currentPageKey].notes = text
     set({ pageNotes: text })
@@ -465,6 +473,7 @@ export const useFlatStore = create((set, get) => ({
       _pageCache[_currentPageKey].notes = get().pageNotes
       _pageCache[_currentPageKey].notesAudio = get().pageNotesAudio
       _pageCache[_currentPageKey].notesAudioHash = get().pageNotesAudioHash
+      _pageCache[_currentPageKey].transition = get().pageTransition
     }
     if (get().flatElements.length === 0) return
     const existed = _pageCache[_currentPageKey]
@@ -481,6 +490,7 @@ export const useFlatStore = create((set, get) => ({
       notes: get().pageNotes,
       notesAudio: get().pageNotesAudio,
       notesAudioHash: get().pageNotesAudioHash,
+      transition: get().pageTransition,
     }
     get()._syncPageInfo()
   },
@@ -503,6 +513,7 @@ export const useFlatStore = create((set, get) => ({
       pageNotes: cached.notes || '',
       pageNotesAudio: cached.notesAudio || null,
       pageNotesAudioHash: cached.notesAudioHash || '',
+      pageTransition: cached.transition || null,
     })
     get()._syncPageInfo()
     return true
@@ -1880,6 +1891,7 @@ export const useFlatStore = create((set, get) => ({
         notes: cached.notes || '',
         notesAudio: cached.notesAudio || null,
         notesAudioHash: cached.notesAudioHash || '',
+        transition: cached.transition || null,
       }
     }
     // 현재 페이지가 캐시에 없는 경우 (단일 페이지)
@@ -1892,6 +1904,7 @@ export const useFlatStore = create((set, get) => ({
         notes: get().pageNotes || '',
         notesAudio: get().pageNotesAudio || null,
         notesAudioHash: get().pageNotesAudioHash || '',
+        transition: get().pageTransition || null,
       }
     }
     return { pages, currentPageKey: _currentPageKey }
@@ -1935,6 +1948,7 @@ export const useFlatStore = create((set, get) => ({
         notes: _pageCache[key].notes || '',
         notesAudio: _pageCache[key].notesAudio || null,
         notesAudioHash: _pageCache[key].notesAudioHash || '',
+        transition: _pageCache[key].transition || null,
       }
     }
 
@@ -2010,6 +2024,7 @@ export const useFlatStore = create((set, get) => ({
         notes: pagesData[key].notes || '',
         notesAudio: pagesData[key].notesAudio || null,
         notesAudioHash: pagesData[key].notesAudioHash || '',
+        transition: pagesData[key].transition || null,
       }
     }
 
@@ -2030,6 +2045,7 @@ export const useFlatStore = create((set, get) => ({
         pageNotes: page.notes || '',
         pageNotesAudio: page.notesAudio || null,
         pageNotesAudioHash: page.notesAudioHash || '',
+        pageTransition: page.transition || null,
       })
     }
     // 페이지 카운트/인덱스 동기화 — 누락 시 PageBar가 로드 직후 전체 페이지 수를
