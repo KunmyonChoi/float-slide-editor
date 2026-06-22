@@ -2622,7 +2622,7 @@ function SlideTransitionSection() {
       <SectionTitle>슬라이드 전환</SectionTitle>
       <div className="grid grid-cols-4 gap-1">
         {TRANSITION_TYPES.map(([v, label]) => (
-          <button key={v} onClick={() => setType(v)}
+          <button key={v} onClick={() => setType(v)} onMouseDown={e => e.preventDefault()}
             className={`text-xs px-1 py-1 rounded border transition-colors ${
               type === v ? 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30'
                 : 'bg-white/5 text-slate-400 border-white/10 hover:bg-white/10'}`}
@@ -2634,7 +2634,7 @@ function SlideTransitionSection() {
           <p className={`${labelClass} mb-0.5`}>방향(들어오는 쪽)</p>
           <div className="grid grid-cols-4 gap-1">
             {DIRS.map(([d, label]) => (
-              <button key={d} onClick={() => setT({ type, durationMs: dur, dir: d })}
+              <button key={d} onClick={() => setT({ type, durationMs: dur, dir: d })} onMouseDown={e => e.preventDefault()}
                 className={`text-xs py-1 rounded border transition-colors ${
                   dir === d ? 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30'
                     : 'bg-white/5 text-slate-400 border-white/10 hover:bg-white/10'}`}
