@@ -20,7 +20,7 @@ const recorderWindow = window.open(
 | 파라미터    | 필수 | 설명 |
 |------------|------|------|
 | `mode`     | ✅   | 반드시 `popup` |
-| `origin`   | ✅   | 호출 앱의 origin (예: `https://float-slide-editor.netlify.app`) |
+| `origin`   | ✅   | 호출 앱의 origin (예: `https://genitor.netlify.app`) |
 | `session`  | –    | 세션 식별자. 모든 응답 메시지에 그대로 반환됨 |
 | `autoRecord` | –  | `1`로 설정 시 앱 준비 완료 후 자동 녹화 시작 |
 
