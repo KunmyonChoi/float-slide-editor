@@ -22,6 +22,19 @@ export function slideTransitionCss(t) {
   return `${TRANSITION_KEYFRAMES[t.type]} ${dur}ms ease-out`
 }
 
+// 슬라이드 전환 방향 변수(slide 타입만) — 들어오는 슬라이드가 해당 방향에서 들어옴.
+const SLIDE_OFF = '30%'
+export function slideTransitionVars(t) {
+  if (!t || t.type !== 'slide') return null
+  switch (t.dir) {
+    case 'left': return { '--fe-sx': `-${SLIDE_OFF}`, '--fe-sy': '0' }
+    case 'up': return { '--fe-sx': '0', '--fe-sy': `-${SLIDE_OFF}` }
+    case 'down': return { '--fe-sx': '0', '--fe-sy': SLIDE_OFF }
+    case 'right':
+    default: return { '--fe-sx': SLIDE_OFF, '--fe-sy': '0' } // 기본: 오른쪽에서
+  }
+}
+
 /**
  * FlatPresenter — flat 편집 결과 기반 발표 모드
  * 전체화면, 편집 UI 없음, 페이지 네비게이션 (화살표/클릭)
@@ -305,6 +318,7 @@ export default function FlatPresenter() {
             style={{
               position: 'relative', width: '100%', height: '100%', overflow: 'hidden',
               animation: slideTransitionCss(page?.transition),
+              ...(slideTransitionVars(page?.transition) || {}),
             }}
           >
             {elements.map(el => {
