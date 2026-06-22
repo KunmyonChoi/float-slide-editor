@@ -950,10 +950,17 @@ export default function FlatCanvas() {
       if (d && d.id === e.pointerId) {
         pointerPanRef.current = null
         stage.style.cursor = panToolRef.current ? 'grab' : ''
-        // 빈 영역을 끌지 않고 탭만 했으면 선택 해제(손 도구에서 선택 해제 경로 제공)
-        if (d.empty && Math.hypot(e.clientX - d.startX, e.clientY - d.startY) < TAP) {
-          useFlatStore.getState().setSelectedFlat(null)
-          setHoverShapeId(null)
+        // 끌지 않고 탭만 했을 때: 크롭 중이면 크롭 종료, 빈 영역이면 선택 해제.
+        // (팬 캡처가 크롭 백드롭·배경 클릭을 가로채 일반 해제 경로가 막히므로 여기서 제공)
+        if (Math.hypot(e.clientX - d.startX, e.clientY - d.startY) < TAP) {
+          const st = useFlatStore.getState()
+          if (st.croppingFlatId) {
+            st.setCroppingFlat(null)
+            setHoverShapeId(null)
+          } else if (d.empty) {
+            st.setSelectedFlat(null)
+            setHoverShapeId(null)
+          }
         }
       }
     }
