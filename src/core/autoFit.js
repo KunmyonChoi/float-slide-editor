@@ -21,6 +21,7 @@ export function estimateCodeHeight(code, { width, fontSizePx = 15, lineHeightRat
 
 function plainOf(el) {
   if (el.isCode) return el.code || ''
+  if (el.isMarkdown) return el.md || ''
   if (!el.isRich) return el.content || ''
   // <br>/<div> 경계를 줄바꿈으로 보존한 뒤 텍스트 추출 (textContent는 br을 무시함)
   const html = (el.content || '').replace(/<br\s*\/?>/gi, '\n').replace(/<\/(div|p)>/gi, '\n')

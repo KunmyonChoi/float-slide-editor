@@ -5,6 +5,7 @@ import { HistoryStack } from '../core/HistoryStack'
 import { isBackgroundElement } from '../core/SnapEngine'
 import { DEFAULT_THEME_ID, getTheme, themeBackgroundStyles, themeRoleStyles } from '../core/themes'
 import { highlightCode } from '../core/codeHighlight'
+import { renderMarkdown } from '../core/markdown'
 import { applyAutoFit } from '../core/autoFit'
 
 // 배경 레이어 판정 — SnapEngine의 canonical 헬퍼 재노출(명시 플래그/__bg 기반)
@@ -1252,6 +1253,14 @@ export const useFlatStore = create((set, get) => ({
     const reqLang = el?.lang || 'auto'
     const { html, lang } = highlightCode(rawCode, reqLang)
     get().updateFlatElement(id, { code: rawCode, content: html, isRich: true, lang: reqLang === 'auto' ? lang : reqLang })
+    set({ editingFlatId: null })
+    get().reflowAutoFit()
+  },
+
+  /** 마크다운 요소 편집 커밋 — 원본(md) 저장 + 렌더(새니타이즈) + 오토핏 reflow */
+  commitMarkdownEdit(id, rawMd) {
+    const html = renderMarkdown(rawMd)
+    get().updateFlatElement(id, { md: rawMd, content: html, isRich: true })
     set({ editingFlatId: null })
     get().reflowAutoFit()
   },
