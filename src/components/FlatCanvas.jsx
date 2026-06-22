@@ -1187,7 +1187,9 @@ export default function FlatCanvas() {
                 scale={scale}
               />
             ))}
-            {selectedEls.length === 1 && selectedEl && (
+            {/* 크롭 중에는 선택 오버레이를 숨김 — 안 그러면 그 위(zIndex 9999)에서 드래그를
+                가로채 크롭(objectPosition) 대신 요소 자체가 이동한다. */}
+            {selectedEls.length === 1 && selectedEl && !croppingFlatId && (
               <FlatSelectionOverlay element={selectedEl} scale={scale}
                 otherRects={otherRects} canvasSize={canvasSize} onSnapGuides={setSnapGuides} />
             )}
@@ -1196,7 +1198,7 @@ export default function FlatCanvas() {
               <FlatAiBar element={selectedEl} scale={scale} canvasRef={canvasRef} />
             )}
             {/* 이미지 단일 선택 시 전용 AI 디자인 향상 플로팅바 (편집 중·발표 중에는 숨김) */}
-            {selectedEls.length === 1 && selectedEl && selectedEl.type === 'image' && !editingFlatId && mode !== 'present' && (
+            {selectedEls.length === 1 && selectedEl && selectedEl.type === 'image' && !editingFlatId && !croppingFlatId && mode !== 'present' && (
               <FlatImageAiBar element={selectedEl} scale={scale} canvasRef={canvasRef} />
             )}
             {/* 커넥터 단일 선택 시 빠른 편집 미니툴바 */}
