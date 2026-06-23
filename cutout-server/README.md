@@ -38,7 +38,8 @@ curl http://localhost:8322/api/health
 빌드/푸시(메인테이너):
 ```bash
 docker login
-sh cutout-server/build-and-push.sh   # buildx 멀티아치(amd64+arm64) → dilly97/float-cutout:latest
+sh cutout-server/build-and-push.sh             # 기본: amd64 단일(빠름) → dilly97/float-cutout:latest
+sh cutout-server/build-and-push.sh multiarch   # amd64+arm64 (arm64는 QEMU라 느림 — Mac은 네이티브 런처 권장)
 ```
 
 > ⚠️ **Docker on macOS/Windows는 GPU(Metal/CUDA)를 못 씁니다 → CPU(느림).** Mac/Win에서 GPU를 원하면 **A(네이티브)** 를 쓰세요.
