@@ -166,8 +166,6 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
           // 외곽선(텍스트 스트로크) — 그래디언트가 아니면 div에 직접 적용
           ...(!isGradientText && styles.textStroke && styles.textStroke !== 'none' ? { WebkitTextStroke: styles.textStroke, paintOrder: 'stroke fill' } : {}),
           opacity: styles.opacity,
-          // 세로 오프셋(baseline offset): 양수=위로. transform이라 레이아웃 중립(autoFit 무영향).
-          ...(styles.baselineOffset ? { transform: `translateY(${-parseFloat(styles.baselineOffset)}px)` } : {}),
           padding: styles.padding,
           overflow: (styles.overflow === 'hidden' || styles.overflow === 'auto' || styles.overflow === 'scroll' ||
                      styles.overflowX === 'hidden' || styles.overflowX === 'auto' || styles.overflowX === 'scroll')
@@ -210,11 +208,18 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
         onClick={handleClick}
         onDoubleClick={handleDoubleClick}
       >
-        {showPlaceholder
-          ? element.placeholder
-          : isGradientText
-            ? <span style={gradientTextStyle}>{textContent}</span>
-            : textContent}
+        {(() => {
+          const inner = showPlaceholder
+            ? element.placeholder
+            : isGradientText
+              ? <span style={gradientTextStyle}>{textContent}</span>
+              : textContent
+          // 세로 오프셋(양수=위로): 박스(배경/테두리)는 고정, 텍스트만 이동.
+          // offset 있을 때만 내부 래퍼로 감싸 transform(없으면 DOM 동일 = 기존 무영향).
+          const off = parseFloat(styles.baselineOffset) || 0
+          if (!off) return inner
+          return <div style={{ transform: `translateY(${-off}px)` }}>{inner}</div>
+        })()}
       </div>
     )
   }
