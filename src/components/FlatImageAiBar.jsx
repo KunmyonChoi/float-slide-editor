@@ -337,7 +337,8 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
               {mode === 'cutout' ? (
                 <div style={{ fontSize: 11, color: '#64748b' }}>
                   분리된 전경(투명 배경). 적용하면 <b>원본 + 타이틀 텍스트 + 전경</b> 3층이 만들어져
-                  텍스트가 피사체 <b>뒤</b>로 가려집니다. 적용 후 'TITLE'을 더블클릭해 내용을 입력하세요.
+                  텍스트가 피사체 <b>뒤</b>로 가려집니다. 'TITLE'을 <b>드래그해 원하는 위치</b>에 놓고,
+                  더블클릭해 내용을 입력하세요(텍스트는 독립 레이어라 자유 배치).
                 </div>
               ) : (
                 <>
