@@ -203,8 +203,8 @@ export default function FlatPropertyContent() {
           </div>
         )}
 
-        {/* 투명도 전용 — video, svg만 (poly shape는 PolyShapeSection 내 투명도 사용) */}
-        {!el.shapeType && (el.type === 'video' || el.type === 'svg') && (
+        {/* 투명도 전용 — image, video, svg (poly shape는 PolyShapeSection 내 투명도 사용) */}
+        {!el.shapeType && (el.type === 'image' || el.type === 'video' || el.type === 'svg') && (
           <div className="pt-1 border-t border-white/5">
             <OpacityOnlySection styles={el.styles} updateStyle={updateStyle} previewStyle={previewStyle} />
           </div>
@@ -260,6 +260,9 @@ function MultiElementPanel({ elements }) {
   const commonBg = getCommonStyle('backgroundColor')
   const commonOpacity = getCommonStyle('opacity')
   const commonBorderRadius = getCommonStyle('borderRadius')
+
+  // '피사체 뒤 텍스트' 합성의 전경 컷아웃(clickThrough)만 따로 투명도 조절 — 그룹 해제 불필요
+  const fgCutout = elements.find(e => e.clickThrough)
 
   return (
     <>
@@ -503,6 +506,23 @@ function MultiElementPanel({ elements }) {
             />
           </div>
         </div>
+
+        {/* 전경(피사체) 투명도 — 합성 그룹에 컷아웃이 있을 때만 */}
+        {fgCutout && (
+          <div className="pt-1 border-t border-white/5">
+            <SectionTitle>전경(피사체)</SectionTitle>
+            <p className={`${labelClass} mb-0.5`}>
+              투명도 <span className="text-slate-600">{fgCutout.styles?.opacity ?? 1}</span>
+            </p>
+            <input
+              type="range" min="0" max="1" step="0.01"
+              value={fgCutout.styles?.opacity ?? 1}
+              onChange={e => useFlatStore.getState().updateFlatElement(fgCutout.id, { styles: { opacity: e.target.value } })}
+              className="w-full" style={{ accentColor: '#6366f1' }}
+            />
+            <p className="text-[10px] text-slate-600 mt-0.5">텍스트 뒤 전경(인물/객체)만 투명하게 — 배경은 그대로</p>
+          </div>
+        )}
 
         {/* 모서리 둥글기 */}
         <div className="pt-1 border-t border-white/5">
