@@ -50,11 +50,15 @@ function NativeSection({ os, recommended }) {
           </a>
         </li>
         <li>압축 해제 후 <b>{isMac ? 'launch.command' : 'launch.bat'}</b> 더블클릭</li>
-        <li>
-          {isMac
-            ? '처음엔 우클릭 → "열기"(Gatekeeper 경고 시). Python·라이브러리·모델이 자동 설치됩니다.'
-            : 'SmartScreen 경고 시 "추가 정보 → 실행". Python·라이브러리·모델이 자동 설치됩니다.'}
-        </li>
+        {isMac ? (
+          <li>
+            미서명 경고로 차단되면: 우클릭 → "열기"를 시도하고, 그래도 막히면
+            <b> 시스템 설정 → 개인정보 보호 및 보안 → 아래 '보안' 섹션의 "그래도 열기"</b>를 누른 뒤 다시 실행하세요.
+            그 후 Python·라이브러리·모델이 자동 설치됩니다.
+          </li>
+        ) : (
+          <li>SmartScreen 경고 시 "추가 정보 → 실행". Python·라이브러리·모델이 자동 설치됩니다.</li>
+        )}
         <li>검은 창에 <b>http://localhost:8322</b> 시작 표시가 뜨면 준비 완료 — 이 창에서 다시 시도하세요.</li>
       </ol>
       <div style={{ fontSize: 11, color: '#64748b', marginTop: 6 }}>
