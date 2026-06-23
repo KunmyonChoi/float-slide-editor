@@ -150,6 +150,9 @@ export default function FlatInlineEditor({ element }) {
     if (element.autoHeight) useFlatStore.getState().reflowAutoFit({ [element.id]: ref.current.scrollHeight })
     // 인라인 서식이 <span style>로 생성되도록 (export 파서가 인라인 스타일을 읽음)
     try { document.execCommand('styleWithCSS', false, true) } catch { /* noop */ }
+    // Enter 줄바꿈을 <div> 블록 대신 <br>(단일 블록)으로 — 멀티라인 선택에 형광펜(hiliteColor) 등
+    // 서식이 줄별로 끊기지 않고 일관 적용되게(블록 경계에서 execCommand가 첫 줄만 처리하는 문제 완화).
+    try { document.execCommand('defaultParagraphSeparator', false, 'br') } catch { /* noop */ }
     document.addEventListener('selectionchange', refreshSelection)
 
     // 페이지 이동/모드 전환 시 _saveCurrentPage가 이 콜백을 호출하여 커밋
