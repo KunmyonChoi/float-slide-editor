@@ -13,7 +13,10 @@
 ## 설치/실행 방법 — 두 갈래
 
 ### A. 네이티브 런처 (권장: 데스크톱 + GPU) — Docker 불필요
-`uv`로 Python·의존성·모델을 첫 실행 때 자동 설치. **GPU 가속**(mac=MPS, win=CUDA).
+런처가 **`uv`를 자동 설치 → Python·의존성·모델까지 첫 실행 때 자동** 확보(수동 설치 불필요). **GPU 가속**(mac=MPS, win=CUDA).
+자동 설치가 막히는 환경이면 uv만 먼저 수동 설치 후 런처 재실행:
+- macOS/Linux: `curl -LsSf https://astral.sh/uv/install.sh | sh`
+- Windows: `powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"`
 - **macOS**: `genitor-cutout-mac.zip` 받아 압축 해제 → `launch.command` 더블클릭.
   미서명 차단 시 우클릭→"열기", 그래도 막히면 **시스템 설정 → 개인정보 보호 및 보안 → '보안' 섹션의 "그래도 열기"** 클릭 후 재실행.
 - **Windows(NVIDIA)**: `genitor-cutout-win.zip` 받아 압축 해제 → `launch.bat` 더블클릭(SmartScreen→추가 정보→실행)

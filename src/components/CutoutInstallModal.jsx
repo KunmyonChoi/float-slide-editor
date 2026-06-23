@@ -62,8 +62,18 @@ function NativeSection({ os, recommended }) {
         <li>검은 창에 <b>http://localhost:8322</b> 시작 표시가 뜨면 준비 완료 — 이 창에서 다시 시도하세요.</li>
       </ol>
       <div style={{ fontSize: 11, color: '#64748b', marginTop: 6 }}>
-        최초 1회만 수 분(토치·모델 다운로드), 이후엔 즉시 시작. 별도 프로그램 설치 불필요.
+        런처가 <b>uv(파이썬 관리자)</b>를 자동 설치하고 <b>Python</b>까지 자동 확보합니다(둘 다 수동 설치 불필요).
+        최초 1회만 수 분(토치·모델 다운로드), 이후엔 즉시 시작.
       </div>
+      <details style={{ marginTop: 6, fontSize: 11.5, color: '#94a3b8' }}>
+        <summary style={{ cursor: 'pointer' }}>자동 설치가 막히면 — uv를 먼저 수동 설치</summary>
+        <div style={{ marginTop: 4 }}>
+          아래를 {isMac ? '터미널' : 'PowerShell'}에 붙여 실행한 뒤, 다시 런처를 실행하세요. (Python은 uv가 알아서 받습니다.)
+          <CopyRow text={isMac
+            ? 'curl -LsSf https://astral.sh/uv/install.sh | sh'
+            : 'powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"'} />
+        </div>
+      </details>
     </Section>
   )
 }
