@@ -1566,6 +1566,54 @@ export const useFlatStore = create((set, get) => ({
     })
   },
 
+  /**
+   * "피사체 뒤 텍스트" 3층 구성: 원본(배경) + 타이틀 텍스트(중간) + 전경 컷아웃(최상위).
+   * cutoutContent = 전경 알파 PNG(data URL, 원본 박스와 동일 영역). 배경+컷아웃만 한 그룹으로 묶고
+   * (타이틀은 독립 → 자유 배치) applyLayoutElements로 단일 undo. 적용 후 타이틀 선택.
+   * @returns {string|null} 생성된 타이틀 텍스트 요소 id
+   */
+  applyTextBehindSubject(imageId, cutoutContent, opts = {}) {
+    const els = get().flatElements
+    const orig = els.find(e => e.id === imageId)
+    if (!orig || !cutoutContent) return null
+    const maxZ = els.length ? Math.max(...els.map(e => e.zIndex)) : 0
+    const gid = 'grp-' + (globalThis.crypto?.randomUUID?.() || Math.random().toString(36).slice(2, 11))
+
+    // 타이틀: 이미지 박스 중앙, 큰 글자(레퍼런스 느낌). 텍스트 < 컷아웃이라 피사체 뒤로 가려짐.
+    // 그룹에 넣지 않음 → 사용자가 자유롭게 드래그해 원하는 위치에 배치(z-순서가 가림 효과 유지).
+    const fontPx = Math.max(40, Math.round(orig.height * 0.32))
+    const textEl = {
+      id: nextFlatId(), sourceId: null, type: 'text',
+      content: opts.titleText || 'TITLE', isRich: false, merged: false,
+      x: orig.x, y: Math.round(orig.y + orig.height / 2 - fontPx * 0.7),
+      width: orig.width, height: Math.round(fontPx * 1.4),
+      zIndex: maxZ + 1,
+      styles: {
+        fontSize: fontPx + 'px', fontWeight: '800', color: 'rgba(255,255,255,0.92)',
+        textAlign: 'center', lineHeight: '1', letterSpacing: '0.02em',
+        fontFamily: orig.styles?.fontFamily || 'inherit',
+      },
+    }
+    // 전경 컷아웃: 원본과 동일 박스 + 동일 채움 전략(objectFit/objectPosition)으로 정확히 겹침.
+    // 컷아웃은 원본 해상도로 분리돼 고유 종횡비가 같으므로, 같은 objectFit이면 그룹 리사이즈에도
+    // 원본과 똑같이 변형돼 인물·배경이 어긋나지 않는다.
+    const cutoutStyles = {}
+    if (orig.styles?.objectFit) cutoutStyles.objectFit = orig.styles.objectFit
+    if (orig.styles?.objectPosition) cutoutStyles.objectPosition = orig.styles.objectPosition
+    const cutoutEl = {
+      id: nextFlatId(), sourceId: null, type: 'image',
+      content: cutoutContent, isRich: false, merged: false,
+      x: orig.x, y: orig.y, width: orig.width, height: orig.height,
+      zIndex: maxZ + 2, groupId: gid,
+      clickThrough: true, // 클릭이 아래 타이틀로 통과(컷아웃은 배경과 그룹으로 함께 조작)
+      styles: cutoutStyles,
+    }
+    // 원본도 그룹에 포함(함께 이동) — 제거 후 groupId 부여본으로 재추가하여 단일 undo.
+    get().applyLayoutElements([imageId], [{ ...orig, groupId: gid }, textEl, cutoutEl])
+    set({ selectedFlatIds: [textEl.id] }) // 타이틀 선택 → 더블클릭해 'TITLE' 교체
+    return textEl.id
+  },
+
   /** 여러 요소에 동일 changes 적용 + batch 히스토리 */
   batchUpdateFlatElements(ids, changes) {
     const els = get().flatElements

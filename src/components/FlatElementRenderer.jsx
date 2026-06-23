@@ -89,8 +89,10 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
     zIndex: isFullCanvasBg ? zIndex - 1000000 : zIndex,
     boxSizing: 'border-box',
     cursor: 'default',
-    // 배경 레이어: 클릭이 통과(선택 안 됨) — 단, 패널에서 선택된 동안엔 정상 처리
-    pointerEvents: (isFullCanvasBg && !isSelected) ? 'none' : undefined,
+    // 배경 레이어: 클릭이 통과(선택 안 됨) — 단, 패널에서 선택된 동안엔 정상 처리.
+    // clickThrough(예: '피사체 뒤 텍스트' 전경 컷아웃): 그룹에 속한 동안만 통과 → 아래 텍스트 클릭 가능
+    //   (그룹 선택으로 함께 조작되므로 직접 클릭 불필요). 그룹 해제 시엔 다시 선택/수정 가능.
+    pointerEvents: (element.clickThrough && element.groupId) ? 'none' : ((isFullCanvasBg && !isSelected) ? 'none' : undefined),
     outline: isSelected
       ? `2px solid ${element.locked ? 'rgba(148,163,184,0.6)' : 'rgba(99,102,241,0.8)'}`
       : undefined,
