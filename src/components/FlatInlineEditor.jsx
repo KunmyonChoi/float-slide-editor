@@ -115,8 +115,19 @@ export default function FlatInlineEditor({ element }) {
       // plain text: escape 후 줄바꿈 변환
       ref.current.innerHTML = escapePlain(content)
     }
-    // preventScroll: 편집 진입 시 브라우저가 포커스 요소를 보이려 캔버스 스크롤 컨테이너를
-    // 움직여 화면이 위로 쏠리던 현상 방지.
+    // 편집 진입 시 포커스/전체선택이 캔버스 스크롤 컨테이너를 움직여 화면이 쏠리는 것 방지:
+    // 스크롤 위치를 저장하고 포커스·선택 후 복원(브라우저 자동 스크롤 취소). preventScroll만으론
+    // 박스보다 긴 텍스트의 '전체 선택'이 선택을 보이려 스크롤시키는 것을 못 막음.
+    const scrollers = []
+    for (let p = ref.current.parentElement; p; p = p.parentElement) {
+      const ov = getComputedStyle(p)
+      if (/(auto|scroll|overlay)/.test(ov.overflow + ov.overflowY + ov.overflowX)) scrollers.push(p)
+    }
+    const sc = document.scrollingElement || document.documentElement
+    if (sc) scrollers.push(sc)
+    const saved = scrollers.map(s => [s, s.scrollTop, s.scrollLeft])
+    const restoreScroll = () => saved.forEach(([s, t, l]) => { s.scrollTop = t; s.scrollLeft = l })
+
     ref.current.focus({ preventScroll: true })
     // 데스크톱: 전체 선택 / 터치: 끝에 캐럿만 (진입 즉시 선택바·OS 메뉴가 글씨를 가리지 않도록)
     const sel = window.getSelection()
@@ -125,6 +136,8 @@ export default function FlatInlineEditor({ element }) {
     if (isCoarsePointer()) range.collapse(false)
     sel.removeAllRanges()
     sel.addRange(range)
+    restoreScroll()
+    requestAnimationFrame(restoreScroll)
     committedRef.current = false
     setEditorRect(ref.current.getBoundingClientRect()) // 이모지 버튼 앵커
     // 오토핏 요소: 진입 즉시 실제 높이로 컨테이너 동기화
