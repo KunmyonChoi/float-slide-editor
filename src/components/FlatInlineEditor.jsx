@@ -240,6 +240,11 @@ export default function FlatInlineEditor({ element }) {
     if (!el || !sel || sel.rangeCount === 0 || sel.isCollapsed) return
     const range = sel.getRangeAt(0)
     const clampSz = (v) => Math.max(FONT_MIN, Math.min(FONT_MAX, Math.round(v)))
+    // 전체 선택 여부(공백 무시) — 전체면 요소 base font-size도 함께 가감해 줄 높이 strut를
+    // 박스/엔터 적용과 일치시킨다(줄간격이 달라 보이던 문제).
+    const allTxt = (el.textContent || '').replace(/\s/g, '')
+    const selTxt = (sel.toString() || '').replace(/\s/g, '')
+    const wholeSelected = allTxt.length > 0 && selTxt.length >= allTxt.length
 
     const targets = []
     const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, null)
@@ -285,8 +290,13 @@ export default function FlatInlineEditor({ element }) {
       nr.setStartBefore(touched[0]); nr.setEndAfter(touched[touched.length - 1])
       sel.removeAllRanges(); sel.addRange(nr)
     }
+    // 전체 선택이면 요소 base font-size도 가감 → strut(줄 높이 기준)가 박스/엔터 적용과 동일
+    if (wholeSelected) {
+      const base = parseFloat(styles.fontSize) || 16
+      useFlatStore.getState().updateFlatElement(element.id, { styles: { fontSize: clampSz(base + delta) + 'px' } })
+    }
     refreshSelection()
-  }, [refreshSelection])
+  }, [refreshSelection, styles.fontSize, element.id])
 
   // 선택 영역에 하이퍼링크 적용 (Ctrl+K / 툴바)
   const applyLink = useCallback(async () => {
