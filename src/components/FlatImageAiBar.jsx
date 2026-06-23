@@ -5,7 +5,8 @@ import { hasApiKey, editImage, buildImageEnhancePrompt } from '../core/OpenAICli
 import { captureElementRegion } from '../core/captureCanvasRegion'
 import { openAiSettings } from './AiSettingsModal'
 import { INFOGRAPHIC_STYLES } from '../core/aiImageStyles'
-import { segmentImage, checkCutoutBackend, cutoutDockerRunCommand } from '../core/CutoutBackendClient'
+import { segmentImage, checkCutoutBackend } from '../core/CutoutBackendClient'
+import CutoutInstallModal from './CutoutInstallModal'
 import { BlobStore } from '../core/BlobStore'
 
 // 이미지 요소의 원본 소스(content) → Blob. idb 참조면 BlobStore, 아니면 직접 fetch.
@@ -52,6 +53,8 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
   const abortRef = useRef(null)
   const captureRef = useRef('') // 입력 캡처 — 재생성 시 재사용
   const cutoutBlobRef = useRef(null) // 분리 결과 PNG blob — 적용 시 data URL로 변환
+  const [serverDown, setServerDown] = useState(false) // 분리 서버 미연결 → 설치 안내 노출
+  const [showInstall, setShowInstall] = useState(false)
   const [rect, setRect] = useState(null)
   const [tick, setTick] = useState(0)
 
@@ -86,6 +89,7 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
     captureRef.current = ''
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setPhase('idle'); setMode('enhance'); setError(''); setStatus(''); setPrompt(''); setImageUrl(''); setZoom(false)
+    setServerDown(false); setShowInstall(false)
     return () => { abortRef.current?.abort() }
   }, [element.id])
 
@@ -163,12 +167,13 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
     abortRef.current?.abort()
     const ctrl = new AbortController()
     abortRef.current = ctrl
-    setPhase('loading'); setError(''); setImageUrl(''); setStatus('분리 서버 확인 중…')
+    setPhase('loading'); setError(''); setImageUrl(''); setServerDown(false); setStatus('분리 서버 확인 중…')
     try {
       const ok = await checkCutoutBackend(true)
       if (ctrl.signal.aborted) return
       if (!ok) {
-        setError('피사체 분리 서버에 연결할 수 없습니다. 서버를 실행하세요:\n' + cutoutDockerRunCommand())
+        setServerDown(true)
+        setError('피사체 분리 서버에 연결할 수 없습니다. 한 번만 설치하면 됩니다.')
         setPhase('error'); return
       }
       setStatus('이미지 불러오는 중…')
@@ -198,7 +203,7 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
 
   const cancel = useCallback(() => {
     abortRef.current?.abort()
-    setPhase('idle'); setError(''); setImageUrl(''); setZoom(false)
+    setPhase('idle'); setError(''); setImageUrl(''); setZoom(false); setServerDown(false)
   }, [])
 
   if (!rect) return null
@@ -360,6 +365,9 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
 
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
             <button type="button" onClick={cancel} style={ghostBtnStyle}>취소</button>
+            {serverDown && phase === 'error' && (
+              <button type="button" onClick={() => setShowInstall(true)} style={primaryBtnStyle}>설치 안내</button>
+            )}
             {phase === 'compose' && (
               <button type="button" onClick={() => run('edit', prompt)} style={primaryBtnStyle}>편집 실행</button>
             )}
@@ -389,6 +397,9 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
           <img src={imageUrl} alt="" style={{ maxWidth: '92vw', maxHeight: '92vh', objectFit: 'contain' }} />
         </div>
       )}
+
+      {/* 분리 서버 설치 안내(OS 감지, 다운로드/도커) */}
+      {showInstall && <CutoutInstallModal onClose={() => setShowInstall(false)} />}
     </>,
     document.body
   )

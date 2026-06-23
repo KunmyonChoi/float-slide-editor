@@ -9,9 +9,27 @@ export const CUTOUT_DEFAULT_PORT = 8322
 export const CUTOUT_DOCKER_IMAGE = 'dilly97/float-cutout'
 const CUTOUT_URL_KEY = 'cutout-backend-url'
 
-/** `docker run` 안내 명령 (UI 힌트용) — GPU 이미지. CPU/macOS는 `:cpu` 태그(README 참고). */
-export function cutoutDockerRunCommand() {
-  return `docker rm -f float-cutout 2>/dev/null; docker run -d --gpus all --pull=always --name float-cutout -p ${CUTOUT_DEFAULT_PORT}:${CUTOUT_DEFAULT_PORT} ${CUTOUT_DOCKER_IMAGE}:gpu`
+// 네이티브 런처 패키지 다운로드 URL(GitHub Releases, 태그 latest). 소스 없이 앱에서 바로 받기.
+const GH_REPO = 'KunmyonChoi/float-slide-editor'
+export const CUTOUT_DOWNLOADS = {
+  mac: `https://github.com/${GH_REPO}/releases/latest/download/genitor-cutout-mac.zip`,
+  win: `https://github.com/${GH_REPO}/releases/latest/download/genitor-cutout-win.zip`,
+}
+
+/** 사용자 OS 추정: 'mac' | 'win' | 'linux' | 'other'. */
+export function detectCutoutOS() {
+  if (typeof navigator === 'undefined') return 'other'
+  const p = (navigator.userAgentData?.platform || navigator.platform || navigator.userAgent || '').toLowerCase()
+  if (/mac|iphone|ipad|ipod/.test(p)) return 'mac'
+  if (/win/.test(p)) return 'win'
+  if (/linux|x11|android/.test(p)) return 'linux'
+  return 'other'
+}
+
+/** 단일 멀티플랫폼 이미지. GPU(NVIDIA 리눅스)는 `--gpus all` opt-in(없으면 자동 CPU). */
+export function cutoutDockerRunCommand({ gpu = false } = {}) {
+  const g = gpu ? '--gpus all ' : ''
+  return `docker rm -f float-cutout 2>/dev/null; docker run -d ${g}--pull=always --name float-cutout -p ${CUTOUT_DEFAULT_PORT}:${CUTOUT_DEFAULT_PORT} ${CUTOUT_DOCKER_IMAGE}`
 }
 
 /** 백엔드 베이스 URL (localStorage > 빌드 env > 기본 localhost:8322). */
