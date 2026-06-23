@@ -88,7 +88,7 @@ export default function FlatSelectionOverlay({ element, scale, otherRects, canva
         .filter(el => {
           if (el.id === element.id) return false
           if (el.zIndex <= element.zIndex) return false
-          if (el.clickThrough) return false // 클릭 통과 레이어(예: 피사체 뒤 텍스트 컷아웃)는 대상 아님
+          if (el.clickThrough && el.groupId) return false // 클릭 통과 레이어(그룹 중 컷아웃)는 대상 아님(해제 시 선택 가능)
           // 배경 요소 제외
           if (el.type === 'shape' && !el.content
             && Math.abs(el.width - canvasSize.w) < 2 && Math.abs(el.height - canvasSize.h) < 2
