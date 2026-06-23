@@ -21,15 +21,6 @@ async function elementImageBlob(content) {
   const res = await fetch(content)
   return res.blob()
 }
-// Blob → data URL (컷아웃 결과를 프로젝트에 영속 저장)
-function blobToDataUrl(blob) {
-  return new Promise((resolve, reject) => {
-    const fr = new FileReader()
-    fr.onload = () => resolve(fr.result)
-    fr.onerror = reject
-    fr.readAsDataURL(blob)
-  })
-}
 
 /**
  * FlatImageAiBar — 이미지 요소를 단일 선택했을 때 뜨는 전용 AI 플로팅바.
@@ -196,8 +187,10 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
   const applyCutout = useCallback(async () => {
     const blob = cutoutBlobRef.current
     if (!blob) return
-    const dataUrl = await blobToDataUrl(blob)
-    useFlatStore.getState().applyTextBehindSubject(element.id, dataUrl)
+    // 컷아웃 PNG는 BlobStore(idb://)에 저장 — 프로젝트 JSON 비대 방지(일반 이미지와 동일,
+    // ProjectSerializer가 저장 시 media/로 패킹). content엔 참조만 들어감.
+    const key = await BlobStore.put(blob)
+    useFlatStore.getState().applyTextBehindSubject(element.id, BlobStore.toRef(key))
     setPhase('idle'); setImageUrl(''); setZoom(false)
   }, [element.id])
 
