@@ -498,6 +498,8 @@ export default function FlatInlineEditor({ element }) {
     // 편집 중엔 입력 내용이 모두 보이도록 visible — auto면 내용이 박스보다 클 때(예: 줄마다
     // 글자 크기가 다른 rich text) 세로 스크롤바가 생겨 거슬림. 표시 모드도 기본 overflow visible.
     overflow: 'visible',
+    // 세로 오프셋(양수=위로)을 편집 중에도 동일 적용 — 표시와 위치 일치(커밋 시 점프 방지).
+    ...(parseFloat(styles.baselineOffset) ? { transform: `translateY(${-parseFloat(styles.baselineOffset)}px)` } : {}),
   }
 
   return (

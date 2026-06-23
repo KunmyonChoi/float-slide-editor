@@ -34,7 +34,7 @@ const FLAT_PRESETS = {
   text: {
     type: 'text', width: 200, height: 40,
     content: '새 텍스트', isRich: false, merged: false,
-    styles: { ...DEFAULT_STYLES, padding: '4px 8px' },
+    styles: { ...DEFAULT_STYLES, lineHeight: '1.2', padding: '4px 8px' },
   },
   rect: {
     type: 'shape', width: 150, height: 100,
