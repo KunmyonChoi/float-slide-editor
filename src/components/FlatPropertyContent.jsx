@@ -1052,6 +1052,13 @@ function FontSection({ el, styles, updateStyle, previewStyle, isGradientText, li
           onPreview={previewStyle && (v => previewStyle('letterSpacing', v + 'px'))}
           unit="px" step={0.5}
         />
+        <NumInput
+          label="세로 오프셋"
+          value={parseFloat(styles.baselineOffset) || 0}
+          onChange={v => updateStyle('baselineOffset', v)}
+          onPreview={previewStyle && (v => previewStyle('baselineOffset', v))}
+          unit="px" step={1} min={-500} max={500}
+        />
       </div>
 
       {/* 내부 여백 — 상/하/좌/우 개별 설정(padding 4값 shorthand로 저장) */}

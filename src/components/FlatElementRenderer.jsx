@@ -166,6 +166,8 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
           // 외곽선(텍스트 스트로크) — 그래디언트가 아니면 div에 직접 적용
           ...(!isGradientText && styles.textStroke && styles.textStroke !== 'none' ? { WebkitTextStroke: styles.textStroke, paintOrder: 'stroke fill' } : {}),
           opacity: styles.opacity,
+          // 세로 오프셋(baseline offset): 양수=위로. transform이라 레이아웃 중립(autoFit 무영향).
+          ...(styles.baselineOffset ? { transform: `translateY(${-parseFloat(styles.baselineOffset)}px)` } : {}),
           padding: styles.padding,
           overflow: (styles.overflow === 'hidden' || styles.overflow === 'auto' || styles.overflow === 'scroll' ||
                      styles.overflowX === 'hidden' || styles.overflowX === 'auto' || styles.overflowX === 'scroll')
