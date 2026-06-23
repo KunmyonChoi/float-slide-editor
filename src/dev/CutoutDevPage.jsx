@@ -91,7 +91,11 @@ export default function CutoutDevPage() {
           오류: {error}
         </div>
       )}
-      {result && <p style={{ color: '#16a34a', fontSize: 13 }}>완료 · {result.ms}ms</p>}
+      {result && (
+        <p style={{ color: '#16a34a', fontSize: 13 }}>
+          완료 · 왕복 {result.ms}ms{result.serverMs != null && ` · 서버 추론 ${result.serverMs}ms`}
+        </p>
+      )}
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginTop: 12 }}>
         <div>

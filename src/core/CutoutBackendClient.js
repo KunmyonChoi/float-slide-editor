@@ -78,5 +78,6 @@ export async function segmentImage(blob, { signal } = {}) {
   }
   const out = await res.blob()
   const ms = Math.round((typeof performance !== 'undefined' ? performance.now() : 0) - t0)
-  return { blob: out, url: URL.createObjectURL(out), ms }
+  const serverMs = Number(res.headers.get('X-Inference-Ms')) || null // 순수 추론 시간(서버)
+  return { blob: out, url: URL.createObjectURL(out), ms, serverMs }
 }
