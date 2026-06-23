@@ -19,10 +19,14 @@ describe('CutoutBackendClient — 베이스 URL 해석', () => {
     expect(getCutoutBase()).toBe(`http://localhost:${CUTOUT_DEFAULT_PORT}`)
   })
 
-  it('docker run 명령은 --gpus all + 포트 매핑 포함', () => {
-    const cmd = cutoutDockerRunCommand()
-    expect(cmd).toContain('--gpus all')
-    expect(cmd).toContain(`-p ${CUTOUT_DEFAULT_PORT}:${CUTOUT_DEFAULT_PORT}`)
-    expect(cmd).toContain('dilly97/float-cutout')
+  it('docker run 명령: 기본은 CPU-safe(--gpus 없음), gpu:true면 --gpus all', () => {
+    const base = cutoutDockerRunCommand()
+    expect(base).not.toContain('--gpus all')
+    expect(base).toContain(`-p ${CUTOUT_DEFAULT_PORT}:${CUTOUT_DEFAULT_PORT}`)
+    expect(base).toContain('dilly97/float-cutout')
+
+    const gpu = cutoutDockerRunCommand({ gpu: true })
+    expect(gpu).toContain('--gpus all')
+    expect(gpu).toContain('dilly97/float-cutout')
   })
 })

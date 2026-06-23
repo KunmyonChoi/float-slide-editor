@@ -1,27 +1,32 @@
-# float-editor 피사체 분리 서버 (FastAPI + BiRefNet, GPU)
-# 빌드: docker build -t dilly97/float-cutout cutout-server
-# 실행: docker run -d --gpus all -p 8322:8322 dilly97/float-cutout
+# float-editor 피사체 분리 서버 — 단일 멀티플랫폼 이미지 (BiRefNet, MIT)
+#   amd64: CUDA torch(cu121) — NVIDIA GPU는 `--gpus all`로 가속, 없으면 자동 CPU 폴백
+#   arm64: CPU torch — Apple Silicon/arm 리눅스 (Docker는 GPU 미지원이라 CPU)
+# CUDA 런타임은 pip torch 휠에 포함되므로 slim 베이스로 충분(호스트엔 NVIDIA 드라이버 + nvidia-container-toolkit만 필요).
 #
-# 참고:
-# - GPU 실행에는 호스트에 NVIDIA 드라이버 + nvidia-container-toolkit 필요(`--gpus all`).
-# - 베이스 이미지 태그는 호스트 CUDA/드라이버에 맞춰 조정 가능(아래는 CUDA 12.1 런타임).
-# - 모델(BiRefNet, MIT)은 최초 실행 시 HF Hub에서 1회 다운로드되어 컨테이너에 캐시된다.
-FROM pytorch/pytorch:2.4.0-cuda12.1-cudnn9-runtime
+# 멀티아치 빌드/푸시:
+#   docker buildx build --platform linux/amd64,linux/arm64 -t dilly97/float-cutout --push cutout-server
+# 단일 아키 로컬 빌드:
+#   docker build -t dilly97/float-cutout cutout-server
+FROM python:3.12-slim
+ARG TARGETARCH
 
-# Pillow/일부 비전 라이브러리 런타임 의존
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libgl1 \
     libglib2.0-0 \
  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
-
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+
+# 아키텍처별 torch: amd64=CUDA(cu121, GPU 가능), 그 외=CPU
+RUN if [ "$TARGETARCH" = "amd64" ]; then \
+      pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cu121; \
+    else \
+      pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu; \
+    fi \
+ && pip install --no-cache-dir -r requirements.txt
 
 COPY . .
-
-# HF 모델 캐시를 앱 폴더 안에 두어 재실행 시 재다운로드 방지
 ENV HF_HOME=/app/.hf-cache
 
 EXPOSE 8322
