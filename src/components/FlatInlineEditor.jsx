@@ -43,6 +43,7 @@ function wrapSelection(prop, value) {
   nr.selectNodeContents(span)
   sel.removeAllRanges()
   sel.addRange(nr)
+  return span
 }
 
 /**
@@ -180,7 +181,18 @@ export default function FlatInlineEditor({ element }) {
     const probe = anchor && anchor.nodeType === 3 ? anchor.parentElement : anchor
     const cur = probe ? (parseFloat(getComputedStyle(probe).fontSize) || 16) : 16
     const next = Math.max(FONT_MIN, Math.min(FONT_MAX, Math.round(cur) + delta))
-    wrapSelection('fontSize', next + 'px')
+    // 새 크기 span으로 감싼 뒤, 선택 내부의 기존 font-size 선언을 제거(정규화).
+    // 안 하면 매 클릭마다 중첩 span이 쌓이고(파일 비대), 안쪽 font-size가 새 크기를 덮어
+    // 여러 줄 선택 시 크기가 안 바뀐 것처럼 보인다.
+    const span = wrapSelection('fontSize', next + 'px')
+    if (span && span.querySelectorAll) {
+      span.querySelectorAll('*').forEach(d => {
+        if (d.style && d.style.fontSize) {
+          d.style.removeProperty('font-size')
+          if (d.getAttribute('style') === '') d.removeAttribute('style')
+        }
+      })
+    }
     refreshSelection()
   }, [refreshSelection])
 
