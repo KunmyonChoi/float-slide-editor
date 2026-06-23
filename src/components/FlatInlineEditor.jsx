@@ -115,7 +115,9 @@ export default function FlatInlineEditor({ element }) {
       // plain text: escape 후 줄바꿈 변환
       ref.current.innerHTML = escapePlain(content)
     }
-    ref.current.focus()
+    // preventScroll: 편집 진입 시 브라우저가 포커스 요소를 보이려 캔버스 스크롤 컨테이너를
+    // 움직여 화면이 위로 쏠리던 현상 방지.
+    ref.current.focus({ preventScroll: true })
     // 데스크톱: 전체 선택 / 터치: 끝에 캐럿만 (진입 즉시 선택바·OS 메뉴가 글씨를 가리지 않도록)
     const sel = window.getSelection()
     const range = document.createRange()
@@ -455,7 +457,11 @@ export default function FlatInlineEditor({ element }) {
     top: y,
     width,
     // 오토핏(autoHeight) 요소는 내용에 따라 줄고 늘게 minHeight를 한 줄로 — 편집 중 라이브 신축
-    minHeight: element.autoHeight ? (parseFloat(styles.fontSize) || 15) * (parseFloat(styles.lineHeight) || 1.4) : height,
+    // 오토핏: 내용에 따라 신축(minHeight 한 줄). 고정 박스: 표시와 동일하게 height 고정 —
+    // 안 그러면 편집 시 박스가 글자 전체로 커지며 캔버스를 벗어나 레이아웃이 쏠림(넘침은 overflow visible로 흐름).
+    ...(element.autoHeight
+      ? { minHeight: (parseFloat(styles.fontSize) || 15) * (parseFloat(styles.lineHeight) || 1.4) }
+      : { height }),
     zIndex: 10001,
     boxSizing: 'border-box',
     // 텍스트 스타일 복제
