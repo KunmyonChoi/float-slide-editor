@@ -9,9 +9,9 @@ export const CUTOUT_DEFAULT_PORT = 8322
 export const CUTOUT_DOCKER_IMAGE = 'dilly97/float-cutout'
 const CUTOUT_URL_KEY = 'cutout-backend-url'
 
-/** `docker run` 안내 명령 (UI 힌트용) — GPU + 최신 pull + 기존 교체 + 백그라운드 */
+/** `docker run` 안내 명령 (UI 힌트용) — GPU 이미지. CPU/macOS는 `:cpu` 태그(README 참고). */
 export function cutoutDockerRunCommand() {
-  return `docker rm -f float-cutout 2>/dev/null; docker run -d --gpus all --pull=always --name float-cutout -p ${CUTOUT_DEFAULT_PORT}:${CUTOUT_DEFAULT_PORT} ${CUTOUT_DOCKER_IMAGE}`
+  return `docker rm -f float-cutout 2>/dev/null; docker run -d --gpus all --pull=always --name float-cutout -p ${CUTOUT_DEFAULT_PORT}:${CUTOUT_DEFAULT_PORT} ${CUTOUT_DOCKER_IMAGE}:gpu`
 }
 
 /** 백엔드 베이스 URL (localStorage > 빌드 env > 기본 localhost:8322). */

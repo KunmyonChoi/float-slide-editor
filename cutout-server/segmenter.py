@@ -36,10 +36,20 @@ _use_half = False
 _lock = threading.Lock()
 
 
+def _pick_device():
+    """cuda(NVIDIA) > mps(Apple Silicon 네이티브) > cpu 순. ⚠️ Docker on macOS는 GPU 불가 → cpu."""
+    if torch.cuda.is_available():
+        return "cuda"
+    mps = getattr(torch.backends, "mps", None)
+    if mps is not None and mps.is_available():
+        return "mps"
+    return "cpu"
+
+
 def get_device():
     if _device is not None:
         return _device
-    return "cuda" if torch.cuda.is_available() else "cpu"
+    return _pick_device()
 
 
 def is_ready():
@@ -47,19 +57,19 @@ def is_ready():
 
 
 def ensure_loaded():
-    """모델 1회 로드(스레드 안전). GPU면 half + cudnn 오토튜닝으로 반복 추론 가속."""
+    """모델 1회 로드(스레드 안전). CUDA면 half + cudnn 오토튜닝으로 가속(mps/cpu는 fp32)."""
     global _model, _device, _use_half
     if _model is not None:
         return
     with _lock:
         if _model is not None:
             return
-        dev = "cuda" if torch.cuda.is_available() else "cpu"
+        dev = _pick_device()
         if dev == "cuda":
             torch.backends.cudnn.benchmark = True  # 고정 입력크기(1024)에서 conv 오토튜닝
         model = AutoModelForImageSegmentation.from_pretrained(MODEL_ID, trust_remote_code=True)
         model.eval().to(dev)
-        use_half = dev == "cuda"
+        use_half = dev == "cuda"  # half는 CUDA에서만(mps/cpu는 fp16 불안정/미가속)
         if use_half:
             model.half()
         torch.set_float32_matmul_precision("high")
