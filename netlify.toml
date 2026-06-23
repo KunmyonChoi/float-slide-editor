@@ -24,7 +24,25 @@
   [headers.values]
     Cache-Control = "no-cache"
 
-# SPA: 모든 경로를 index.html로 (클라이언트 라우팅 대비)
+# index.html은 항상 재검증 — 배포 후 새 해시 자산을 참조하게. stale HTML이 옛 청크를 요청해
+# SPA 폴백(text/html)으로 받으면 "Failed to fetch dynamically imported module" MIME 오류 발생.
+[[headers]]
+  for = "/index.html"
+  [headers.values]
+    Cache-Control = "no-cache"
+
+# 해시 자산은 불변(장기 캐시) — 파일명에 해시가 있어 안전
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+# 존재하지 않는 자산은 깔끔히 404 — SPA 폴백이 index.html(text/html)로 가로채 모듈 MIME 오류 내는 것 방지
+[[redirects]]
+  from = "/assets/*"
+  status = 404
+
+# SPA: 나머지 경로를 index.html로 (클라이언트 라우팅 대비)
 [[redirects]]
   from = "/*"
   to = "/index.html"
