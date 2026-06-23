@@ -104,21 +104,7 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
   if (type === 'image') {
     return (
       <div style={baseStyle} onMouseDown={handleMouseDown} onClick={handleClick} onDoubleClick={handleDoubleClick}>
-        <img
-          src={content}
-          alt=""
-          draggable={false}
-          style={{
-            width: '100%',
-            height: '100%',
-            objectFit: styles.objectFit || 'contain',
-            objectPosition: styles.objectPosition || 'center center',
-            borderRadius: styles.borderRadius,
-            border: styles.border,
-            opacity: styles.opacity,
-            display: 'block',
-          }}
-        />
+        <ImageContent content={content} styles={styles} />
       </div>
     )
   }
@@ -650,6 +636,40 @@ function useVideoPoster(url, enabled) {
     return () => { cancelled = true; cleanup() }
   }, [url, enabled])
   return state.url === url ? state.poster : null
+}
+
+/**
+ * 이미지 요소 — content가 idb:// 참조면 blob URL로 해석해 표시(데이터/HTTP URL은 그대로).
+ * (피사체 뒤 텍스트 컷아웃 등 idb 저장 이미지가 안 보이던 문제 수정)
+ */
+function ImageContent({ content, styles }) {
+  const isIdb = BlobStore.isIdbRef(content)
+  const [idbUrl, setIdbUrl] = useState(null)
+  useEffect(() => {
+    if (!isIdb) return
+    let cancelled = false
+    BlobStore.getUrl(BlobStore.parseRef(content)).then(u => { if (!cancelled) setIdbUrl(u) })
+    return () => { cancelled = true }
+  }, [content, isIdb])
+  const src = isIdb ? idbUrl : content
+  if (!src) return null
+  return (
+    <img
+      src={src}
+      alt=""
+      draggable={false}
+      style={{
+        width: '100%',
+        height: '100%',
+        objectFit: styles.objectFit || 'contain',
+        objectPosition: styles.objectPosition || 'center center',
+        borderRadius: styles.borderRadius,
+        border: styles.border,
+        opacity: styles.opacity,
+        display: 'block',
+      }}
+    />
+  )
 }
 
 /**
