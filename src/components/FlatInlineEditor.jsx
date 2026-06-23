@@ -642,6 +642,9 @@ function EditAccessory({ rect, sel, open, accessoryRef, listFmt, onToggleList, o
 
 function SelectionToolbar({ sel, mobile, fmt, onCmd, onFontSize, onLink }) {
   const vp = useVisualViewport()
+  // 데스크톱: 마우스가 툴바 위에 있는 동안 위치 고정 — A−/A+ 연속 클릭으로 글자 크기가 바뀌어
+  // 선택 rect가 변해도 버튼이 커서 밑에서 도망가지 않게 한다(hover 벗어나면 다시 따라감).
+  const [frozen, setFrozen] = useState(null)
   let top, left
   if (mobile) {
     // 모바일: 선택 유무와 무관하게 키보드 바로 위(없으면 화면 하단)에 가로 중앙 고정
@@ -651,6 +654,7 @@ function SelectionToolbar({ sel, mobile, fmt, onCmd, onFontSize, onLink }) {
   } else {
     const p = computeSelToolbarPos(sel)
     top = p.top; left = p.left
+    if (frozen) { top = frozen.top; left = frozen.left }
   }
 
   // 툴바 영역 pointerdown/mousedown 기본동작 차단 → 에디터 포커스/선택 유지 (blur 커밋 방지, 터치 포함)
@@ -661,6 +665,8 @@ function SelectionToolbar({ sel, mobile, fmt, onCmd, onFontSize, onLink }) {
     <div
       onMouseDown={keepSelection}
       onPointerDown={keepSelection}
+      onMouseEnter={() => { if (!mobile) setFrozen({ top, left }) }}
+      onMouseLeave={() => setFrozen(null)}
       style={{
         position: 'fixed',
         top,
