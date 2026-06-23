@@ -256,6 +256,25 @@ function MultiElementPanel({ elements }) {
 
   // 그룹 바운딩 박스
   const bbox = getGroupBBox(elements)
+  const hasRotatedMember = elements.some(e => e.rotation)
+
+  // 화면 채우기 — 그룹 bbox를 캔버스에 정확히 꽉 채우고(비율 왜곡 가능, 단일 요소와 동일),
+  // 각 멤버는 상대 위치·크기 비율을 유지한 채 함께 스케일. 단일 undo.
+  const fillCanvasGroup = () => {
+    const cs = useFlatStore.getState().canvasSize
+    if (!bbox.w || !bbox.h) return
+    const sx = cs.w / bbox.w, sy = cs.h / bbox.h
+    const changes = elements.map(e => ({
+      id: e.id,
+      changes: {
+        x: Math.round((e.x - bbox.x) * sx),
+        y: Math.round((e.y - bbox.y) * sy),
+        width: Math.round(e.width * sx),
+        height: Math.round(e.height * sy),
+      },
+    }))
+    batchUpdateFlatElementsIndividual(changes)
+  }
 
   const commonBg = getCommonStyle('backgroundColor')
   const commonOpacity = getCommonStyle('opacity')
@@ -270,9 +289,19 @@ function MultiElementPanel({ elements }) {
       </div>
 
       <div className="p-3 space-y-3">
-        {/* 그룹 바운딩 박스 위치/크기 (읽기 전용) */}
+        {/* 그룹 바운딩 박스 위치/크기 (읽기 전용) + 화면 채우기 */}
         <div>
-          <SectionTitle>그룹 위치</SectionTitle>
+          <div className="flex items-center justify-between mb-0.5">
+            <SectionTitle>그룹 위치</SectionTitle>
+            <button
+              type="button"
+              onClick={fillCanvasGroup}
+              title="화면 채우기 (그룹 전체를 캔버스에 꽉 채움)"
+              className="flex items-center justify-center px-2 py-1 rounded-lg bg-white/5 text-slate-300 border border-white/10 hover:bg-white/10 transition-colors"
+            >
+              <FillCanvasIcon />
+            </button>
+          </div>
           <div className="grid grid-cols-2 gap-1.5">
             <div>
               <p className={`${labelClass} mb-0.5`}>X</p>
@@ -291,6 +320,9 @@ function MultiElementPanel({ elements }) {
               <div className={`${inputClass} opacity-60`}>{Math.round(bbox.h)}</div>
             </div>
           </div>
+          {hasRotatedMember && (
+            <p className="text-[10px] text-amber-400/80 mt-1">⚠ 회전된 요소가 있어 채우기 시 위치·크기가 왜곡될 수 있습니다.</p>
+          )}
         </div>
 
         {/* 정렬 / 분배 */}
