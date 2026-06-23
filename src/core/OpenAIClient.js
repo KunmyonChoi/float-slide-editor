@@ -5,7 +5,11 @@
  * OpenAI REST API는 CORS를 허용하므로 별도 백엔드 프록시 없이 호출 가능하다.
  *
  * 주의: localStorage 키는 같은 브라우저를 쓰는 사람에게 노출될 수 있다(공용 PC 주의).
+ *
+ * 텍스트(chat)는 '로컬 LLM 사용'(Ollama, OpenAI 호환) 시 로컬 엔드포인트로 라우팅된다.
+ * 이미지 생성/편집은 로컬 대체가 없어 OpenAI 경로 유지.
  */
+import { isLocalLlmEnabled, getLocalLlmChatEndpoint, getLocalLlmModel } from './LlmBackendClient'
 
 const KEY_STORAGE = 'openai-api-key'
 const MODEL_STORAGE = 'openai-model'
@@ -68,8 +72,12 @@ export { DEFAULT_MODEL, DEFAULT_IMAGE_MODEL }
  * @param {{ system?: string, user: string, images?: string[], model?: string, temperature?: number, signal?: AbortSignal }} opts
  */
 export async function chat({ system, user, images, model, temperature = 0.7, responseFormat, signal } = {}) {
+  const local = isLocalLlmEnabled()
   const apiKey = getApiKey()
-  if (!apiKey) throw new Error('OpenAI API 키가 설정되지 않았습니다. 먼저 키를 입력하세요.')
+  if (!local && !apiKey) throw new Error('OpenAI API 키가 설정되지 않았습니다. 먼저 키를 입력하세요.')
+
+  const endpoint = local ? getLocalLlmChatEndpoint() : ENDPOINT
+  const useModel = local ? getLocalLlmModel() : (model || getModel())
 
   const messages = []
   if (system) messages.push({ role: 'system', content: system })
@@ -80,14 +88,15 @@ export async function chat({ system, user, images, model, temperature = 0.7, res
 
   let res
   try {
-    res = await fetch(ENDPOINT, {
+    res = await fetch(endpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
+        // 로컬(Ollama)은 키 불필요 — 더미 토큰. OpenAI는 사용자 키.
+        Authorization: `Bearer ${apiKey || 'local'}`,
       },
       body: JSON.stringify({
-        model: model || getModel(),
+        model: useModel,
         messages,
         temperature,
         ...(responseFormat ? { response_format: responseFormat } : {}),
@@ -96,7 +105,9 @@ export async function chat({ system, user, images, model, temperature = 0.7, res
     })
   } catch (e) {
     if (e?.name === 'AbortError') throw e
-    throw new Error('OpenAI에 연결할 수 없습니다. 네트워크 연결을 확인하세요.')
+    throw new Error(local
+      ? '로컬 LLM(Ollama)에 연결할 수 없습니다. Ollama 실행 여부와 OLLAMA_ORIGINS 설정을 확인하세요.'
+      : 'OpenAI에 연결할 수 없습니다. 네트워크 연결을 확인하세요.')
   }
 
   if (!res.ok) {
@@ -105,6 +116,10 @@ export async function chat({ system, user, images, model, temperature = 0.7, res
       const j = await res.json()
       detail = j?.error?.message || ''
     } catch { /* 본문 파싱 실패 무시 */ }
+    if (local) {
+      if (res.status === 404) throw new Error(`로컬 LLM 모델(${getLocalLlmModel()})을 찾을 수 없습니다. 'ollama pull ${getLocalLlmModel()}'로 받으세요.`)
+      throw new Error(`로컬 LLM 오류 (${res.status})${detail ? ': ' + detail : ''}`)
+    }
     if (res.status === 401) throw new Error('API 키가 유효하지 않습니다. 키를 다시 확인하세요.')
     if (res.status === 429) throw new Error('요청이 너무 많거나 사용 한도를 초과했습니다. 잠시 후 다시 시도하세요.')
     throw new Error(`OpenAI 오류 (${res.status})${detail ? ': ' + detail : ''}`)
@@ -112,7 +127,7 @@ export async function chat({ system, user, images, model, temperature = 0.7, res
 
   const data = await res.json()
   const text = data?.choices?.[0]?.message?.content
-  if (!text) throw new Error('OpenAI 응답이 비어 있습니다.')
+  if (!text) throw new Error('응답이 비어 있습니다.')
   return text.trim()
 }
 
