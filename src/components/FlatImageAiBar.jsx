@@ -6,10 +6,18 @@ import { captureElementRegion } from '../core/captureCanvasRegion'
 import { openAiSettings } from './AiSettingsModal'
 import { INFOGRAPHIC_STYLES } from '../core/aiImageStyles'
 import { segmentImage, checkCutoutBackend, cutoutDockerRunCommand } from '../core/CutoutBackendClient'
+import { BlobStore } from '../core/BlobStore'
 
-// data URL → Blob (캡처 결과를 분리 서버로 업로드)
-async function dataUrlToBlob(dataUrl) {
-  const res = await fetch(dataUrl)
+// 이미지 요소의 원본 소스(content) → Blob. idb 참조면 BlobStore, 아니면 직접 fetch.
+// (박스 캡처가 아니라 원본을 분리해야 컷아웃 종횡비=원본과 같아 그룹 리사이즈에 어긋나지 않음)
+async function elementImageBlob(content) {
+  if (!content) throw new Error('이미지 소스를 찾을 수 없습니다.')
+  if (BlobStore.isIdbRef(content)) {
+    const b = await BlobStore.get(BlobStore.parseRef(content))
+    if (!b) throw new Error('이미지 데이터를 불러오지 못했습니다.')
+    return b
+  }
+  const res = await fetch(content)
   return res.blob()
 }
 // Blob → data URL (컷아웃 결과를 프로젝트에 영속 저장)
@@ -163,13 +171,9 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
         setError('피사체 분리 서버에 연결할 수 없습니다. 서버를 실행하세요:\n' + cutoutDockerRunCommand())
         setPhase('error'); return
       }
-      setStatus('이미지 캡처 중…')
-      const cap = await captureElementRegion(
-        { x: element.x, y: element.y, w: element.width, h: element.height },
-        { signal: ctrl.signal },
-      )
+      setStatus('이미지 불러오는 중…')
+      const inputBlob = await elementImageBlob(element.content)
       if (ctrl.signal.aborted) return
-      const inputBlob = await dataUrlToBlob(cap)
       setStatus('피사체 분리 중…')
       const r = await segmentImage(inputBlob, { signal: ctrl.signal })
       if (ctrl.signal.aborted) return
@@ -181,7 +185,7 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
       setError(e?.message || '피사체 분리에 실패했습니다.')
       setPhase('error')
     }
-  }, [element.x, element.y, element.width, element.height])
+  }, [element.content])
 
   // 컷아웃 적용: 원본(배경)+타이틀(중간)+컷아웃(앞) 3층 자동 배치
   const applyCutout = useCallback(async () => {

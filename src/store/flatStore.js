@@ -1593,13 +1593,18 @@ export const useFlatStore = create((set, get) => ({
         fontFamily: orig.styles?.fontFamily || 'inherit',
       },
     }
-    // 전경 컷아웃: 원본과 동일 박스에 정확히 겹침(최상위). 박스 크기로 캡처됐으므로 fill로 정렬.
+    // 전경 컷아웃: 원본과 동일 박스 + 동일 채움 전략(objectFit/objectPosition)으로 정확히 겹침.
+    // 컷아웃은 원본 해상도로 분리돼 고유 종횡비가 같으므로, 같은 objectFit이면 그룹 리사이즈에도
+    // 원본과 똑같이 변형돼 인물·배경이 어긋나지 않는다.
+    const cutoutStyles = {}
+    if (orig.styles?.objectFit) cutoutStyles.objectFit = orig.styles.objectFit
+    if (orig.styles?.objectPosition) cutoutStyles.objectPosition = orig.styles.objectPosition
     const cutoutEl = {
       id: nextFlatId(), sourceId: null, type: 'image',
       content: cutoutContent, isRich: false, merged: false,
       x: orig.x, y: orig.y, width: orig.width, height: orig.height,
       zIndex: maxZ + 2, groupId: gid,
-      styles: { objectFit: 'fill' },
+      styles: cutoutStyles,
     }
     // 원본도 그룹에 포함(함께 이동) — 제거 후 groupId 부여본으로 재추가하여 단일 undo.
     get().applyLayoutElements([imageId], [{ ...orig, groupId: gid }, textEl, cutoutEl])

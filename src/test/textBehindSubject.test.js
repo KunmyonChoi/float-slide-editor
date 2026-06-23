@@ -36,11 +36,22 @@ describe('applyTextBehindSubject — 피사체 뒤 텍스트 3층 구성', () =>
     expect(title.zIndex).toBeLessThan(cutout.zIndex)
   })
 
-  it('컷아웃은 원본과 동일 박스(겹침)', () => {
+  it('컷아웃은 원본과 동일 박스 + 동일 채움전략(objectFit 복사) → 리사이즈 정렬 유지', () => {
     useFlatStore.getState().applyTextBehindSubject('img1', CUTOUT)
     const cutout = useFlatStore.getState().flatElements.find(e => e.type === 'image' && e.id !== 'img1')
     expect([cutout.x, cutout.y, cutout.width, cutout.height]).toEqual([100, 80, 600, 400])
-    expect(cutout.styles.objectFit).toBe('fill')
+    expect(cutout.styles.objectFit).toBe('cover') // 원본(imageEl)의 objectFit 복사
+  })
+
+  it('objectPosition도 복사', () => {
+    useFlatStore.setState({
+      flatElements: [imageEl('img1', { styles: { objectFit: 'cover', objectPosition: '20% 30%' } })],
+      selectedFlatIds: [],
+    })
+    useFlatStore.getState().applyTextBehindSubject('img1', CUTOUT)
+    const cutout = useFlatStore.getState().flatElements.find(e => e.type === 'image' && e.id !== 'img1')
+    expect(cutout.styles.objectFit).toBe('cover')
+    expect(cutout.styles.objectPosition).toBe('20% 30%')
   })
 
   it('세 요소가 같은 그룹 + 타이틀 선택', () => {
