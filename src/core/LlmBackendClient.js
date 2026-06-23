@@ -6,7 +6,7 @@
  * 실제 텍스트 호출은 OpenAIClient.chat이 isLocalLlmEnabled()일 때 이 base로 보낸다.
  */
 export const LLM_DEFAULT_URL = 'http://localhost:11434'
-export const LLM_DEFAULT_MODEL = 'qwen2.5:14b'
+export const LLM_DEFAULT_MODEL = 'qwen2.5:7b'
 
 const ENABLED_KEY = 'local-llm-enabled'
 const URL_KEY = 'local-llm-url'
@@ -97,6 +97,27 @@ export async function checkOllama(force = false) {
     _status = { ok: false }
   }
   return _status
+}
+
+/** 로컬 LLM 동작 테스트 — 샘플 chat 1회 보내 응답 텍스트 반환(설정 검증용). */
+export async function testLocalLlm(model = getLocalLlmModel()) {
+  const res = await fetch(getLocalLlmChatEndpoint(), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer local' },
+    body: JSON.stringify({
+      model,
+      messages: [{ role: 'user', content: '한국어로 한 문장만 자기소개 해줘.' }],
+      temperature: 0.5,
+    }),
+    signal: AbortSignal.timeout(60000),
+  })
+  if (!res.ok) {
+    let d = ''
+    try { d = (await res.json())?.error?.message || '' } catch { /* noop */ }
+    throw new Error(`오류 ${res.status}${d ? ': ' + d : ''}`)
+  }
+  const j = await res.json()
+  return j?.choices?.[0]?.message?.content?.trim() || '(빈 응답)'
 }
 
 /** 지정 모델이 설치돼 있는지(태그 목록 기준). */
