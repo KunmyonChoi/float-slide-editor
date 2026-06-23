@@ -185,16 +185,73 @@ export default function FlatInlineEditor({ element }) {
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // 선택 영역에 서식 적용 (포커스/선택 유지 → blur 커밋 방지는 툴바 mousedown preventDefault가 담당)
+  // 형광펜(배경색): execCommand('hiliteColor')는 기존 styled span이 섞인 멀티라인 선택에서
+  // 일부 줄을 건너뛴다(예: 글자크기 바꾼 줄). 선택과 교차하는 모든 텍스트 노드를 직접 배경 span으로
+  // 감싸(또는 지우기 시 조상 배경 제거) 줄·중첩 무관하게 적용한다.
+  const applyHighlight = useCallback((color) => {
+    const el = ref.current
+    if (!el) return
+    const sel = window.getSelection()
+    if (!sel || sel.rangeCount === 0) return
+    const range = sel.getRangeAt(0)
+    if (range.collapsed) return
+    const clearing = color === 'transparent'
+
+    const targets = []
+    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, null)
+    let n
+    while ((n = walker.nextNode())) {
+      if (!n.nodeValue || !range.intersectsNode(n)) continue
+      let s = 0, e = n.nodeValue.length
+      if (n === range.startContainer) s = range.startOffset
+      if (n === range.endContainer) e = range.endOffset
+      if (s < e) targets.push([n, s, e])
+    }
+    if (!targets.length) return
+
+    if (clearing) {
+      // 선택 영역 조상 span들의 background-color 제거(투명 span만으론 조상 색이 남음)
+      targets.forEach(([node]) => {
+        for (let p = node.parentElement; p && p !== el; p = p.parentElement) {
+          if (p.style && p.style.backgroundColor) {
+            p.style.removeProperty('background-color')
+            if (p.getAttribute('style') === '') p.removeAttribute('style')
+          }
+        }
+      })
+      refreshSelection()
+      return
+    }
+
+    const spans = []
+    targets.forEach(([node, s, e]) => {
+      const r = document.createRange()
+      r.setStart(node, s); r.setEnd(node, e)
+      const span = document.createElement('span')
+      span.style.backgroundColor = color
+      try { r.surroundContents(span) }
+      catch { const f = r.extractContents(); span.appendChild(f); r.insertNode(span) }
+      spans.push(span)
+    })
+    if (spans.length) { // 선택 복원(첫~끝 span)
+      const nr = document.createRange()
+      nr.setStartBefore(spans[0]); nr.setEndAfter(spans[spans.length - 1])
+      sel.removeAllRanges(); sel.addRange(nr)
+    }
+    refreshSelection()
+  }, [refreshSelection])
+
   const applyCmd = useCallback((cmd, value) => {
     const el = ref.current
     if (!el) return
+    if (cmd === 'hiliteColor') { applyHighlight(value); return } // 멀티라인·기존 span 무관 견고 적용
     el.focus()
     try {
       document.execCommand('styleWithCSS', false, true)
       document.execCommand(cmd, false, value)
     } catch { /* execCommand 미지원 무시 */ }
     refreshSelection()
-  }, [refreshSelection])
+  }, [refreshSelection, applyHighlight])
 
   // 선택 영역 글자크기 증감 (앵커의 계산된 크기 기준 ±step)
   const changeFontSize = useCallback((delta) => {
