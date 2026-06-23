@@ -6,7 +6,7 @@ import { pointsToBBox, closestPointOnSegments } from '../core/PolyShapeUtils'
 import { attachTargetAt, nearestConnectionPoint } from '../core/ConnectorRouting'
 import { useIsTouch } from '../core/pointerEnv'
 
-const HANDLE_SIZE = 8
+const HANDLE_SIZE = 12 // 데스크톱 리사이즈 핸들 화면 px(렌더 시 /scale로 줌 무관 일정 크기)
 const ROTATE_HANDLE_OFFSET = 30
 // 리사이즈 최소 크기. 얇은 구분선/규칙선(높이 1~4px 등)으로 변환된 요소를
 // 다시 그 크기로 되돌릴 수 있도록 1px까지 허용한다(0/음수만 방지).
@@ -587,25 +587,28 @@ export default function FlatSelectionOverlay({ element, scale, otherRects, canva
               )
             })()
           ) : (
-            HANDLES.map(h => (
-              <div
-                key={h.dir}
-                data-resize-handle="true"
-                onMouseDown={(e) => handleResizeStart(e, h.dir)}
-                style={{
-                  position: 'absolute',
-                  left: h.x * width - HANDLE_SIZE / 2,
-                  top: h.y * height - HANDLE_SIZE / 2,
-                  width: HANDLE_SIZE,
-                  height: HANDLE_SIZE,
-                  background: '#6366f1',
-                  border: '1px solid #fff',
-                  borderRadius: 2,
-                  cursor: h.cursor,
-                  zIndex: 10000,
-                }}
-              />
-            ))
+            HANDLES.map(h => {
+              const hsz = HANDLE_SIZE / scale // 화면 기준 일정 크기(줌 무관)
+              return (
+                <div
+                  key={h.dir}
+                  data-resize-handle="true"
+                  onMouseDown={(e) => handleResizeStart(e, h.dir)}
+                  style={{
+                    position: 'absolute',
+                    left: h.x * width - hsz / 2,
+                    top: h.y * height - hsz / 2,
+                    width: hsz,
+                    height: hsz,
+                    background: '#6366f1',
+                    border: `${1.5 / scale}px solid #fff`,
+                    borderRadius: 2 / scale,
+                    cursor: h.cursor,
+                    zIndex: 10000,
+                  }}
+                />
+              )
+            })
           )}
         </>
       )}
