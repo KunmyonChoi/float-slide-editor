@@ -82,6 +82,24 @@ export function stripInlineFormatting(content, isRich, { styleProps = [], tags =
   return body.innerHTML
 }
 
+/**
+ * 모든 인라인 서식 제거 → 줄바꿈 보존 평문. "서식 삭제" / 깨진 마크업(중첩 span 등) 정규화용.
+ * 블록(div/p)·br는 줄바꿈으로, 나머지 태그는 텍스트만 남긴다.
+ * @returns {string} 평문(줄바꿈 \n 포함)
+ */
+export function richToPlainText(content) {
+  if (!content) return ''
+  const withBreaks = content
+    .replace(/<div>\s*<br\s*\/?>\s*<\/div>/gi, '\n')
+    .replace(/<\/div>\s*<div[^>]*>/gi, '\n')
+    .replace(/<\/p>\s*<p[^>]*>/gi, '\n')
+    .replace(/<(div|p)[^>]*>/gi, '\n')
+    .replace(/<\/(div|p)>/gi, '')
+    .replace(/<br\s*\/?>/gi, '\n')
+  const body = parseBody(withBreaks)
+  return (body.textContent || '').replace(/^\n+/, '').replace(/\n+$/, '')
+}
+
 // 서식별 인라인 override 정의 (전체 적용 시 제거 대상)
 export const FORMAT_STRIP = {
   bold: { styleProps: ['font-weight'], tags: ['b', 'strong'] },

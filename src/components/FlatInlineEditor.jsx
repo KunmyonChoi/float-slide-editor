@@ -23,27 +23,6 @@ function editorToPlain(el) {
   return tmp.textContent || ''
 }
 
-/** 현재 선택 영역을 style 한 속성으로 감싼다 (execCommand가 px를 못 주는 fontSize 등에 사용) */
-function wrapSelection(prop, value) {
-  const sel = window.getSelection()
-  if (!sel || sel.rangeCount === 0) return
-  const range = sel.getRangeAt(0)
-  if (range.collapsed) return
-  const span = document.createElement('span')
-  span.style[prop] = value
-  try {
-    range.surroundContents(span)
-  } catch {
-    // 노드 경계를 가로지르는 선택: 추출 후 래핑
-    const frag = range.extractContents()
-    span.appendChild(frag)
-    range.insertNode(span)
-  }
-  const nr = document.createRange()
-  nr.selectNodeContents(span)
-  sel.removeAllRanges()
-  sel.addRange(nr)
-}
 
 /**
  * FlatInlineEditor
@@ -114,7 +93,26 @@ export default function FlatInlineEditor({ element }) {
       // plain text: escape 후 줄바꿈 변환
       ref.current.innerHTML = escapePlain(content)
     }
-    ref.current.focus()
+    // 편집 중 캐럿이 캔버스 밖으로 나가면 브라우저가 캐럿을 보이려 조상의 scrollTop을 바꿔
+    // (overflow:hidden 이라 스크롤바 없어도 가능) 캔버스가 통째로 밀려 올라간다.
+    //  - hidden/clip 조상: 사용자가 스크롤할 수 없으니 편집 세션 내내 위치를 지속 고정(모든 스크롤=자동).
+    //  - auto/scroll 조상 + scrollingElement: 진입 시 1회 복원(사용자 스크롤은 허용).
+    const hardLock = [], softRestore = []
+    for (let p = ref.current.parentElement; p; p = p.parentElement) {
+      const o = (() => { const c = getComputedStyle(p); return `${c.overflow} ${c.overflowY} ${c.overflowX}` })()
+      if (/hidden|clip/.test(o)) hardLock.push(p)
+      else if (/auto|scroll|overlay/.test(o)) softRestore.push(p)
+    }
+    const sc = document.scrollingElement || document.documentElement
+    if (sc) softRestore.push(sc)
+    const snap = (els) => els.map(s => [s, s.scrollTop, s.scrollLeft])
+    const savedHard = snap(hardLock), savedSoft = snap(softRestore)
+    const apply = (arr) => arr.forEach(([s, t, l]) => { if (s.scrollTop !== t) s.scrollTop = t; if (s.scrollLeft !== l) s.scrollLeft = l })
+    const restoreAll = () => { apply(savedHard); apply(savedSoft) }
+    const onAnyScroll = () => apply(savedHard) // 편집 중 자동 스크롤은 hidden 컨테이너를 즉시 되돌림
+    document.addEventListener('scroll', onAnyScroll, true)
+
+    ref.current.focus({ preventScroll: true })
     // 데스크톱: 전체 선택 / 터치: 끝에 캐럿만 (진입 즉시 선택바·OS 메뉴가 글씨를 가리지 않도록)
     const sel = window.getSelection()
     const range = document.createRange()
@@ -122,12 +120,17 @@ export default function FlatInlineEditor({ element }) {
     if (isCoarsePointer()) range.collapse(false)
     sel.removeAllRanges()
     sel.addRange(range)
+    restoreAll()
+    requestAnimationFrame(restoreAll)
     committedRef.current = false
     setEditorRect(ref.current.getBoundingClientRect()) // 이모지 버튼 앵커
     // 오토핏 요소: 진입 즉시 실제 높이로 컨테이너 동기화
     if (element.autoHeight) useFlatStore.getState().reflowAutoFit({ [element.id]: ref.current.scrollHeight })
     // 인라인 서식이 <span style>로 생성되도록 (export 파서가 인라인 스타일을 읽음)
     try { document.execCommand('styleWithCSS', false, true) } catch { /* noop */ }
+    // Enter 줄바꿈을 <div> 블록 대신 <br>(단일 블록)으로 — 멀티라인 선택에 형광펜(hiliteColor) 등
+    // 서식이 줄별로 끊기지 않고 일관 적용되게(블록 경계에서 execCommand가 첫 줄만 처리하는 문제 완화).
+    try { document.execCommand('defaultParagraphSeparator', false, 'br') } catch { /* noop */ }
     document.addEventListener('selectionchange', refreshSelection)
 
     // 페이지 이동/모드 전환 시 _saveCurrentPage가 이 콜백을 호출하여 커밋
@@ -152,6 +155,7 @@ export default function FlatInlineEditor({ element }) {
 
     return () => {
       document.removeEventListener('selectionchange', refreshSelection)
+      document.removeEventListener('scroll', onAnyScroll, true)
       // unmount 시 미커밋 상태면 커밋 시도
       flushCommit()
       useFlatStore.getState()._setPendingEditCommit(null)
@@ -159,30 +163,140 @@ export default function FlatInlineEditor({ element }) {
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // 선택 영역에 서식 적용 (포커스/선택 유지 → blur 커밋 방지는 툴바 mousedown preventDefault가 담당)
+  // 형광펜(배경색): execCommand('hiliteColor')는 기존 styled span이 섞인 멀티라인 선택에서
+  // 일부 줄을 건너뛴다(예: 글자크기 바꾼 줄). 선택과 교차하는 모든 텍스트 노드를 직접 배경 span으로
+  // 감싸(또는 지우기 시 조상 배경 제거) 줄·중첩 무관하게 적용한다.
+  const applyHighlight = useCallback((color) => {
+    const el = ref.current
+    if (!el) return
+    const sel = window.getSelection()
+    if (!sel || sel.rangeCount === 0) return
+    const range = sel.getRangeAt(0)
+    if (range.collapsed) return
+    const clearing = color === 'transparent'
+
+    const targets = []
+    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, null)
+    let n
+    while ((n = walker.nextNode())) {
+      if (!n.nodeValue || !range.intersectsNode(n)) continue
+      let s = 0, e = n.nodeValue.length
+      if (n === range.startContainer) s = range.startOffset
+      if (n === range.endContainer) e = range.endOffset
+      if (s < e) targets.push([n, s, e])
+    }
+    if (!targets.length) return
+
+    if (clearing) {
+      // 선택 영역 조상 span들의 background-color 제거(투명 span만으론 조상 색이 남음)
+      targets.forEach(([node]) => {
+        for (let p = node.parentElement; p && p !== el; p = p.parentElement) {
+          if (p.style && p.style.backgroundColor) {
+            p.style.removeProperty('background-color')
+            if (p.getAttribute('style') === '') p.removeAttribute('style')
+          }
+        }
+      })
+      refreshSelection()
+      return
+    }
+
+    const spans = []
+    targets.forEach(([node, s, e]) => {
+      const r = document.createRange()
+      r.setStart(node, s); r.setEnd(node, e)
+      const span = document.createElement('span')
+      span.style.backgroundColor = color
+      try { r.surroundContents(span) }
+      catch { const f = r.extractContents(); span.appendChild(f); r.insertNode(span) }
+      spans.push(span)
+    })
+    if (spans.length) { // 선택 복원(첫~끝 span)
+      const nr = document.createRange()
+      nr.setStartBefore(spans[0]); nr.setEndAfter(spans[spans.length - 1])
+      sel.removeAllRanges(); sel.addRange(nr)
+    }
+    refreshSelection()
+  }, [refreshSelection])
+
   const applyCmd = useCallback((cmd, value) => {
     const el = ref.current
     if (!el) return
+    if (cmd === 'hiliteColor') { applyHighlight(value); return } // 멀티라인·기존 span 무관 견고 적용
     el.focus()
     try {
       document.execCommand('styleWithCSS', false, true)
       document.execCommand(cmd, false, value)
     } catch { /* execCommand 미지원 무시 */ }
     refreshSelection()
-  }, [refreshSelection])
+  }, [refreshSelection, applyHighlight])
 
-  // 선택 영역 글자크기 증감 (앵커의 계산된 크기 기준 ±step)
+  // 선택 영역 글자크기 상대 증감 — 전체 박스 단축키(bumpFontSizePx)와 동일하게 위계 유지.
+  // 기존 font-size 조상은 제자리에서 가감(누적 없음), base(상속) 런만 현재크기+delta로 1회 래핑.
+  // (일괄 통일은 속성창 폰트크기 직접 지정으로 별도 제공)
   const changeFontSize = useCallback((delta) => {
     const el = ref.current
     const sel = window.getSelection()
     if (!el || !sel || sel.rangeCount === 0 || sel.isCollapsed) return
-    el.focus()
-    const anchor = sel.anchorNode
-    const probe = anchor && anchor.nodeType === 3 ? anchor.parentElement : anchor
-    const cur = probe ? (parseFloat(getComputedStyle(probe).fontSize) || 16) : 16
-    const next = Math.max(FONT_MIN, Math.min(FONT_MAX, Math.round(cur) + delta))
-    wrapSelection('fontSize', next + 'px')
+    const range = sel.getRangeAt(0)
+    const clampSz = (v) => Math.max(FONT_MIN, Math.min(FONT_MAX, Math.round(v)))
+    // 전체 선택 여부(공백 무시) — 전체면 요소 base font-size도 함께 가감해 줄 높이 strut를
+    // 박스/엔터 적용과 일치시킨다(줄간격이 달라 보이던 문제).
+    const allTxt = (el.textContent || '').replace(/\s/g, '')
+    const selTxt = (sel.toString() || '').replace(/\s/g, '')
+    const wholeSelected = allTxt.length > 0 && selTxt.length >= allTxt.length
+
+    const targets = []
+    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, null)
+    let n
+    while ((n = walker.nextNode())) {
+      if (!n.nodeValue || !range.intersectsNode(n)) continue
+      let s = 0, e = n.nodeValue.length
+      if (n === range.startContainer) s = range.startOffset
+      if (n === range.endContainer) e = range.endOffset
+      if (s < e) targets.push([n, s, e])
+    }
+    if (!targets.length) return
+
+    const carriers = new Set()
+    const baseRuns = []
+    targets.forEach(([node, s, e]) => {
+      let carrier = null
+      for (let p = node.parentElement; p && p !== el; p = p.parentElement) {
+        if (p.style && p.style.fontSize) { carrier = p; break }
+      }
+      if (carrier) carriers.add(carrier)
+      else baseRuns.push([node, s, e])
+    })
+
+    const touched = []
+    carriers.forEach(c => {
+      const curC = parseFloat(c.style.fontSize) || parseFloat(getComputedStyle(c).fontSize) || 16
+      c.style.fontSize = clampSz(curC + delta) + 'px'
+      touched.push(c)
+    })
+    baseRuns.forEach(([node, s, e]) => {
+      const curB = parseFloat(getComputedStyle(node.parentElement).fontSize) || 16
+      const r = document.createRange()
+      r.setStart(node, s); r.setEnd(node, e)
+      const span = document.createElement('span')
+      span.style.fontSize = clampSz(curB + delta) + 'px'
+      try { r.surroundContents(span) } catch { const f = r.extractContents(); span.appendChild(f); r.insertNode(span) }
+      touched.push(span)
+    })
+    if (touched.length) { // 가감된 영역 전체로 선택 복원
+      touched.sort((a, b) => (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) ? -1 : 1)
+      const nr = document.createRange()
+      nr.setStartBefore(touched[0]); nr.setEndAfter(touched[touched.length - 1])
+      sel.removeAllRanges(); sel.addRange(nr)
+    }
+    // 전체 선택이면 요소 base font-size도 가감 → strut(줄 높이 기준)가 박스/엔터 적용과 동일
+    if (wholeSelected) {
+      const base = parseFloat(styles.fontSize) || 16
+      useFlatStore.getState().updateFlatElement(element.id, { styles: { fontSize: clampSz(base + delta) + 'px' } })
+    }
     refreshSelection()
-  }, [refreshSelection])
+  }, [refreshSelection, styles.fontSize, element.id])
 
   // 선택 영역에 하이퍼링크 적용 (Ctrl+K / 툴바)
   const applyLink = useCallback(async () => {
@@ -443,7 +557,11 @@ export default function FlatInlineEditor({ element }) {
     top: y,
     width,
     // 오토핏(autoHeight) 요소는 내용에 따라 줄고 늘게 minHeight를 한 줄로 — 편집 중 라이브 신축
-    minHeight: element.autoHeight ? (parseFloat(styles.fontSize) || 15) * (parseFloat(styles.lineHeight) || 1.4) : height,
+    // 오토핏: 내용에 따라 신축(minHeight 한 줄). 고정 박스: 표시와 동일하게 height 고정 —
+    // 안 그러면 편집 시 박스가 글자 전체로 커지며 캔버스를 벗어나 레이아웃이 쏠림(넘침은 overflow visible로 흐름).
+    ...(element.autoHeight
+      ? { minHeight: (parseFloat(styles.fontSize) || 15) * (parseFloat(styles.lineHeight) || 1.4) }
+      : { height }),
     zIndex: 10001,
     boxSizing: 'border-box',
     // 텍스트 스타일 복제
@@ -495,7 +613,11 @@ export default function FlatInlineEditor({ element }) {
     outlineOffset: -1,
     cursor: 'text',
     userSelect: 'text',
-    overflow: 'auto',
+    // 편집 중엔 입력 내용이 모두 보이도록 visible — auto면 내용이 박스보다 클 때(예: 줄마다
+    // 글자 크기가 다른 rich text) 세로 스크롤바가 생겨 거슬림. 표시 모드도 기본 overflow visible.
+    overflow: 'visible',
+    // 세로 오프셋(양수=위로)을 편집 중에도 동일 적용 — 표시와 위치 일치(커밋 시 점프 방지).
+    ...(parseFloat(styles.baselineOffset) ? { transform: `translateY(${-parseFloat(styles.baselineOffset)}px)` } : {}),
   }
 
   return (
@@ -638,6 +760,9 @@ function EditAccessory({ rect, sel, open, accessoryRef, listFmt, onToggleList, o
 
 function SelectionToolbar({ sel, mobile, fmt, onCmd, onFontSize, onLink }) {
   const vp = useVisualViewport()
+  // 데스크톱: 마우스가 툴바 위에 있는 동안 위치 고정 — A−/A+ 연속 클릭으로 글자 크기가 바뀌어
+  // 선택 rect가 변해도 버튼이 커서 밑에서 도망가지 않게 한다(hover 벗어나면 다시 따라감).
+  const [frozen, setFrozen] = useState(null)
   let top, left
   if (mobile) {
     // 모바일: 선택 유무와 무관하게 키보드 바로 위(없으면 화면 하단)에 가로 중앙 고정
@@ -647,6 +772,7 @@ function SelectionToolbar({ sel, mobile, fmt, onCmd, onFontSize, onLink }) {
   } else {
     const p = computeSelToolbarPos(sel)
     top = p.top; left = p.left
+    if (frozen) { top = frozen.top; left = frozen.left }
   }
 
   // 툴바 영역 pointerdown/mousedown 기본동작 차단 → 에디터 포커스/선택 유지 (blur 커밋 방지, 터치 포함)
@@ -657,6 +783,8 @@ function SelectionToolbar({ sel, mobile, fmt, onCmd, onFontSize, onLink }) {
     <div
       onMouseDown={keepSelection}
       onPointerDown={keepSelection}
+      onMouseEnter={() => { if (!mobile) setFrozen({ top, left }) }}
+      onMouseLeave={() => setFrozen(null)}
       style={{
         position: 'fixed',
         top,

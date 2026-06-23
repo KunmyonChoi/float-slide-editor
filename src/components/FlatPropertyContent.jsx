@@ -12,7 +12,7 @@ import { BlobStore } from '../core/BlobStore'
 import { detectListType, applyListType } from '../core/TextListTransform'
 import { addRow, removeRow, addCol, removeCol, setHeaderRow, setBorder } from '../core/slideTable'
 import { useScrub } from './useScrub'
-import { setFontSizeUniformPx, stripInlineFormatting, FORMAT_STRIP } from '../core/TextStyleScope'
+import { setFontSizeUniformPx, stripInlineFormatting, richToPlainText, FORMAT_STRIP } from '../core/TextStyleScope'
 import { generateImage, hasApiKey } from '../core/OpenAIClient'
 import { openAiSettings } from './AiSettingsModal'
 import { BACKGROUND_STYLES, BACKGROUND_GROUPS, DEFAULT_BACKGROUND_STYLE_ID, getBackgroundStyle, buildBackgroundPrompt } from '../core/backgroundStyles'
@@ -869,6 +869,10 @@ function FontSection({ el, styles, updateStyle, previewStyle, isGradientText, li
     const content = stripInlineFormatting(el.content, el.isRich, FORMAT_STRIP[which])
     useFlatStore.getState().updateFlatElement(el.id, { content, styles: styleChanges })
   }
+  // 모든 인라인 서식 제거 → 기본 스타일 평문(줄바꿈 유지). 깨진 중첩 마크업 정규화 겸용.
+  const clearFormatting = () => {
+    useFlatStore.getState().updateFlatElement(el.id, { content: richToPlainText(el.content), isRich: false })
+  }
 
   return (
     <div className="space-y-2">
@@ -933,6 +937,14 @@ function FontSection({ el, styles, updateStyle, previewStyle, isGradientText, li
         }} title="취소선 (Strikethrough)">
           <s>S</s>
         </ToggleBtn>
+        {el.isRich && (
+          <button
+            type="button"
+            onClick={clearFormatting}
+            title="서식 지우기 — 크기·색·굵기·배경 등 인라인 서식을 모두 제거(기본 스타일 평문). 줄바꿈 유지"
+            className="ml-auto px-2 rounded-lg text-xs text-slate-300 bg-white/5 border border-white/10 hover:bg-white/10 transition-colors"
+          >서식 지우기</button>
+        )}
       </div>
 
       <div style={isGradientText ? { opacity: 0.4, pointerEvents: 'none' } : undefined}>
@@ -1043,7 +1055,8 @@ function FontSection({ el, styles, updateStyle, previewStyle, isGradientText, li
           value={parseFloat(styles.lineHeight) || 1.5}
           onChange={v => updateStyle('lineHeight', String(v))}
           onPreview={previewStyle && (v => previewStyle('lineHeight', String(v)))}
-          min={0.5} max={5} step={0.1}
+          // 하한 1.0 — 1.0 미만이면 라인박스가 겹쳐 인라인 하이라이트 배경이 윗줄 글자를 가림
+          min={1} max={5} step={0.1}
         />
         <NumInput
           label="문자 간격"
@@ -1051,6 +1064,13 @@ function FontSection({ el, styles, updateStyle, previewStyle, isGradientText, li
           onChange={v => updateStyle('letterSpacing', v + 'px')}
           onPreview={previewStyle && (v => previewStyle('letterSpacing', v + 'px'))}
           unit="px" step={0.5}
+        />
+        <NumInput
+          label="세로 오프셋"
+          value={parseFloat(styles.baselineOffset) || 0}
+          onChange={v => updateStyle('baselineOffset', v)}
+          onPreview={previewStyle && (v => previewStyle('baselineOffset', v))}
+          unit="px" step={1} min={-500} max={500}
         />
       </div>
 
