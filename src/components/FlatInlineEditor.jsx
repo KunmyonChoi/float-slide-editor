@@ -495,7 +495,9 @@ export default function FlatInlineEditor({ element }) {
     outlineOffset: -1,
     cursor: 'text',
     userSelect: 'text',
-    overflow: 'auto',
+    // 편집 중엔 입력 내용이 모두 보이도록 visible — auto면 내용이 박스보다 클 때(예: 줄마다
+    // 글자 크기가 다른 rich text) 세로 스크롤바가 생겨 거슬림. 표시 모드도 기본 overflow visible.
+    overflow: 'visible',
   }
 
   return (
