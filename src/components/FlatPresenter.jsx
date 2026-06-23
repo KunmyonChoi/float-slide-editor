@@ -336,6 +336,7 @@ export default function FlatPresenter() {
               return (
                 <div key={el.id} style={{
                   position: 'absolute', left: el.x, top: el.y, width: el.width, height: el.height,
+                  zIndex: el.zIndex, // 래퍼가 요소 z를 보존(안 하면 z:auto로 양수 z 형제 아래로 깔림)
                   transformOrigin: 'center center',
                   opacity: showHidden ? 0 : undefined,
                   visibility: showHidden ? 'hidden' : undefined,
