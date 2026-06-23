@@ -12,13 +12,16 @@ import os
 import time
 import threading
 
+# MPS(Apple GPU)에서 미지원 연산은 CPU로 자동 폴백 — torch import 전에 설정해야 적용됨
+os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
+
 import numpy as np
 import torch
 from PIL import Image
 from torchvision import transforms
 from transformers import AutoModelForImageSegmentation
 
-BUILD_VERSION = "2026-06-23.2-birefnet-warm"
+BUILD_VERSION = "2026-06-23.3-birefnet-fp32fix"
 MODEL_ID = os.environ.get("CUTOUT_MODEL", "ZhengPeng7/BiRefNet")  # MIT
 INPUT_SIZE = int(os.environ.get("CUTOUT_INPUT_SIZE", "1024"))
 
@@ -70,8 +73,8 @@ def ensure_loaded():
         model = AutoModelForImageSegmentation.from_pretrained(MODEL_ID, trust_remote_code=True)
         model.eval().to(dev)
         use_half = dev == "cuda"  # half는 CUDA에서만(mps/cpu는 fp16 불안정/미가속)
-        if use_half:
-            model.half()
+        # 체크포인트가 fp16이므로 비-CUDA에선 fp32로 강제 — 입력(fp32)과 dtype 불일치 방지
+        model.half() if use_half else model.float()
         torch.set_float32_matmul_precision("high")
         _model, _device, _use_half = model, dev, use_half
 
