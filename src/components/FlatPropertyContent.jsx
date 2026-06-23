@@ -1043,7 +1043,8 @@ function FontSection({ el, styles, updateStyle, previewStyle, isGradientText, li
           value={parseFloat(styles.lineHeight) || 1.5}
           onChange={v => updateStyle('lineHeight', String(v))}
           onPreview={previewStyle && (v => previewStyle('lineHeight', String(v)))}
-          min={0.5} max={5} step={0.1}
+          // 하한 1.0 — 1.0 미만이면 라인박스가 겹쳐 인라인 하이라이트 배경이 윗줄 글자를 가림
+          min={1} max={5} step={0.1}
         />
         <NumInput
           label="문자 간격"
