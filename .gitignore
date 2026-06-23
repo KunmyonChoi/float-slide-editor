@@ -44,5 +44,8 @@ scripts/pptx-compare/_tmp_page.html
 check-elements.mjs
 test-ppt-download.mjs
 
+# Local reference screenshots
+screenshot.png
+
 # Local Netlify folder
 .netlify
