@@ -5,6 +5,22 @@ import { hasApiKey, editImage, buildImageEnhancePrompt } from '../core/OpenAICli
 import { captureElementRegion } from '../core/captureCanvasRegion'
 import { openAiSettings } from './AiSettingsModal'
 import { INFOGRAPHIC_STYLES } from '../core/aiImageStyles'
+import { segmentImage, checkCutoutBackend, cutoutDockerRunCommand } from '../core/CutoutBackendClient'
+
+// data URL → Blob (캡처 결과를 분리 서버로 업로드)
+async function dataUrlToBlob(dataUrl) {
+  const res = await fetch(dataUrl)
+  return res.blob()
+}
+// Blob → data URL (컷아웃 결과를 프로젝트에 영속 저장)
+function blobToDataUrl(blob) {
+  return new Promise((resolve, reject) => {
+    const fr = new FileReader()
+    fr.onload = () => resolve(fr.result)
+    fr.onerror = reject
+    fr.readAsDataURL(blob)
+  })
+}
 
 /**
  * FlatImageAiBar — 이미지 요소를 단일 선택했을 때 뜨는 전용 AI 플로팅바.
@@ -27,6 +43,7 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
   const [zoom, setZoom] = useState(false)
   const abortRef = useRef(null)
   const captureRef = useRef('') // 입력 캡처 — 재생성 시 재사용
+  const cutoutBlobRef = useRef(null) // 분리 결과 PNG blob — 적용 시 data URL로 변환
   const [rect, setRect] = useState(null)
   const [tick, setTick] = useState(0)
 
@@ -132,6 +149,49 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
     setPhase('idle'); setImageUrl(''); setZoom(false)
   }, [imageUrl, element.id])
 
+  // 피사체 분리(서버) → 전경 컷아웃 미리보기
+  const runCutout = useCallback(async () => {
+    setMode('cutout')
+    abortRef.current?.abort()
+    const ctrl = new AbortController()
+    abortRef.current = ctrl
+    setPhase('loading'); setError(''); setImageUrl(''); setStatus('분리 서버 확인 중…')
+    try {
+      const ok = await checkCutoutBackend(true)
+      if (ctrl.signal.aborted) return
+      if (!ok) {
+        setError('피사체 분리 서버에 연결할 수 없습니다. 서버를 실행하세요:\n' + cutoutDockerRunCommand())
+        setPhase('error'); return
+      }
+      setStatus('이미지 캡처 중…')
+      const cap = await captureElementRegion(
+        { x: element.x, y: element.y, w: element.width, h: element.height },
+        { signal: ctrl.signal },
+      )
+      if (ctrl.signal.aborted) return
+      const inputBlob = await dataUrlToBlob(cap)
+      setStatus('피사체 분리 중…')
+      const r = await segmentImage(inputBlob, { signal: ctrl.signal })
+      if (ctrl.signal.aborted) return
+      cutoutBlobRef.current = r.blob
+      setImageUrl(r.url)
+      setPhase('preview')
+    } catch (e) {
+      if (e?.name === 'AbortError') return
+      setError(e?.message || '피사체 분리에 실패했습니다.')
+      setPhase('error')
+    }
+  }, [element.x, element.y, element.width, element.height])
+
+  // 컷아웃 적용: 원본(배경)+타이틀(중간)+컷아웃(앞) 3층 자동 배치
+  const applyCutout = useCallback(async () => {
+    const blob = cutoutBlobRef.current
+    if (!blob) return
+    const dataUrl = await blobToDataUrl(blob)
+    useFlatStore.getState().applyTextBehindSubject(element.id, dataUrl)
+    setPhase('idle'); setImageUrl(''); setZoom(false)
+  }, [element.id])
+
   const cancel = useCallback(() => {
     abortRef.current?.abort()
     setPhase('idle'); setError(''); setImageUrl(''); setZoom(false)
@@ -141,12 +201,13 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
   const { left: elemLeft, top: elemTop, bottom: elemBottom } = rect
 
   const BAR_H = 36
-  const BAR_W = 460
+  const BAR_W = 600
   const placeAbove = elemTop - BAR_H - 8 >= 8
   const anchorTop = placeAbove ? elemTop - BAR_H - 8 : elemBottom + 8
   const anchorLeft = Math.max(8, Math.min(window.innerWidth - BAR_W - 8, elemLeft))
 
-  const modeLabel = mode === 'edit' ? 'AI 이미지 편집' : 'AI 디자인 향상'
+  const modeLabel = mode === 'cutout' ? '피사체 뒤 텍스트'
+    : mode === 'edit' ? 'AI 이미지 편집' : 'AI 디자인 향상'
 
   const PANEL_W = 360
   const PANEL_H_EST = 380
@@ -199,6 +260,15 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
             <EditIcon />
             <span style={{ fontSize: 12, marginLeft: 5 }}>프롬프트 편집</span>
           </button>
+          <button
+            type="button"
+            onClick={runCutout}
+            title="피사체(인물/객체)를 분리해 그 '뒤'에 텍스트를 넣는 3층 구성을 만듭니다"
+            style={aiBtnStyle}
+          >
+            <LayersIcon />
+            <span style={{ fontSize: 12, marginLeft: 5 }}>피사체 뒤 텍스트</span>
+          </button>
         </div>
       )}
 
@@ -243,7 +313,7 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
           )}
 
           {phase === 'error' && (
-            <div style={{ fontSize: 12.5, color: '#fca5a5', lineHeight: 1.5 }}>{error}</div>
+            <div style={{ fontSize: 12.5, color: '#fca5a5', lineHeight: 1.5, whiteSpace: 'pre-wrap', userSelect: 'text', WebkitUserSelect: 'text' }}>{error}</div>
           )}
 
           {phase === 'preview' && (
@@ -258,19 +328,28 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
                   cursor: imageUrl ? 'zoom-in' : 'default',
                 }}
               >
-                {imageUrl && <img src={imageUrl} alt="" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', display: 'block' }} />}
+                {imageUrl && <img src={imageUrl} alt="" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', display: 'block', ...(mode === 'cutout' ? CHECKER_BG : null) }} />}
               </div>
-              <div style={{ fontSize: 11, color: '#64748b' }}>
-                {mode === 'edit' ? '편집 지시' : '변환 지시'}(편집 후 재생성 가능)
-              </div>
-              <textarea
-                value={prompt}
-                onChange={e => setPrompt(e.target.value)}
-                rows={3}
-                spellCheck={false}
-                style={textareaStyle}
-              />
-              <div style={{ fontSize: 11, color: '#64748b' }}>적용하면 같은 자리에서 결과 이미지로 교체됩니다(되돌리기 가능).</div>
+              {mode === 'cutout' ? (
+                <div style={{ fontSize: 11, color: '#64748b' }}>
+                  분리된 전경(투명 배경). 적용하면 <b>원본 + 타이틀 텍스트 + 전경</b> 3층이 만들어져
+                  텍스트가 피사체 <b>뒤</b>로 가려집니다. 적용 후 'TITLE'을 더블클릭해 내용을 입력하세요.
+                </div>
+              ) : (
+                <>
+                  <div style={{ fontSize: 11, color: '#64748b' }}>
+                    {mode === 'edit' ? '편집 지시' : '변환 지시'}(편집 후 재생성 가능)
+                  </div>
+                  <textarea
+                    value={prompt}
+                    onChange={e => setPrompt(e.target.value)}
+                    rows={3}
+                    spellCheck={false}
+                    style={textareaStyle}
+                  />
+                  <div style={{ fontSize: 11, color: '#64748b' }}>적용하면 같은 자리에서 결과 이미지로 교체됩니다(되돌리기 가능).</div>
+                </>
+              )}
             </>
           )}
 
@@ -280,10 +359,12 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
               <button type="button" onClick={() => run('edit', prompt)} style={primaryBtnStyle}>편집 실행</button>
             )}
             {(phase === 'preview' || phase === 'error') && (
-              <button type="button" onClick={regenerate} style={ghostBtnStyle}>재생성</button>
+              <button type="button" onClick={mode === 'cutout' ? runCutout : regenerate} style={ghostBtnStyle}>
+                {mode === 'cutout' ? '다시 시도' : '재생성'}
+              </button>
             )}
             {phase === 'preview' && (
-              <button type="button" onClick={apply} style={primaryBtnStyle}>적용</button>
+              <button type="button" onClick={mode === 'cutout' ? applyCutout : apply} style={primaryBtnStyle}>적용</button>
             )}
           </div>
         </div>
@@ -318,6 +399,13 @@ const styleSelectStyle = {
   background: 'rgba(255,255,255,0.06)', color: '#e2e8f0',
   border: '1px solid rgba(255,255,255,0.14)', outline: 'none',
 }
+// 투명(전경) 미리보기용 체커 배경
+const CHECKER_BG = {
+  backgroundImage:
+    'linear-gradient(45deg,#94a3b8 25%,transparent 25%),linear-gradient(-45deg,#94a3b8 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#94a3b8 75%),linear-gradient(-45deg,transparent 75%,#94a3b8 75%)',
+  backgroundSize: '16px 16px',
+  backgroundPosition: '0 0,0 8px,8px -8px,-8px 0',
+}
 const textareaStyle = {
   width: '100%', boxSizing: 'border-box', resize: 'vertical',
   padding: '8px 10px', fontSize: 12, lineHeight: 1.5,
@@ -347,6 +435,16 @@ function EditIcon() {
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <path d="M12 20h9" />
       <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" />
+    </svg>
+  )
+}
+
+function LayersIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M12 2 2 7l10 5 10-5-10-5z" />
+      <path d="M2 17l10 5 10-5" />
+      <path d="M2 12l10 5 10-5" />
     </svg>
   )
 }

@@ -1566,6 +1566,47 @@ export const useFlatStore = create((set, get) => ({
     })
   },
 
+  /**
+   * "피사체 뒤 텍스트" 3층 구성: 원본(배경) + 타이틀 텍스트(중간) + 전경 컷아웃(최상위).
+   * cutoutContent = 전경 알파 PNG(data URL, 원본 박스와 동일 영역). 세 요소를 한 그룹으로 묶고
+   * applyLayoutElements로 단일 undo. 적용 후 타이틀을 선택해 바로 편집 유도.
+   * @returns {string|null} 생성된 타이틀 텍스트 요소 id
+   */
+  applyTextBehindSubject(imageId, cutoutContent, opts = {}) {
+    const els = get().flatElements
+    const orig = els.find(e => e.id === imageId)
+    if (!orig || !cutoutContent) return null
+    const maxZ = els.length ? Math.max(...els.map(e => e.zIndex)) : 0
+    const gid = 'grp-' + (globalThis.crypto?.randomUUID?.() || Math.random().toString(36).slice(2, 11))
+
+    // 타이틀: 이미지 박스 중앙, 큰 글자(레퍼런스 느낌). 텍스트 < 컷아웃이라 피사체 뒤로 가려짐.
+    const fontPx = Math.max(40, Math.round(orig.height * 0.32))
+    const textEl = {
+      id: nextFlatId(), sourceId: null, type: 'text',
+      content: opts.titleText || 'TITLE', isRich: false, merged: false,
+      x: orig.x, y: Math.round(orig.y + orig.height / 2 - fontPx * 0.7),
+      width: orig.width, height: Math.round(fontPx * 1.4),
+      zIndex: maxZ + 1, groupId: gid,
+      styles: {
+        fontSize: fontPx + 'px', fontWeight: '800', color: 'rgba(255,255,255,0.92)',
+        textAlign: 'center', lineHeight: '1', letterSpacing: '0.02em',
+        fontFamily: orig.styles?.fontFamily || 'inherit',
+      },
+    }
+    // 전경 컷아웃: 원본과 동일 박스에 정확히 겹침(최상위). 박스 크기로 캡처됐으므로 fill로 정렬.
+    const cutoutEl = {
+      id: nextFlatId(), sourceId: null, type: 'image',
+      content: cutoutContent, isRich: false, merged: false,
+      x: orig.x, y: orig.y, width: orig.width, height: orig.height,
+      zIndex: maxZ + 2, groupId: gid,
+      styles: { objectFit: 'fill' },
+    }
+    // 원본도 그룹에 포함(함께 이동) — 제거 후 groupId 부여본으로 재추가하여 단일 undo.
+    get().applyLayoutElements([imageId], [{ ...orig, groupId: gid }, textEl, cutoutEl])
+    set({ selectedFlatIds: [textEl.id] }) // 타이틀 선택 → 더블클릭해 'TITLE' 교체
+    return textEl.id
+  },
+
   /** 여러 요소에 동일 changes 적용 + batch 히스토리 */
   batchUpdateFlatElements(ids, changes) {
     const els = get().flatElements
