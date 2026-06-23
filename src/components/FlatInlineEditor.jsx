@@ -23,28 +23,6 @@ function editorToPlain(el) {
   return tmp.textContent || ''
 }
 
-/** 현재 선택 영역을 style 한 속성으로 감싼다 (execCommand가 px를 못 주는 fontSize 등에 사용) */
-function wrapSelection(prop, value) {
-  const sel = window.getSelection()
-  if (!sel || sel.rangeCount === 0) return
-  const range = sel.getRangeAt(0)
-  if (range.collapsed) return
-  const span = document.createElement('span')
-  span.style[prop] = value
-  try {
-    range.surroundContents(span)
-  } catch {
-    // 노드 경계를 가로지르는 선택: 추출 후 래핑
-    const frag = range.extractContents()
-    span.appendChild(frag)
-    range.insertNode(span)
-  }
-  const nr = document.createRange()
-  nr.selectNodeContents(span)
-  sel.removeAllRanges()
-  sel.addRange(nr)
-  return span
-}
 
 /**
  * FlatInlineEditor
@@ -253,27 +231,59 @@ export default function FlatInlineEditor({ element }) {
     refreshSelection()
   }, [refreshSelection, applyHighlight])
 
-  // 선택 영역 글자크기 증감 (앵커의 계산된 크기 기준 ±step)
+  // 선택 영역 글자크기 상대 증감 — 전체 박스 단축키(bumpFontSizePx)와 동일하게 위계 유지.
+  // 기존 font-size 조상은 제자리에서 가감(누적 없음), base(상속) 런만 현재크기+delta로 1회 래핑.
+  // (일괄 통일은 속성창 폰트크기 직접 지정으로 별도 제공)
   const changeFontSize = useCallback((delta) => {
     const el = ref.current
     const sel = window.getSelection()
     if (!el || !sel || sel.rangeCount === 0 || sel.isCollapsed) return
-    el.focus()
-    const anchor = sel.anchorNode
-    const probe = anchor && anchor.nodeType === 3 ? anchor.parentElement : anchor
-    const cur = probe ? (parseFloat(getComputedStyle(probe).fontSize) || 16) : 16
-    const next = Math.max(FONT_MIN, Math.min(FONT_MAX, Math.round(cur) + delta))
-    // 새 크기 span으로 감싼 뒤, 선택 내부의 기존 font-size 선언을 제거(정규화).
-    // 안 하면 매 클릭마다 중첩 span이 쌓이고(파일 비대), 안쪽 font-size가 새 크기를 덮어
-    // 여러 줄 선택 시 크기가 안 바뀐 것처럼 보인다.
-    const span = wrapSelection('fontSize', next + 'px')
-    if (span && span.querySelectorAll) {
-      span.querySelectorAll('*').forEach(d => {
-        if (d.style && d.style.fontSize) {
-          d.style.removeProperty('font-size')
-          if (d.getAttribute('style') === '') d.removeAttribute('style')
-        }
-      })
+    const range = sel.getRangeAt(0)
+    const clampSz = (v) => Math.max(FONT_MIN, Math.min(FONT_MAX, Math.round(v)))
+
+    const targets = []
+    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, null)
+    let n
+    while ((n = walker.nextNode())) {
+      if (!n.nodeValue || !range.intersectsNode(n)) continue
+      let s = 0, e = n.nodeValue.length
+      if (n === range.startContainer) s = range.startOffset
+      if (n === range.endContainer) e = range.endOffset
+      if (s < e) targets.push([n, s, e])
+    }
+    if (!targets.length) return
+
+    const carriers = new Set()
+    const baseRuns = []
+    targets.forEach(([node, s, e]) => {
+      let carrier = null
+      for (let p = node.parentElement; p && p !== el; p = p.parentElement) {
+        if (p.style && p.style.fontSize) { carrier = p; break }
+      }
+      if (carrier) carriers.add(carrier)
+      else baseRuns.push([node, s, e])
+    })
+
+    const touched = []
+    carriers.forEach(c => {
+      const curC = parseFloat(c.style.fontSize) || parseFloat(getComputedStyle(c).fontSize) || 16
+      c.style.fontSize = clampSz(curC + delta) + 'px'
+      touched.push(c)
+    })
+    baseRuns.forEach(([node, s, e]) => {
+      const curB = parseFloat(getComputedStyle(node.parentElement).fontSize) || 16
+      const r = document.createRange()
+      r.setStart(node, s); r.setEnd(node, e)
+      const span = document.createElement('span')
+      span.style.fontSize = clampSz(curB + delta) + 'px'
+      try { r.surroundContents(span) } catch { const f = r.extractContents(); span.appendChild(f); r.insertNode(span) }
+      touched.push(span)
+    })
+    if (touched.length) { // 가감된 영역 전체로 선택 복원
+      touched.sort((a, b) => (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) ? -1 : 1)
+      const nr = document.createRange()
+      nr.setStartBefore(touched[0]); nr.setEndAfter(touched[touched.length - 1])
+      sel.removeAllRanges(); sel.addRange(nr)
     }
     refreshSelection()
   }, [refreshSelection])
