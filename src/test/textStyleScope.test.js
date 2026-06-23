@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { bumpFontSizePx, setFontSizeUniformPx, stripInlineFormatting, FORMAT_STRIP } from '../core/TextStyleScope'
+import { bumpFontSizePx, setFontSizeUniformPx, stripInlineFormatting, richToPlainText, FORMAT_STRIP } from '../core/TextStyleScope'
 
 describe('bumpFontSizePx — 상대 증감(위계 유지)', () => {
   it('비-rich: base만 증가', () => {
@@ -74,5 +74,18 @@ describe('stripInlineFormatting — 전체 서식 통일', () => {
     const out = stripInlineFormatting(html, true, FORMAT_STRIP.bold)
     expect(out).toContain('color: red')
     expect(out).not.toContain('font-weight')
+  })
+})
+
+describe('richToPlainText — 서식 삭제(평탄화)', () => {
+  it('div/br 줄바꿈 보존 + 모든 인라인 서식 제거', () => {
+    const html = '<span style="background-color:#fde68a"><span style="font-size:200px">A</span></span><div><span style="font-size:120px">B</span></div><div>C</div>'
+    expect(richToPlainText(html)).toBe('A\nB\nC')
+  })
+  it('br 줄바꿈', () => {
+    expect(richToPlainText('a<br>b<br>c')).toBe('a\nb\nc')
+  })
+  it('빈 입력', () => {
+    expect(richToPlainText('')).toBe('')
   })
 })
