@@ -96,6 +96,37 @@ describe('useScrub', () => {
     expect(onCommit).not.toHaveBeenCalled()
   })
 
+  // 터치: 가로/세로 모두 인식(우/상=증가). 마우스는 가로 전용.
+  const tdown = (x, y) => ({ pointerId: 1, clientX: x, clientY: y, button: 0, pointerType: 'touch', preventDefault: vi.fn(), currentTarget: { setPointerCapture: vi.fn() } })
+  const tmove = (x, y) => ({ pointerId: 1, clientX: x, clientY: y, pointerType: 'touch' })
+
+  it('터치: 세로 위로 드래그 = 증가', () => {
+    const onPreview = vi.fn()
+    const { result } = renderHook(() => useScrub({ value: 10, step: 1, onPreview, onCommit: vi.fn() }))
+    const h = result.current
+    h.onPointerDown(tdown(100, 100))
+    h.onPointerMove(tmove(100, 80)) // dy=-20 → +20 → 30
+    expect(onPreview).toHaveBeenLastCalledWith(30)
+  })
+
+  it('터치: 가로 오른쪽 드래그 = 증가', () => {
+    const onPreview = vi.fn()
+    const { result } = renderHook(() => useScrub({ value: 10, step: 1, onPreview, onCommit: vi.fn() }))
+    const h = result.current
+    h.onPointerDown(tdown(100, 100))
+    h.onPointerMove(tmove(120, 100)) // dx=+20 → 30
+    expect(onPreview).toHaveBeenLastCalledWith(30)
+  })
+
+  it('마우스: 세로 드래그는 무시(가로 전용)', () => {
+    const onPreview = vi.fn()
+    const { result } = renderHook(() => useScrub({ value: 10, step: 1, onPreview, onCommit: vi.fn() }))
+    const h = result.current
+    h.onPointerDown(down(100))
+    h.onPointerMove({ pointerId: 1, clientX: 100, clientY: 50 }) // dx=0 → 변화 없음
+    expect(onPreview).not.toHaveBeenCalled()
+  })
+
   it('드래그 핸들 style에 ew-resize/touchAction none 포함', () => {
     const { result } = renderHook(() => useScrub({ value: 0, onPreview: vi.fn(), onCommit: vi.fn() }))
     expect(result.current.style.cursor).toBe('ew-resize')

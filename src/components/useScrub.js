@@ -58,7 +58,7 @@ export function useScrub({ value, step = 1, min, max, sensitivity = 1, onPreview
     e.preventDefault()
     e.currentTarget.setPointerCapture?.(e.pointerId)
     const start = Number(value) || 0
-    drag.current = { id: e.pointerId, startX: e.clientX, startVal: start, last: start, moved: false }
+    drag.current = { id: e.pointerId, startX: e.clientX, startY: e.clientY, startVal: start, last: start, moved: false }
     window.addEventListener('keydown', onKey)
   }
 
@@ -66,12 +66,18 @@ export function useScrub({ value, step = 1, min, max, sensitivity = 1, onPreview
     const d = drag.current
     if (!d || e.pointerId !== d.id) return
     const dx = e.clientX - d.startX
+    const dy = e.clientY - d.startY
+    // 마우스/펜: 가로 전용(ew-resize 의미 유지). 터치: 손가락 방향이 자유로워 가로/세로 모두 인식
+    // — 우세 축 사용(오른쪽=증가, 위=증가). 가로 전용이면 세로 드래그가 무반응이라 "됐다 안 됐다"로 느껴짐.
+    const delta = e.pointerType === 'touch'
+      ? (Math.abs(dx) >= Math.abs(dy) ? dx : -dy)
+      : dx
     // 데드존 — 터치는 손가락 떨림이 커서 더 크게(탭이 값 변경으로 오인되지 않게)
     const dead = e.pointerType === 'touch' ? 8 : 3
-    if (!d.moved && Math.abs(dx) < dead) return
+    if (!d.moved && Math.abs(delta) < dead) return
     d.moved = true
     const mult = e.shiftKey ? step * 10 : e.altKey ? step * 0.1 : step
-    let next = d.startVal + Math.round(dx / sensitivity) * mult
+    let next = d.startVal + Math.round(delta / sensitivity) * mult
     next = snap(clamp(next, min, max), mult)
     if (next !== d.last) { d.last = next; onPreview && onPreview(next) }
   }
