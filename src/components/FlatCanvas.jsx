@@ -1586,7 +1586,7 @@ function ConnectionMarkers({ el, touch, scale = 1 }) {
   // 화면상 크기를 일정하게 유지(줌아웃에서도 잡기 쉬움).
   const s = scale || 1
   const OUT = CONNECT_DOT_OUT / s   // 화면상 14px
-  const R = (touch ? 13 : 6) / s    // 화면상 일정 반지름
+  const R = (touch ? 13 : 4.5) / s  // 화면상 일정 반지름(데스크톱은 작게)
   // 터치 + 줌아웃에선 8개가 작은 도형 주변에서 겹침 → 터치는 4변 중점만
   const pts = connectionPoints(el)
     .filter(p => touch ? ((p.fx === 0.5) !== (p.fy === 0.5)) : true)
@@ -1610,7 +1610,7 @@ function ConnectionMarkers({ el, touch, scale = 1 }) {
           title="드래그해서 다른 도형에 연결 (이 지점에 고정)"
           onPointerDown={(e) => start(e, p)}
           style={{ position: 'absolute', left: p.dx - R, top: p.dy - R, width: R * 2, height: R * 2, borderRadius: '50%',
-            background: '#10b981', border: `${2 / s}px solid #fff`, boxShadow: `0 0 0 ${1 / s}px rgba(16,185,129,0.5)`,
+            background: '#10b981', border: `${(touch ? 2 : 1.5) / s}px solid #fff`, boxShadow: `0 0 0 ${1 / s}px rgba(16,185,129,0.5)`,
             cursor: 'crosshair', touchAction: 'none', zIndex: 10001 }} />
       ))}
     </div>

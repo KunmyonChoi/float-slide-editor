@@ -6,12 +6,11 @@ import { pointsToBBox, closestPointOnSegments } from '../core/PolyShapeUtils'
 import { attachTargetAt, nearestConnectionPoint } from '../core/ConnectorRouting'
 import { useIsTouch } from '../core/pointerEnv'
 
-const HANDLE_SIZE = 12 // 데스크톱 리사이즈 핸들 화면 px(렌더 시 /scale로 줌 무관 일정 크기)
+const HANDLE_SIZE = 8 // 데스크톱 리사이즈 핸들 화면 px(렌더 시 /scale로 줌 무관 일정 크기)
 const ROTATE_HANDLE_OFFSET = 30
 // 리사이즈 최소 크기. 얇은 구분선/규칙선(높이 1~4px 등)으로 변환된 요소를
 // 다시 그 크기로 되돌릴 수 있도록 1px까지 허용한다(0/음수만 방지).
 const MIN_SIZE = 1
-const GROUP_HANDLE_SIZE = 8
 const RADIUS_HANDLE_MIN_INSET = 14 // 둥글기 0일 때도 잡을 수 있도록 핸들 최소 안쪽 거리
 const RADIUS_HANDLE_MAX_INSET = 18 // 핸들이 모서리 근처에 머물도록 상한(중앙 침범 방지)
 const RADIUS_HANDLE_MIN_ELEM = 40 // 이보다 작은 요소는 핸들이 본체를 덮으므로 숨김
@@ -936,27 +935,30 @@ export function FlatGroupOverlay({ elements, scale, otherRects, canvasSize, onSn
             </div>
           )
         })()
-      ) : GROUP_HANDLES.map(h => (
-        <div
-          key={h.dir}
-          data-resize-handle="true"
-          onMouseDown={(e) => handleResizeStart(e, h.dir)}
-          onPointerDown={(e) => { if (e.pointerType === 'touch') handleResizeStart(e, h.dir) }}
-          style={{
-            position: 'absolute',
-            left: h.x * bbox.w - GROUP_HANDLE_SIZE / 2,
-            top: h.y * bbox.h - GROUP_HANDLE_SIZE / 2,
-            width: GROUP_HANDLE_SIZE,
-            height: GROUP_HANDLE_SIZE,
-            background: '#6366f1',
-            border: '1px solid #fff',
-            borderRadius: 2,
-            cursor: h.cursor,
-            touchAction: 'none',
-            zIndex: 10000,
-          }}
-        />
-      )))}
+      ) : GROUP_HANDLES.map(h => {
+        const hsz = HANDLE_SIZE / scale // 단일 요소 핸들과 동일 — 화면 기준 일정 크기
+        return (
+          <div
+            key={h.dir}
+            data-resize-handle="true"
+            onMouseDown={(e) => handleResizeStart(e, h.dir)}
+            onPointerDown={(e) => { if (e.pointerType === 'touch') handleResizeStart(e, h.dir) }}
+            style={{
+              position: 'absolute',
+              left: h.x * bbox.w - hsz / 2,
+              top: h.y * bbox.h - hsz / 2,
+              width: hsz,
+              height: hsz,
+              background: '#6366f1',
+              border: `${1.5 / scale}px solid #fff`,
+              borderRadius: 2 / scale,
+              cursor: h.cursor,
+              touchAction: 'none',
+              zIndex: 10000,
+            }}
+          />
+        )
+      }))}
     </div>
   )
 }
