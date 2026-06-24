@@ -61,11 +61,12 @@ export default function FlatPropertyContent() {
   // 다이어그램 모드일 때 애니메이션 탭 자리에 뜨는 아이콘 팔레트 탭(선택 무관 항상 사용 가능)
   const [iconTab, setIconTab] = useState(false)
   const singleSel = selectedEls.length === 1
-  // 애니메이션 탭이 단일 선택 상태에서 활성일 때만 캔버스 순서 배지 표시
+  // 애니메이션 탭이 단일 선택 상태에서 활성일 때만 캔버스 순서 배지 표시.
+  // 다이어그램 모드에선 애니메이션 탭이 숨겨지므로(아이콘 탭으로 대체) 배지도 끈다.
   useEffect(() => {
-    useFlatStore.getState().setAnimPanelOpen(animTab && singleSel)
+    useFlatStore.getState().setAnimPanelOpen(animTab && singleSel && !diagramMode)
     return () => useFlatStore.getState().setAnimPanelOpen(false)
-  }, [animTab, singleSel])
+  }, [animTab, singleSel, diagramMode])
 
   // 일반(비-아이콘) 패널 본문 — 선택 상태에 따라 분기.
   const renderEdit = () => {

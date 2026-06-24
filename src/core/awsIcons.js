@@ -9,10 +9,18 @@
 // path '../assets/aws-icons/EC2.svg' → raw SVG 문자열
 const RAW = import.meta.glob('../assets/aws-icons/*.svg', { query: '?raw', import: 'default', eager: true })
 
+/** raw SVG → <img src>로 쓸 수 있는 data URL (자기완결적, 저장/내보내기 라운드트립 가능) */
+export function svgToDataUrl(svg) {
+  return 'data:image/svg+xml,' + encodeURIComponent(svg)
+}
+
+// 빌드 타임에 1회 인코딩 — 렌더마다 재인코딩하지 않도록 id별 캐시.
 const SVG_BY_ID = {}
+const DATA_URL_BY_ID = {}
 for (const [path, svg] of Object.entries(RAW)) {
   const id = path.split('/').pop().replace(/\.svg$/, '')
   SVG_BY_ID[id] = svg
+  DATA_URL_BY_ID[id] = svgToDataUrl(svg)
 }
 
 /** 아이콘 id → raw SVG 문자열 (없으면 null) */
@@ -20,15 +28,9 @@ export function iconSvg(id) {
   return SVG_BY_ID[id] || null
 }
 
-/** raw SVG → <img src>로 쓸 수 있는 data URL (자기완결적, 저장/내보내기 라운드트립 가능) */
-export function svgToDataUrl(svg) {
-  return 'data:image/svg+xml,' + encodeURIComponent(svg)
-}
-
-/** 아이콘 id → data URL (없으면 null) */
+/** 아이콘 id → data URL (없으면 null) — 캐시된 값 반환 */
 export function awsIconDataUrl(id) {
-  const svg = iconSvg(id)
-  return svg ? svgToDataUrl(svg) : null
+  return DATA_URL_BY_ID[id] || null
 }
 
 /**

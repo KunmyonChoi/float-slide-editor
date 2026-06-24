@@ -12,6 +12,11 @@ import { awsIconDataUrl, ICON_LABEL, GROUP_BY_KIND } from '../core/awsIcons'
 // 배경 레이어 판정 — SnapEngine의 canonical 헬퍼 재노출(명시 플래그/__bg 기반)
 export { isBackgroundElement as isBackgroundLayer }
 
+// 새 그룹 id — 'grp-' 접두사 + UUID(미지원 환경은 난수 폴백). 그룹 묶기/요소 삽입 공용.
+function newGroupId() {
+  return 'grp-' + (globalThis.crypto?.randomUUID?.() || Math.random().toString(36).slice(2, 11))
+}
+
 // 사용자정의 테마 기본값 — 기본 테마(화이트)를 복제한 가변 토큰
 export function makeDefaultCustomTheme() {
   const base = getTheme(DEFAULT_THEME_ID)
@@ -1112,7 +1117,7 @@ export const useFlatStore = create((set, get) => ({
   groupSelected() {
     const ids = get().selectedFlatIds
     if (ids.length < 2) return
-    const gid = 'grp-' + (globalThis.crypto?.randomUUID?.() || Math.random().toString(36).slice(2, 11))
+    const gid = newGroupId()
     get().batchUpdateFlatElements(ids, { groupId: gid })
   },
 
@@ -1496,7 +1501,7 @@ export const useFlatStore = create((set, get) => ({
       }
       if (clone.groupId) {
         if (!groupMap[clone.groupId]) {
-          groupMap[clone.groupId] = 'grp-' + (globalThis.crypto?.randomUUID?.() || Math.random().toString(36).slice(2, 11))
+          groupMap[clone.groupId] = newGroupId()
         }
         clone.groupId = groupMap[clone.groupId]
       }
@@ -1566,7 +1571,7 @@ export const useFlatStore = create((set, get) => ({
     let iy = Math.round(cy - SIZE / 2)
     ix = Math.max(0, Math.min(ix, cs.w - SIZE))
     iy = Math.max(0, Math.min(iy, cs.h - SIZE - LABEL_H - GAP))
-    const gid = 'grp-' + (globalThis.crypto?.randomUUID?.() || Math.random().toString(36).slice(2, 11))
+    const gid = newGroupId()
     const iconEl = {
       id: nextFlatId(), sourceId: null, type: 'image', groupId: gid,
       content: dataUrl, isRich: false, merged: false,
@@ -1577,10 +1582,12 @@ export const useFlatStore = create((set, get) => ({
         opacity: '1', objectFit: 'contain',
       },
     }
+    // 라벨 x는 (클램프된) 아이콘 중심 기준 — 가장자리 드롭에서도 아이콘 아래 정렬·캔버스 내 유지
+    const labelX = Math.max(0, Math.min(Math.round(ix + SIZE / 2 - LABEL_W / 2), cs.w - LABEL_W))
     const labelEl = {
       id: nextFlatId(), sourceId: null, type: 'text', groupId: gid,
       content: ICON_LABEL[iconId] || iconId, isRich: false, merged: false,
-      x: Math.round(cx - LABEL_W / 2), y: iy + SIZE + GAP, width: LABEL_W, height: LABEL_H, zIndex: maxZ + 2,
+      x: labelX, y: iy + SIZE + GAP, width: LABEL_W, height: LABEL_H, zIndex: maxZ + 2,
       styles: {
         backgroundColor: 'rgba(0,0,0,0)', color: '#232F3E',
         fontSize: '11px', fontFamily: 'sans-serif', fontWeight: '600',
@@ -1589,7 +1596,7 @@ export const useFlatStore = create((set, get) => ({
       },
     }
     get().addFlatElements([iconEl, labelEl])
-    set({ selectedFlatIds: [iconEl.id, labelEl.id] })
+    get().setSelectedFlats([iconEl.id, labelEl.id])
   },
 
   /**
@@ -1608,7 +1615,7 @@ export const useFlatStore = create((set, get) => ({
     let x = Math.round(cx - W / 2), y = Math.round(cy - H / 2)
     x = Math.max(0, Math.min(x, cs.w - W))
     y = Math.max(0, Math.min(y, cs.h - H))
-    const gid = 'grp-' + (globalThis.crypto?.randomUUID?.() || Math.random().toString(36).slice(2, 11))
+    const gid = newGroupId()
     const rectEl = {
       id: nextFlatId(), sourceId: null, type: 'shape', groupId: gid,
       content: '', isRich: false, merged: false,
@@ -1631,7 +1638,7 @@ export const useFlatStore = create((set, get) => ({
       },
     }
     get().addFlatElements([rectEl, labelEl])
-    set({ selectedFlatIds: [rectEl.id, labelEl.id] })
+    get().setSelectedFlats([rectEl.id, labelEl.id])
   },
 
   /** 레이아웃 변환 — removeIds를 제거하고 addElements를 추가 (단일 undo 단위) */
@@ -1663,7 +1670,7 @@ export const useFlatStore = create((set, get) => ({
     const orig = els.find(e => e.id === imageId)
     if (!orig || !cutoutContent) return null
     const maxZ = els.length ? Math.max(...els.map(e => e.zIndex)) : 0
-    const gid = 'grp-' + (globalThis.crypto?.randomUUID?.() || Math.random().toString(36).slice(2, 11))
+    const gid = newGroupId()
 
     // 타이틀: 이미지 박스 중앙, 큰 글자(레퍼런스 느낌). 텍스트 < 컷아웃이라 피사체 뒤로 가려짐.
     // 그룹에 넣지 않음 → 사용자가 자유롭게 드래그해 원하는 위치에 배치(z-순서가 가림 효과 유지).

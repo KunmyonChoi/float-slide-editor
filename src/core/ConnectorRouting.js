@@ -284,12 +284,20 @@ export function attachTargetAt(px, py, elements, opts = {}) {
   const isFullCanvas = (el) => cs &&
     Math.abs(el.width - cs.w) < 2 && Math.abs(el.height - cs.h) < 2 &&
     Math.abs(el.x) < 2 && Math.abs(el.y) < 2
+  // 노드(아이콘/도형)와 함께 묶인 텍스트 = 캡션 라벨 → 부착 대상에서 제외(커넥터는 노드에 붙어야 함).
+  // 라벨이 노드보다 z가 높거나 더 넓어도 노드가 타겟이 되도록 한다.
+  const captionGroups = new Set()
+  for (const el of elements) {
+    if (el.groupId && el.type !== 'text') captionGroups.add(el.groupId)
+  }
+  const isCaptionLabel = (el) => el.type === 'text' && el.groupId && captionGroups.has(el.groupId)
   const cand = elements
     .filter(el =>
       !isConnector(el) &&
       !el.isBackground &&
       el.sourceId !== '__bg' &&
       !isFullCanvas(el) &&
+      !isCaptionLabel(el) &&
       el.id !== excludeId
     )
     .sort((a, b) => (b.zIndex ?? 0) - (a.zIndex ?? 0))
