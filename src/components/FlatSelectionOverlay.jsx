@@ -647,6 +647,7 @@ const GROUP_HANDLES = [
 export function FlatGroupOverlay({ elements, scale, otherRects, canvasSize, onSnapGuides }) {
   const { batchPreviewFlatElements, batchUpdateFlatElementsIndividual, setEditingFlat } = useFlatStore()
   const dragRef = useRef(null)
+  const isTouch = useIsTouch()
 
   const bbox = useMemo(() => {
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
@@ -887,7 +888,36 @@ export function FlatGroupOverlay({ elements, scale, otherRects, canvasSize, onSn
       onPointerDown={(e) => { if (e.pointerType === 'touch') handleMoveStart(e) }}
       onDoubleClick={handleDoubleClick}
     >
-      {movableElements.length > 0 && GROUP_HANDLES.map(h => (
+      {movableElements.length > 0 && (isTouch ? (
+        /* 모바일: 단일 요소 오버레이와 동일 기준 — 우하단(SE) 한 점, 화면 기준 일정 크기 */
+        (() => {
+          const H = 24 / scale
+          return (
+            <div
+              data-resize-handle="true"
+              onMouseDown={(e) => handleResizeStart(e, 'se')}
+              onPointerDown={(e) => { if (e.pointerType === 'touch') handleResizeStart(e, 'se') }}
+              style={{
+                position: 'absolute',
+                left: bbox.w - H / 2,
+                top: bbox.h - H / 2,
+                width: H, height: H,
+                background: '#6366f1',
+                border: `${2 / scale}px solid #fff`,
+                borderRadius: 6 / scale,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                cursor: 'nwse-resize', touchAction: 'none',
+                zIndex: 10000,
+              }}
+            >
+              <svg width={H * 0.55} height={H * 0.55} viewBox="0 0 12 12" fill="none"
+                stroke="#fff" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M3 9 H9 V3" />
+              </svg>
+            </div>
+          )
+        })()
+      ) : GROUP_HANDLES.map(h => (
         <div
           key={h.dir}
           data-resize-handle="true"
@@ -907,7 +937,7 @@ export function FlatGroupOverlay({ elements, scale, otherRects, canvasSize, onSn
             zIndex: 10000,
           }}
         />
-      ))}
+      )))}
     </div>
   )
 }
