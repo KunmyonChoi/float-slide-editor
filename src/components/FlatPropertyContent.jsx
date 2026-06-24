@@ -259,7 +259,8 @@ function SingleElementPanel({ el, animTab, setAnimTab, updateFlatElement, previe
 // ── 다중 선택 패널 ──────────────────────────────────
 
 function MultiElementPanel({ elements }) {
-  const { batchUpdateFlatElements, batchUpdateFlatElementsIndividual, selectedFlatIds } = useFlatStore()
+  const { batchUpdateFlatElements, batchUpdateFlatElementsIndividual, batchPreviewFlatElements, selectedFlatIds } = useFlatStore()
+  const lockAspect = useFlatStore(s => s.lockAspect)
 
   // 공통 값 계산 헬퍼: 모든 요소에서 동일하면 그 값, 아니면 null
   const getCommon = (getter) => {
@@ -316,6 +317,42 @@ function MultiElementPanel({ elements }) {
     batchUpdateFlatElementsIndividual(changes)
   }
 
+  // ── 그룹 위치/크기 스크럽 ──
+  // 드래그 시작 시 멤버 원본을 스냅샷 → 변환은 스냅샷 기준(누적 반올림 드리프트 없음).
+  // 커밋 시 원본으로 되돌린 뒤 일괄 업데이트해 undo가 '원본→최종'을 기록. ESC/드래그 종료 시 스냅샷 해제.
+  const scrubStartRef = useRef(null)
+  useEffect(() => {
+    const clear = () => { scrubStartRef.current = null }
+    window.addEventListener('pointerup', clear)
+    window.addEventListener('pointercancel', clear)
+    return () => { window.removeEventListener('pointerup', clear); window.removeEventListener('pointercancel', clear) }
+  }, [])
+  const snapMembers = () => elements.map(e => ({ id: e.id, x: e.x, y: e.y, width: e.width, height: e.height }))
+  const getBase = (preview) => {
+    if (preview) {
+      if (!scrubStartRef.current) scrubStartRef.current = { bbox, members: snapMembers() }
+      return scrubStartRef.current
+    }
+    return scrubStartRef.current || { bbox, members: snapMembers() }
+  }
+  const applyBoxTransform = (fn, preview) => {
+    const base = getBase(preview)
+    const changes = base.members.map(m => ({ id: m.id, changes: fn(m, base.bbox) }))
+    if (preview) { batchPreviewFlatElements(changes); return }
+    // 원본으로 되돌린 뒤 커밋 → undo가 원본→최종 기록(프리뷰는 히스토리 없음)
+    batchPreviewFlatElements(base.members.map(m => ({ id: m.id, changes: { x: m.x, y: m.y, width: m.width, height: m.height } })))
+    batchUpdateFlatElementsIndividual(changes)
+    scrubStartRef.current = null
+  }
+  const scaleMember = (m, b, sx, sy) => ({
+    x: Math.round(b.x + (m.x - b.x) * sx), y: Math.round(b.y + (m.y - b.y) * sy),
+    width: Math.max(1, Math.round(m.width * sx)), height: Math.max(1, Math.round(m.height * sy)),
+  })
+  const tX = (nx) => (m, b) => ({ x: Math.round(m.x + (nx - b.x)) })
+  const tY = (ny) => (m, b) => ({ y: Math.round(m.y + (ny - b.y)) })
+  const tW = (nw) => (m, b) => { const sx = b.w ? Math.max(1, nw) / b.w : 1; return scaleMember(m, b, sx, lockAspect ? sx : 1) }
+  const tH = (nh) => (m, b) => { const sy = b.h ? Math.max(1, nh) / b.h : 1; return scaleMember(m, b, lockAspect ? sy : 1, sy) }
+
   const commonBg = getCommonStyle('backgroundColor')
   const commonOpacity = getCommonStyle('opacity')
   const commonBorderRadius = getCommonStyle('borderRadius')
@@ -329,7 +366,7 @@ function MultiElementPanel({ elements }) {
       </div>
 
       <div className="p-3 space-y-3">
-        {/* 그룹 바운딩 박스 위치/크기 (읽기 전용) + 화면 채우기 */}
+        {/* 그룹 바운딩 박스 위치/크기 (스크럽으로 그룹 이동·스케일) + 화면 채우기 */}
         <div>
           <div className="flex items-center justify-between mb-0.5">
             <SectionTitle>그룹 위치</SectionTitle>
@@ -346,22 +383,10 @@ function MultiElementPanel({ elements }) {
             </div>
           </div>
           <div className="grid grid-cols-2 gap-1.5">
-            <div>
-              <p className={`${labelClass} mb-0.5`}>X</p>
-              <div className={`${inputClass} opacity-60`}>{Math.round(bbox.x)}</div>
-            </div>
-            <div>
-              <p className={`${labelClass} mb-0.5`}>Y</p>
-              <div className={`${inputClass} opacity-60`}>{Math.round(bbox.y)}</div>
-            </div>
-            <div>
-              <p className={`${labelClass} mb-0.5`}>W</p>
-              <div className={`${inputClass} opacity-60`}>{Math.round(bbox.w)}</div>
-            </div>
-            <div>
-              <p className={`${labelClass} mb-0.5`}>H</p>
-              <div className={`${inputClass} opacity-60`}>{Math.round(bbox.h)}</div>
-            </div>
+            <NumInput label="X" value={bbox.x} onChange={v => applyBoxTransform(tX(v), false)} onPreview={v => applyBoxTransform(tX(v), true)} />
+            <NumInput label="Y" value={bbox.y} onChange={v => applyBoxTransform(tY(v), false)} onPreview={v => applyBoxTransform(tY(v), true)} />
+            <NumInput label="W" value={bbox.w} min={1} onChange={v => applyBoxTransform(tW(v), false)} onPreview={v => applyBoxTransform(tW(v), true)} />
+            <NumInput label="H" value={bbox.h} min={1} onChange={v => applyBoxTransform(tH(v), false)} onPreview={v => applyBoxTransform(tH(v), true)} />
           </div>
           {hasRotatedMember && (
             <p className="text-[10px] text-amber-400/80 mt-1">⚠ 회전된 요소가 있어 채우기 시 위치·크기가 왜곡될 수 있습니다.</p>
@@ -430,15 +455,11 @@ function MultiElementPanel({ elements }) {
             {/* 크기 + 굵기/이탈릭/밑줄 */}
             <div className="flex items-end gap-1.5 mt-2">
               <div className="flex-1">
-                <p className={`${labelClass} mb-0.5`}>크기</p>
-                <input
-                  type="number"
+                <NumInput
+                  label="크기" min={1}
                   value={parseFloat(getTextCommon('fontSize') || '16')}
-                  onChange={e => updateTextStyle('fontSize', `${e.target.value}px`)}
-                  onKeyDown={e => e.stopPropagation()}
-                  min="8" step="1"
-                  className={inputClass}
-                  style={{ width: '100%' }}
+                  onChange={v => updateTextStyle('fontSize', `${v}px`)}
+                  onPreview={v => batchPreviewFlatElements(textIds.map(id => ({ id, changes: { styles: { fontSize: `${v}px` } } })))}
                 />
               </div>
               <button
