@@ -454,8 +454,13 @@ export default function FlatSelectionOverlay({ element, scale, otherRects, canva
                포인터 이벤트로 마우스·터치·펜 일괄 처리, 핸들은 연결점 마커와 동일 크기(터치 크게). */
             [0, element.points.length - 1].map((idx, i) => {
               const which = i === 0 ? 'start' : 'end'
-              const pt = element.points[idx]
-              const R = (isTouch ? 13 : 4.5) / scale // 연결점 마커와 동일
+              const pts = element.points
+              const pt = pts[idx]
+              // 연결점 마커와 동일 로직: 화면상 작으면(여기선 두 끝점 사이 화면 거리) 핸들 축소 →
+              // 짧은 커넥터에서 양 끝 핸들이 겹치지 않게(64px 이상=풀, 작을수록 최대 50%).
+              const connScreen = Math.hypot(pts[pts.length - 1].x - pts[0].x, pts[pts.length - 1].y - pts[0].y) * scale
+              const f = Math.max(0.5, Math.min(1, connScreen / 64))
+              const R = (isTouch ? 13 : 4.5) * f / scale
               const startReconnect = (e) => {
                 e.stopPropagation(); e.preventDefault()
                 try { e.currentTarget.setPointerCapture?.(e.pointerId) } catch { /* 무시 */ }
@@ -515,8 +520,8 @@ export default function FlatSelectionOverlay({ element, scale, otherRects, canva
                     left: pt.x - R, top: pt.y - R,
                     width: R * 2, height: R * 2,
                     background: '#10b981',
-                    border: `${(isTouch ? 2 : 1.5) / scale}px solid #fff`,
-                    boxShadow: `0 0 0 ${1 / scale}px rgba(16,185,129,0.5)`,
+                    border: `${(isTouch ? 2 : 1.5) * f / scale}px solid #fff`,
+                    boxShadow: `0 0 0 ${f / scale}px rgba(16,185,129,0.5)`,
                     borderRadius: '50%',
                     cursor: 'crosshair',
                     pointerEvents: 'auto', // 컨테이너가 none이어도 핸들은 받음
