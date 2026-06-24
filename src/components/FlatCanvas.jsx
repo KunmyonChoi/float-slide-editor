@@ -87,6 +87,10 @@ export default function FlatCanvas() {
   const pendingTapDeselectRef = useRef(null) // 손 도구: 편집 중 빈영역 탭 → 편집 종료 후 선택 해제 예약
   const [marquee, setMarquee] = useState(null)
   const marqueeRef = useRef(null) // 마키 시작 좌표 기억
+  // 롱프레스 컨텍스트 메뉴 억제: 누른 뒤 손가락이 임계 이상 움직였으면(=드래그) 그 누름 동안
+  // contextmenu를 막는다. 정지 롱프레스는 그대로 메뉴가 뜬다(드래그/롱프레스 자연 구분).
+  const pressPosRef = useRef(null)
+  const pressMovedRef = useRef(false)
   const [contextMenu, setContextMenu] = useState(null)
   const [snapGuides, setSnapGuides] = useState([])
 
@@ -431,6 +435,30 @@ export default function FlatCanvas() {
     const id = attachTargetAt(pt.x, pt.y, st.flatElements, { threshold: CONNECT_DOT_OUT + 10, canvasSize: st.canvasSize })
     setHoverShapeId(id)
   }, [diagramMode, connectorDraft, canvasPt])
+
+  // 누름 이동량 추적(캡처 단계) — 요소 드래그는 자식에서 stopPropagation되므로 document
+  // 캡처 리스너로 모든 포인터다운/무브를 관찰한다. contextmenu 억제 판단에만 사용.
+  useEffect(() => {
+    const CONTEXT_MOVE_THRESH = 10 // 화면 px — 이 이상 움직이면 드래그로 보고 롱프레스 메뉴 억제
+    const onDown = (e) => { pressPosRef.current = { x: e.clientX, y: e.clientY }; pressMovedRef.current = false }
+    const onMove = (e) => {
+      const p = pressPosRef.current
+      if (!p || pressMovedRef.current) return
+      if (Math.hypot(e.clientX - p.x, e.clientY - p.y) > CONTEXT_MOVE_THRESH) pressMovedRef.current = true
+    }
+    // 떼면 추적 중단(다음 다운 전 hover 이동이 플래그를 건드리지 않게). 플래그는 다음 down에서 리셋.
+    const onUp = () => { pressPosRef.current = null }
+    document.addEventListener('pointerdown', onDown, true)
+    document.addEventListener('pointermove', onMove, true)
+    document.addEventListener('pointerup', onUp, true)
+    document.addEventListener('pointercancel', onUp, true)
+    return () => {
+      document.removeEventListener('pointerdown', onDown, true)
+      document.removeEventListener('pointermove', onMove, true)
+      document.removeEventListener('pointerup', onUp, true)
+      document.removeEventListener('pointercancel', onUp, true)
+    }
+  }, [])
 
   // 드래그 중 window 리스너 (커서 추적 + 부착 후보 + 종료)
   const connectorDragging = !!connectorDraft
@@ -1178,6 +1206,8 @@ export default function FlatCanvas() {
     // 편집 중에는 우리 메뉴를 열지 않고 브라우저 기본 동작도 막지 않음
     // — 모바일 롱프레스로 텍스트 단어선택/네이티브 콜아웃을 보존
     if (useFlatStore.getState().editingFlatId) return
+    // 누른 뒤 손가락이 움직였으면(드래그) 또는 커넥터 드래그 중이면 롱프레스 메뉴 억제
+    if (pressMovedRef.current || useFlatStore.getState().connectorDraft) { e.preventDefault(); return }
     e.preventDefault()
     if (!stageRef.current) return
     const stageRect = stageRef.current.getBoundingClientRect()
