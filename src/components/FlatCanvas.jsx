@@ -1432,6 +1432,16 @@ export default function FlatCanvas() {
               && !isBackgroundElement(selectedEl) && (
               <ConnectionMarkers el={selectedEl} touch={isTouch} scale={scale} />
             )}
+            {/* 그룹(AWS 아이콘=이미지+라벨, 그룹 컨테이너=도형+라벨) 선택 시: 캡션 라벨을 제외한
+                단일 노드면 그 노드에 연결점 표시 → 그룹 선택 상태에서도 커넥터 시작 가능 */}
+            {diagramMode && !connectorDraft && selectedEls.length > 1 && (() => {
+              const nodes = selectedEls.filter(el =>
+                el.shapeType !== 'connector' && !el.locked && !isBackgroundElement(el)
+                && !(el.type === 'text' && el.groupId && selectedEls.some(o => o.groupId === el.groupId && o.type !== 'text')))
+              return nodes.length === 1
+                ? <ConnectionMarkers el={nodes[0]} touch={isTouch} scale={scale} />
+                : null
+            })()}
             {/* 다이어그램 모드: 커넥터 생성 드래그 프리뷰 */}
             {connectorDraft && (() => {
               const byId = {}
