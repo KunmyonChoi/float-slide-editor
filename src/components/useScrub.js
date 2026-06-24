@@ -1,4 +1,4 @@
-import { useRef } from 'react'
+import { useRef, useState } from 'react'
 
 const clamp = (v, min, max) => {
   if (min !== undefined && v < min) return min
@@ -39,9 +39,12 @@ const snap = (v, step) => {
  */
 export function useScrub({ value, step = 1, min, max, sensitivity = 1, onPreview, onCommit }) {
   const drag = useRef(null)
+  // 누른 순간(드래그 시작 전 포함) 활성 표시 — 라벨 배경 하이라이트로 "스크럽 잡힘" 피드백.
+  const [active, setActive] = useState(false)
 
   const finish = (cancelled) => {
     const d = drag.current
+    setActive(false)
     if (!d) return
     drag.current = null
     window.removeEventListener('keydown', onKey)
@@ -56,9 +59,11 @@ export function useScrub({ value, step = 1, min, max, sensitivity = 1, onPreview
   const onPointerDown = (e) => {
     if (e.button != null && e.button > 0) return // 좌클릭 / 터치 / 펜만
     e.preventDefault()
-    e.currentTarget.setPointerCapture?.(e.pointerId)
     const start = Number(value) || 0
+    // drag 상태를 먼저 확정 → setPointerCapture가 (드물게) 던져도 스크럽이 살아 있게.
     drag.current = { id: e.pointerId, startX: e.clientX, startY: e.clientY, startVal: start, last: start, moved: false }
+    try { e.currentTarget.setPointerCapture?.(e.pointerId) } catch { /* 무시 */ }
+    setActive(true)
     window.addEventListener('keydown', onKey)
   }
 
@@ -91,6 +96,7 @@ export function useScrub({ value, step = 1, min, max, sensitivity = 1, onPreview
     onPointerMove,
     onPointerUp,
     onPointerCancel: onPointerUp,
+    active,
     style: { cursor: 'ew-resize', touchAction: 'none', userSelect: 'none' },
   }
 }

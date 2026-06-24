@@ -46,6 +46,8 @@ const labelClass = 'text-xs text-slate-500'
 // 라벨 전체(숫자 박스 너비)가 스크럽 영역 — 짧은 글자 의존 X, 일관된 큰 가로 타깃.
 // (패딩/마진은 다른 라벨과 행 높이가 어긋나므로 쓰지 않음 — w-full로만 넓힘)
 const scrubLabelClass = `${labelClass} w-full mb-0.5 underline decoration-dotted decoration-slate-500 underline-offset-2 hover:text-slate-200 hover:decoration-slate-300`
+// 스크럽 활성(누름) 시 라벨 하이라이트 — "스크럽 잡힘" 즉각 피드백
+const scrubActiveClass = 'bg-indigo-500/40 text-white decoration-transparent rounded px-1 -mx-1'
 
 /**
  * FlatPropertyContent — Flat 모드 속성 패널 콘텐츠
@@ -1858,7 +1860,7 @@ function NumInput({ label, value, onChange, onPreview, unit = '', min, max, step
   }
 
   const fmt = (v) => String(Math.round(v * 100) / 100)
-  const scrub = useScrub({
+  const { active: scrubActive, ...scrub } = useScrub({
     value, step, min, max,
     onPreview: (v) => { setLocal(fmt(v)); onPreview && onPreview(v) },
     onCommit: (v) => { setLocal(fmt(v)); onChange(v) },
@@ -1868,7 +1870,8 @@ function NumInput({ label, value, onChange, onPreview, unit = '', min, max, step
     <div>
       {label && (
         // 점선 밑줄 + ew-resize 커서로 드래그 가능함을 표시(일반 레이블과 구분)
-        <p className={scrubLabelClass}
+        // 누르면(active) 배경 하이라이트 — 스크럽이 잡혔다는 즉각 피드백.
+        <p className={`${scrubLabelClass}${scrubActive ? ' ' + scrubActiveClass : ''}`}
            title="드래그하여 조절" {...scrub}>{label}</p>
       )}
       <div className="flex items-center">
@@ -1904,7 +1907,7 @@ function FontSizeInput({ value, onChange, onPreview }) {
     onChange(n)
   }
 
-  const scrub = useScrub({
+  const { active: scrubActive, ...scrub } = useScrub({
     value, step: 1, min: 1,
     onPreview: (v) => { setLocal(String(Math.round(v))); onPreview && onPreview(v) },
     onCommit: (v) => { setLocal(String(Math.round(v))); onChange(v) },
@@ -1912,7 +1915,7 @@ function FontSizeInput({ value, onChange, onPreview }) {
 
   return (
     <div>
-      <p className={scrubLabelClass} title="드래그하여 조절" {...scrub}>크기</p>
+      <p className={`${scrubLabelClass}${scrubActive ? ' ' + scrubActiveClass : ''}`} title="드래그하여 조절" {...scrub}>크기</p>
       <div className="flex items-center gap-1">
         <input
           type="text"
