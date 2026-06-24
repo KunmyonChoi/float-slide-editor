@@ -20,6 +20,7 @@ import { detectBgColor, applyChromaKey } from '../core/chromaKey'
 import { highlightCode, CODE_FONT } from '../core/codeHighlight'
 import { renderMarkdown } from '../core/markdown'
 import { EFFECTS, effectHasDir } from '../core/slideAnimation'
+import DiagramIconPanel from './DiagramIconPanel'
 
 // ── 글꼴 크기 프리셋 ────────────────────────────────
 
@@ -53,9 +54,12 @@ const scrubLabelClass = `${labelClass} w-full mb-0.5 underline decoration-dotted
 export default function FlatPropertyContent() {
   const { selectedFlatIds, flatElements, updateFlatElement, previewFlatElement,
           editingFlatId } = useFlatStore()
+  const diagramMode = useFlatStore(s => s.diagramMode)
   const selectedEls = flatElements.filter(e => selectedFlatIds.includes(e.id))
 
   const [animTab, setAnimTab] = useState(false)
+  // 다이어그램 모드일 때 애니메이션 탭 자리에 뜨는 아이콘 팔레트 탭(선택 무관 항상 사용 가능)
+  const [iconTab, setIconTab] = useState(false)
   const singleSel = selectedEls.length === 1
   // 애니메이션 탭이 단일 선택 상태에서 활성일 때만 캔버스 순서 배지 표시
   useEffect(() => {
@@ -63,14 +67,48 @@ export default function FlatPropertyContent() {
     return () => useFlatStore.getState().setAnimPanelOpen(false)
   }, [animTab, singleSel])
 
-  if (selectedEls.length === 0) return <SlideBackgroundPanel />
-  if (selectedEls.length > 1) return <MultiElementPanel elements={selectedEls} />
+  // 일반(비-아이콘) 패널 본문 — 선택 상태에 따라 분기.
+  const renderEdit = () => {
+    if (selectedEls.length === 0) return <SlideBackgroundPanel />
+    if (selectedEls.length > 1) return <MultiElementPanel elements={selectedEls} />
+    return <SingleElementPanel
+      el={selectedEls[0]} animTab={animTab} setAnimTab={setAnimTab}
+      updateFlatElement={updateFlatElement} previewFlatElement={previewFlatElement}
+      editingFlatId={editingFlatId} diagramMode={diagramMode} />
+  }
 
-  const el = selectedEls[0]
+  // 다이어그램 모드: 패널 상단에 [편집 | 아이콘] 탭. 아이콘 탭은 선택 여부와 무관하게 항상 노출.
+  if (diagramMode) {
+    return (
+      <div className="flex flex-col">
+        <div className="flex border-b border-white/5 px-2">
+          {[['edit', '편집'], ['icon', '아이콘']].map(([k, label]) => {
+            const active = (k === 'icon') === iconTab
+            return (
+              <button key={k} onClick={() => setIconTab(k === 'icon')}
+                className={`text-xs px-3 py-1.5 -mb-px border-b-2 transition-colors ${
+                  active ? 'border-indigo-400 text-white' : 'border-transparent text-slate-400 hover:text-slate-200'}`}
+              >{label}</button>
+            )
+          })}
+        </div>
+        {iconTab ? <DiagramIconPanel /> : renderEdit()}
+      </div>
+    )
+  }
+
+  return renderEdit()
+}
+
+// ── 단일 요소 패널 ──────────────────────────────────
+
+function SingleElementPanel({ el, animTab, setAnimTab, updateFlatElement, previewFlatElement, editingFlatId, diagramMode }) {
   const update = (changes) => updateFlatElement(el.id, changes)
   const updateStyle = (key, value) => updateFlatElement(el.id, { styles: { [key]: value } })
   const updateStyles = (styleChanges) => updateFlatElement(el.id, { styles: styleChanges })
   const previewStyle = (key, value) => previewFlatElement(el.id, { styles: { [key]: value } })
+  // 다이어그램 모드에선 애니메이션 탭이 숨겨지므로 항상 속성 본문을 보여준다.
+  const effAnim = animTab && !diagramMode
 
   return (
     <>
@@ -93,10 +131,11 @@ export default function FlatPropertyContent() {
         </button>
       </div>
 
-      {/* 탭: 속성 / 애니메이션 (정보 과다 방지) */}
+      {/* 탭: 속성 / 애니메이션 (정보 과다 방지).
+          다이어그램 모드에선 애니메이션 탭이 상위 '아이콘' 탭으로 대체되므로 속성만 표시. */}
       <div className="flex border-b border-white/5 px-2">
-        {[['props', '속성'], ['anim', '애니메이션']].map(([k, label]) => {
-          const active = (k === 'anim') === animTab
+        {(diagramMode ? [['props', '속성']] : [['props', '속성'], ['anim', '애니메이션']]).map(([k, label]) => {
+          const active = (k === 'anim') === effAnim
           return (
             <button key={k} onClick={() => setAnimTab(k === 'anim')}
               className={`text-xs px-3 py-1.5 -mb-px border-b-2 transition-colors ${
@@ -106,13 +145,13 @@ export default function FlatPropertyContent() {
         })}
       </div>
 
-      {animTab && (
+      {effAnim && (
         <div className="p-3">
           <AnimationTab el={el} />
         </div>
       )}
 
-      <div className="p-3 space-y-3" style={animTab ? { display: 'none' } : undefined}>
+      <div className="p-3 space-y-3" style={effAnim ? { display: 'none' } : undefined}>
         <PositionSection el={el} update={update} preview={(changes) => previewFlatElement(el.id, changes)} />
 
         <div className="pt-1 border-t border-white/5">
