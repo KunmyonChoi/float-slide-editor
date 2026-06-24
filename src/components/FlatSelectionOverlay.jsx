@@ -1,4 +1,4 @@
-import { useCallback, useRef, useEffect, useMemo } from 'react'
+import { useCallback, useRef, useEffect, useMemo, useState } from 'react'
 import { useFlatStore } from '../store/flatStore'
 import { computeSnapGuides, computeResizeSnapGuides, isBackgroundElement } from '../core/SnapEngine'
 import { computeRotationAngle, snapRotation, normalizeAngle, canvasDeltaToLocal } from '../core/RotationUtils'
@@ -49,6 +49,8 @@ export default function FlatSelectionOverlay({ element, scale, otherRects, canva
   const diagramMode = useFlatStore(s => s.diagramMode)
   const isTouch = useIsTouch()
   const dragRef = useRef(null)
+  // 커넥터 끝점 재연결 드래그 중 하이라이트할 대상 도형 bbox(절대 캔버스 좌표) | null
+  const [reconnectTarget, setReconnectTarget] = useState(null)
 
   // 더블클릭 → 텍스트 편집 모드 진입 (text + shape)
   const handleDoubleClick = useCallback((e) => {
@@ -436,69 +438,89 @@ export default function FlatSelectionOverlay({ element, scale, otherRects, canva
               }}
             />
           )}
+          {/* 커넥터 재연결 드래그 중 대상 도형 하이라이트 (오버레이 컨테이너 기준 좌표로 보정) */}
+          {isConnector && reconnectTarget && (
+            <div style={{
+              position: 'absolute',
+              left: reconnectTarget.x - element.x, top: reconnectTarget.y - element.y,
+              width: reconnectTarget.width, height: reconnectTarget.height,
+              border: `${2 / scale}px solid #6366f1`, borderRadius: 4,
+              pointerEvents: 'none', zIndex: 9998,
+            }} />
+          )}
           {/* 리사이즈 핸들 또는 포인트 핸들 */}
           {isConnector && element.connection && element.points && element.points.length >= 2 ? (
-            /* 커넥터: 양 끝 재연결 핸들 — 드래그로 다른 도형에 재부착(빈 공간이면 원복) */
+            /* 커넥터: 양 끝 재연결 핸들 — 드래그로 다른 도형에 재부착(빈 공간이면 원복).
+               포인터 이벤트로 마우스·터치·펜 일괄 처리, 핸들은 연결점 마커와 동일 크기(터치 크게). */
             [0, element.points.length - 1].map((idx, i) => {
               const which = i === 0 ? 'start' : 'end'
               const pt = element.points[idx]
+              const R = (isTouch ? 13 : 4.5) / scale // 연결점 마커와 동일
+              const startReconnect = (e) => {
+                e.stopPropagation(); e.preventDefault()
+                try { e.currentTarget.setPointerCapture?.(e.pointerId) } catch { /* 무시 */ }
+                const orig = element.connection
+                const origMine = which === 'start' ? orig.start : orig.end
+                const onMove = (me) => {
+                  const canvasEl = document.querySelector('[data-flat-canvas]')
+                  if (!canvasEl) return
+                  const rect = canvasEl.getBoundingClientRect()
+                  const p = { x: (me.clientX - rect.left) / scale, y: (me.clientY - rect.top) / scale }
+                  const st = useFlatStore.getState()
+                  const otherId = (which === 'start' ? orig.end : orig.start)?.elementId
+                  const targetId = attachTargetAt(p.x, p.y, st.flatElements, { excludeId: otherId, canvasSize: st.canvasSize })
+                  // 연결점에 가까우면 고정, 아니면 몸체=플로팅
+                  let tempEnd, tgtRect = null
+                  if (targetId) {
+                    const tEl = st.flatElements.find(el => el.id === targetId)
+                    const ap = tEl ? nearestConnectionPoint(p.x, p.y, tEl, 16) : null
+                    tempEnd = ap ? { elementId: targetId, fx: ap.fx, fy: ap.fy } : { elementId: targetId }
+                    if (tEl) tgtRect = { x: tEl.x, y: tEl.y, width: tEl.width, height: tEl.height }
+                  } else {
+                    tempEnd = { point: p }
+                  }
+                  setReconnectTarget(tgtRect)
+                  const tempConn = which === 'start' ? { start: tempEnd, end: orig.end } : { start: orig.start, end: tempEnd }
+                  previewFlatElement(element.id, { connection: tempConn })
+                }
+                const onUp = () => {
+                  window.removeEventListener('pointermove', onMove)
+                  window.removeEventListener('pointerup', onUp)
+                  window.removeEventListener('pointercancel', onUp)
+                  setReconnectTarget(null)
+                  const cur = useFlatStore.getState().flatElements.find(el => el.id === element.id)
+                  const curEnd = cur && (which === 'start' ? cur.connection.start : cur.connection.end)
+                  // 원복 후, 도형에 부착(변경)된 경우만 히스토리 커밋. 빈 공간이면 취소(원복 유지).
+                  previewFlatElement(element.id, { connection: orig })
+                  const changed = curEnd && curEnd.elementId && (
+                    curEnd.elementId !== origMine?.elementId ||
+                    curEnd.fx !== origMine?.fx || curEnd.fy !== origMine?.fy)
+                  if (changed) {
+                    const finalConn = which === 'start' ? { start: curEnd, end: orig.end } : { start: orig.start, end: curEnd }
+                    updateFlatElement(element.id, { connection: finalConn })
+                  }
+                }
+                window.addEventListener('pointermove', onMove)
+                window.addEventListener('pointerup', onUp)
+                window.addEventListener('pointercancel', onUp)
+              }
               return (
                 <div
                   key={which}
                   data-resize-handle="true"
                   title="드래그해서 다른 도형에 다시 연결"
-                  onMouseDown={(e) => {
-                    e.stopPropagation(); e.preventDefault()
-                    const orig = element.connection
-                    const origMine = which === 'start' ? orig.start : orig.end
-                    const onMove = (me) => {
-                      const canvasEl = document.querySelector('[data-flat-canvas]')
-                      if (!canvasEl) return
-                      const rect = canvasEl.getBoundingClientRect()
-                      const p = { x: (me.clientX - rect.left) / scale, y: (me.clientY - rect.top) / scale }
-                      const st = useFlatStore.getState()
-                      const otherId = (which === 'start' ? orig.end : orig.start)?.elementId
-                      const targetId = attachTargetAt(p.x, p.y, st.flatElements, { excludeId: otherId, canvasSize: st.canvasSize })
-                      // 연결점에 가까우면 고정, 아니면 몸체=플로팅
-                      let tempEnd
-                      if (targetId) {
-                        const tEl = st.flatElements.find(el => el.id === targetId)
-                        const ap = tEl ? nearestConnectionPoint(p.x, p.y, tEl, 16) : null
-                        tempEnd = ap ? { elementId: targetId, fx: ap.fx, fy: ap.fy } : { elementId: targetId }
-                      } else {
-                        tempEnd = { point: p }
-                      }
-                      const tempConn = which === 'start' ? { start: tempEnd, end: orig.end } : { start: orig.start, end: tempEnd }
-                      previewFlatElement(element.id, { connection: tempConn })
-                    }
-                    const onUp = () => {
-                      window.removeEventListener('mousemove', onMove)
-                      window.removeEventListener('mouseup', onUp)
-                      const cur = useFlatStore.getState().flatElements.find(el => el.id === element.id)
-                      const curEnd = cur && (which === 'start' ? cur.connection.start : cur.connection.end)
-                      // 원복 후, 도형에 부착(변경)된 경우만 히스토리 커밋. 빈 공간이면 취소(원복 유지).
-                      previewFlatElement(element.id, { connection: orig })
-                      const changed = curEnd && curEnd.elementId && (
-                        curEnd.elementId !== origMine?.elementId ||
-                        curEnd.fx !== origMine?.fx || curEnd.fy !== origMine?.fy)
-                      if (changed) {
-                        const finalConn = which === 'start' ? { start: curEnd, end: orig.end } : { start: orig.start, end: curEnd }
-                        updateFlatElement(element.id, { connection: finalConn })
-                      }
-                    }
-                    window.addEventListener('mousemove', onMove)
-                    window.addEventListener('mouseup', onUp)
-                  }}
+                  onPointerDown={startReconnect}
                   style={{
                     position: 'absolute',
-                    left: pt.x - 6, top: pt.y - 6,
-                    width: 12, height: 12,
+                    left: pt.x - R, top: pt.y - R,
+                    width: R * 2, height: R * 2,
                     background: '#10b981',
-                    border: '2px solid #fff',
-                    boxShadow: '0 0 0 1px rgba(16,185,129,0.5)',
+                    border: `${(isTouch ? 2 : 1.5) / scale}px solid #fff`,
+                    boxShadow: `0 0 0 ${1 / scale}px rgba(16,185,129,0.5)`,
                     borderRadius: '50%',
                     cursor: 'crosshair',
                     pointerEvents: 'auto', // 컨테이너가 none이어도 핸들은 받음
+                    touchAction: 'none',
                     zIndex: 10001,
                   }}
                 />
