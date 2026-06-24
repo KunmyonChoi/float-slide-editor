@@ -1,6 +1,6 @@
 import { useCallback, useRef, useEffect, useMemo } from 'react'
 import { useFlatStore } from '../store/flatStore'
-import { computeSnapGuides, computeResizeSnapGuides } from '../core/SnapEngine'
+import { computeSnapGuides, computeResizeSnapGuides, isBackgroundElement } from '../core/SnapEngine'
 import { computeRotationAngle, snapRotation, normalizeAngle, canvasDeltaToLocal } from '../core/RotationUtils'
 import { pointsToBBox, closestPointOnSegments } from '../core/PolyShapeUtils'
 import { attachTargetAt, nearestConnectionPoint } from '../core/ConnectorRouting'
@@ -818,6 +818,22 @@ export function FlatGroupOverlay({ elements, scale, otherRects, canvasSize, onSn
       const els = useFlatStore.getState().flatElements
 
       if (d.mode === 'move') {
+        // 탭(이동 거의 없음): 전체선택 등으로 그룹 박스가 캔버스를 덮으면 stage 빈영역 탭이
+        // 그룹 오버레이(pointerEvents:auto)에 막혀 선택 해제가 안 된다 → 여기서 직접 처리.
+        // 탭 지점이 (배경 제외) 어떤 요소 위도 아니면 빈 영역 탭으로 보고 선택 해제.
+        const movedScreen = e ? Math.hypot((e.clientX ?? 0) - d.startMouseX, (e.clientY ?? 0) - d.startMouseY) : 999
+        if (movedScreen < 8) {
+          const canvasEl = document.querySelector('[data-flat-canvas]')
+          let onEl = false
+          if (canvasEl && e) {
+            const r = canvasEl.getBoundingClientRect()
+            const px = (e.clientX - r.left) / scale, py = (e.clientY - r.top) / scale
+            onEl = els.some(el => !isBackgroundElement(el)
+              && px >= el.x && px <= el.x + el.width && py >= el.y && py <= el.y + el.height)
+          }
+          if (!onEl) useFlatStore.getState().setSelectedFlats([])
+          return
+        }
         // 현재(프리뷰) 값 저장 후 원래 값으로 되돌리고 commit → undo 가능
         const newChanges = d.startPositions.map(sp => {
           const current = els.find(e => e.id === sp.id)
