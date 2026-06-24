@@ -7,9 +7,15 @@ import { DEFAULT_THEME_ID, getTheme, themeBackgroundStyles, themeRoleStyles } fr
 import { highlightCode } from '../core/codeHighlight'
 import { renderMarkdown } from '../core/markdown'
 import { applyAutoFit } from '../core/autoFit'
+import { awsIconDataUrl, ICON_LABEL, GROUP_BY_KIND } from '../core/awsIcons'
 
 // 배경 레이어 판정 — SnapEngine의 canonical 헬퍼 재노출(명시 플래그/__bg 기반)
 export { isBackgroundElement as isBackgroundLayer }
+
+// 새 그룹 id — 'grp-' 접두사 + UUID(미지원 환경은 난수 폴백). 그룹 묶기/요소 삽입 공용.
+function newGroupId() {
+  return 'grp-' + (globalThis.crypto?.randomUUID?.() || Math.random().toString(36).slice(2, 11))
+}
 
 // 사용자정의 테마 기본값 — 기본 테마(화이트)를 복제한 가변 토큰
 export function makeDefaultCustomTheme() {
@@ -295,6 +301,11 @@ export const useFlatStore = create((set, get) => ({
   /** 속성창 '애니메이션' 탭 활성 여부 — 켜지면 캔버스에 순서 배지 표시 */
   animPanelOpen: false,
   setAnimPanelOpen(v) { set({ animPanelOpen: !!v }) },
+  /** 가로세로 비율 고정(리사이즈 시) — 켜면 핸들 드래그가 비율 유지(단일·그룹 공통).
+      Shift는 일시 반전(켜진 상태서 Shift=자유, 꺼진 상태서 Shift=고정). 모바일엔 Shift가 없어 토글 필수. */
+  lockAspect: false,
+  setLockAspect(v) { set({ lockAspect: !!v }) },
+  toggleLockAspect() { set(s => ({ lockAspect: !s.lockAspect })) },
   /** 에디터 애니메이션 미리보기 — null 또는 { revealed, playingStep }. tick은 재생 트리거. */
   animPreview: null,
   animPreviewTick: 0,
@@ -1111,7 +1122,7 @@ export const useFlatStore = create((set, get) => ({
   groupSelected() {
     const ids = get().selectedFlatIds
     if (ids.length < 2) return
-    const gid = 'grp-' + (globalThis.crypto?.randomUUID?.() || Math.random().toString(36).slice(2, 11))
+    const gid = newGroupId()
     get().batchUpdateFlatElements(ids, { groupId: gid })
   },
 
@@ -1495,7 +1506,7 @@ export const useFlatStore = create((set, get) => ({
       }
       if (clone.groupId) {
         if (!groupMap[clone.groupId]) {
-          groupMap[clone.groupId] = 'grp-' + (globalThis.crypto?.randomUUID?.() || Math.random().toString(36).slice(2, 11))
+          groupMap[clone.groupId] = newGroupId()
         }
         clone.groupId = groupMap[clone.groupId]
       }
@@ -1548,6 +1559,93 @@ export const useFlatStore = create((set, get) => ({
     })
   },
 
+  /**
+   * AWS 아이콘 삽입 (다이어그램 모드) — 아이콘 이미지 + 서비스명 라벨을 한 그룹으로 추가.
+   * dropX/dropY 미지정 시 캔버스 중앙. 단일 undo, 둘 다 선택 상태로.
+   */
+  insertAwsIcon(iconId, dropX, dropY) {
+    const dataUrl = awsIconDataUrl(iconId)
+    if (!dataUrl) return
+    const cs = get().canvasSize
+    const els = get().flatElements
+    const maxZ = els.length > 0 ? Math.max(...els.map(e => e.zIndex)) : 0
+    const SIZE = 56, LABEL_W = 110, LABEL_H = 22, GAP = 2
+    const cx = dropX != null ? dropX : cs.w / 2
+    const cy = dropY != null ? dropY : cs.h / 2
+    let ix = Math.round(cx - SIZE / 2)
+    let iy = Math.round(cy - SIZE / 2)
+    ix = Math.max(0, Math.min(ix, cs.w - SIZE))
+    iy = Math.max(0, Math.min(iy, cs.h - SIZE - LABEL_H - GAP))
+    const gid = newGroupId()
+    const iconEl = {
+      id: nextFlatId(), sourceId: null, type: 'image', groupId: gid,
+      content: dataUrl, isRich: false, merged: false,
+      x: ix, y: iy, width: SIZE, height: SIZE, zIndex: maxZ + 1,
+      styles: {
+        backgroundColor: 'rgba(0,0,0,0)', backgroundImage: 'none',
+        borderRadius: '0px', border: '0px none', boxShadow: 'none',
+        opacity: '1', objectFit: 'contain',
+      },
+    }
+    // 라벨 x는 (클램프된) 아이콘 중심 기준 — 가장자리 드롭에서도 아이콘 아래 정렬·캔버스 내 유지
+    const labelX = Math.max(0, Math.min(Math.round(ix + SIZE / 2 - LABEL_W / 2), cs.w - LABEL_W))
+    const labelEl = {
+      id: nextFlatId(), sourceId: null, type: 'text', groupId: gid,
+      content: ICON_LABEL[iconId] || iconId, isRich: false, merged: false,
+      x: labelX, y: iy + SIZE + GAP, width: LABEL_W, height: LABEL_H, zIndex: maxZ + 2,
+      styles: {
+        backgroundColor: 'rgba(0,0,0,0)', color: '#232F3E',
+        fontSize: '11px', fontFamily: 'sans-serif', fontWeight: '600',
+        lineHeight: '1.3', textAlign: 'center', padding: '2px',
+        borderRadius: '0px', border: '0px none', boxShadow: 'none', opacity: '1',
+      },
+    }
+    get().addFlatElements([iconEl, labelEl])
+    get().setSelectedFlats([iconEl.id, labelEl.id])
+  },
+
+  /**
+   * AWS 그룹 컨테이너 삽입 — 색 입힌 점선/실선 경계 박스 + 좌상단 라벨을 한 그룹으로 추가.
+   * 투명 채움이라 안에 둔 요소가 비친다. 나중에 드롭한 아이콘이 위에 쌓이도록 일반 z로 추가.
+   */
+  insertAwsGroup(kind, dropX, dropY) {
+    const def = GROUP_BY_KIND[kind]
+    if (!def) return
+    const cs = get().canvasSize
+    const els = get().flatElements
+    const maxZ = els.length > 0 ? Math.max(...els.map(e => e.zIndex)) : 0
+    const W = Math.min(340, cs.w * 0.5), H = Math.min(240, cs.h * 0.5)
+    const cx = dropX != null ? dropX : cs.w / 2
+    const cy = dropY != null ? dropY : cs.h / 2
+    let x = Math.round(cx - W / 2), y = Math.round(cy - H / 2)
+    x = Math.max(0, Math.min(x, cs.w - W))
+    y = Math.max(0, Math.min(y, cs.h - H))
+    const gid = newGroupId()
+    const rectEl = {
+      id: nextFlatId(), sourceId: null, type: 'shape', groupId: gid,
+      content: '', isRich: false, merged: false,
+      x, y, width: Math.round(W), height: Math.round(H), zIndex: maxZ + 1,
+      styles: {
+        backgroundColor: 'rgba(0,0,0,0)',
+        border: `2px ${def.dashed ? 'dashed' : 'solid'} ${def.color}`,
+        borderRadius: '8px', boxShadow: 'none', opacity: '1',
+      },
+    }
+    const labelEl = {
+      id: nextFlatId(), sourceId: null, type: 'text', groupId: gid,
+      content: def.label, isRich: false, merged: false,
+      x: x + 8, y: y + 6, width: Math.round(W) - 16, height: 22, zIndex: maxZ + 2,
+      styles: {
+        backgroundColor: 'rgba(0,0,0,0)', color: def.color,
+        fontSize: '12px', fontFamily: 'sans-serif', fontWeight: '700',
+        lineHeight: '1.3', textAlign: 'left', padding: '0px',
+        borderRadius: '0px', border: '0px none', boxShadow: 'none', opacity: '1',
+      },
+    }
+    get().addFlatElements([rectEl, labelEl])
+    get().setSelectedFlats([rectEl.id, labelEl.id])
+  },
+
   /** 레이아웃 변환 — removeIds를 제거하고 addElements를 추가 (단일 undo 단위) */
   applyLayoutElements(removeIds, addElements) {
     const els = get().flatElements
@@ -1577,7 +1675,7 @@ export const useFlatStore = create((set, get) => ({
     const orig = els.find(e => e.id === imageId)
     if (!orig || !cutoutContent) return null
     const maxZ = els.length ? Math.max(...els.map(e => e.zIndex)) : 0
-    const gid = 'grp-' + (globalThis.crypto?.randomUUID?.() || Math.random().toString(36).slice(2, 11))
+    const gid = newGroupId()
 
     // 타이틀: 이미지 박스 중앙, 큰 글자(레퍼런스 느낌). 텍스트 < 컷아웃이라 피사체 뒤로 가려짐.
     // 그룹에 넣지 않음 → 사용자가 자유롭게 드래그해 원하는 위치에 배치(z-순서가 가림 효과 유지).

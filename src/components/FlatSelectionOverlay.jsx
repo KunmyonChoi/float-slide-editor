@@ -1,6 +1,6 @@
 import { useCallback, useRef, useEffect, useMemo } from 'react'
 import { useFlatStore } from '../store/flatStore'
-import { computeSnapGuides, computeResizeSnapGuides } from '../core/SnapEngine'
+import { computeSnapGuides, computeResizeSnapGuides, isBackgroundElement } from '../core/SnapEngine'
 import { computeRotationAngle, snapRotation, normalizeAngle, canvasDeltaToLocal } from '../core/RotationUtils'
 import { pointsToBBox, closestPointOnSegments } from '../core/PolyShapeUtils'
 import { attachTargetAt, nearestConnectionPoint } from '../core/ConnectorRouting'
@@ -225,7 +225,8 @@ export default function FlatSelectionOverlay({ element, scale, otherRects, canva
         let w = d.startW, h = d.startH
         const dir = d.dir
         const sym = e.altKey || e.ctrlKey || e.metaKey   // Alt(또는 Ctrl: PowerPoint): 중심 대칭
-        const lockRatio = e.shiftKey  // Shift: 가로세로 비율 고정
+        // 비율 고정: 전역 토글(lockAspect)과 Shift의 XOR — 토글 ON이면 기본 고정, Shift로 일시 자유.
+        const lockRatio = e.shiftKey !== useFlatStore.getState().lockAspect
 
         // 회전된 요소: 마우스 delta를 로컬 좌표로 변환
         const rot = d.startRotation || 0
@@ -647,6 +648,7 @@ const GROUP_HANDLES = [
 export function FlatGroupOverlay({ elements, scale, otherRects, canvasSize, onSnapGuides }) {
   const { batchPreviewFlatElements, batchUpdateFlatElementsIndividual, setEditingFlat } = useFlatStore()
   const dragRef = useRef(null)
+  const isTouch = useIsTouch()
 
   const bbox = useMemo(() => {
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
@@ -747,7 +749,9 @@ export function FlatGroupOverlay({ elements, scale, otherRects, canvasSize, onSn
       } else if (d.mode === 'resize') {
         const { bbox: origBbox, dir, startPositions } = d
         const sym = e.altKey || e.ctrlKey || e.metaKey  // Alt(또는 Ctrl: PowerPoint): 그룹 중심 대칭
-        const lockRatio = e.shiftKey // Shift: 그룹 비율 고정
+        // 비율 고정: 전역 토글(lockAspect)과 Shift의 XOR. 고정 시 scaleX===scaleY로 그룹 내 모든 요소가
+        // 균일 스케일 → 자식 왜곡 없음(그룹 비율 보존의 핵심).
+        const lockRatio = e.shiftKey !== useFlatStore.getState().lockAspect
         const k = sym ? 2 : 1
         let newW = origBbox.w, newH = origBbox.h
 
@@ -814,6 +818,22 @@ export function FlatGroupOverlay({ elements, scale, otherRects, canvasSize, onSn
       const els = useFlatStore.getState().flatElements
 
       if (d.mode === 'move') {
+        // 탭(이동 거의 없음): 전체선택 등으로 그룹 박스가 캔버스를 덮으면 stage 빈영역 탭이
+        // 그룹 오버레이(pointerEvents:auto)에 막혀 선택 해제가 안 된다 → 여기서 직접 처리.
+        // 탭 지점이 (배경 제외) 어떤 요소 위도 아니면 빈 영역 탭으로 보고 선택 해제.
+        const movedScreen = e ? Math.hypot((e.clientX ?? 0) - d.startMouseX, (e.clientY ?? 0) - d.startMouseY) : 999
+        if (movedScreen < 8) {
+          const canvasEl = document.querySelector('[data-flat-canvas]')
+          let onEl = false
+          if (canvasEl && e) {
+            const r = canvasEl.getBoundingClientRect()
+            const px = (e.clientX - r.left) / scale, py = (e.clientY - r.top) / scale
+            onEl = els.some(el => !isBackgroundElement(el)
+              && px >= el.x && px <= el.x + el.width && py >= el.y && py <= el.y + el.height)
+          }
+          if (!onEl) useFlatStore.getState().setSelectedFlats([])
+          return
+        }
         // 현재(프리뷰) 값 저장 후 원래 값으로 되돌리고 commit → undo 가능
         const newChanges = d.startPositions.map(sp => {
           const current = els.find(e => e.id === sp.id)
@@ -887,7 +907,36 @@ export function FlatGroupOverlay({ elements, scale, otherRects, canvasSize, onSn
       onPointerDown={(e) => { if (e.pointerType === 'touch') handleMoveStart(e) }}
       onDoubleClick={handleDoubleClick}
     >
-      {movableElements.length > 0 && GROUP_HANDLES.map(h => (
+      {movableElements.length > 0 && (isTouch ? (
+        /* 모바일: 단일 요소 오버레이와 동일 기준 — 우하단(SE) 한 점, 화면 기준 일정 크기 */
+        (() => {
+          const H = 24 / scale
+          return (
+            <div
+              data-resize-handle="true"
+              onMouseDown={(e) => handleResizeStart(e, 'se')}
+              onPointerDown={(e) => { if (e.pointerType === 'touch') handleResizeStart(e, 'se') }}
+              style={{
+                position: 'absolute',
+                left: bbox.w - H / 2,
+                top: bbox.h - H / 2,
+                width: H, height: H,
+                background: '#6366f1',
+                border: `${2 / scale}px solid #fff`,
+                borderRadius: 6 / scale,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                cursor: 'nwse-resize', touchAction: 'none',
+                zIndex: 10000,
+              }}
+            >
+              <svg width={H * 0.55} height={H * 0.55} viewBox="0 0 12 12" fill="none"
+                stroke="#fff" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M3 9 H9 V3" />
+              </svg>
+            </div>
+          )
+        })()
+      ) : GROUP_HANDLES.map(h => (
         <div
           key={h.dir}
           data-resize-handle="true"
@@ -907,7 +956,7 @@ export function FlatGroupOverlay({ elements, scale, otherRects, canvasSize, onSn
             zIndex: 10000,
           }}
         />
-      ))}
+      )))}
     </div>
   )
 }

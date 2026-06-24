@@ -163,6 +163,19 @@ describe('ConnectorRouting', () => {
       expect(attachTargetAt(20, 20, [A], { excludeId: 'A' })).toBeNull()
     })
 
+    it('노드와 그룹된 캡션 라벨(텍스트)은 제외 — 커넥터는 아이콘에 붙는다', () => {
+      // 아이콘(image) + 라벨(text)이 같은 그룹. 라벨이 z 더 높고 더 넓게 겹침.
+      const icon = { id: 'ICON', type: 'image', x: 100, y: 100, width: 56, height: 56, zIndex: 5, groupId: 'g1' }
+      const label = { id: 'LBL', type: 'text', x: 73, y: 158, width: 110, height: 22, zIndex: 6, groupId: 'g1' }
+      const els = [icon, label]
+      // 라벨 영역(아이콘 아래)이라도 라벨은 제외 → 임계 안의 아이콘이 잡히거나, 아이콘 밖이면 null
+      expect(attachTargetAt(128, 165, els, { threshold: 12 })).toBe('ICON') // 아이콘 하단+9
+      expect(attachTargetAt(128, 128, els)).toBe('ICON') // 아이콘 내부
+      // 그룹 없는 단독 텍스트는 계속 부착 가능(라벨만 제외)
+      const lone = { id: 'TXT', type: 'text', x: 300, y: 300, width: 80, height: 30, zIndex: 1 }
+      expect(attachTargetAt(320, 315, [lone])).toBe('TXT')
+    })
+
     it('플래그 없는 전체화면 배경도 canvasSize 주면 제외', () => {
       const cs = { w: 1280, h: 720 }
       const plainBg = rect('PBG', 0, 0, 1280, 720, { zIndex: 0 }) // isBackground 없음(크기추론 배경)

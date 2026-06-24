@@ -18,6 +18,7 @@ import FlatTableEditor from './FlatTableEditor'
 import FlatContextMenu from './FlatContextMenu'
 import ImageCropOverlay from './ImageCropOverlay'
 import { nextFlatId, isFontUrl } from '../core/FlatExtractor'
+import { AWS_ICON_MIME, AWS_GROUP_MIME } from '../core/awsIcons'
 import { isBundlerHtml } from '../core/BundlerUnpacker'
 import { pointsToBBox, absoluteToRelativePoints, pointsToSvgPath } from '../core/PolyShapeUtils'
 import { confirmDialog } from './ConfirmDialog'
@@ -300,6 +301,21 @@ export default function FlatCanvas() {
   const handleDrop = useCallback((e) => {
     e.preventDefault()
     setDragOver(false)
+
+    // 드롭 위치를 캔버스 좌표로 변환 (AWS 아이콘/그룹·이미지 공통)
+    let dropXc, dropYc
+    if (canvasRef.current) {
+      const r = canvasRef.current.getBoundingClientRect()
+      dropXc = (e.clientX - r.left) / scale
+      dropYc = (e.clientY - r.top) / scale
+    }
+
+    // 다이어그램 아이콘 팔레트 드롭 — 파일 처리보다 먼저 (dataTransfer.files 비어 있음)
+    const awsIcon = e.dataTransfer.getData(AWS_ICON_MIME)
+    if (awsIcon) { useFlatStore.getState().insertAwsIcon(awsIcon, dropXc, dropYc); return }
+    const awsGroup = e.dataTransfer.getData(AWS_GROUP_MIME)
+    if (awsGroup) { useFlatStore.getState().insertAwsGroup(awsGroup, dropXc, dropYc); return }
+
     const allFiles = [...e.dataTransfer.files]
 
     // HTML 슬라이드 파일 드롭 → 덱 불러오기(가져오기와 동일)
@@ -327,15 +343,8 @@ export default function FlatCanvas() {
     const images = allFiles.filter(f => f.type.startsWith('image/'))
     const videos = allFiles.filter(f => f.type.startsWith('video/'))
     if (images.length === 0 && videos.length === 0) return
-    // 드롭 위치를 캔버스 좌표로 변환
-    let dropX, dropY
-    if (canvasRef.current) {
-      const rect = canvasRef.current.getBoundingClientRect()
-      dropX = (e.clientX - rect.left) / scale
-      dropY = (e.clientY - rect.top) / scale
-    }
-    for (const file of images) insertImageFromFile(file, dropX, dropY)
-    for (const file of videos) insertVideoFromFile(file, dropX, dropY)
+    for (const file of images) insertImageFromFile(file, dropXc, dropYc)
+    for (const file of videos) insertVideoFromFile(file, dropXc, dropYc)
   }, [scale, insertImageFromFile, insertVideoFromFile])
 
   // ── 그리기 모드 ──
