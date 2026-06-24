@@ -1621,11 +1621,16 @@ function ConnectionMarkers({ el, touch, scale = 1 }) {
   // 마커는 scale 컨테이너 안에 있어 줌과 함께 작아짐 → 캔버스 단위를 /scale 해서
   // 화면상 크기를 일정하게 유지(줌아웃에서도 잡기 쉬움).
   const s = scale || 1
-  const OUT = CONNECT_DOT_OUT / s   // 화면상 14px
-  const R = (touch ? 13 : 4.5) / s  // 화면상 일정 반지름(데스크톱은 작게)
-  // 터치 + 줌아웃에선 8개가 작은 도형 주변에서 겹침 → 터치는 4변 중점만
+  // 요소가 화면상 작으면(줌아웃·작은 아이콘) 핸들이 서로 겹치거나 요소를 가린다 →
+  // 짧은 변의 화면 크기에 비례해 핸들·간격을 축소(64px 이상이면 풀사이즈, 작을수록 최대 50%까지).
+  const elemScreen = Math.min(el.width, el.height) * s
+  const f = Math.max(0.5, Math.min(1, elemScreen / 64))
+  const OUT = (CONNECT_DOT_OUT * f) / s   // 화면상 ~14px(작은 요소는 축소)
+  const R = ((touch ? 13 : 4.5) * f) / s  // 화면상 일정 반지름(데스크톱은 작게, 작은 요소는 더 작게)
+  // 터치이거나 요소가 작으면 8개가 겹치므로 4변 중점만 표시
+  const compact = touch || elemScreen < 48
   const pts = connectionPoints(el)
-    .filter(p => touch ? ((p.fx === 0.5) !== (p.fy === 0.5)) : true)
+    .filter(p => compact ? ((p.fx === 0.5) !== (p.fy === 0.5)) : true)
     .map(p => {
       const ox = p.fx === 0 ? -1 : p.fx === 1 ? 1 : 0
       const oy = p.fy === 0 ? -1 : p.fy === 1 ? 1 : 0
@@ -1646,7 +1651,7 @@ function ConnectionMarkers({ el, touch, scale = 1 }) {
           title="드래그해서 다른 도형에 연결 (이 지점에 고정)"
           onPointerDown={(e) => start(e, p)}
           style={{ position: 'absolute', left: p.dx - R, top: p.dy - R, width: R * 2, height: R * 2, borderRadius: '50%',
-            background: '#10b981', border: `${(touch ? 2 : 1.5) / s}px solid #fff`, boxShadow: `0 0 0 ${1 / s}px rgba(16,185,129,0.5)`,
+            background: '#10b981', border: `${(touch ? 2 : 1.5) * f / s}px solid #fff`, boxShadow: `0 0 0 ${f / s}px rgba(16,185,129,0.5)`,
             cursor: 'crosshair', touchAction: 'none', zIndex: 10001 }} />
       ))}
     </div>
