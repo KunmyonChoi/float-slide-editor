@@ -457,21 +457,17 @@ export default function FlatCanvas() {
     }
     const onUp = () => useFlatStore.getState().commitConnectorDraft()
     const onKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); useFlatStore.getState().cancelConnectorDraft() } }
-    // 터치/펜: 같은 핸들러 재사용(마우스 PointerEvent는 mousemove가 처리하므로 무시 → 중복 방지)
-    const onPMove = (e) => { if (e.pointerType !== 'mouse') onMove(e) }
-    const onPUp = (e) => { if (e.pointerType !== 'mouse') onUp(e) }
-    window.addEventListener('mousemove', onMove)
-    window.addEventListener('mouseup', onUp)
-    window.addEventListener('pointermove', onPMove)
-    window.addEventListener('pointerup', onPUp)
-    window.addEventListener('pointercancel', onPUp)
+    // 포인터 이벤트로 모든 입력(마우스/터치/펜)을 일괄 추적. 마커가 pointerdown에서
+    // preventDefault()하면 마우스 호환 이벤트(mousemove/mouseup)가 억제돼 마우스 드래그가
+    // 추적되지 않으므로(놓은 뒤에야 선이 따라오는 버그), pointermove/pointerup만 사용한다.
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+    window.addEventListener('pointercancel', onUp)
     window.addEventListener('keydown', onKey)
     return () => {
-      window.removeEventListener('mousemove', onMove)
-      window.removeEventListener('mouseup', onUp)
-      window.removeEventListener('pointermove', onPMove)
-      window.removeEventListener('pointerup', onPUp)
-      window.removeEventListener('pointercancel', onPUp)
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+      window.removeEventListener('pointercancel', onUp)
       window.removeEventListener('keydown', onKey)
     }
   }, [connectorDragging, canvasPt, isTouch])
