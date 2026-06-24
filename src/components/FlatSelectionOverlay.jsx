@@ -225,7 +225,8 @@ export default function FlatSelectionOverlay({ element, scale, otherRects, canva
         let w = d.startW, h = d.startH
         const dir = d.dir
         const sym = e.altKey || e.ctrlKey || e.metaKey   // Alt(또는 Ctrl: PowerPoint): 중심 대칭
-        const lockRatio = e.shiftKey  // Shift: 가로세로 비율 고정
+        // 비율 고정: 전역 토글(lockAspect)과 Shift의 XOR — 토글 ON이면 기본 고정, Shift로 일시 자유.
+        const lockRatio = e.shiftKey !== useFlatStore.getState().lockAspect
 
         // 회전된 요소: 마우스 delta를 로컬 좌표로 변환
         const rot = d.startRotation || 0
@@ -748,7 +749,9 @@ export function FlatGroupOverlay({ elements, scale, otherRects, canvasSize, onSn
       } else if (d.mode === 'resize') {
         const { bbox: origBbox, dir, startPositions } = d
         const sym = e.altKey || e.ctrlKey || e.metaKey  // Alt(또는 Ctrl: PowerPoint): 그룹 중심 대칭
-        const lockRatio = e.shiftKey // Shift: 그룹 비율 고정
+        // 비율 고정: 전역 토글(lockAspect)과 Shift의 XOR. 고정 시 scaleX===scaleY로 그룹 내 모든 요소가
+        // 균일 스케일 → 자식 왜곡 없음(그룹 비율 보존의 핵심).
+        const lockRatio = e.shiftKey !== useFlatStore.getState().lockAspect
         const k = sym ? 2 : 1
         let newW = origBbox.w, newH = origBbox.h
 

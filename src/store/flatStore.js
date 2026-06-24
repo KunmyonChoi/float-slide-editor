@@ -301,6 +301,11 @@ export const useFlatStore = create((set, get) => ({
   /** 속성창 '애니메이션' 탭 활성 여부 — 켜지면 캔버스에 순서 배지 표시 */
   animPanelOpen: false,
   setAnimPanelOpen(v) { set({ animPanelOpen: !!v }) },
+  /** 가로세로 비율 고정(리사이즈 시) — 켜면 핸들 드래그가 비율 유지(단일·그룹 공통).
+      Shift는 일시 반전(켜진 상태서 Shift=자유, 꺼진 상태서 Shift=고정). 모바일엔 Shift가 없어 토글 필수. */
+  lockAspect: false,
+  setLockAspect(v) { set({ lockAspect: !!v }) },
+  toggleLockAspect() { set(s => ({ lockAspect: !s.lockAspect })) },
   /** 에디터 애니메이션 미리보기 — null 또는 { revealed, playingStep }. tick은 재생 트리거. */
   animPreview: null,
   animPreviewTick: 0,

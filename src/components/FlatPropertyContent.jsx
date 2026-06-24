@@ -333,14 +333,17 @@ function MultiElementPanel({ elements }) {
         <div>
           <div className="flex items-center justify-between mb-0.5">
             <SectionTitle>그룹 위치</SectionTitle>
-            <button
-              type="button"
-              onClick={fillCanvasGroup}
-              title="화면 채우기 (그룹 전체를 캔버스에 꽉 채움)"
-              className="flex items-center justify-center px-2 py-1 rounded-lg bg-white/5 text-slate-300 border border-white/10 hover:bg-white/10 transition-colors"
-            >
-              <FillCanvasIcon />
-            </button>
+            <div className="flex items-center gap-1">
+              <LockAspectToggle />
+              <button
+                type="button"
+                onClick={fillCanvasGroup}
+                title="화면 채우기 (그룹 전체를 캔버스에 꽉 채움)"
+                className="flex items-center justify-center px-2 py-1 rounded-lg bg-white/5 text-slate-300 border border-white/10 hover:bg-white/10 transition-colors"
+              >
+                <FillCanvasIcon />
+              </button>
+            </div>
           </div>
           <div className="grid grid-cols-2 gap-1.5">
             <div>
@@ -665,7 +668,10 @@ function PositionSection({ el, update, preview }) {
   }
   return (
     <div>
-      <SectionTitle>크기 및 위치</SectionTitle>
+      <div className="flex items-center justify-between">
+        <SectionTitle>크기 및 위치</SectionTitle>
+        <LockAspectToggle />
+      </div>
       <div className="grid grid-cols-2 gap-1.5">
         <NumInput label="X" value={el.x} onChange={v => update({ x: v })} onPreview={preview && (v => preview({ x: v }))} />
         <NumInput label="Y" value={el.y} onChange={v => update({ y: v })} onPreview={preview && (v => preview({ y: v }))} />
@@ -705,6 +711,47 @@ function PositionSection({ el, update, preview }) {
         </div>
       </div>
     </div>
+  )
+}
+
+// 가로세로 비율 고정 토글 — 전역 lockAspect. 단일·그룹 리사이즈 공통, 모바일에서도 사용 가능.
+function LockAspectToggle() {
+  const lockAspect = useFlatStore(s => s.lockAspect)
+  const toggle = useFlatStore(s => s.toggleLockAspect)
+  return (
+    <button
+      type="button"
+      onClick={toggle}
+      title={lockAspect
+        ? '가로세로 비율 고정: 켜짐 — 리사이즈 시 비율 유지 (Shift로 일시 자유)'
+        : '가로세로 비율 고정: 꺼짐 — 자유 리사이즈 (Shift로 일시 고정)'}
+      className={`flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-md border transition-colors ${
+        lockAspect
+          ? 'bg-indigo-500/20 text-indigo-300 border-indigo-500/40'
+          : 'bg-white/5 text-slate-400 border-white/10 hover:bg-white/10'}`}
+    >
+      <LinkIcon linked={lockAspect} />
+      비율
+    </button>
+  )
+}
+
+function LinkIcon({ linked }) {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      {linked ? (
+        <>
+          <path d="M9 17H7A5 5 0 0 1 7 7h2" />
+          <path d="M15 7h2a5 5 0 0 1 0 10h-2" />
+          <line x1="8" y1="12" x2="16" y2="12" />
+        </>
+      ) : (
+        <>
+          <path d="M9 17H7A5 5 0 0 1 7 7h2" />
+          <path d="M15 7h2a5 5 0 0 1 0 10h-2" />
+        </>
+      )}
+    </svg>
   )
 }
 
