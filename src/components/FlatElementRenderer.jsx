@@ -4,6 +4,7 @@ import { useEditorStore } from '../store/editorStore'
 import { BlobStore } from '../core/BlobStore'
 import { pointsToSvgPath, connectorCurvePath, connectorLabelMid } from '../core/PolyShapeUtils'
 import { tableContainerStyle, cellStyle } from '../core/slideTable'
+import { isCoarsePointer } from '../core/pointerEnv'
 
 /**
  * FlatElementRenderer
@@ -364,6 +365,7 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
     // 끝점/방향(도형 경계 위치)은 유지. 화살표 있는 끝: 화살표 길이만큼(앞 삐져나옴 방지).
     // 커넥터의 화살표 없는 끝: 선 두께만큼(두꺼운 선 끝이 도형을 가리지 않게). 일반 선은 안 당김.
     const isConn = element.shapeType === 'connector'
+    const isTouch = isCoarsePointer() // 히트 폭 결정용(비반응형 — 리스너/상태 없이 1회 질의)
     const endInset = (k) => {
       if (k === 'triangle') return aMark * 0.8          // 채운 삼각: 선은 밑변까지(앞 삐져나옴 방지)
       if (k === 'circle' || k === 'diamond') return aMark * 0.5
@@ -403,7 +405,10 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
     return (
       // 컨테이너는 클릭 통과(빈 bbox가 뒤 도형을 가리지 않게). 실제 히트는 선/면 path만 받는다.
       // (path가 pointer-events:auto면 이벤트가 div로 버블되어 onClick/onMouseDown은 정상 동작)
-      <div style={{ ...baseStyle, overflow: 'visible', pointerEvents: 'none' }} onMouseDown={handleMouseDown} onClick={handleClick} onDoubleClick={handleDoubleClick}>
+      // 커넥터는 대각선 bbox라 선택 아웃라인(사각 boundary)이 의미 없음 → 숨기고 끝점 핸들로만 표시.
+      <div style={{ ...baseStyle, overflow: 'visible', pointerEvents: 'none',
+        outline: isConn ? undefined : baseStyle.outline, outlineOffset: isConn ? undefined : baseStyle.outlineOffset }}
+        onMouseDown={handleMouseDown} onClick={handleClick} onDoubleClick={handleDoubleClick}>
         <svg
           width={width} height={height}
           viewBox={`0 0 ${width} ${height}`}
@@ -430,8 +435,9 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
             )}
           </defs>
           {/* 전체 길이(투명) — 히트영역 겸 마커(화살표) 캐리어: 끝점/방향 유지.
-              열린 선=stroke만, 닫힌 도형=면 포함(all) 클릭 가능(빈 bbox는 통과). */}
-          <path d={d} stroke="transparent" strokeWidth={Math.max(sw, 10)} fill="none"
+              열린 선=stroke만, 닫힌 도형=면 포함(all) 클릭 가능(빈 bbox는 통과).
+              얇은 선을 모바일에서 쉽게 잡도록 히트 폭을 화면 기준으로 넓힌다(터치 24·데스크톱 12px). */}
+          <path d={d} stroke="transparent" strokeWidth={Math.max(sw, (isTouch ? 24 : 12) / (scale || 1))} fill="none"
             pointerEvents={element.closed ? 'all' : 'stroke'}
             markerStart={startArrow !== 'none' ? `url(#ms-${markerId})` : undefined}
             markerEnd={endArrow !== 'none' ? `url(#me-${markerId})` : undefined} />
