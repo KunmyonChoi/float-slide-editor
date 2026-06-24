@@ -13,6 +13,7 @@ import SlideDeleteToast from './components/SlideDeleteToast'
 import InstallAppBanner from './components/InstallAppBanner'
 import { UrlPromptHost } from './components/UrlPrompt'
 import { AiSettingsHost } from './components/AiSettingsModal'
+import { CapabilitiesHost } from './components/CapabilitiesModal'
 import { InfographicHost } from './components/InfographicModal'
 import { ConfirmHost } from './components/ConfirmDialog'
 import { useFlatStore } from './store/flatStore'
@@ -90,6 +91,7 @@ export default function App() {
       <InstallAppBanner />
       <UrlPromptHost />
       <AiSettingsHost />
+      <CapabilitiesHost />
       <InfographicHost />
       <ConfirmHost />
       {debugMode && <ComparePanel />}

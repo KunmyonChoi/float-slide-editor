@@ -3,6 +3,7 @@ import { useFlatStore } from '../store/flatStore'
 import { useEditorStore } from '../store/editorStore'
 import { exportFlatHtml, exportFlatHtmlAllPages, downloadHtml } from '../core/FlatExporter'
 import { openAiSettings } from './AiSettingsModal'
+import { openCapabilities } from './CapabilitiesModal'
 import { openFile } from '../core/FilePicker'
 import { confirmDialog } from './ConfirmDialog'
 import { usePwaInstall } from '../core/pwaInstall'
@@ -338,6 +339,7 @@ export default function FileMenu({ fallbackSample }) {
     { id: 'sepAi', type: 'separator' },
     ...(canInstall ? [{ id: 'installApp', label: '앱 설치', shortcut: '홈 화면', action: handleInstallApp }] : []),
     { id: 'aiSettings', label: 'AI 설정', shortcut: 'OpenAI', action: openAiSettings },
+    { id: 'capabilities', label: '권한 및 기능 상태', action: openCapabilities },
     { id: 'sepDebug', type: 'separator' },
     // 샘플 슬라이드는 디버그/데모용 — 디버그 모드일 때만 노출
     ...(debugMode ? [{ id: 'loadSample', label: '샘플 슬라이드', action: handleLoadSample }] : []),
