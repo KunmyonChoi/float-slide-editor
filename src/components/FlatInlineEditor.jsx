@@ -80,7 +80,16 @@ export default function FlatInlineEditor({ element }) {
   // 마운트 시 innerHTML 설정 + 포커스 + 커밋 콜백 등록
   useEffect(() => {
     if (!ref.current) return
-    const escapePlain = (t) => (t || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>')
+    // plain text → innerHTML용 HTML 인코딩. 이미 &amp; 등 엔티티가 섞여 있을 수 있으므로
+    // 먼저 디코딩(textContent trick)한 뒤 인코딩해 이중인코딩 방지.
+    const escapePlain = (t) => {
+      if (!t) return ''
+      // &amp; 등 기존 HTML 엔티티를 먼저 디코딩(브라우저 DOM으로)
+      const tmp = document.createElement('div')
+      tmp.innerHTML = t.replace(/\n/g, '⁠') // 줄바꿈 임시 보존(U+2060 WORD JOINER, 텍스트에 거의 안 쓰임)
+      const decoded = tmp.textContent.replace(/⁠/g, '\n')
+      return decoded.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>')
+    }
     if (element.isCode) {
       // 코드 모드: 색칠 content 대신 원본 code(plain)를 편집
       ref.current.innerHTML = escapePlain(element.code || '')
@@ -148,8 +157,17 @@ export default function FlatInlineEditor({ element }) {
         return
       }
       const html = (ref.current?.innerHTML || '').trim()
-      const hasHtmlTags = /<[a-z][\s\S]*>/i.test(html)
-      commitTextEdit(element.id, html, hasHtmlTags)
+      // <br>/<div> 줄바꿈 구조만 있고 인라인 서식(<span>/<b>/<a> 등)이 없으면 plain.
+      // ⚠ <br>/<div>는 줄바꿈 표현이므로 hasHtmlTags에서 제외해야 순수 plain 판정이 정확.
+      const hasInlineStyle = /<(?!br|div|\/div|\/br)([a-z][\s\S]*?)>/i.test(html)
+      if (!hasInlineStyle) {
+        // plain text: innerHTML의 &amp; 등 엔티티를 textContent(자동 디코딩)로 추출.
+        // editorToPlain: <br>/<div> → \n 변환 후 textContent → 원본 문자열 그대로.
+        const plain = editorToPlain(ref.current)
+        commitTextEdit(element.id, plain, false)
+      } else {
+        commitTextEdit(element.id, html, true)
+      }
     }
     useFlatStore.getState()._setPendingEditCommit(flushCommit)
 
@@ -493,6 +511,44 @@ export default function FlatInlineEditor({ element }) {
   }, [emojiOpen])
 
   const handleKeyDown = useCallback((e) => {
+    // Backspace: 캐럿이 줄(블록/div) 맨 앞에 있을 때 위 줄과 합치기.
+    // defaultParagraphSeparator='br'이지만 기존 content에 <div> 구조가 섞이면
+    // 브라우저가 Backspace로 <div> 경계를 제대로 합치지 못하는 경우 보완.
+    if (e.key === 'Backspace' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      const sel = window.getSelection()
+      if (sel && sel.isCollapsed && sel.rangeCount > 0) {
+        const range = sel.getRangeAt(0)
+        const { startContainer, startOffset } = range
+        // 캐럿이 노드 맨 앞(offset 0)이고 현재 노드 자체 또는 부모가 <div>인 경우
+        const block = startContainer.nodeType === Node.TEXT_NODE
+          ? startContainer.parentElement
+          : startContainer
+        if (startOffset === 0 && block) {
+          const div = block.closest?.('div[contenteditable="true"] > div') ||
+                      (block.tagName === 'DIV' && block.parentElement === ref.current ? block : null)
+          if (div && div.previousSibling) {
+            e.preventDefault()
+            e.stopPropagation()
+            // 이전 블록의 끝으로 캐럿 이동 후 두 블록 내용을 합침
+            const prev = div.previousSibling
+            const prevRange = document.createRange()
+            prevRange.selectNodeContents(prev)
+            prevRange.collapse(false)
+            sel.removeAllRanges()
+            sel.addRange(prevRange)
+            // div의 내용을 prev로 이동(빈 <br>이면 그냥 제거)
+            if (div.innerHTML.trim() === '' || div.innerHTML === '<br>') {
+              div.remove()
+            } else {
+              while (div.firstChild) prev.appendChild(div.firstChild)
+              div.remove()
+            }
+            return
+          }
+        }
+      }
+    }
+
     if (e.key === 'Escape') {
       e.preventDefault()
       e.stopPropagation()
