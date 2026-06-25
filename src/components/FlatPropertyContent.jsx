@@ -2628,6 +2628,32 @@ function AudioVizSection({ el, update, updateStyle }) {
       <NumInput label="박스 모서리 둥글기" value={parseFloat(el.styles?.borderRadius) || 0} min={0} max={200}
         onChange={v => updateStyle('borderRadius', `${v}px`)} />
 
+      {/* 투명도 · 볼륨 */}
+      <div className="pt-1 border-t border-white/5 space-y-2">
+        <div>
+          <SectionTitle>
+            투명도 <span className="text-slate-600 font-normal">{parseFloat(el.styles?.opacity ?? 1).toFixed(2)}</span>
+          </SectionTitle>
+          <input
+            type="range" min="0" max="1" step="0.01"
+            value={el.styles?.opacity ?? 1}
+            onChange={e => updateStyle('opacity', e.target.value)}
+            className="w-full" style={{ accentColor: '#6366f1' }}
+          />
+        </div>
+        <div>
+          <SectionTitle>
+            볼륨 <span className="text-slate-600 font-normal">{Math.round((el.volume ?? 1) * 100)}%</span>
+          </SectionTitle>
+          <input
+            type="range" min="0" max="1" step="0.01"
+            value={el.volume ?? 1}
+            onChange={e => update({ volume: parseFloat(e.target.value) })}
+            className="w-full" style={{ accentColor: '#6366f1' }}
+          />
+        </div>
+      </div>
+
       {/* 재생 옵션 (영상과 동일) */}
       <div className="pt-1 border-t border-white/5 space-y-2">
         <label className="flex items-center gap-2 cursor-pointer">

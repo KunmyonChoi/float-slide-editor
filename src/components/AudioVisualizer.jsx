@@ -30,9 +30,11 @@ export default function AudioVisualizer({ element, playNow }) {
     return () => { cancelled = true }
   }, [content, isIdb])
 
-  // 라이브 루프가 최신 viz/크기를 재구독 없이 읽도록 ref에 보관(오디오 그래프 재생성 방지)
-  const liveRef = useRef({ viz, width, height })
-  liveRef.current = { viz, width, height }
+  const volume = Number.isFinite(element.volume) ? Math.max(0, Math.min(1, element.volume)) : 1
+  // 라이브 루프가 최신 viz/크기/볼륨을 재구독 없이 읽도록 ref에 보관(오디오 그래프 재생성 방지)
+  const liveRef = useRef({ viz, width, height, volume })
+  liveRef.current = { viz, width, height, volume }
+  const gainRef = useRef(null) // GainNode — 볼륨 실시간 반영
 
   // 캔버스 backing store를 DPR·크기에 맞춤(선명도)
   const syncCanvasSize = (cv) => {
@@ -90,11 +92,16 @@ export default function AudioVisualizer({ element, playNow }) {
       analyser.fftSize = 256
       analyser.smoothingTimeConstant = Math.max(0, Math.min(0.99, viz.smoothing))
       const gain = ctxAudio.createGain()
-      gain.gain.value = element.muted ? 0 : 1
+      gain.gain.value = element.muted ? 0 : liveRef.current.volume
+      gainRef.current = gain
       srcNode.connect(analyser); analyser.connect(gain); gain.connect(ctxAudio.destination)
       const data = new Uint8Array(analyser.frequencyBinCount)
       const loop = () => {
         if (stopped) return
+        // 볼륨 실시간 반영(음소거 우선)
+        if (gainRef.current) {
+          gainRef.current.gain.value = element.muted ? 0 : liveRef.current.volume
+        }
         analyser.getByteFrequencyData(data)
         const { viz: v, width: w, height: h } = liveRef.current
         const ctx = syncCanvasSize(cv)
@@ -105,14 +112,16 @@ export default function AudioVisualizer({ element, playNow }) {
       audio.play().catch(() => { /* 자동재생 차단(비음소거) — 사용자 상호작용 후 재생 */ })
       loop()
     } catch {
-      // Web Audio 실패 시: 분석기 없이 소리만 재생(이 경로엔 gain이 없으므로 muted 직접 적용) + 정적 프레임
+      // Web Audio 실패 시: 분석기 없이 소리만 재생(이 경로엔 gain이 없으므로 muted/volume 직접 적용) + 정적 프레임
       audio.muted = !!element.muted
+      audio.volume = liveRef.current.volume
       audio.play().catch(() => {})
       paintStatic()
     }
 
     return () => {
       stopped = true
+      gainRef.current = null
       cancelAnimationFrame(raf)
       try { audio.pause() } catch { /* 무시 */ }
       audio.src = ''
