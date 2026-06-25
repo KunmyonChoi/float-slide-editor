@@ -73,6 +73,9 @@ export function exportFlatHtml(flatElements, canvasSize, fontImports = []) {
       const vidOpacity = el.styles.opacity && el.styles.opacity !== '1' ? `opacity:${el.styles.opacity};` : ''
       return `<div style="${flatStyle(el)};${br}${vidOpacity}"><iframe src="${escHtml(el.content)}" style="width:100%;height:100%;border:none;" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe></div>`
     }
+    if (el.type === 'audio') {
+      return audioVizHtml(el)
+    }
     if (el.type === 'svg') {
       return `<div style="${flatStyle(el)}">${el.content}</div>`
     }
@@ -113,6 +116,7 @@ export function exportFlatHtml(flatElements, canvasSize, fontImports = []) {
 </head>
 <body style="width:${canvasSize.w}px;height:${canvasSize.h}px;overflow:hidden;position:relative;">
 ${els.join('\n')}
+${flatElements.some(e => e.type === 'audio') ? AUDIO_VIZ_SCRIPT : ''}
 </body>
 </html>`
 }
@@ -193,6 +197,7 @@ function nav(d){show(cur+d);}
 document.addEventListener('keydown',function(e){if(e.key==='ArrowRight'||e.key==='ArrowDown'){e.preventDefault();nav(1);}else if(e.key==='ArrowLeft'||e.key==='ArrowUp'){e.preventDefault();nav(-1);}});
 show(0);
 </script>` : ''}
+${sortedKeys.some(k => (pages[k].elements || []).some(e => e.type === 'audio')) ? AUDIO_VIZ_SCRIPT : ''}
 </body>
 </html>`
 }
@@ -228,6 +233,9 @@ function renderElement(el) {
     const br = el.styles.borderRadius && el.styles.borderRadius !== '0px' ? `border-radius:${el.styles.borderRadius};overflow:hidden;` : ''
     const vidOpacity = el.styles.opacity && el.styles.opacity !== '1' ? `opacity:${el.styles.opacity};` : ''
     return `<div style="${flatStyle(el)};${br}${vidOpacity}"><iframe src="${escHtml(el.content)}" style="width:100%;height:100%;border:none;" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe></div>`
+  }
+  if (el.type === 'audio') {
+    return audioVizHtml(el)
   }
   if (el.type === 'svg') {
     return `<div style="${flatStyle(el)}">${el.content}</div>`
@@ -364,3 +372,55 @@ function escHtml(str) {
 }
 
 function r(n) { return Math.round(n * 10) / 10 }
+
+/**
+ * 오디오 비주얼라이저 요소 → 라이브 <audio>+<canvas> 마크업.
+ * idb:// 로컬 미디어는 HTML 내보내기 공통 한계(영상/이미지와 동일) — data:/http URL은 동작.
+ */
+function audioVizHtml(el) {
+  const br = el.styles.borderRadius && el.styles.borderRadius !== '0px' ? `border-radius:${el.styles.borderRadius};overflow:hidden;` : ''
+  const bg = el.styles.backgroundColor && el.styles.backgroundColor !== 'rgba(0, 0, 0, 0)' && el.styles.backgroundColor !== 'transparent' ? `background:${el.styles.backgroundColor};` : ''
+  const op = el.styles.opacity && el.styles.opacity !== '1' ? `opacity:${el.styles.opacity};` : ''
+  const viz = { shape: 'bars', barWidth: 6, barGap: 3, barRadius: 3, color: '#6366f1', smoothing: 0.8, sensitivity: 1, ...(el.viz || {}) }
+  const cfg = escHtml(JSON.stringify({ viz, autoplay: el.autoplay !== false, muted: !!el.muted }))
+  return `<div style="${flatStyle(el)};${br}${bg}${op}" class="fe-audioviz" data-cfg="${cfg}">`
+    + `<canvas style="width:100%;height:100%;display:block"></canvas>`
+    + `<audio src="${escHtml(el.content)}" preload="auto"${el.loop ? ' loop' : ''}${el.muted ? ' muted' : ''} style="display:none"></audio>`
+    + `</div>`
+}
+
+// 내보낸 HTML에 1회 삽입되는 비주얼라이저 초기화 스크립트(주파수 반응 + 정적 폴백).
+// 첫 사용자 클릭(또는 음소거 자동재생)에 재생 시작. audioViz.js의 drawViz/barsFromFrequency 로직을 인라인 미러.
+const AUDIO_VIZ_SCRIPT = `<script>
+(function(){
+  function rr(c,x,y,w,h,r){var rad=Math.max(0,Math.min(r,w/2,h/2));c.beginPath();c.moveTo(x+rad,y);c.arcTo(x+w,y,x+w,y+h,rad);c.arcTo(x+w,y+h,x,y+h,rad);c.arcTo(x,y+h,x,y,rad);c.arcTo(x,y,x+w,y,rad);c.closePath();}
+  function draw(ctx,w,h,mags,v){ctx.clearRect(0,0,w,h);ctx.fillStyle=v.color;var unit=Math.max(1,v.barWidth+v.barGap),n=mags.length,tot=n*unit-v.barGap,x=Math.max(0,(w-tot)/2),mb=Math.max(1,v.barWidth*0.06);for(var i=0;i<n;i++){var m=Math.max(0,Math.min(1,mags[i]||0));if(v.shape==='mirror'){var hf=Math.max(mb/2,(h/2)*m);rr(ctx,x,h/2-hf,v.barWidth,hf*2,v.barRadius);}else{var bh=Math.max(mb,h*m);rr(ctx,x,h-bh,v.barWidth,bh,v.barRadius);}ctx.fill();x+=unit;}}
+  function barCount(w,bw,bg){var u=Math.max(1,bw+bg);return Math.max(1,Math.floor((w+bg)/u));}
+  function staticFrame(n){var o=[];for(var i=0;i<n;i++){var s=Math.sin(i*0.55+1)*0.5+Math.sin(i*0.17+2.1)*0.35+Math.sin(i*1.3)*0.15;o.push(0.12+0.88*Math.abs(s));}return o;}
+  function bars(f,n,sens){var o=new Array(n).fill(0);if(!f.length)return o;var u=Math.max(1,Math.floor(f.length*0.7));for(var i=0;i<n;i++){var a=Math.floor(i/n*u),b=Math.max(a+1,Math.floor((i+1)/n*u)),s=0;for(var j=a;j<b;j++)s+=f[j];o[i]=Math.max(0,Math.min(1,s/(b-a)/255*sens));}return o;}
+  document.querySelectorAll('.fe-audioviz').forEach(function(box){
+    var cfg;try{cfg=JSON.parse(box.getAttribute('data-cfg'));}catch(e){return;}
+    var v=cfg.viz,cv=box.querySelector('canvas'),audio=box.querySelector('audio');
+    function size(){var dpr=window.devicePixelRatio||1,w=box.clientWidth,h=box.clientHeight;cv.width=Math.max(1,Math.round(w*dpr));cv.height=Math.max(1,Math.round(h*dpr));var ctx=cv.getContext('2d');ctx.setTransform(dpr,0,0,dpr,0,0);return {ctx:ctx,w:w,h:h};}
+    function paintStatic(){var s=size();draw(s.ctx,s.w,s.h,staticFrame(barCount(s.w,v.barWidth,v.barGap)),v);}
+    paintStatic();
+    var started=false;
+    function start(){
+      if(started)return;started=true;
+      try{
+        var AC=window.AudioContext||window.webkitAudioContext,ac=new AC();
+        var src=ac.createMediaElementSource(audio),an=ac.createAnalyser();
+        an.fftSize=256;an.smoothingTimeConstant=Math.max(0,Math.min(0.99,v.smoothing));
+        var g=ac.createGain();g.gain.value=cfg.muted?0:1;
+        src.connect(an);an.connect(g);g.connect(ac.destination);
+        var data=new Uint8Array(an.frequencyBinCount);
+        (function loop(){an.getByteFrequencyData(data);var s=size();draw(s.ctx,s.w,s.h,bars(data,barCount(s.w,v.barWidth,v.barGap),v.sensitivity),v);requestAnimationFrame(loop);})();
+        ac.resume&&ac.resume();
+      }catch(e){}
+      audio.play&&audio.play().catch(function(){});
+    }
+    if(cfg.autoplay&&cfg.muted){start();}
+    window.addEventListener('pointerdown',start,{once:true});
+  });
+})();
+</script>`

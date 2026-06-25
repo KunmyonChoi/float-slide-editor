@@ -673,6 +673,8 @@ def _add_element(slide, el: dict, cs: dict, font_name_map: dict = None, slide_bg
         _add_svg(slide, el, x, y, w, h, rotation)
     elif el_type == 'video':
         _add_video(slide, el, x, y, w, h, rotation)
+    elif el_type == 'audio':
+        _add_audio(slide, el, x, y, w, h, rotation)
     elif el_type == 'table':
         _add_table(slide, el, x, y, w, h, rotation)
 
@@ -1283,6 +1285,60 @@ def _apply_video_playback(slide, shape_id, autoplay=False, loop=False, muted=Fal
             for cond in vid.iter(qn('p:cond')):
                 if cond.get('delay') == 'indefinite':
                     cond.set('delay', '0')
+
+
+def _add_audio(slide, el: dict, x, y, w, h, rotation):
+    """오디오 비주얼라이저 → 정적 PNG 스냅샷(막대 프레임). PptExporter.js(JS 경로)와 동일 동작.
+    PPT는 오디오/실시간 애니메이션 한계로 시각만 보존. 실패 시 플레이스홀더."""
+    try:
+        import math, cairosvg
+        s = el.get('styles', {}) or {}
+        viz = {'shape': 'bars', 'barWidth': 6, 'barGap': 3, 'barRadius': 3,
+               'color': '#6366f1', 'sensitivity': 1, **(el.get('viz') or {})}
+        w_px = max(1, int(round(el.get('width', 320))))
+        h_px = max(1, int(round(el.get('height', 120))))
+        bw, bg_, rad = float(viz['barWidth']), float(viz['barGap']), float(viz['barRadius'])
+        unit = max(1.0, bw + bg_)
+        n = max(1, int((w_px + bg_) // unit))
+        # 정적 대표 프레임 — JS staticFrame과 동일 공식(결정적)
+        mags = []
+        for i in range(n):
+            v = (math.sin(i * 0.55 + 1) * 0.5 + math.sin(i * 0.17 + 2.1) * 0.35
+                 + math.sin(i * 1.3) * 0.15)
+            mags.append(0.12 + 0.88 * abs(v))
+        total = n * unit - bg_
+        x0 = max(0.0, (w_px - total) / 2)
+        min_bar = max(1.0, bw * 0.06)
+        rects = ''
+        bgc = s.get('backgroundColor')
+        if bgc:
+            rb = css_color_to_rgba(bgc)
+            if rb and rb[3] > 0:
+                rects += (f'<rect x="0" y="0" width="{w_px}" height="{h_px}" '
+                          f'fill="rgb({rb[0]},{rb[1]},{rb[2]})" fill-opacity="{rb[3]:.3f}"/>')
+        color = viz['color']
+        cx = x0
+        for m in mags:
+            m = max(0.0, min(1.0, m))
+            if viz['shape'] == 'mirror':
+                half = max(min_bar / 2, (h_px / 2) * m)
+                rects += (f'<rect x="{cx:.2f}" y="{h_px/2-half:.2f}" width="{bw:.2f}" '
+                          f'height="{half*2:.2f}" rx="{rad:.2f}" ry="{rad:.2f}" fill="{color}"/>')
+            else:
+                bh = max(min_bar, h_px * m)
+                rects += (f'<rect x="{cx:.2f}" y="{h_px-bh:.2f}" width="{bw:.2f}" '
+                          f'height="{bh:.2f}" rx="{rad:.2f}" ry="{rad:.2f}" fill="{color}"/>')
+            cx += unit
+        svg = (f'<svg xmlns="http://www.w3.org/2000/svg" width="{w_px}" height="{h_px}" '
+               f'viewBox="0 0 {w_px} {h_px}">{rects}</svg>')
+        png = cairosvg.svg2png(bytestring=svg.encode('utf-8'), output_width=w_px, output_height=h_px)
+        pic = slide.shapes.add_picture(io.BytesIO(png), x, y, w, h)
+        if rotation:
+            pic.rotation = rotation
+        return
+    except Exception as e:
+        print(f'PPT export: audio visualizer snapshot failed, placeholder: {e}')
+    _add_video_placeholder(slide, el, x, y, w, h, rotation)
 
 
 def _add_video_placeholder(slide, el: dict, x, y, w, h, rotation):

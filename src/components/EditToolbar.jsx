@@ -10,6 +10,7 @@ import { SNIPPETS } from '../core/snippets'
 import SnippetMenu from './SnippetMenu'
 import { createTableElement } from '../core/slideTable'
 import { BlobStore } from '../core/BlobStore'
+import { DEFAULT_VIZ } from '../core/audioViz'
 import { ToolBtn, Divider, UndoIcon, RedoIcon } from './FloatingToolbar'
 import { promptUrl } from './UrlPrompt'
 
@@ -273,6 +274,29 @@ export default function EditToolbar() {
       if (!confirm(`파일 크기가 ${sizeMB.toFixed(0)}MB입니다. 계속하시겠습니까?`)) return
     }
     const key = await BlobStore.put(file)
+
+    // 오디오 파일(mp3 등) → 비주얼라이저 요소(영상 아님)
+    if (file.type.startsWith('audio/')) {
+      const w = Math.min(640, Math.round(canvasSize.w * 0.6)), h = 160
+      const maxZ = flatElements.length > 0 ? Math.max(...flatElements.map(el => el.zIndex)) : 0
+      const el = {
+        id: nextFlatId(), sourceId: null,
+        type: 'audio', width: w, height: h,
+        content: BlobStore.toRef(key),
+        isRich: false, merged: false,
+        autoplay: true, loop: true, muted: false, // 기본: 발표 시 자동재생·반복
+        viz: { ...DEFAULT_VIZ },
+        x: Math.round((canvasSize.w - w) / 2),
+        y: Math.round((canvasSize.h - h) / 2),
+        zIndex: maxZ + 1,
+        styles: { ...DEFAULT_STYLES, borderRadius: '8px' },
+      }
+      addFlatElement(el)
+      setSelectedFlat(el.id)
+      e.target.value = ''
+      return
+    }
+
     const blobUrl = await BlobStore.getUrl(key)
     // 비디오 치수 감지
     const video = document.createElement('video')
@@ -377,13 +401,13 @@ export default function EditToolbar() {
             label="영상"
             items={[
               { id: 'vurl', icon: <span className="text-xs">🔗</span>, label: 'URL 입력', action: insertVideoUrl },
-              { id: 'vfile', icon: <span className="text-xs">📁</span>, label: '파일 선택', action: () => videoInputRef.current?.click() },
+              { id: 'vfile', icon: <span className="text-xs">📁</span>, label: '파일 선택 (영상·오디오)', action: () => videoInputRef.current?.click() },
             ]}
           />
           <input
             ref={videoInputRef}
             type="file"
-            accept="video/*"
+            accept="video/*,audio/*"
             style={{ display: 'none' }}
             onChange={handleVideoFile}
           />
