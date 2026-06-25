@@ -326,6 +326,24 @@ export default function FlatPresenter() {
               const step = animInfo.stepOf[el.id]
               const playing = playingStep >= 0 && step === playingStep
               const showHidden = isHiddenAt(animInfo, el, revealed) && !playing
+
+              // 자동(auto) 요소: 슬라이드 진입 즉시 CSS animation 재생.
+              // 외부 div에 key={currentSlide}가 있으므로 슬라이드 전환 시 remount → 애니 재시작.
+              if (step == null && el.anim?.trigger?.mode === 'auto' && el.anim?.effect && el.anim.effect !== 'none') {
+                return (
+                  <div key={el.id} style={{
+                    position: 'absolute', left: el.x, top: el.y, width: el.width, height: el.height,
+                    zIndex: el.zIndex,
+                    transformOrigin: 'center center',
+                    animation: animationCss(el.anim, animInfo.autoOffsets?.[el.id] ?? 0),
+                    ...(directionVars(el.anim) || {}),
+                  }}>
+                    <FlatElementRenderer element={{ ...el, x: 0, y: 0 }} isSelected={false}
+                      isEditing={false} scale={scale} canvasSize={canvasSize} playNow={true} />
+                  </div>
+                )
+              }
+
               // 애니메이션 없는 요소는 래퍼 없이 그대로(레이아웃/스태킹 영향 최소화)
               if (step == null) {
                 return (

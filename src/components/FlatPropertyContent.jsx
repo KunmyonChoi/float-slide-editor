@@ -2815,7 +2815,7 @@ function AiBackgroundSection({ onApply }) {
 }
 
 // 요소 애니메이션 탭 — 효과·방향·시간·트리거 지정. (발표 모드/미리보기에서 재생)
-const TRIGGER_MODES = [['click', '클릭 시'], ['after', '다음에'], ['with', '동시에']]
+const TRIGGER_MODES = [['auto', '자동'], ['click', '클릭 시'], ['after', '다음에'], ['with', '동시에']]
 const DIRS = [['up', '↑'], ['down', '↓'], ['left', '←'], ['right', '→']]
 function effectLabel(id) { return (EFFECTS.find(e => e.id === id) || {}).label || id }
 function shortDesc(el) {
@@ -2849,7 +2849,7 @@ function AnimationTab({ el }) {
     .sort((a, b) => (a.anim.seq || 0) - (b.anim.seq || 0))
 
   const setMode = (mode) => {
-    if (mode === 'click') { patch({ trigger: { mode: 'click', ref: null } }); return }
+    if (mode === 'auto' || mode === 'click') { patch({ trigger: { mode, ref: null } }); return }
     const ref = anim.trigger?.ref && targets.some(t => t.id === anim.trigger.ref)
       ? anim.trigger.ref : (targets[targets.length - 1]?.id || null)
     patch({ trigger: { mode, ref } })
@@ -2901,11 +2901,14 @@ function AnimationTab({ el }) {
 
           <div>
             <p className={`${labelClass} mb-0.5`}>시작</p>
-            <div className="grid grid-cols-3 gap-1">
+            <div className="grid grid-cols-4 gap-1">
               {TRIGGER_MODES.map(([m, label]) => (
                 <button key={m} onClick={() => setMode(m)}
                   className={`text-xs py-1 rounded border transition-colors ${
-                    (anim.trigger?.mode || 'click') === m ? 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30'
+                    (anim.trigger?.mode || 'click') === m
+                      ? m === 'auto'
+                        ? 'bg-sky-500/20 text-sky-300 border-sky-500/30'
+                        : 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30'
                       : 'bg-white/5 text-slate-400 border-white/10 hover:bg-white/10'}`}
                 >{label}</button>
               ))}
@@ -2926,7 +2929,10 @@ function AnimationTab({ el }) {
               </div>
             )}
           </div>
-          <p className="text-[10px] text-slate-600">발표 모드에서 클릭(또는 ←/→)으로 단계 진행됩니다. 캔버스의 번호는 진행 순서입니다.</p>
+          {anim.trigger?.mode === 'auto'
+            ? <p className="text-[10px] text-slate-600">페이지 진입 시 자동 재생됩니다. 지연(ms)으로 타이밍을 조절하세요. 캔버스에 하늘색 <b>자동</b> 배지로 표시됩니다.</p>
+            : <p className="text-[10px] text-slate-600">발표 모드에서 클릭(또는 ←/→)으로 단계 진행됩니다. 캔버스의 번호는 진행 순서입니다.</p>
+          }
         </>
       )}
     </div>

@@ -4,11 +4,11 @@
  *   effect: 'fadeIn'|'slideIn'|'scaleIn'|'pop'|'fadeOut'|'slideOut'|'scaleOut',
  *   dir?: 'left'|'right'|'up'|'down',   // slide 계열만
  *   durationMs, delayMs,
- *   trigger: { mode:'click'|'with'|'after', ref:<elementId>|null },
+ *   trigger: { mode:'auto'|'click'|'with'|'after', ref:<elementId>|null },
  *   seq: number,                        // 작성 순서(빌드 단계 계산 기준)
  * }
- * 트리거로 click 단계(step)를 묶는다: click=새 단계, with=ref와 같은 단계 동시,
- * after=ref와 같은 단계지만 ref 종료 후(+delay) 자동 연쇄.
+ * auto  = 페이지 진입 즉시 자동 재생 (delayMs로 지연, 클릭 단계에 포함되지 않음)
+ * click = 새 단계, with = ref와 같은 단계 동시, after = ref 종료 후(+delay) 자동 연쇄.
  */
 
 export const EFFECTS = [
@@ -28,11 +28,12 @@ export function isEntrance(effect) { return KIND[effect] === 'enter' }
 export function isExit(effect) { return KIND[effect] === 'exit' }
 export function effectHasDir(effect) { return !!HASDIR[effect] }
 
-const DEFAULT_DUR = 500
+export const DEFAULT_DUR = 500
 
 /**
  * 애니메이션 가진 요소들을 seq 순으로 정렬해 click 단계로 그룹핑.
- * @returns { stepCount, stepOf:{id->step}, offsetOf:{id->startMs}, order:[id...] }
+ * auto 트리거 요소는 stepOf에 포함되지 않고 autoOffsets에 별도 보관된다.
+ * @returns { stepCount, stepOf:{id->step}, offsetOf:{id->startMs}, autoOffsets:{id->delayMs}, order:[id...] }
  */
 export function computeSteps(elements) {
   const animated = (elements || [])
@@ -42,10 +43,15 @@ export function computeSteps(elements) {
   const byId = {}
   for (const e of animated) byId[e.id] = e
 
-  const stepOf = {}, offsetOf = {}
+  const stepOf = {}, offsetOf = {}, autoOffsets = {}
   let stepCount = 0
   for (const e of animated) {
     const tr = e.anim.trigger || { mode: 'click' }
+    // 자동: 클릭 단계에 포함하지 않음 — CSS animation-delay로 delayMs 그대로 사용
+    if (tr.mode === 'auto') {
+      autoOffsets[e.id] = e.anim.delayMs || 0
+      continue
+    }
     const ref = tr.ref && byId[tr.ref] && stepOf[tr.ref] != null ? tr.ref : null
     if (tr.mode === 'with' && ref) {
       stepOf[e.id] = stepOf[ref]
@@ -60,7 +66,7 @@ export function computeSteps(elements) {
       stepCount++
     }
   }
-  return { stepCount, stepOf, offsetOf, order: animated.map(e => e.id) }
+  return { stepCount, stepOf, offsetOf, autoOffsets, order: animated.map(e => e.id) }
 }
 
 /** 단계별 총 소요시간(ms) — 자동 진행(음성/미리보기) 타이밍용. offset+duration 최대값. */

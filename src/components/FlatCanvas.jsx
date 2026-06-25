@@ -5,7 +5,7 @@ import { isBackgroundElement } from '../core/SnapEngine'
 import { useIsTouch } from '../core/pointerEnv'
 import { resolveConnectors, resolveConnectorEndpoints, resolveConnectorCurve, attachTargetAt, connectionPoints, nearestConnectionPoint } from '../core/ConnectorRouting'
 import { getRotatedAABB } from '../core/RotationUtils'
-import { computeSteps, isHiddenAt, animationCss, directionVars, stepDurations } from '../core/slideAnimation'
+import { computeSteps, isHiddenAt, animationCss, directionVars, stepDurations, DEFAULT_DUR } from '../core/slideAnimation'
 import FlatElementRenderer from './FlatElementRenderer'
 import FlatSelectionOverlay, { FlatGroupOverlay } from './FlatSelectionOverlay'
 import FlatAiBar from './FlatAiBar'
@@ -51,7 +51,8 @@ function AnimationBadges({ elements, scale }) {
     <>
       {elements.map(el => {
         const step = info.stepOf[el.id]
-        if (step == null) return null
+        const isAuto = el.anim?.trigger?.mode === 'auto' && el.anim?.effect && el.anim.effect !== 'none'
+        if (step == null && !isAuto) return null
         const exit = el.anim?.effect?.endsWith('Out')
         return (
           <div key={el.id} style={{
@@ -62,9 +63,9 @@ function AnimationBadges({ elements, scale }) {
               display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
               minWidth: 18, height: 18, padding: '0 4px', borderRadius: 9,
               fontSize: 11, fontWeight: 700, color: '#fff',
-              background: exit ? '#ef4444' : '#6366f1',
+              background: isAuto ? '#0ea5e9' : exit ? '#ef4444' : '#6366f1',
               border: '1.5px solid #fff', boxShadow: '0 1px 4px rgba(0,0,0,0.4)',
-            }}>{step + 1}</span>
+            }}>{isAuto ? '자동' : step + 1}</span>
           </div>
         )
       })}
@@ -160,14 +161,25 @@ export default function FlatCanvas() {
   useEffect(() => {
     if (!animPreviewTick) return
     const info = computeSteps(renderElements)
-    if (info.stepCount === 0) { useFlatStore.getState()._setAnimPreview(null); return }
+    const hasAuto = Object.keys(info.autoOffsets || {}).length > 0
+    if (info.stepCount === 0 && !hasAuto) { useFlatStore.getState()._setAnimPreview(null); return }
     const durs = stepDurations(info, renderElements)
     const setP = (v) => useFlatStore.getState()._setAnimPreview(v)
     const timers = []
+    // 미리보기 시작 — auto 요소는 key remount로 즉시 재생
+    setP({ revealed: 0, playingStep: -1 })
     let t = 200
     for (let s = 0; s < info.stepCount; s++) {
       timers.push(setTimeout(() => setP({ revealed: s + 1, playingStep: s }), t))
       t += durs[s] + 350
+    }
+    // auto만 있을 경우 가장 긴 auto 애니메이션이 끝날 때까지 대기
+    if (info.stepCount === 0 && hasAuto) {
+      const maxDelay = Math.max(...Object.values(info.autoOffsets))
+      const maxDur = Math.max(...renderElements
+        .filter(e => e.anim?.trigger?.mode === 'auto')
+        .map(e => e.anim?.durationMs || DEFAULT_DUR))
+      t = maxDelay + maxDur + 400
     }
     timers.push(setTimeout(() => setP(null), t))
     return () => timers.forEach(clearTimeout)
@@ -1300,6 +1312,23 @@ export default function FlatCanvas() {
               // 미리보기 중: 발표 모드와 동일하게 등장/퇴장 적용
               if (animPreview) {
                 const step = animInfo.stepOf[el.id]
+                const isAutoEl = el.anim?.trigger?.mode === 'auto' && el.anim?.effect && el.anim.effect !== 'none'
+
+                // 자동 요소: key에 animPreviewTick 포함 → 미리보기 시작마다 remount → 애니 재시작
+                if (isAutoEl) {
+                  return (
+                    <div key={`auto-${el.id}-${animPreviewTick}`} style={{
+                      position: 'absolute', left: el.x, top: el.y, width: el.width, height: el.height,
+                      zIndex: el.zIndex,
+                      transformOrigin: 'center center',
+                      animation: animationCss(el.anim, animInfo.autoOffsets?.[el.id] ?? 0),
+                      ...(directionVars(el.anim) || {}),
+                    }}>
+                      <FlatElementRenderer element={{ ...el, x: 0, y: 0 }} isSelected={false} isEditing={false} scale={scale} playNow={false} />
+                    </div>
+                  )
+                }
+
                 if (step != null) {
                   const playing = animPreview.playingStep >= 0 && step === animPreview.playingStep
                   const showHidden = isHiddenAt(animInfo, el, animPreview.revealed) && !playing
