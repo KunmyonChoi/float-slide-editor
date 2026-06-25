@@ -1313,7 +1313,7 @@ export default function FlatCanvas() {
                       animation: playing ? animationCss(el.anim, animInfo.offsetOf[el.id]) : undefined,
                       ...(playing ? (directionVars(el.anim) || {}) : {}),
                     }}>
-                      <FlatElementRenderer element={{ ...el, x: 0, y: 0 }} isSelected={false} isEditing={false} scale={scale} />
+                      <FlatElementRenderer element={{ ...el, x: 0, y: 0 }} isSelected={false} isEditing={false} scale={scale} playNow={false} />
                     </div>
                   )
                 }
@@ -1325,6 +1325,7 @@ export default function FlatCanvas() {
                   isSelected={!animPreview && selectedFlatIds.includes(el.id)}
                   isEditing={el.id === editingFlatId}
                   scale={scale}
+                  playNow={false}
                 />
               )
             })}

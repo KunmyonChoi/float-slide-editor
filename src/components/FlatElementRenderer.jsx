@@ -468,9 +468,10 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
   }
 
   if (type === 'audio') {
-    // playNow: prop으로 명시된 경우 우선(FlatPresenter 등 재생 컨텍스트), 없으면 store mode로 판단.
-    // FlatCanvas는 발표 모드여도 playNow prop 없이 렌더 → 편집 화면 오디오가 발표 중에 재생되는 문제 방지.
-    const isPresent = playNowProp !== undefined ? playNowProp : useEditorStore.getState().mode === 'present'
+    // playNow: 반드시 명시적 prop으로 제어 — store mode로 자동 판단하지 않음.
+    // FlatPresenter만 playNow={true}를 전달. FlatCanvas·SlideListPanel 등 편집/썸네일 경로는
+    // playNow={false}를 명시해 발표 모드 진입 시에도 오디오가 재생되지 않게 한다.
+    const isPresent = playNowProp === true
     return (
       <div style={baseStyle} onMouseDown={handleMouseDown} onClick={handleClick}>
         <AudioVisualizer element={element} playNow={isPresent} />

@@ -235,7 +235,7 @@ export const SlideThumbnail = memo(function SlideThumbnail({ elements, canvasSiz
     <div style={{ width, height, position: 'relative', overflow: 'hidden', background: '#fff', pointerEvents: 'none' }}>
       <div style={{ position: 'absolute', top: 0, left: 0, width: cs.w, height: cs.h, transform: `scale(${scale})`, transformOrigin: 'top left' }}>
         {els.map(el => (
-          <FlatElementRenderer key={el.id} element={el} isSelected={false} isEditing={false} scale={scale} canvasSize={cs} />
+          <FlatElementRenderer key={el.id} element={el} isSelected={false} isEditing={false} scale={scale} canvasSize={cs} playNow={false} />
         ))}
       </div>
     </div>
