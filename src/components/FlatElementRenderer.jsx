@@ -5,6 +5,7 @@ import { BlobStore } from '../core/BlobStore'
 import { pointsToSvgPath, connectorCurvePath, connectorLabelMid } from '../core/PolyShapeUtils'
 import { tableContainerStyle, cellStyle } from '../core/slideTable'
 import { isCoarsePointer } from '../core/pointerEnv'
+import AudioVisualizer from './AudioVisualizer'
 
 /**
  * FlatElementRenderer
@@ -462,6 +463,15 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
             lineHeight: 1.3, boxShadow: '0 0 0 1px rgba(0,0,0,0.06)',
           }}>{labelText}</div>
         )}
+      </div>
+    )
+  }
+
+  if (type === 'audio') {
+    const isPresent = useEditorStore.getState().mode === 'present'
+    return (
+      <div style={baseStyle} onMouseDown={handleMouseDown} onClick={handleClick}>
+        <AudioVisualizer element={element} playNow={isPresent} />
       </div>
     )
   }

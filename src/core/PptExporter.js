@@ -5,6 +5,7 @@ import { htmlToTextRuns, cssColorToHex, applyTextTransform } from './HtmlToTextR
 import { parseGradient } from './GradientParser'
 import { cssColorToRgba } from './CssColor'
 import { BlobStore } from './BlobStore'
+import { DEFAULT_VIZ, barCount, staticFrame, drawViz } from './audioViz'
 
 // px → inches (96 DPI 기준)
 const PX_TO_INCH = 1 / 96
@@ -105,6 +106,9 @@ async function addElementToSlide(slide, el, canvasSize) {
       break
     case 'video':
       await addVideo(slide, el, { x, y, w, h, rotate })
+      break
+    case 'audio':
+      addAudioSnapshot(slide, el, { x, y, w, h, rotate })
       break
     case 'table':
       addTable(slide, el, { x, y, w, h, rotate })
@@ -554,6 +558,35 @@ async function addVideo(slide, el, pos) {
     console.warn('PPT export: 영상 임베드 실패, 플레이스홀더로 대체:', e.message)
   }
   addVideoPlaceholder(slide, el, pos)
+}
+
+/**
+ * 오디오 비주얼라이저 → 정적 PNG 스냅샷. PPT는 오디오/실시간 애니메이션 한계가 있어
+ * 현재 막대 프레임을 이미지로 구워 삽입(시각만 보존). exporter.py(Python)와 동일 동작.
+ */
+function addAudioSnapshot(slide, el, pos) {
+  try {
+    const viz = { ...DEFAULT_VIZ, ...(el.viz || {}) }
+    const W = Math.max(1, Math.round(el.width || 320)), H = Math.max(1, Math.round(el.height || 120))
+    const SCALE = 2 // 선명도
+    const cv = document.createElement('canvas')
+    cv.width = W * SCALE; cv.height = H * SCALE
+    const ctx = cv.getContext('2d')
+    ctx.scale(SCALE, SCALE)
+    const bg = el.styles?.backgroundColor
+    if (bg && bg !== 'transparent' && bg !== 'rgba(0, 0, 0, 0)') { ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H) }
+    drawViz(ctx, W, H, staticFrame(barCount(W, viz.barWidth, viz.barGap)), viz)
+    const data = cv.toDataURL('image/png')
+    const opts = { x: pos.x, y: pos.y, w: pos.w, h: pos.h, data }
+    if (pos.rotate) opts.rotate = pos.rotate
+    if (el.styles?.borderRadius && el.styles.borderRadius !== '0px') opts.rounding = true
+    slide.addImage(opts)
+  } catch (e) {
+    console.warn('PPT export: 오디오 비주얼라이저 스냅샷 실패:', e.message)
+    slide.addText([{ text: '♪ 오디오', options: { fontSize: 12, color: 'FFFFFF' } }], {
+      x: pos.x, y: pos.y, w: pos.w, h: pos.h, fill: { color: '1E293B' }, valign: 'middle', align: 'center',
+    })
+  }
 }
 
 function addVideoPlaceholder(slide, el, pos) {

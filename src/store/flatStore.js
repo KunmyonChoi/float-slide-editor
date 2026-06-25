@@ -12,6 +12,13 @@ import { awsIconDataUrl, ICON_LABEL, GROUP_BY_KIND } from '../core/awsIcons'
 // 배경 레이어 판정 — SnapEngine의 canonical 헬퍼 재노출(명시 플래그/__bg 기반)
 export { isBackgroundElement as isBackgroundLayer }
 
+// 현재 flatElements의 최대 flat-N 번호 계산 — extractFlatElementsFromIframe에 전달해 ID 충돌 방지.
+function _maxExistingFlatId(els) {
+  let m = 0
+  for (const e of els) { const n = parseInt((e.id || '').replace(/^flat-/, '')); if (n > m) m = n }
+  return m
+}
+
 // 새 그룹 id — 'grp-' 접두사 + UUID(미지원 환경은 난수 폴백). 그룹 묶기/요소 삽입 공용.
 function newGroupId() {
   return 'grp-' + (globalThis.crypto?.randomUUID?.() || Math.random().toString(36).slice(2, 11))
@@ -550,7 +557,7 @@ export const useFlatStore = create((set, get) => ({
     }
 
     // 캐시 미스 → 새로 추출
-    const { elements, canvasSize, fontImports } = extractFlatElementsFromIframe(iframeRef)
+    const { elements, canvasSize, fontImports } = extractFlatElementsFromIframe(iframeRef, _maxExistingFlatId(get().flatElements))
     _history.clear()
     _currentPageKey = pageKey || null
     set({
@@ -605,7 +612,7 @@ export const useFlatStore = create((set, get) => ({
     await new Promise(r => setTimeout(r, 400))
 
     if (_currentPageKey) delete _pageCache[_currentPageKey]
-    const { elements, canvasSize, fontImports } = extractFlatElementsFromIframe(ref)
+    const { elements, canvasSize, fontImports } = extractFlatElementsFromIframe(ref, _maxExistingFlatId(get().flatElements))
     _history.clear()
     set({
       flatElements: elements,
@@ -684,7 +691,7 @@ export const useFlatStore = create((set, get) => ({
         ref.current.contentWindow?.postMessage({ type: 'fe:navigate', page: route.h, v: route.v }, '*')
         await new Promise(r => setTimeout(r, 400))
         try {
-          const { elements, canvasSize, fontImports } = extractFlatElementsFromIframe(ref)
+          const { elements, canvasSize, fontImports } = extractFlatElementsFromIframe(ref, _maxExistingFlatId(get().flatElements))
           freshHtml[route.id] = { elements, canvasSize: canonicalCs || canvasSize, fontImports: fontImports || [], history: { stack: [], pointer: -1 } }
         } catch (e) {
           console.warn(`Regen page ${route.id} failed:`, e.message)
@@ -728,7 +735,7 @@ export const useFlatStore = create((set, get) => ({
 
     // 캐시 미스 → DOM 렌더 대기 후 추출
     setTimeout(() => {
-      const { elements, canvasSize, fontImports } = extractFlatElementsFromIframe(ref)
+      const { elements, canvasSize, fontImports } = extractFlatElementsFromIframe(ref, _maxExistingFlatId(get().flatElements))
       _history.clear()
       _currentPageKey = pageKey || null
       set({
@@ -869,7 +876,7 @@ export const useFlatStore = create((set, get) => ({
         await new Promise(r => setTimeout(r, 400))
 
         try {
-          const result = extractFlatElementsFromIframe(iframeRef)
+          const result = extractFlatElementsFromIframe(iframeRef, _maxExistingFlatId(get().flatElements))
           _pageCache[route.id] = {
             elements: result.elements,
             canvasSize: canonicalCs || result.canvasSize,
@@ -2120,7 +2127,7 @@ export const useFlatStore = create((set, get) => ({
 
       // 추출
       try {
-        const result = extractFlatElementsFromIframe(iframeRef)
+        const result = extractFlatElementsFromIframe(iframeRef, _maxExistingFlatId(get().flatElements))
         pages[route.id] = {
           elements: result.elements,
           canvasSize: canonicalCs || result.canvasSize,

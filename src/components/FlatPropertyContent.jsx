@@ -13,6 +13,7 @@ import { detectListType, applyListType } from '../core/TextListTransform'
 import { addRow, removeRow, addCol, removeCol, setHeaderRow, setBorder } from '../core/slideTable'
 import { useScrub } from './useScrub'
 import { isCoarsePointer } from '../core/pointerEnv'
+import { DEFAULT_VIZ, VIZ_SHAPES } from '../core/audioViz'
 import { setFontSizeUniformPx, stripInlineFormatting, richToPlainText, FORMAT_STRIP } from '../core/TextStyleScope'
 import { generateImage, hasApiKey } from '../core/OpenAIClient'
 import { openAiSettings } from './AiSettingsModal'
@@ -194,6 +195,12 @@ function SingleElementPanel({ el, animTab, setAnimTab, updateFlatElement, previe
         {el.type === 'video' && (
           <div className="pt-1 border-t border-white/5">
             <VideoSection el={el} update={update} />
+          </div>
+        )}
+
+        {el.type === 'audio' && (
+          <div className="pt-1 border-t border-white/5">
+            <AudioVizSection el={el} update={update} updateStyle={updateStyle} />
           </div>
         )}
 
@@ -2561,6 +2568,81 @@ function VideoSection({ el, update }) {
         />
         <span className={labelClass}>컨트롤 숨기기 (발표 화면)</span>
       </label>
+    </div>
+  )
+}
+
+function AudioVizSection({ el, update, updateStyle }) {
+  const autoplay = el.autoplay ?? false
+  const loop = el.loop ?? false
+  const muted = el.muted ?? false
+  const viz = { ...DEFAULT_VIZ, ...(el.viz || {}) }
+  const updateViz = (changes) => update({ viz: { ...viz, ...changes } })
+
+  return (
+    <div className="space-y-2">
+      <SectionTitle>오디오 비주얼라이저</SectionTitle>
+      <p className="text-[11px] text-slate-500 leading-relaxed">
+        발표 모드에서 음악이 재생되며 막대가 주파수에 맞춰 반응합니다. 편집 화면은 미리보기(정적)입니다.
+      </p>
+
+      {/* 모양 */}
+      <SelectInput
+        label="모양"
+        value={viz.shape}
+        options={VIZ_SHAPES}
+        onChange={v => updateViz({ shape: v })}
+      />
+
+      {/* 막대 두께 / 간격 */}
+      <div className="grid grid-cols-2 gap-1.5">
+        <NumInput label="막대 두께" value={viz.barWidth} min={1} max={60}
+          onChange={v => updateViz({ barWidth: v })} />
+        <NumInput label="막대 간격" value={viz.barGap} min={0} max={40}
+          onChange={v => updateViz({ barGap: v })} />
+      </div>
+
+      {/* 막대 곡률 / 민감도 */}
+      <div className="grid grid-cols-2 gap-1.5">
+        <NumInput label="막대 곡률" value={viz.barRadius} min={0} max={30}
+          onChange={v => updateViz({ barRadius: v })} />
+        <NumInput label="반응 민감도" value={viz.sensitivity} min={0.2} max={4} step={0.1}
+          onChange={v => updateViz({ sensitivity: v })} />
+      </div>
+
+      {/* 부드러움(스무딩) */}
+      <NumInput label="부드러움 (0~0.99)" value={viz.smoothing} min={0} max={0.99} step={0.05}
+        onChange={v => updateViz({ smoothing: v })} />
+
+      {/* 막대 색 */}
+      <div>
+        <p className={`${labelClass} mb-0.5`}>막대 색</p>
+        <ColorPicker value={viz.color} onChange={v => updateViz({ color: v })} />
+      </div>
+
+      {/* 박스 배경 / 모서리 */}
+      <div>
+        <p className={`${labelClass} mb-0.5`}>박스 배경</p>
+        <ColorPicker value={el.styles?.backgroundColor || 'rgba(0,0,0,0)'} onChange={v => updateStyle('backgroundColor', v)} showOpacity />
+      </div>
+      <NumInput label="박스 모서리 둥글기" value={parseFloat(el.styles?.borderRadius) || 0} min={0} max={200}
+        onChange={v => updateStyle('borderRadius', `${v}px`)} />
+
+      {/* 재생 옵션 (영상과 동일) */}
+      <div className="pt-1 border-t border-white/5 space-y-2">
+        <label className="flex items-center gap-2 cursor-pointer">
+          <input type="checkbox" checked={autoplay} onChange={e => update({ autoplay: e.target.checked })} className="accent-indigo-500" />
+          <span className={labelClass}>자동 재생 (발표 모드)</span>
+        </label>
+        <label className="flex items-center gap-2 cursor-pointer">
+          <input type="checkbox" checked={loop} onChange={e => update({ loop: e.target.checked })} className="accent-indigo-500" />
+          <span className={labelClass}>반복 재생</span>
+        </label>
+        <label className="flex items-center gap-2 cursor-pointer">
+          <input type="checkbox" checked={muted} onChange={e => update({ muted: e.target.checked })} className="accent-indigo-500" />
+          <span className={labelClass}>음소거 (파형만 보기)</span>
+        </label>
+      </div>
     </div>
   )
 }

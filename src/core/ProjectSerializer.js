@@ -256,6 +256,8 @@ function _guessExtension(mimeType) {
     'video/mp4': '.mp4', 'video/webm': '.webm', 'video/ogg': '.ogv',
     'image/png': '.png', 'image/jpeg': '.jpg', 'image/gif': '.gif',
     'image/webp': '.webp', 'image/svg+xml': '.svg',
+    'audio/mpeg': '.mp3', 'audio/mp3': '.mp3', 'audio/wav': '.wav',
+    'audio/ogg': '.ogg', 'audio/webm': '.weba', 'audio/aac': '.aac', 'audio/flac': '.flac',
   }
   return map[mimeType] || '.bin'
 }
