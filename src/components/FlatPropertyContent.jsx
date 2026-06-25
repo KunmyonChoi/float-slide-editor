@@ -18,6 +18,7 @@ import { setFontSizeUniformPx, stripInlineFormatting, richToPlainText, FORMAT_ST
 import { generateImage, hasApiKey } from '../core/OpenAIClient'
 import { openAiSettings } from './AiSettingsModal'
 import { BACKGROUND_STYLES, BACKGROUND_GROUPS, DEFAULT_BACKGROUND_STYLE_ID, getBackgroundStyle, buildBackgroundPrompt } from '../core/backgroundStyles'
+import { embedPngMetadata } from '../core/pngMeta'
 import { detectBgColor, applyChromaKey } from '../core/chromaKey'
 import { highlightCode, CODE_FONT } from '../core/codeHighlight'
 import { renderMarkdown } from '../core/markdown'
@@ -112,6 +113,7 @@ function SingleElementPanel({ el, animTab, setAnimTab, updateFlatElement, previe
   const updateStyle = (key, value) => updateFlatElement(el.id, { styles: { [key]: value } })
   const updateStyles = (styleChanges) => updateFlatElement(el.id, { styles: styleChanges })
   const previewStyle = (key, value) => previewFlatElement(el.id, { styles: { [key]: value } })
+  const debugMode = useFlatStore(s => s.debugMode)
   // 다이어그램 모드에선 애니메이션 탭이 숨겨지므로 항상 속성 본문을 보여준다.
   const effAnim = animTab && !diagramMode
 
@@ -257,6 +259,13 @@ function SingleElementPanel({ el, animTab, setAnimTab, updateFlatElement, previe
         {!el.shapeType && (el.type === 'video' || el.type === 'svg') && (
           <div className="pt-1 border-t border-white/5">
             <OpacityOnlySection styles={el.styles} updateStyle={updateStyle} previewStyle={previewStyle} />
+          </div>
+        )}
+
+        {/* 디버그: 텍스트 raw content */}
+        {debugMode && el.type === 'text' && (
+          <div className="pt-1 border-t border-white/5">
+            <RawTextSection el={el} />
           </div>
         )}
 
@@ -2723,10 +2732,14 @@ function AiBackgroundSection({ onApply }) {
   const generate = async () => {
     if (!hasApiKey()) { openAiSettings(); return }
     const style = BACKGROUND_STYLES.find(s => s.id === styleId)
+    const fullPrompt = buildBackgroundPrompt(style, prompt)
     setStatus('loading'); setError('')
     try {
-      const dataUrl = await generateImage(buildBackgroundPrompt(style, prompt), { width: 1280, height: 720 })
-      onApply(dataUrl)
+      const dataUrl = await generateImage(fullPrompt, { width: 1280, height: 720 })
+      onApply(embedPngMetadata(dataUrl, {
+        description: prompt || style?.label || '',
+        prompt: fullPrompt,
+      }))
       setStatus('idle')
     } catch (e) {
       setError(e?.message || '생성 실패')
@@ -3378,5 +3391,40 @@ function SlideBackgroundPanel() {
         )}
       </div>
     </>
+  )
+}
+
+// ── 디버그: 텍스트 raw content (HTML 구조 확인용) ────────────────────────
+
+function RawTextSection({ el }) {
+  const [copied, setCopied] = useState(false)
+  const html = el.content ?? ''
+
+  const handleCopy = () => {
+    navigator.clipboard?.writeText(html).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    })
+  }
+
+  return (
+    <div className="space-y-1">
+      <div className="flex items-center justify-between">
+        <span className="text-xs text-slate-500 font-mono">content</span>
+        <div className="flex items-center gap-1.5">
+          <span className={`text-xs font-mono px-1.5 py-0.5 rounded ${el.isRich ? 'text-amber-400/80 bg-amber-400/10' : 'text-slate-500 bg-white/5'}`}>
+            {el.isRich ? 'rich' : 'plain'}
+          </span>
+          <button
+            onClick={handleCopy}
+            className="text-xs px-1.5 py-0.5 rounded bg-white/5 text-slate-400 hover:bg-white/10 hover:text-slate-200 border border-white/10 transition-colors"
+          >{copied ? '복사됨' : '복사'}</button>
+        </div>
+      </div>
+      <pre
+        className="text-xs text-amber-300/80 bg-black/30 rounded p-2 font-mono whitespace-pre-wrap break-all border border-white/5 max-h-60 overflow-y-auto"
+        style={{ lineHeight: 1.6 }}
+      >{html || <span className="text-slate-600 italic">(비어 있음)</span>}</pre>
+    </div>
   )
 }

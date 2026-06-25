@@ -4,6 +4,7 @@ import { useFlatStore } from '../store/flatStore'
 import { hasApiKey, generateImagePrompt, generateImage } from '../core/OpenAIClient'
 import { openAiSettings } from './AiSettingsModal'
 import { IMAGE_STYLES } from '../core/aiImageStyles'
+import { embedPngMetadata } from '../core/pngMeta'
 
 /**
  * FlatAiBar — 텍스트 박스(요소)를 단일 선택했을 때 뜨는 전용 AI 플로팅바.
@@ -111,9 +112,13 @@ export default function FlatAiBar({ element, scale, canvasRef }) {
   // 텍스트 박스를 같은 위치·크기의 이미지 요소로 교체(되돌리기 가능)
   const apply = useCallback(() => {
     if (!imageUrl) return
+    const content = embedPngMetadata(imageUrl, {
+      description: sourceText(),
+      prompt,
+    })
     useFlatStore.getState().updateFlatElement(element.id, {
       type: 'image',
-      content: imageUrl,
+      content,
       isRich: false,
       styles: {
         objectFit: 'cover',
@@ -123,7 +128,7 @@ export default function FlatAiBar({ element, scale, canvasRef }) {
       },
     })
     setPhase('idle'); setImageUrl('')
-  }, [imageUrl, element.id])
+  }, [imageUrl, element.id, sourceText, prompt])
 
   const cancel = useCallback(() => {
     abortRef.current?.abort()

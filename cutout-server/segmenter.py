@@ -21,7 +21,7 @@ from PIL import Image
 from torchvision import transforms
 from transformers import AutoModelForImageSegmentation
 
-BUILD_VERSION = "2026-06-23.3-birefnet-fp32fix"
+BUILD_VERSION = "2026-06-26.1-birefnet-dtype-at-load"
 MODEL_ID = os.environ.get("CUTOUT_MODEL", "ZhengPeng7/BiRefNet")  # MIT
 INPUT_SIZE = int(os.environ.get("CUTOUT_INPUT_SIZE", "1024"))
 
@@ -60,7 +60,12 @@ def is_ready():
 
 
 def ensure_loaded():
-    """모델 1회 로드(스레드 안전). CUDA면 half + cudnn 오토튜닝으로 가속(mps/cpu는 fp32)."""
+    """모델 1회 로드(스레드 안전). CUDA면 half + cudnn 오토튜닝으로 가속(mps/cpu는 fp32).
+
+    from_pretrained 호출 시 torch_dtype을 지정해 로드 시점에 dtype을 확정한다.
+    post-hoc model.half()/float() 변환은 BiRefNet 일부 레이어(bias 등)를 누락하는 경우가
+    있어 "input type (float) and bias type (c10::Half)" 에러를 유발한다.
+    """
     global _model, _device, _use_half
     if _model is not None:
         return
@@ -70,11 +75,12 @@ def ensure_loaded():
         dev = _pick_device()
         if dev == "cuda":
             torch.backends.cudnn.benchmark = True  # 고정 입력크기(1024)에서 conv 오토튜닝
-        model = AutoModelForImageSegmentation.from_pretrained(MODEL_ID, trust_remote_code=True)
+        use_half = dev == "cuda"
+        dtype = torch.float16 if use_half else torch.float32
+        model = AutoModelForImageSegmentation.from_pretrained(
+            MODEL_ID, trust_remote_code=True, torch_dtype=dtype
+        )
         model.eval().to(dev)
-        use_half = dev == "cuda"  # half는 CUDA에서만(mps/cpu는 fp16 불안정/미가속)
-        # 체크포인트가 fp16이므로 비-CUDA에선 fp32로 강제 — 입력(fp32)과 dtype 불일치 방지
-        model.half() if use_half else model.float()
         torch.set_float32_matmul_precision("high")
         _model, _device, _use_half = model, dev, use_half
 

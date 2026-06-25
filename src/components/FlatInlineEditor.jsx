@@ -482,8 +482,12 @@ export default function FlatInlineEditor({ element }) {
       return
     }
     const html = (ref.current?.innerHTML || '').trim()
-    const hasHtmlTags = /<[a-z][\s\S]*>/i.test(html)
-    commitTextEdit(element.id, html, hasHtmlTags)
+    const hasInlineStyle = /<(?!br|div|\/div|\/br)([a-z][\s\S]*?)>/i.test(html)
+    if (!hasInlineStyle) {
+      commitTextEdit(element.id, editorToPlain(ref.current), false)
+    } else {
+      commitTextEdit(element.id, html, true)
+    }
   }, [element.id, element.isCode, element.isMarkdown, commitTextEdit])
 
   // 오토핏 요소: 입력마다 에디터 실제 높이로 컨테이너 라이브 신축(히스토리 없이, 캐럿 안전)
@@ -511,9 +515,10 @@ export default function FlatInlineEditor({ element }) {
   }, [emojiOpen])
 
   const handleKeyDown = useCallback((e) => {
-    // Backspace: 캐럿이 줄(블록/div) 맨 앞에 있을 때 위 줄과 합치기.
+    // Backspace: 캐럿이 줄(블록/div 또는 <br>) 맨 앞에 있을 때 위 줄과 합치기.
     // defaultParagraphSeparator='br'이지만 기존 content에 <div> 구조가 섞이면
     // 브라우저가 Backspace로 <div> 경계를 제대로 합치지 못하는 경우 보완.
+    // flex column 컨테이너에서 <br> 구분자도 브라우저 기본 처리가 안 되므로 직접 처리.
     if (e.key === 'Backspace' && !e.ctrlKey && !e.metaKey && !e.altKey) {
       const sel = window.getSelection()
       if (sel && sel.isCollapsed && sel.rangeCount > 0) {
@@ -545,8 +550,89 @@ export default function FlatInlineEditor({ element }) {
             }
             return
           }
+          // <br> 줄 구분자 (offset === 0): startContainer부터 위로 올라가며 직전 형제 탐색.
+          // span 안 텍스트 / span 자체 등 inline 중첩에서도 동작.
+          let brNode = null
+          for (let n = startContainer; n && n !== ref.current; n = n.parentElement) {
+            if (n.previousSibling) {
+              if (n.previousSibling.nodeName === 'BR') brNode = n.previousSibling
+              break
+            }
+          }
+          if (brNode) {
+            e.preventDefault()
+            e.stopPropagation()
+            const beforeBr = brNode.previousSibling
+            const nr = document.createRange()
+            if (beforeBr?.nodeType === Node.TEXT_NODE) {
+              nr.setStart(beforeBr, beforeBr.textContent.length)
+            } else if (beforeBr) {
+              nr.setStartAfter(beforeBr)
+            } else {
+              const afterBr = brNode.nextSibling
+              if (afterBr) nr.setStart(afterBr, 0)
+              else nr.setStart(brNode.parentNode, 0)
+            }
+            nr.collapse(true)
+            sel.removeAllRanges()
+            sel.addRange(nr)
+            brNode.remove()
+            return
+          }
+        }
+
+        // element-level 캐럿 (offset > 0): 직전 자식이 <br>인 경우
+        if (startContainer.nodeType === Node.ELEMENT_NODE && startOffset > 0) {
+          const prevChild = startContainer.childNodes[startOffset - 1]
+          if (prevChild?.nodeName === 'BR') {
+            e.preventDefault()
+            e.stopPropagation()
+            const beforeBr = prevChild.previousSibling
+            const nr = document.createRange()
+            if (beforeBr?.nodeType === Node.TEXT_NODE) {
+              nr.setStart(beforeBr, beforeBr.textContent.length)
+            } else if (beforeBr) {
+              nr.setStartAfter(beforeBr)
+            } else {
+              const afterBr = prevChild.nextSibling
+              if (afterBr) nr.setStart(afterBr, 0)
+              else nr.setStart(startContainer, 0)
+            }
+            nr.collapse(true)
+            sel.removeAllRanges()
+            sel.addRange(nr)
+            prevChild.remove()
+            return
+          }
         }
       }
+    }
+
+    // Enter → 항상 <br> 직접 삽입 (브라우저가 만드는 div/span 분기 제거 → Backspace 병합 신뢰성 확보)
+    // list 안에서는 기본 동작(새 li 생성) 유지.
+    if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      if (!isCaretInList()) {
+        e.preventDefault()
+        e.stopPropagation()
+        const s = window.getSelection()
+        if (s?.rangeCount > 0) {
+          const r = s.getRangeAt(0)
+          r.deleteContents()
+          const br = document.createElement('br')
+          r.insertNode(br)
+          const nr = document.createRange()
+          nr.setStartAfter(br)
+          nr.collapse(true)
+          s.removeAllRanges()
+          s.addRange(nr)
+          if (element.autoHeight && ref.current) {
+            useFlatStore.getState().reflowAutoFit({ [element.id]: ref.current.scrollHeight })
+          }
+        }
+        return
+      }
+      e.stopPropagation()
+      return
     }
 
     if (e.key === 'Escape') {
