@@ -19,6 +19,7 @@ import FlatContextMenu from './FlatContextMenu'
 import ImageCropOverlay from './ImageCropOverlay'
 import { nextFlatId, isFontUrl } from '../core/FlatExtractor'
 import { AWS_ICON_MIME, AWS_GROUP_MIME } from '../core/awsIcons'
+import { DEFAULT_VIZ } from '../core/audioViz'
 import { isBundlerHtml } from '../core/BundlerUnpacker'
 import { pointsToBBox, absoluteToRelativePoints, pointsToSvgPath } from '../core/PolyShapeUtils'
 import { confirmDialog } from './ConfirmDialog'
@@ -295,6 +296,34 @@ export default function FlatCanvas() {
     setSelectedFlat(el.id)
   }, [canvasSize, flatElements, addFlatElement, setSelectedFlat])
 
+  // 오디오 파일 → BlobStore + 비주얼라이저 요소 삽입 (EditToolbar.handleVideoFile의 오디오 분기와 동일)
+  const insertAudioFromFile = useCallback(async (file, dropX, dropY) => {
+    const { BlobStore } = await import('../core/BlobStore')
+    const key = await BlobStore.put(file)
+    const w = Math.min(640, Math.round(canvasSize.w * 0.6)), h = 160
+    const maxZ = useFlatStore.getState().flatElements.length > 0
+      ? Math.max(...useFlatStore.getState().flatElements.map(el => el.zIndex)) : 0
+    const cx = dropX != null ? dropX : canvasSize.w / 2
+    const cy = dropY != null ? dropY : canvasSize.h / 2
+    const el = {
+      id: nextFlatId(), sourceId: null,
+      type: 'audio', width: w, height: h,
+      content: BlobStore.toRef(key),
+      isRich: false, merged: false,
+      autoplay: true, loop: true, muted: false,
+      viz: { ...DEFAULT_VIZ },
+      x: Math.max(0, Math.min(Math.round(cx - w / 2), canvasSize.w - w)),
+      y: Math.max(0, Math.min(Math.round(cy - h / 2), canvasSize.h - h)),
+      zIndex: maxZ + 1,
+      styles: {
+        backgroundColor: 'rgba(0, 0, 0, 0)', backgroundImage: 'none',
+        borderRadius: '8px', border: '0px none', boxShadow: 'none', opacity: '1',
+      },
+    }
+    addFlatElement(el)
+    useFlatStore.getState().setSelectedFlat(el.id)
+  }, [canvasSize, addFlatElement])
+
   // 드래그 앤 드롭
   const handleDragOver = useCallback((e) => {
     e.preventDefault()
@@ -344,12 +373,15 @@ export default function FlatCanvas() {
       return
     }
 
+    const isAudioFile = (f) => f.type.startsWith('audio/') || /\.(mp3|wav|ogg|m4a|flac|aac|opus|weba)$/i.test(f.name)
     const images = allFiles.filter(f => f.type.startsWith('image/'))
-    const videos = allFiles.filter(f => f.type.startsWith('video/'))
-    if (images.length === 0 && videos.length === 0) return
+    const videos = allFiles.filter(f => f.type.startsWith('video/') && !isAudioFile(f))
+    const audios = allFiles.filter(isAudioFile)
+    if (images.length === 0 && videos.length === 0 && audios.length === 0) return
     for (const file of images) insertImageFromFile(file, dropXc, dropYc)
     for (const file of videos) insertVideoFromFile(file, dropXc, dropYc)
-  }, [scale, insertImageFromFile, insertVideoFromFile])
+    for (const file of audios) insertAudioFromFile(file, dropXc, dropYc)
+  }, [scale, insertImageFromFile, insertVideoFromFile, insertAudioFromFile])
 
   // ── 그리기 모드 ──
   const finalizeDraw = useCallback((allPoints) => {
