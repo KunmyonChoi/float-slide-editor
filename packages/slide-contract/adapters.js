@@ -30,12 +30,13 @@ export function internalElementToPublic(el) {
   } else {
     out.src = el.content || ''
   }
-  if (el.type === 'video') { // 영상별 재생 옵션 — 변환기가 PPT 자동재생/반복/음소거에 반영
+  if (el.type === 'video' || el.type === 'audio') { // 영상/오디오 재생 옵션
     if (el.autoplay) out.autoplay = true
     if (el.loop) out.loop = true
     if (el.muted) out.muted = true
     if (el.hideControls) out.hideControls = true
   }
+  if (el.type === 'audio' && el.viz) out.viz = el.viz // 오디오 비주얼라이저 설정
   if (el.type === 'shape' && el.fillRatio != null) { // 부분 채우기 → PPT 솔리드 사각형
     out.fillRatio = el.fillRatio
     out.fillDir = el.fillDir || 'left'
@@ -70,12 +71,13 @@ export function publicElementToInternal(pel) {
     out.content = pel.src || ''
     out.isRich = false
   }
-  if (pel.type === 'video') {
+  if (pel.type === 'video' || pel.type === 'audio') {
     if (pel.autoplay) out.autoplay = true
     if (pel.loop) out.loop = true
     if (pel.muted) out.muted = true
     if (pel.hideControls) out.hideControls = true
   }
+  if (pel.type === 'audio' && pel.viz) out.viz = pel.viz
   if (pel.type === 'shape' && pel.fillRatio != null) {
     out.fillRatio = pel.fillRatio
     out.fillDir = pel.fillDir || 'left'

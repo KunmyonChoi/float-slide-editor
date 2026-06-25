@@ -1316,18 +1316,21 @@ def _add_audio(slide, el: dict, x, y, w, h, rotation):
             if rb and rb[3] > 0:
                 rects += (f'<rect x="0" y="0" width="{w_px}" height="{h_px}" '
                           f'fill="rgb({rb[0]},{rb[1]},{rb[2]})" fill-opacity="{rb[3]:.3f}"/>')
-        color = viz['color']
+        # 색은 rgba()로 올 수 있어(SVG fill은 rgba 미지원) rgb()+fill-opacity로 분해 — 다른 경로와 동일
+        cr = css_color_to_rgba(viz['color']) or (99, 102, 241, 1)
+        fill = f'rgb({cr[0]},{cr[1]},{cr[2]})'
+        fo = f' fill-opacity="{cr[3]:.3f}"' if cr[3] < 1 else ''
         cx = x0
         for m in mags:
             m = max(0.0, min(1.0, m))
             if viz['shape'] == 'mirror':
                 half = max(min_bar / 2, (h_px / 2) * m)
                 rects += (f'<rect x="{cx:.2f}" y="{h_px/2-half:.2f}" width="{bw:.2f}" '
-                          f'height="{half*2:.2f}" rx="{rad:.2f}" ry="{rad:.2f}" fill="{color}"/>')
+                          f'height="{half*2:.2f}" rx="{rad:.2f}" ry="{rad:.2f}" fill="{fill}"{fo}/>')
             else:
                 bh = max(min_bar, h_px * m)
                 rects += (f'<rect x="{cx:.2f}" y="{h_px-bh:.2f}" width="{bw:.2f}" '
-                          f'height="{bh:.2f}" rx="{rad:.2f}" ry="{rad:.2f}" fill="{color}"/>')
+                          f'height="{bh:.2f}" rx="{rad:.2f}" ry="{rad:.2f}" fill="{fill}"{fo}/>')
             cx += unit
         svg = (f'<svg xmlns="http://www.w3.org/2000/svg" width="{w_px}" height="{h_px}" '
                f'viewBox="0 0 {w_px} {h_px}">{rects}</svg>')

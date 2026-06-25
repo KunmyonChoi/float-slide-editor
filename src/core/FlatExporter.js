@@ -385,7 +385,7 @@ function audioVizHtml(el) {
   const cfg = escHtml(JSON.stringify({ viz, autoplay: el.autoplay !== false, muted: !!el.muted }))
   return `<div style="${flatStyle(el)};${br}${bg}${op}" class="fe-audioviz" data-cfg="${cfg}">`
     + `<canvas style="width:100%;height:100%;display:block"></canvas>`
-    + `<audio src="${escHtml(el.content)}" preload="auto"${el.loop ? ' loop' : ''}${el.muted ? ' muted' : ''} style="display:none"></audio>`
+    + `<audio src="${escHtml(el.content)}" preload="auto"${el.loop ? ' loop' : ''} style="display:none"></audio>`
     + `</div>`
 }
 
@@ -416,7 +416,7 @@ const AUDIO_VIZ_SCRIPT = `<script>
         var data=new Uint8Array(an.frequencyBinCount);
         (function loop(){an.getByteFrequencyData(data);var s=size();draw(s.ctx,s.w,s.h,bars(data,barCount(s.w,v.barWidth,v.barGap),v.sensitivity),v);requestAnimationFrame(loop);})();
         ac.resume&&ac.resume();
-      }catch(e){}
+      }catch(e){audio.muted=cfg.muted;}
       audio.play&&audio.play().catch(function(){});
     }
     if(cfg.autoplay&&cfg.muted){start();}

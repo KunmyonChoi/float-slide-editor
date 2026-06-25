@@ -9,7 +9,10 @@ import { DEFAULT_VIZ, barCount, staticFrame, barsFromFrequency, drawViz } from '
  * 막대 배치는 '폭에 채우기'(요소 폭에서 막대 개수 산출). 크기 조정 시 반응형 재계산.
  */
 export default function AudioVisualizer({ element, playNow }) {
-  const { content, width, height, styles = {} } = element
+  const { content, styles = {} } = element
+  // 외부/계약 경로에서 크기 없이 들어온 요소 대비 — 0/NaN이면 기본값(빈 캔버스 방지)
+  const width = Number.isFinite(element.width) && element.width > 0 ? element.width : 320
+  const height = Number.isFinite(element.height) && element.height > 0 ? element.height : 120
   const viz = { ...DEFAULT_VIZ, ...(element.viz || {}) }
   const canvasRef = useRef(null)
   const isIdb = BlobStore.isIdbRef(content)
@@ -45,16 +48,18 @@ export default function AudioVisualizer({ element, playNow }) {
   // 발표 모드라도 자동재생이 꺼져 있으면 정적(소리 없음). 음악 화면 기본은 autoplay=true.
   const live = playNow && (element.autoplay ?? false)
 
-  // 편집 모드(또는 재생 전/자동재생 off): 정적 프레임 1장. viz/크기 변경 시 다시 그림.
+  // 정적 프레임 1장 — 편집/자동재생 off, 또는 발표라도 url 미해석(idb 로딩 중)일 때.
+  // (둘 다 아니면 라이브 effect가 그림). url 미해석 동안 빈 캔버스 방지.
+  const staticNow = !live || !url
   useEffect(() => {
-    if (live) return
+    if (!staticNow) return
     const cv = canvasRef.current
     if (!cv) return
     const ctx = syncCanvasSize(cv)
     const n = barCount(width, viz.barWidth, viz.barGap)
     drawViz(ctx, width, height, staticFrame(n), viz)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [live, width, height, viz.shape, viz.barWidth, viz.barGap, viz.barRadius, viz.color])
+  }, [staticNow, width, height, viz.shape, viz.barWidth, viz.barGap, viz.barRadius, viz.color])
 
   // 발표 모드: 실시간 주파수 반응. 자체 Audio 객체를 만들어 그래프 once-only 제약/StrictMode 회피.
   useEffect(() => {
@@ -65,7 +70,8 @@ export default function AudioVisualizer({ element, playNow }) {
     const audio = new Audio()
     audio.src = url
     audio.loop = !!element.loop
-    audio.muted = !!element.muted
+    // 음소거는 GainNode로만 처리 — audio.muted는 MediaElementSource 신호까지 끊어
+    // 분석기에 무음이 들어가 '음소거(파형만 보기)'에서 막대가 멈춘다.
     audio.crossOrigin = 'anonymous'
     audio.preload = 'auto'
 
@@ -99,7 +105,8 @@ export default function AudioVisualizer({ element, playNow }) {
       audio.play().catch(() => { /* 자동재생 차단(비음소거) — 사용자 상호작용 후 재생 */ })
       loop()
     } catch {
-      // Web Audio 실패 시: 소리만 재생 시도 + 정적 프레임
+      // Web Audio 실패 시: 분석기 없이 소리만 재생(이 경로엔 gain이 없으므로 muted 직접 적용) + 정적 프레임
+      audio.muted = !!element.muted
       audio.play().catch(() => {})
       paintStatic()
     }
@@ -111,8 +118,9 @@ export default function AudioVisualizer({ element, playNow }) {
       audio.src = ''
       try { ctxAudio && ctxAudio.close() } catch { /* 무시 */ }
     }
+    // smoothing은 분석기 생성 시 1회 설정 → 변경 시 재구독 필요(나머지 viz는 ref로 라이브 반영)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [live, url, element.loop, element.muted])
+  }, [live, url, element.loop, element.muted, viz.smoothing])
 
   return (
     <div style={{

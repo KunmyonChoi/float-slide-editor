@@ -27,10 +27,12 @@ def _public_el_to_internal(pel: dict) -> dict:
     else:
         out['content'] = pel.get('src') or ''
         out['isRich'] = False
-    if pel.get('type') == 'video':  # 영상별 재생 옵션
+    if pel.get('type') in ('video', 'audio'):  # 영상/오디오 재생 옵션
         for k in ('autoplay', 'loop', 'muted', 'hideControls'):
             if pel.get(k):
                 out[k] = True
+    if pel.get('type') == 'audio' and pel.get('viz') is not None:  # 오디오 비주얼라이저 설정
+        out['viz'] = pel['viz']
     if pel.get('type') == 'shape' and pel.get('fillRatio') is not None:  # 부분 채우기
         out['fillRatio'] = pel.get('fillRatio')
         out['fillDir'] = pel.get('fillDir') or 'left'
