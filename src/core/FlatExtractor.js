@@ -1693,10 +1693,10 @@ function buildPseudoFlatElements(el, rect, domOrder) {
 export function extractFlatElementsFromIframe(iframeRef, existingMaxId = 0) {
   const iframe = iframeRef?.current
   if (!iframe) return { elements: [], canvasSize: { w: 1280, h: 800 } }
-  // 기존 요소의 최대 ID까지 카운터를 미리 올려 추출 ID가 충돌하지 않게 한다.
+  // existingMaxId를 extractFlatElements에 전달해 내부 resetFlatCounter() 대신
+  // 기존 최대 ID부터 카운터를 시작하게 한다.
   // (충돌 시 같은 id 두 요소가 함께 선택돼 그룹처럼 핸들이 표시되는 버그 방지)
-  if (existingMaxId > 0) bumpFlatCounterTo(existingMaxId)
-  return extractFlatElements(iframe.contentDocument, iframe.contentWindow)
+  return extractFlatElements(iframe.contentDocument, iframe.contentWindow, existingMaxId)
 }
 
 /**
@@ -1738,13 +1738,16 @@ export function settleAnimations(doc) {
  * iframe에서 쓰려면 extractFlatElementsFromIframe(ref)를 사용.
  * @param {Document} doc @param {Window} win
  */
-export function extractFlatElements(doc, win) {
+export function extractFlatElements(doc, win, existingMaxId = 0) {
   if (!doc || !win) return { elements: [], canvasSize: { w: 1280, h: 800 } }
 
   // 좌표/가시성 측정 전에 진행 중인 등장 애니메이션을 최종 상태로 고정한다.
   settleAnimations(doc)
 
+  // existingMaxId가 있으면 기존 요소 최대 ID부터 발급(충돌 방지), 없으면 0부터 시작.
+  // 기존 resetFlatCounter()는 항상 0 리셋이라 멀티페이지/프로젝트 혼용 시 ID 충돌 유발.
   resetFlatCounter()
+  if (existingMaxId > 0) bumpFlatCounterTo(existingMaxId)
   const result = []
   let zCounter = 0
 
