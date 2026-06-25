@@ -275,8 +275,10 @@ export default function EditToolbar() {
     }
     const key = await BlobStore.put(file)
 
-    // 오디오 파일(mp3 등) → 비주얼라이저 요소(영상 아님)
-    if (file.type.startsWith('audio/')) {
+    // 오디오 파일(mp3 등) → 비주얼라이저 요소(영상 아님).
+    // file.type이 빈 문자열인 경우(Android/Windows에서 흔함)도 확장자로 보조 판정.
+    const isAudio = file.type.startsWith('audio/') || /\.(mp3|wav|ogg|m4a|flac|aac|opus|weba)$/i.test(file.name)
+    if (isAudio) {
       const w = Math.min(640, Math.round(canvasSize.w * 0.6)), h = 160
       const maxZ = flatElements.length > 0 ? Math.max(...flatElements.map(el => el.zIndex)) : 0
       const el = {

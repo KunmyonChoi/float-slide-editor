@@ -192,7 +192,15 @@ ${sortedKeys.length > 1 ? `<div id="nav">
 <div id="counter"></div>
 <script>
 var slides=document.querySelectorAll('.slide'),cur=0;
-function show(n){slides[cur].classList.remove('active');cur=Math.max(0,Math.min(slides.length-1,n));slides[cur].classList.add('active');document.getElementById('counter').textContent=(cur+1)+' / '+slides.length;}
+function show(n){
+  // R4: 현재 슬라이드 오디오 RAF 루프 중단, 다음 슬라이드 루프 재개(숨김 요소 CPU 낭비 방지)
+  slides[cur].querySelectorAll('.fe-audioviz').forEach(function(b){b._vizStop&&b._vizStop();});
+  slides[cur].classList.remove('active');
+  cur=Math.max(0,Math.min(slides.length-1,n));
+  slides[cur].classList.add('active');
+  slides[cur].querySelectorAll('.fe-audioviz').forEach(function(b){b._vizResume&&b._vizResume();});
+  document.getElementById('counter').textContent=(cur+1)+' / '+slides.length;
+}
 function nav(d){show(cur+d);}
 document.addEventListener('keydown',function(e){if(e.key==='ArrowRight'||e.key==='ArrowDown'){e.preventDefault();nav(1);}else if(e.key==='ArrowLeft'||e.key==='ArrowUp'){e.preventDefault();nav(-1);}});
 show(0);
@@ -398,29 +406,39 @@ const AUDIO_VIZ_SCRIPT = `<script>
   function barCount(w,bw,bg){var u=Math.max(1,bw+bg);return Math.max(1,Math.floor((w+bg)/u));}
   function staticFrame(n){var o=[];for(var i=0;i<n;i++){var s=Math.sin(i*0.55+1)*0.5+Math.sin(i*0.17+2.1)*0.35+Math.sin(i*1.3)*0.15;o.push(0.12+0.88*Math.abs(s));}return o;}
   function bars(f,n,sens){var o=new Array(n).fill(0);if(!f.length)return o;var u=Math.max(1,Math.floor(f.length*0.7));for(var i=0;i<n;i++){var a=Math.floor(i/n*u),b=Math.max(a+1,Math.floor((i+1)/n*u)),s=0;for(var j=a;j<b;j++)s+=f[j];o[i]=Math.max(0,Math.min(1,s/(b-a)/255*sens));}return o;}
+  var starters=[];
   document.querySelectorAll('.fe-audioviz').forEach(function(box){
     var cfg;try{cfg=JSON.parse(box.getAttribute('data-cfg'));}catch(e){return;}
     var v=cfg.viz,cv=box.querySelector('canvas'),audio=box.querySelector('audio');
-    function size(){var dpr=window.devicePixelRatio||1,w=box.clientWidth,h=box.clientHeight;cv.width=Math.max(1,Math.round(w*dpr));cv.height=Math.max(1,Math.round(h*dpr));var ctx=cv.getContext('2d');ctx.setTransform(dpr,0,0,dpr,0,0);return {ctx:ctx,w:w,h:h};}
-    function paintStatic(){var s=size();draw(s.ctx,s.w,s.h,staticFrame(barCount(s.w,v.barWidth,v.barGap)),v);}
+    // R4: RAF ID를 저장해 슬라이드 숨김 시 루프 중단, 재표시 시 재개
+    var rafId=0,running=false;
+    function size(){var dpr=window.devicePixelRatio||1,w=box.clientWidth||0,h=box.clientHeight||0;if(!w||!h)return null;cv.width=Math.max(1,Math.round(w*dpr));cv.height=Math.max(1,Math.round(h*dpr));var ctx=cv.getContext('2d');ctx.setTransform(dpr,0,0,dpr,0,0);return {ctx:ctx,w:w,h:h};}
+    function paintStatic(){var s=size();if(!s)return;draw(s.ctx,s.w,s.h,staticFrame(barCount(s.w,v.barWidth,v.barGap)),v);}
     paintStatic();
-    var started=false;
+    var started=false,an=null,data=null;
+    function loop(){if(!running)return;var s=size();if(s&&an&&data){an.getByteFrequencyData(data);draw(s.ctx,s.w,s.h,bars(data,barCount(s.w,v.barWidth,v.barGap),v.sensitivity),v);}rafId=requestAnimationFrame(loop);}
+    function stopLoop(){running=false;cancelAnimationFrame(rafId);}
+    function resumeLoop(){if(!started||running)return;running=true;loop();}
     function start(){
       if(started)return;started=true;
       try{
         var AC=window.AudioContext||window.webkitAudioContext,ac=new AC();
-        var src=ac.createMediaElementSource(audio),an=ac.createAnalyser();
-        an.fftSize=256;an.smoothingTimeConstant=Math.max(0,Math.min(0.99,v.smoothing));
+        var src=ac.createMediaElementSource(audio),_an=ac.createAnalyser();
+        _an.fftSize=256;_an.smoothingTimeConstant=Math.max(0,Math.min(0.99,v.smoothing));
         var g=ac.createGain();g.gain.value=cfg.muted?0:1;
-        src.connect(an);an.connect(g);g.connect(ac.destination);
-        var data=new Uint8Array(an.frequencyBinCount);
-        (function loop(){an.getByteFrequencyData(data);var s=size();draw(s.ctx,s.w,s.h,bars(data,barCount(s.w,v.barWidth,v.barGap),v.sensitivity),v);requestAnimationFrame(loop);})();
+        src.connect(_an);_an.connect(g);g.connect(ac.destination);
+        an=_an;data=new Uint8Array(_an.frequencyBinCount);
+        running=true;loop();
         ac.resume&&ac.resume();
       }catch(e){audio.muted=cfg.muted;}
       audio.play&&audio.play().catch(function(){});
     }
+    box._vizStop=stopLoop;box._vizResume=resumeLoop;
     if(cfg.autoplay&&cfg.muted){start();}
-    window.addEventListener('pointerdown',start,{once:true});
+    // R3: 개별 등록 대신 starters 배열에 push → 하나의 전역 리스너로 일괄 호출(다중 동시 start 방지 아님 — 의도된 동작)
+    starters.push(start);
   });
+  // R3: 모든 요소가 동일 pointerdown에 시작하되, 스타터를 일괄 등록하여 관리 용이
+  window.addEventListener('pointerdown',function(){starters.forEach(function(fn){fn();});},{once:true});
 })();
 </script>`
