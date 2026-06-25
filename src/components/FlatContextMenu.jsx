@@ -6,6 +6,9 @@ import { copyElementToSystemClipboard } from '../core/SystemClipboard'
 import { computeAlignmentChanges, computeDistributionChanges, isBackgroundElement } from '../core/SnapEngine'
 import { promptUrl } from './UrlPrompt'
 import { openInfographic } from './InfographicModal'
+import { confirmDialog } from './ConfirmDialog'
+import { useEditorStore } from '../store/editorStore'
+import { isBundlerHtml } from '../core/BundlerUnpacker'
 
 const DEFAULT_STYLES = {
   backgroundColor: 'rgba(0, 0, 0, 0)', backgroundImage: 'none',
@@ -227,6 +230,38 @@ export default function FlatContextMenu({ x, y, canvasX, canvasY, onClose }) {
     }
   }, [insertImageFromBlob, insertTextElement])
 
+  // 클립보드에서 HTML 슬라이드 가져오기 (Claude 산출물 붙여넣기 등)
+  const pasteHtmlFromClipboard = useCallback(async () => {
+    if (!navigator.clipboard?.read) { alert('이 브라우저는 클립보드 읽기 API를 지원하지 않습니다.'); return }
+    let html = null
+    try {
+      const items = await navigator.clipboard.read()
+      for (const item of items) {
+        if (item.types.includes('text/plain')) {
+          const text = await (await item.getType('text/plain')).text()
+          if (isBundlerHtml(text) || /<!doctype\s+html|<html[\s>]|<\/html\s*>/i.test(text)) { html = text; break }
+        }
+        if (!html && item.types.includes('text/html')) {
+          const text = await (await item.getType('text/html')).text()
+          if (isBundlerHtml(text) || /<!doctype\s+html|<html[\s>]|<\/html\s*>/i.test(text)) { html = text; break }
+        }
+      }
+    } catch { alert('클립보드를 읽지 못했습니다. 브라우저 권한을 확인하세요.'); return }
+    if (!html) { alert('클립보드에서 HTML 슬라이드를 찾지 못했습니다.\nClaude 아티팩트에서 "소스 복사"(</> 버튼) 후 다시 시도하세요.'); return }
+    const st = useFlatStore.getState()
+    const hasContent = st.flatElements.length > 0 || st.flatPageCount > 1
+    if (hasContent) {
+      const ok = await confirmDialog({
+        title: 'HTML 슬라이드 붙여넣기',
+        message: '클립보드의 HTML 슬라이드로 현재 작업이 대체됩니다.\n저장하지 않았다면 먼저 저장하세요. 계속할까요?',
+        confirmText: '가져오기', cancelText: '취소', danger: true,
+      })
+      if (!ok) return
+    }
+    st.clearPageCache()
+    useEditorStore.getState().loadHtml(html, { imported: true })
+  }, [])
+
   // 영상 URL → embed URL 변환
   const parseVideoUrl = (url) => {
     // YouTube
@@ -289,6 +324,7 @@ export default function FlatContextMenu({ x, y, canvasX, canvasY, onClose }) {
       case 'copy': copyElement(); if (selectedEls.length === 1) copyElementToSystemClipboard(selectedEls[0]); break
       case 'paste': pasteElement(); break
       case 'pasteClipboard': pasteFromClipboard(); break
+      case 'pasteHtmlSlide': pasteHtmlFromClipboard(); return // onClose는 비동기 후 처리
       case 'duplicate': duplicateElement(); break
       case 'delete': removeSelectedElements(); break
       case 'selectAll': selectAllFlats(); break
@@ -386,7 +422,7 @@ export default function FlatContextMenu({ x, y, canvasX, canvasY, onClose }) {
       removeSelectedElements, selectAllFlats, bringForward, sendBackward,
       bringToFront, sendToBack, insertElement, insertVideo, onClose, allLocked,
       flatElements, selectedFlatIds, batchUpdateFlatElementsIndividual,
-      updateFlatElement, batchUpdateFlatElements, bgElement, setSelectedFlat, singleTextEl, downloadSelectedMedia, pasteFromClipboard])
+      updateFlatElement, batchUpdateFlatElements, bgElement, setSelectedFlat, singleTextEl, downloadSelectedMedia, pasteFromClipboard, pasteHtmlFromClipboard])
 
   // 서브메뉴 hover
   const enterSubmenu = (key) => {
@@ -415,6 +451,7 @@ export default function FlatContextMenu({ x, y, canvasX, canvasY, onClose }) {
       { id: 'copy', label: '복사', shortcut: 'Ctrl+C', action: 'copy' },
       { id: 'paste', label: '붙여넣기', shortcut: 'Ctrl+V', action: 'paste', disabled: clipboardEmpty },
       { id: 'pasteClip', label: '클립보드 붙여넣기 (이미지/텍스트)', shortcut: 'Ctrl+Alt+V', action: 'pasteClipboard' },
+      { id: 'pasteHtml', label: 'HTML 슬라이드 붙여넣기', action: 'pasteHtmlSlide' },
       { id: 'dup', label: '복제', shortcut: 'Ctrl+D', action: 'duplicate' },
     ],
     // 서식
@@ -483,6 +520,7 @@ export default function FlatContextMenu({ x, y, canvasX, canvasY, onClose }) {
     [
       { id: 'paste', label: '붙여넣기', shortcut: 'Ctrl+V', action: 'paste', disabled: clipboardEmpty },
       { id: 'pasteClip', label: '클립보드 붙여넣기 (이미지/텍스트)', shortcut: 'Ctrl+Alt+V', action: 'pasteClipboard' },
+      { id: 'pasteHtml', label: 'HTML 슬라이드 붙여넣기', action: 'pasteHtmlSlide' },
     ],
     // 배경
     [

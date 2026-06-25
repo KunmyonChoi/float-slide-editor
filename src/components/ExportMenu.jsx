@@ -6,6 +6,7 @@ import { openAiSettings } from './AiSettingsModal'
 import { openCapabilities } from './CapabilitiesModal'
 import { openFile } from '../core/FilePicker'
 import { confirmDialog } from './ConfirmDialog'
+import { isBundlerHtml } from '../core/BundlerUnpacker'
 import { usePwaInstall } from '../core/pwaInstall'
 
 // .flatproj는 실제로 ZIP 패키지 → MIME을 application/zip으로 맞춰야 OS 열기 패널에서
@@ -73,6 +74,54 @@ export default function FileMenu({ fallbackSample }) {
   }
 
   // ── 액션들 ──
+
+  // 클립보드에서 HTML 슬라이드 가져오기 — Claude 산출물 붙여넣기 등
+  const handleImportHtmlFromClipboard = useCallback(async () => {
+    setOpen(false)
+    let html = null
+    // Clipboard API 우선(모바일 포함 크롬 계열)
+    if (navigator.clipboard?.read) {
+      try {
+        const items = await navigator.clipboard.read()
+        for (const item of items) {
+          if (item.types.includes('text/plain')) {
+            const text = await (await item.getType('text/plain')).text()
+            if (isBundlerHtml(text) || /<!doctype\s+html|<html[\s>]|<\/html\s*>/i.test(text)) {
+              html = text; break
+            }
+          }
+          if (!html && item.types.includes('text/html')) {
+            const text = await (await item.getType('text/html')).text()
+            if (isBundlerHtml(text) || /<!doctype\s+html|<html[\s>]|<\/html\s*>/i.test(text)) {
+              html = text; break
+            }
+          }
+        }
+      } catch {
+        alert('클립보드를 읽지 못했습니다. 브라우저 권한을 확인하세요.')
+        return
+      }
+    } else {
+      alert('이 브라우저는 클립보드 읽기 API를 지원하지 않습니다. Ctrl+V 붙여넣기를 사용하세요.')
+      return
+    }
+    if (!html) {
+      alert('클립보드에서 HTML 슬라이드를 찾지 못했습니다.\nClaude 아티팩트에서 "소스 복사"(</> 버튼) 후 다시 시도하세요.')
+      return
+    }
+    const hasContent = useFlatStore.getState().flatElements.length > 0 || useFlatStore.getState().flatPageCount > 1
+    if (hasContent) {
+      const ok = await confirmDialog({
+        title: 'HTML 슬라이드 가져오기',
+        message: '클립보드의 HTML 슬라이드로 현재 작업이 대체됩니다.\n저장하지 않았다면 먼저 저장하세요. 계속할까요?',
+        confirmText: '가져오기', cancelText: '취소', danger: true,
+      })
+      if (!ok) return
+    }
+    clearPageCache()
+    useFlatStore.getState().setProjectFile(null, null)
+    loadHtml(html, { imported: true })
+  }, [clearPageCache, loadHtml])
 
   // HTML 열기 — 확장자 필터(.html/.htm)
   const handleOpenHtml = useCallback(async () => {
@@ -331,7 +380,8 @@ export default function FileMenu({ fallbackSample }) {
     },
     { id: 'import', label: '가져오기', submenu: 'import',
       children: [
-        { id: 'importHtml', label: 'HTML 슬라이드 가져오기', action: handleOpenHtml },
+        { id: 'importHtml', label: 'HTML 슬라이드 가져오기 (파일)', action: handleOpenHtml },
+        { id: 'importHtmlClip', label: '클립보드 HTML 슬라이드 가져오기', action: handleImportHtmlFromClipboard },
       ],
     },
     // 외부 HTML을 가져온 경우에만 노출 — 처음 가져온 원본으로 되돌리기
