@@ -85,15 +85,18 @@ export default function FlatSelectionOverlay({ element, scale, otherRects, canva
       const cx = (e.clientX - rect.left) / scale
       const cy = (e.clientY - rect.top) / scale
       // 현재 선택 요소보다 zIndex가 높고, 클릭 지점에 있는 요소 찾기 (배경 제외)
-      const hit = flatElements
+      // 클릭이 현재 선택 요소의 bbox 안에 있으면 전환 억제 — 선택된 요소를 이동·편집하려는
+      // 의도인데 위에 걸친 장식용 반투명 도형이 선택을 가로채는 문제 방지.
+      const insideCurrent = cx >= element.x && cy >= element.y
+        && cx <= element.x + element.width && cy <= element.y + element.height
+      const hit = insideCurrent ? null : flatElements
         .filter(el => {
           if (el.id === element.id) return false
           if (el.zIndex <= element.zIndex) return false
           if (el.clickThrough && el.groupId) return false // 클릭 통과 레이어(그룹 중 컷아웃)는 대상 아님(해제 시 선택 가능)
-          // 배경 요소 제외
+          // 배경 요소 제외: 정확히 캔버스 크기이거나 캔버스보다 큰(오버사이즈) 요소
           if (el.type === 'shape' && !el.content
-            && Math.abs(el.width - canvasSize.w) < 2 && Math.abs(el.height - canvasSize.h) < 2
-            && Math.abs(el.x) < 2 && Math.abs(el.y) < 2) return false
+            && el.width >= canvasSize.w && el.height >= canvasSize.h) return false
           return cx >= el.x && cy >= el.y && cx <= el.x + el.width && cy <= el.y + el.height
         })
         .sort((a, b) => b.zIndex - a.zIndex)[0]

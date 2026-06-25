@@ -1690,9 +1690,12 @@ function buildPseudoFlatElements(el, rect, domOrder) {
  * iframe ref 편의 래퍼 — React ref(iframeRef)의 contentDocument/contentWindow를
  * 풀어 코어 extractFlatElements(doc, win)를 호출. (앱 내부용; 코어는 비의존 유지)
  */
-export function extractFlatElementsFromIframe(iframeRef) {
+export function extractFlatElementsFromIframe(iframeRef, existingMaxId = 0) {
   const iframe = iframeRef?.current
   if (!iframe) return { elements: [], canvasSize: { w: 1280, h: 800 } }
+  // 기존 요소의 최대 ID까지 카운터를 미리 올려 추출 ID가 충돌하지 않게 한다.
+  // (충돌 시 같은 id 두 요소가 함께 선택돼 그룹처럼 핸들이 표시되는 버그 방지)
+  if (existingMaxId > 0) bumpFlatCounterTo(existingMaxId)
   return extractFlatElements(iframe.contentDocument, iframe.contentWindow)
 }
 
