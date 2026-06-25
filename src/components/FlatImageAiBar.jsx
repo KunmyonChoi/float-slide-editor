@@ -23,6 +23,49 @@ async function elementImageBlob(content) {
 }
 
 /**
+ * 이미지를 박스 크기(elementW×elementH) 캔버스에 contain-fit 위치로 그리고,
+ * 빈 letterbox/pillarbox 영역은 투명으로 둔다.
+ * → OpenAI image edit API가 투명 영역을 자연스럽게 채울 수 있다(아웃페인팅).
+ */
+async function composeContainFit(content, elementW, elementH) {
+  let imgUrl = content
+  let revokeOnDone = false
+  if (BlobStore.isIdbRef(content)) {
+    const blob = await BlobStore.get(BlobStore.parseRef(content))
+    if (!blob) throw new Error('이미지 데이터를 불러오지 못했습니다.')
+    imgUrl = URL.createObjectURL(blob)
+    revokeOnDone = true
+  }
+  return new Promise((resolve, reject) => {
+    const img = new Image()
+    img.onload = () => {
+      if (revokeOnDone) URL.revokeObjectURL(imgUrl)
+      const imgAR = img.naturalWidth / img.naturalHeight
+      const boxAR = elementW / elementH
+      let dw, dh, dx, dy
+      if (imgAR >= boxAR) {
+        // 이미지가 박스보다 가로가 넓음 → 상하 여백(letterbox)
+        dw = elementW; dh = elementW / imgAR
+        dx = 0;        dy = (elementH - dh) / 2
+      } else {
+        // 이미지가 박스보다 세로가 긺 → 좌우 여백(pillarbox)
+        dh = elementH; dw = elementH * imgAR
+        dx = (elementW - dw) / 2; dy = 0
+      }
+      const canvas = document.createElement('canvas')
+      canvas.width = elementW; canvas.height = elementH
+      canvas.getContext('2d').drawImage(img, Math.round(dx), Math.round(dy), Math.round(dw), Math.round(dh))
+      resolve(canvas.toDataURL('image/png'))
+    }
+    img.onerror = () => {
+      if (revokeOnDone) URL.revokeObjectURL(imgUrl)
+      reject(new Error('이미지를 불러오지 못했습니다.'))
+    }
+    img.src = imgUrl
+  })
+}
+
+/**
  * FlatImageAiBar — 이미지 요소를 단일 선택했을 때 뜨는 전용 AI 플로팅바.
  *
  * 두 가지 액션(둘 다 OpenAI image-to-image `editImage` 사용):
@@ -141,16 +184,42 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
     }
   }, [prompt, mode, run, element.width, element.height])
 
+  // 빈 공간 채우기(아웃페인팅): contain 상태 이미지의 letterbox/pillarbox 영역을 AI로 채움
+  const runOutpaint = useCallback(async () => {
+    if (!hasApiKey()) { openAiSettings(); return }
+    abortRef.current?.abort()
+    const ctrl = new AbortController()
+    abortRef.current = ctrl
+    setMode('outpaint'); setPhase('loading'); setError(''); setImageUrl('')
+    try {
+      setStatus('이미지 합성 중…')
+      const composite = await composeContainFit(element.content, element.width, element.height)
+      if (ctrl.signal.aborted) return
+      captureRef.current = composite
+      setStatus('AI 빈 공간 채우기 중… (수십 초 걸릴 수 있어요)')
+      const p = 'Seamlessly fill the transparent letterbox/pillarbox areas by naturally extending the existing scene. Match the exact colors, lighting, textures, mood, and visual style of the original image. The result must look like the image was always this size — no visible seams or transitions.'
+      setPrompt(p)
+      const url = await editImage(composite, p, { width: element.width, height: element.height, signal: ctrl.signal })
+      if (ctrl.signal.aborted) return
+      setImageUrl(url); setPhase('preview')
+    } catch (e) {
+      if (e?.name === 'AbortError') return
+      setError(e?.message || '빈 공간 채우기에 실패했습니다.')
+      setPhase('error')
+    }
+  }, [element.content, element.width, element.height])
+
   // 같은 id·위치·크기 유지한 채 이미지 content만 교체(되돌리기 가능).
   const apply = useCallback(() => {
     if (!imageUrl) return
     useFlatStore.getState().updateFlatElement(element.id, {
       content: imageUrl,
       isRich: false,
-      styles: { objectFit: 'contain' },
+      // 아웃페인팅 결과는 박스 크기에 맞게 생성되었으므로 cover로 빈틈 없이 표시
+      styles: { objectFit: mode === 'outpaint' ? 'cover' : 'contain' },
     })
     setPhase('idle'); setImageUrl(''); setZoom(false)
-  }, [imageUrl, element.id])
+  }, [imageUrl, element.id, mode])
 
   // 피사체 분리(서버) → 전경 컷아웃 미리보기
   const runCutout = useCallback(async () => {
@@ -209,7 +278,11 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
   const anchorLeft = Math.max(8, Math.min(window.innerWidth - BAR_W - 8, elemLeft))
 
   const modeLabel = mode === 'cutout' ? '피사체 뒤 텍스트'
+    : mode === 'outpaint' ? 'AI 빈 공간 채우기'
     : mode === 'edit' ? 'AI 이미지 편집' : 'AI 디자인 향상'
+
+  // objectFit이 contain(맞추기)일 때만 빈 공간 채우기 버튼 노출
+  const isContainFit = (element.styles?.objectFit ?? 'contain') === 'contain'
 
   const PANEL_W = 360
   const PANEL_H_EST = 380
@@ -271,6 +344,17 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
             <LayersIcon />
             <span style={{ fontSize: 12, marginLeft: 5 }}>피사체 뒤 텍스트</span>
           </button>
+          {isContainFit && (
+            <button
+              type="button"
+              onClick={runOutpaint}
+              title="맞추기(contain) 모드의 빈 letterbox·pillarbox 영역을 AI로 자연스럽게 채웁니다"
+              style={aiBtnStyle}
+            >
+              <OutpaintIcon />
+              <span style={{ fontSize: 12, marginLeft: 5 }}>빈 공간 채우기</span>
+            </button>
+          )}
         </div>
       )}
 
@@ -365,7 +449,9 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
               <button type="button" onClick={() => run('edit', prompt)} style={primaryBtnStyle}>편집 실행</button>
             )}
             {(phase === 'preview' || phase === 'error') && (
-              <button type="button" onClick={mode === 'cutout' ? runCutout : regenerate} style={ghostBtnStyle}>
+              <button type="button"
+                onClick={mode === 'cutout' ? runCutout : mode === 'outpaint' ? runOutpaint : regenerate}
+                style={ghostBtnStyle}>
                 {mode === 'cutout' ? '다시 시도' : '재생성'}
               </button>
             )}
@@ -444,6 +530,16 @@ function EditIcon() {
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <path d="M12 20h9" />
       <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" />
+    </svg>
+  )
+}
+
+function OutpaintIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="3" y="3" width="18" height="18" rx="2" />
+      <rect x="7" y="7" width="10" height="10" rx="1" fill="currentColor" fillOpacity="0.3" strokeWidth="1.5" />
+      <path d="M3 7h4M3 17h4M17 3v4M17 21v-4M7 3v4M21 7h-4M21 17h-4M7 21v-4" strokeWidth="1.5" />
     </svg>
   )
 }
