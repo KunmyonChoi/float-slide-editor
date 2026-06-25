@@ -12,6 +12,7 @@ import { BlobStore } from '../core/BlobStore'
 import { detectListType, applyListType } from '../core/TextListTransform'
 import { addRow, removeRow, addCol, removeCol, setHeaderRow, setBorder } from '../core/slideTable'
 import { useScrub } from './useScrub'
+import { isCoarsePointer } from '../core/pointerEnv'
 import { setFontSizeUniformPx, stripInlineFormatting, richToPlainText, FORMAT_STRIP } from '../core/TextStyleScope'
 import { generateImage, hasApiKey } from '../core/OpenAIClient'
 import { openAiSettings } from './AiSettingsModal'
@@ -1866,12 +1867,14 @@ function NumInput({ label, value, onChange, onPreview, unit = '', min, max, step
     onCommit: (v) => { setLocal(fmt(v)); onChange(v) },
   })
 
+  // 터치는 라벨 한 줄이 얇아 타깃이 어려움 → 세로 패딩으로 탭 영역 확대(데스크톱은 그대로)
+  const touchPad = isCoarsePointer() ? ' py-2' : ''
   return (
     <div>
       {label && (
         // 점선 밑줄 + ew-resize 커서로 드래그 가능함을 표시(일반 레이블과 구분)
         // 누르면(active) 배경 하이라이트 — 스크럽이 잡혔다는 즉각 피드백.
-        <p className={`${scrubLabelClass}${scrubActive ? ' ' + scrubActiveClass : ''}`}
+        <p className={`${scrubLabelClass}${touchPad}${scrubActive ? ' ' + scrubActiveClass : ''}`}
            title="드래그하여 조절" {...scrub}>{label}</p>
       )}
       <div className="flex items-center">
@@ -1913,9 +1916,10 @@ function FontSizeInput({ value, onChange, onPreview }) {
     onCommit: (v) => { setLocal(String(Math.round(v))); onChange(v) },
   })
 
+  const touchPad = isCoarsePointer() ? ' py-2' : ''
   return (
     <div>
-      <p className={`${scrubLabelClass}${scrubActive ? ' ' + scrubActiveClass : ''}`} title="드래그하여 조절" {...scrub}>크기</p>
+      <p className={`${scrubLabelClass}${touchPad}${scrubActive ? ' ' + scrubActiveClass : ''}`} title="드래그하여 조절" {...scrub}>크기</p>
       <div className="flex items-center gap-1">
         <input
           type="text"
