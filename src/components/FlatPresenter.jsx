@@ -330,7 +330,7 @@ export default function FlatPresenter() {
               if (step == null) {
                 return (
                   <FlatElementRenderer key={el.id} element={el} isSelected={false}
-                    isEditing={false} scale={scale} canvasSize={canvasSize} />
+                    isEditing={false} scale={scale} canvasSize={canvasSize} playNow={true} />
                 )
               }
               return (
@@ -344,7 +344,7 @@ export default function FlatPresenter() {
                   ...(playing ? (directionVars(el.anim) || {}) : {}),
                 }}>
                   <FlatElementRenderer element={{ ...el, x: 0, y: 0 }} isSelected={false}
-                    isEditing={false} scale={scale} canvasSize={canvasSize} />
+                    isEditing={false} scale={scale} canvasSize={canvasSize} playNow={true} />
                 </div>
               )
             })}

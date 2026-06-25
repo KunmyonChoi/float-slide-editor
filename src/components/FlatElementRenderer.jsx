@@ -12,7 +12,7 @@ import AudioVisualizer from './AudioVisualizer'
  * 단일 FlatElement를 절대 좌표로 렌더링한다.
  * 클릭으로 선택, 드래그로 이동 (Phase 3에서 추가).
  */
-export default function FlatElementRenderer({ element, isSelected, isEditing, scale, canvasSize: canvasSizeProp }) {
+export default function FlatElementRenderer({ element, isSelected, isEditing, scale, canvasSize: canvasSizeProp, playNow: playNowProp }) {
   // 개별 선택자 구독 — 스토어 전체를 구독하면 현재 페이지 변경 등 무관한 갱신마다
   // 모든 인스턴스(특히 썸네일)가 재렌더되어 깜빡임(움찔)이 생긴다. 함수는 안정 참조.
   const setSelectedFlat = useFlatStore(s => s.setSelectedFlat)
@@ -468,7 +468,9 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
   }
 
   if (type === 'audio') {
-    const isPresent = useEditorStore.getState().mode === 'present'
+    // playNow: prop으로 명시된 경우 우선(FlatPresenter 등 재생 컨텍스트), 없으면 store mode로 판단.
+    // FlatCanvas는 발표 모드여도 playNow prop 없이 렌더 → 편집 화면 오디오가 발표 중에 재생되는 문제 방지.
+    const isPresent = playNowProp !== undefined ? playNowProp : useEditorStore.getState().mode === 'present'
     return (
       <div style={baseStyle} onMouseDown={handleMouseDown} onClick={handleClick}>
         <AudioVisualizer element={element} playNow={isPresent} />
