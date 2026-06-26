@@ -12,10 +12,23 @@ import { awsIconDataUrl, ICON_LABEL, GROUP_BY_KIND } from '../core/awsIcons'
 // 배경 레이어 판정 — SnapEngine의 canonical 헬퍼 재노출(명시 플래그/__bg 기반)
 export { isBackgroundElement as isBackgroundLayer }
 
-// 현재 flatElements의 최대 flat-N 번호 계산 — extractFlatElementsFromIframe에 전달해 ID 충돌 방지.
-function _maxExistingFlatId(els) {
+// 요소 리스트의 최대 flat-N 번호.
+function _maxFlatIdInList(els) {
   let m = 0
-  for (const e of els) { const n = parseInt((e.id || '').replace(/^flat-/, '')); if (n > m) m = n }
+  for (const e of (els || [])) { const n = parseInt((e.id || '').replace(/^flat-/, '')); if (n > m) m = n }
+  return m
+}
+
+// 전역 최대 flat-N — 라이브 요소 + 캐시된 모든 페이지를 통틀어 계산.
+// ⚠️ 충돌 방지의 단일 기준. 현재 페이지만 보면(과거 _maxExistingFlatId) 멀티페이지 덱에서
+// 다른 페이지의 더 큰 ID를 놓쳐 카운터가 역행 → 드롭/삽입 시 같은 id가 발급돼
+// "두 요소가 함께 선택·이동되는(그룹처럼 보이는)" 버그가 재발한다. 항상 전 페이지를 본다.
+function _globalMaxFlatId(liveEls) {
+  let m = _maxFlatIdInList(liveEls)
+  for (const k in _pageCache) {
+    const cm = _maxFlatIdInList(_pageCache[k]?.elements)
+    if (cm > m) m = cm
+  }
   return m
 }
 
@@ -525,6 +538,9 @@ export const useFlatStore = create((set, get) => ({
   _restoreFromCache(pageKey) {
     const cached = _pageCache[pageKey]
     if (!cached) return false
+    // 캐시 복귀는 재추출이 없으므로 카운터가 그대로다. 다른 페이지에 더 큰 ID가 있으면
+    // 이 페이지에서 드롭/삽입 시 충돌하므로, 복귀 시점에 전역 최대로 카운터를 올려 둔다.
+    bumpFlatCounterTo(_globalMaxFlatId(cached.elements))
     _history.setState(cached.history)
     _currentPageKey = pageKey
     set({
@@ -557,7 +573,7 @@ export const useFlatStore = create((set, get) => ({
     }
 
     // 캐시 미스 → 새로 추출
-    const { elements, canvasSize, fontImports } = extractFlatElementsFromIframe(iframeRef, _maxExistingFlatId(get().flatElements))
+    const { elements, canvasSize, fontImports } = extractFlatElementsFromIframe(iframeRef, _globalMaxFlatId(get().flatElements))
     _history.clear()
     _currentPageKey = pageKey || null
     set({
@@ -612,7 +628,7 @@ export const useFlatStore = create((set, get) => ({
     await new Promise(r => setTimeout(r, 400))
 
     if (_currentPageKey) delete _pageCache[_currentPageKey]
-    const { elements, canvasSize, fontImports } = extractFlatElementsFromIframe(ref, _maxExistingFlatId(get().flatElements))
+    const { elements, canvasSize, fontImports } = extractFlatElementsFromIframe(ref, _globalMaxFlatId(get().flatElements))
     _history.clear()
     set({
       flatElements: elements,
@@ -691,7 +707,7 @@ export const useFlatStore = create((set, get) => ({
         ref.current.contentWindow?.postMessage({ type: 'fe:navigate', page: route.h, v: route.v }, '*')
         await new Promise(r => setTimeout(r, 400))
         try {
-          const { elements, canvasSize, fontImports } = extractFlatElementsFromIframe(ref, _maxExistingFlatId(get().flatElements))
+          const { elements, canvasSize, fontImports } = extractFlatElementsFromIframe(ref, _globalMaxFlatId(get().flatElements))
           freshHtml[route.id] = { elements, canvasSize: canonicalCs || canvasSize, fontImports: fontImports || [], history: { stack: [], pointer: -1 } }
         } catch (e) {
           console.warn(`Regen page ${route.id} failed:`, e.message)
@@ -735,7 +751,7 @@ export const useFlatStore = create((set, get) => ({
 
     // 캐시 미스 → DOM 렌더 대기 후 추출
     setTimeout(() => {
-      const { elements, canvasSize, fontImports } = extractFlatElementsFromIframe(ref, _maxExistingFlatId(get().flatElements))
+      const { elements, canvasSize, fontImports } = extractFlatElementsFromIframe(ref, _globalMaxFlatId(get().flatElements))
       _history.clear()
       _currentPageKey = pageKey || null
       set({
@@ -876,7 +892,7 @@ export const useFlatStore = create((set, get) => ({
         await new Promise(r => setTimeout(r, 400))
 
         try {
-          const result = extractFlatElementsFromIframe(iframeRef, _maxExistingFlatId(get().flatElements))
+          const result = extractFlatElementsFromIframe(iframeRef, _globalMaxFlatId(get().flatElements))
           _pageCache[route.id] = {
             elements: result.elements,
             canvasSize: canonicalCs || result.canvasSize,
@@ -2127,7 +2143,7 @@ export const useFlatStore = create((set, get) => ({
 
       // 추출
       try {
-        const result = extractFlatElementsFromIframe(iframeRef, _maxExistingFlatId(get().flatElements))
+        const result = extractFlatElementsFromIframe(iframeRef, _globalMaxFlatId(get().flatElements))
         pages[route.id] = {
           elements: result.elements,
           canvasSize: canonicalCs || result.canvasSize,
