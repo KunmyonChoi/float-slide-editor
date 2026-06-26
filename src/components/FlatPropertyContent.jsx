@@ -2577,6 +2577,42 @@ function VideoSection({ el, update }) {
         />
         <span className={labelClass}>컨트롤 숨기기 (발표 화면)</span>
       </label>
+      <VideoChromaKey el={el} update={update} />
+    </div>
+  )
+}
+
+// 영상 배경 지우기(크로마키) — 비파괴 실시간 합성. 설정(key/tolerance)만 요소에 저장.
+// 임베드(YouTube/Vimeo)·외부 URL은 픽셀 접근 불가 → 비노출.
+function VideoChromaKey({ el, update }) {
+  const isEmbed = /youtube\.com|youtu\.be|vimeo\.com|\/embed\//i.test(el.content || '')
+  const isLocal = BlobStore.isIdbRef(el.content) || (el.content || '').startsWith('blob:') || (el.content || '').startsWith('data:')
+  if (isEmbed || !isLocal) return null
+
+  const chroma = el.chroma || null
+  const enabled = !!chroma?.enabled
+  const tol = chroma?.tolerance ?? 18
+
+  const setEnabled = (on) => update({ chroma: on ? { enabled: true, key: null, tolerance: tol, feather: null } : { ...chroma, enabled: false } })
+  const setTol = (v) => update({ chroma: { ...(chroma || { key: null }), enabled: true, tolerance: v } })
+
+  return (
+    <div className="border-t border-white/5 pt-2 mt-1 space-y-1.5">
+      <label className="flex items-center gap-2 cursor-pointer">
+        <input type="checkbox" checked={enabled} onChange={e => setEnabled(e.target.checked)} className="accent-indigo-500" />
+        <span className={labelClass}>배경 지우기 (크로마키)</span>
+      </label>
+      {enabled && (
+        <>
+          <p className="text-[10px] text-slate-500">제거색: 자동(첫 프레임 모서리). 단색 배경 영상에 가장 잘 맞습니다.</p>
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] text-slate-400 w-9 shrink-0">허용</span>
+            <input type="range" min="2" max="60" step="1" value={tol}
+              onChange={e => setTol(Number(e.target.value))} className="flex-1" style={{ accentColor: '#6366f1' }} />
+            <span className="text-[10px] text-slate-500 w-5 text-right">{tol}</span>
+          </div>
+        </>
+      )}
     </div>
   )
 }
