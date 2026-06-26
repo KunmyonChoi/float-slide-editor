@@ -8,6 +8,7 @@ import { INFOGRAPHIC_STYLES } from '../core/aiImageStyles'
 import { segmentImage, checkCutoutBackend } from '../core/CutoutBackendClient'
 import CutoutInstallModal from './CutoutInstallModal'
 import { BlobStore } from '../core/BlobStore'
+import { useDraggableToolbar, GripHandle } from './useDraggableToolbar'
 
 // 이미지 요소의 원본 소스(content) → Blob. idb 참조면 BlobStore, 아니면 직접 fetch.
 // (박스 캡처가 아니라 원본을 분리해야 컷아웃 종횡비=원본과 같아 그룹 리사이즈에 어긋나지 않음)
@@ -268,6 +269,10 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
     setPhase('idle'); setError(''); setImageUrl(''); setZoom(false); setServerDown(false)
   }, [])
 
+  // 드래그 이동 — 그립 핸들로 idle 액션바를 자유 위치로 옮김(선택 변경 시 자동 복귀)
+  const barRef = useRef(null)
+  const { pos: dragPos, startDrag, dragging } = useDraggableToolbar(element.id, barRef)
+
   if (!rect) return null
   const { left: elemLeft, top: elemTop, bottom: elemBottom } = rect
 
@@ -276,6 +281,8 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
   const placeAbove = elemTop - BAR_H - 8 >= 8
   const anchorTop = placeAbove ? elemTop - BAR_H - 8 : elemBottom + 8
   const anchorLeft = Math.max(8, Math.min(window.innerWidth - BAR_W - 8, elemLeft))
+  const barLeft = dragPos ? dragPos.left : anchorLeft
+  const barTop = dragPos ? dragPos.top : anchorTop
 
   const modeLabel = mode === 'cutout' ? '피사체 뒤 텍스트'
     : mode === 'outpaint' ? 'AI 빈 공간 채우기'
@@ -297,11 +304,12 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
       {/* 플로팅 액션바 (idle) */}
       {phase === 'idle' && (
         <div
+          ref={barRef}
           data-edit-accessory="true"
           onMouseDown={e => e.stopPropagation()}
           onClick={e => e.stopPropagation()}
           style={{
-            position: 'fixed', left: anchorLeft, top: anchorTop, zIndex: 10040,
+            position: 'fixed', left: barLeft, top: barTop, zIndex: 10040,
             display: 'flex', alignItems: 'center', gap: 6,
             height: BAR_H, padding: '0 8px', borderRadius: 10,
             background: 'rgba(15,23,42,0.92)', backdropFilter: 'blur(12px)',
@@ -309,6 +317,7 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
             boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
           }}
         >
+          <GripHandle onPointerDown={startDrag} dragging={dragging} />
           <select
             value={styleId}
             onChange={e => setStyleId(e.target.value)}

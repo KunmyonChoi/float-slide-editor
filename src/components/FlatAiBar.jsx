@@ -5,6 +5,7 @@ import { hasApiKey, generateImagePrompt, generateImage } from '../core/OpenAICli
 import { openAiSettings } from './AiSettingsModal'
 import { IMAGE_STYLES } from '../core/aiImageStyles'
 import { embedPngMetadata } from '../core/pngMeta'
+import { useDraggableToolbar, GripHandle } from './useDraggableToolbar'
 
 /**
  * FlatAiBar — 텍스트 박스(요소)를 단일 선택했을 때 뜨는 전용 AI 플로팅바.
@@ -135,6 +136,10 @@ export default function FlatAiBar({ element, scale, canvasRef }) {
     setPhase('idle'); setError(''); setImageUrl('')
   }, [])
 
+  // 드래그 이동 — 그립 핸들로 idle 액션바를 자유 위치로 옮김(선택 변경 시 자동 복귀)
+  const barRef = useRef(null)
+  const { pos: dragPos, startDrag, dragging } = useDraggableToolbar(element.id, barRef)
+
   // 화면 좌표 (layout effect에서 계산됨)
   if (!rect) return null
   const { left: elemLeft, top: elemTop, bottom: elemBottom } = rect
@@ -143,6 +148,9 @@ export default function FlatAiBar({ element, scale, canvasRef }) {
   const placeAbove = elemTop - BAR_H - 8 >= 8
   const anchorTop = placeAbove ? elemTop - BAR_H - 8 : elemBottom + 8
   const anchorLeft = Math.max(8, Math.min(window.innerWidth - 360, elemLeft))
+  // 드래그된 자유 위치가 있으면 그것을, 없으면 자동 앵커를 사용
+  const barLeft = dragPos ? dragPos.left : anchorLeft
+  const barTop = dragPos ? dragPos.top : anchorTop
 
   const PANEL_W = 360
   const PANEL_H_EST = 380
@@ -157,6 +165,7 @@ export default function FlatAiBar({ element, scale, canvasRef }) {
       {/* 플로팅 액션바 (idle) */}
       {phase === 'idle' && (
         <div
+          ref={barRef}
           data-edit-accessory="true"
           // 포털 자식의 React 이벤트는 FlatCanvas(부모)로 버블링되므로 반드시 전파 차단.
           // (안 하면 mousedown이 캔버스 마퀴로 전달돼 mouseup에서 선택 해제→바 언마운트)
@@ -164,7 +173,7 @@ export default function FlatAiBar({ element, scale, canvasRef }) {
           onMouseDown={e => e.stopPropagation()}
           onClick={e => e.stopPropagation()}
           style={{
-            position: 'fixed', left: anchorLeft, top: anchorTop, zIndex: 10040,
+            position: 'fixed', left: barLeft, top: barTop, zIndex: 10040,
             display: 'flex', alignItems: 'center', gap: 6,
             height: BAR_H, padding: '0 8px', borderRadius: 10,
             background: 'rgba(15,23,42,0.92)', backdropFilter: 'blur(12px)',
@@ -172,6 +181,7 @@ export default function FlatAiBar({ element, scale, canvasRef }) {
             boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
           }}
         >
+          <GripHandle onPointerDown={startDrag} dragging={dragging} />
           <select
             value={styleId}
             onChange={e => setStyleId(e.target.value)}
