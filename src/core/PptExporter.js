@@ -394,6 +394,11 @@ async function addImage(slide, el, pos) {
 async function addShape(slide, el, pos) {
   const s = el.styles || {}
 
+  // 투명도 — pptxgenjs는 도형 fill의 transparency만 읽는다(최상위 shapeOpts.transparency는 무시됨).
+  // 래스터(그라데이션/복잡배경) 경로는 addImage라 최상위 transparency가 먹는다.
+  const transparency = (s.opacity && s.opacity !== '1')
+    ? Math.round((1 - parseFloat(s.opacity)) * 100) : 0
+
   const border = parseBorder(s)
   const shadow = parseShadow(s.boxShadow)
   const bgImage = s.backgroundImage || 'none'
@@ -412,6 +417,7 @@ async function addShape(slide, el, pos) {
           data: pngData,
           x: pos.x, y: pos.y, w: pos.w, h: pos.h,
           ...(pos.rotate ? { rotate: pos.rotate } : {}),
+          ...(transparency ? { transparency } : {}),
         })
       }
     } catch { /* 실패 시 무시(테두리/부분채움은 아래 계속) */ }
@@ -435,6 +441,7 @@ async function addShape(slide, el, pos) {
         data: pngData,
         x: pos.x, y: pos.y, w: pos.w, h: pos.h,
         ...(pos.rotate ? { rotate: pos.rotate } : {}),
+        ...(transparency ? { transparency } : {}),
       })
       return
     } catch { /* 실패 시 아래 균일 테두리 rect로 폴백 */ }
@@ -448,6 +455,7 @@ async function addShape(slide, el, pos) {
         data: pngData,
         x: pos.x, y: pos.y, w: pos.w, h: pos.h,
         ...(pos.rotate ? { rotate: pos.rotate } : {}),
+        ...(transparency ? { transparency } : {}),
       })
     } catch {
       // 래스터라이즈 실패 시 첫 번째 색상으로 대체
@@ -455,7 +463,7 @@ async function addShape(slide, el, pos) {
       const fallbackColor = grad.stops.length > 0 ? cssColorToHex(grad.stops[0].color) : null
       slide.addShape('rect', {
         x: pos.x, y: pos.y, w: pos.w, h: pos.h,
-        fill: fallbackColor ? { color: fallbackColor } : { type: 'none' },
+        fill: fallbackColor ? { color: fallbackColor, ...(transparency ? { transparency } : {}) } : { type: 'none' },
         ...(pos.rotate ? { rotate: pos.rotate } : {}),
       })
     }
@@ -464,16 +472,13 @@ async function addShape(slide, el, pos) {
 
   const shapeOpts = {
     x: pos.x, y: pos.y, w: pos.w, h: pos.h,
-    fill: solidFill || { type: 'none' },
+    // 투명도는 fill 안에 넣어야 적용됨(pptxgenjs <a:alpha>는 fill 색상에서 생성)
+    fill: solidFill ? { ...solidFill, ...(transparency ? { transparency } : {}) } : { type: 'none' },
   }
 
   if (pos.rotate) shapeOpts.rotate = pos.rotate
   if (border) shapeOpts.border = border
   if (shadow) shapeOpts.shadow = shadow
-
-  if (s.opacity && s.opacity !== '1') {
-    shapeOpts.transparency = Math.round((1 - parseFloat(s.opacity)) * 100)
-  }
 
   const isCircle = s.borderRadius && (s.borderRadius === '50%' || s.borderRadius === '9999px')
   if (isCircle) {

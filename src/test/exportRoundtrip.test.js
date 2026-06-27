@@ -254,4 +254,17 @@ describe('PPT 개선 항목', () => {
     // opacity 0.8 → transparency 20
     expect(opts.transparency).toBe(20)
   })
+
+  it('회전된 솔리드 도형 투명도 — fill.transparency에 들어감(최상위 아님)', async () => {
+    const { transparentElement } = await import('./fixtures/export-fixtures')
+    // 회전 추가
+    const el = { ...transparentElement.elements[0], rotation: 30 }
+    const pages = { '0-0': { elements: [el], canvasSize: transparentElement.canvasSize, fontImports: [] } }
+    const slide = await getLastPptxSlide(pages, transparentElement.canvasSize)
+    const shape = slide._items.find(it => it.opts?.fill && it.opts.fill.type !== 'none')
+    expect(shape).toBeDefined()
+    // opacity 0.5 → transparency 50, fill 안에 위치해야 PPT에 실제 적용됨
+    expect(shape.opts.fill.transparency).toBe(50)
+    expect(shape.opts.rotate).toBe(30)
+  })
 })

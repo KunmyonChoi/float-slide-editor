@@ -369,11 +369,12 @@ export function validatePptMapping(items, elements, canvasSize) {
       }
     }
 
-    // 투명도 검증
+    // 투명도 검증 — 도형은 fill.transparency, 이미지/텍스트는 최상위 transparency에 들어간다.
     if (el.styles?.opacity && el.styles.opacity !== '1') {
       const expectedTransp = Math.round((1 - parseFloat(el.styles.opacity)) * 100)
-      if (opts.transparency !== expectedTransp) {
-        issues.push({ type: 'style', elementId: el.id, message: `transparency: expected ${expectedTransp}, got ${opts.transparency}` })
+      const actualTransp = opts.transparency ?? opts.fill?.transparency
+      if (actualTransp !== expectedTransp) {
+        issues.push({ type: 'style', elementId: el.id, message: `transparency: expected ${expectedTransp}, got ${actualTransp}` })
       }
     }
   }

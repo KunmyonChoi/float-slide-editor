@@ -1859,19 +1859,41 @@ def _apply_text_shadow(shape, s: dict):
 
 
 def _apply_opacity(shape, s: dict):
+    """요소 opacity 스타일을 fill 알파에 반영. 기존 fill 알파(rgba 색)와 곱해 결합한다."""
     opacity = s.get('opacity', '1')
-    if opacity and opacity != '1':
+    if not opacity or opacity == '1':
+        return
+    try:
+        val = float(opacity)
+    except (ValueError, TypeError):
+        return
+    if val >= 1:
+        return
+    val = max(0.0, val)
+    try:
+        sp_pr = shape._element.spPr
+    except Exception:
+        return
+    if sp_pr is None:
+        return
+    solid_fill = sp_pr.find(qn('a:solidFill'))
+    if solid_fill is None:
+        return
+    srgb = solid_fill.find(qn('a:srgbClr'))
+    if srgb is None:
+        return
+    # 기존 alpha(없으면 100% 불투명)와 곱해 결합 후 교체
+    existing = srgb.find(qn('a:alpha'))
+    base = 100000
+    if existing is not None and existing.get('val'):
         try:
-            val = float(opacity)
-            if val < 1:
-                # Set transparency via XML (not directly supported in python-pptx API)
-                sp = shape._element
-                sp_pr = sp.find(qn('p:spPr'))
-                if sp_pr is None:
-                    sp_pr = sp.find(qn('xdr:spPr'))
-                # Opacity not trivially supported - skip for now
+            base = int(existing.get('val'))
         except (ValueError, TypeError):
-            pass
+            base = 100000
+    new_val = max(0, min(100000, int(base * val)))
+    for a in srgb.findall(qn('a:alpha')):
+        srgb.remove(a)
+    srgb.append(srgb.makeelement(qn('a:alpha'), {'val': str(new_val)}))
 
 
 def _apply_round_corners(shape, border_radius: str):
