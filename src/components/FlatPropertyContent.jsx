@@ -19,7 +19,7 @@ import { generateImage, hasApiKey } from '../core/OpenAIClient'
 import { openAiSettings } from './AiSettingsModal'
 import { BACKGROUND_STYLES, BACKGROUND_GROUPS, DEFAULT_BACKGROUND_STYLE_ID, getBackgroundStyle, buildBackgroundPrompt } from '../core/backgroundStyles'
 import { embedPngMetadata } from '../core/pngMeta'
-import { detectBgColor, applyChromaKey } from '../core/chromaKey'
+import { detectBgColor, applyChromaKey, chromaEntries } from '../core/chromaKey'
 import { highlightCode, CODE_FONT } from '../core/codeHighlight'
 import { renderMarkdown } from '../core/markdown'
 import { EFFECTS, effectHasDir } from '../core/slideAnimation'
@@ -2582,8 +2582,12 @@ function VideoSection({ el, update }) {
   )
 }
 
-// 영상 배경 지우기(크로마키) — 비파괴 실시간 합성. 설정(key/tolerance)만 요소에 저장.
+// 영상 배경 지우기(크로마키) — 비파괴 실시간 합성. 설정(keys[])만 요소에 저장.
+// 다중 키: 1차로 배경 제거 후 잔류색을 2차 키로 추가 제거(키마다 허용/경계 별도).
 // 임베드(YouTube/Vimeo)·외부 URL은 픽셀 접근 불가 → 비노출.
+const CHROMA_MAX_KEYS = 4
+const CHROMA_ORDINAL = ['1차', '2차', '3차', '4차']
+
 function VideoChromaKey({ el, update }) {
   const isEmbed = /youtube\.com|youtu\.be|vimeo\.com|\/embed\//i.test(el.content || '')
   const isLocal = BlobStore.isIdbRef(el.content) || (el.content || '').startsWith('blob:') || (el.content || '').startsWith('data:')
@@ -2591,10 +2595,35 @@ function VideoChromaKey({ el, update }) {
 
   const chroma = el.chroma || null
   const enabled = !!chroma?.enabled
-  const tol = chroma?.tolerance ?? 18
+  const entries = chromaEntries(chroma) // 구버전 단일 키도 배열로 정규화
+  const despill = chroma?.despill ?? 0
 
-  const setEnabled = (on) => update({ chroma: on ? { enabled: true, key: null, tolerance: tol, feather: null } : { ...chroma, enabled: false } })
-  const setTol = (v) => update({ chroma: { ...(chroma || { key: null }), enabled: true, tolerance: v } })
+  const writeEntries = (next) => update({ chroma: { ...chroma, enabled: true, keys: next.length ? next : [{ key: null, tolerance: 18, feather: null }] } })
+  const patchEntry = (i, changes) => writeEntries(entries.map((e, j) => (j === i ? { ...e, ...changes } : e)))
+  const addEntry = () => { if (entries.length < CHROMA_MAX_KEYS) writeEntries([...entries, { key: null, tolerance: 18, feather: null }]) }
+  const removeEntry = (i) => writeEntries(entries.filter((_, j) => j !== i))
+
+  const setEnabled = (on) => update({ chroma: { ...chroma, enabled: on, keys: entries } })
+  const setDespill = (v) => update({ chroma: { ...chroma, enabled: true, keys: entries, despill: v } })
+  const reset = () => update({ chroma: { enabled: false, keys: [{ key: null, tolerance: 18, feather: null }], despill: 0 } })
+
+  // 스포이드: 해당 키가 '노릴 색'이 보이도록 그 키만 뺀 결과를 잠시 보여주고(비히스토리 preview)
+  // 클릭한 색을 그 키에 커밋. (1차는 다른 키가 없으면 원본 노출, 2차는 1차 적용 결과=잔류색 노출)
+  const pickColor = async (i) => {
+    if (!window.EyeDropper) return
+    const preview = useFlatStore.getState().previewFlatElement
+    const others = entries.filter((_, j) => j !== i)
+    preview(el.id, { chroma: others.length ? { enabled: true, keys: others } : { enabled: false, keys: entries } })
+    await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))
+    try {
+      const { sRGBHex } = await new window.EyeDropper().open()
+      const m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(sRGBHex)
+      preview(el.id, { chroma: { enabled: true, keys: entries } }) // 원상 복원(undo 기준)
+      if (m) patchEntry(i, { key: { r: parseInt(m[1], 16), g: parseInt(m[2], 16), b: parseInt(m[3], 16) } })
+    } catch {
+      preview(el.id, { chroma: { enabled: true, keys: entries } })
+    }
+  }
 
   return (
     <div className="border-t border-white/5 pt-2 mt-1 space-y-1.5">
@@ -2604,13 +2633,58 @@ function VideoChromaKey({ el, update }) {
       </label>
       {enabled && (
         <>
-          <p className="text-[10px] text-slate-500">제거색: 자동(첫 프레임 모서리). 단색 배경 영상에 가장 잘 맞습니다.</p>
-          <div className="flex items-center gap-2">
-            <span className="text-[10px] text-slate-400 w-9 shrink-0">허용</span>
-            <input type="range" min="2" max="60" step="1" value={tol}
-              onChange={e => setTol(Number(e.target.value))} className="flex-1" style={{ accentColor: '#6366f1' }} />
-            <span className="text-[10px] text-slate-500 w-5 text-right">{tol}</span>
+          {entries.map((e, i) => {
+            const keyHex = e.key ? `rgb(${e.key.r},${e.key.g},${e.key.b})` : 'transparent'
+            const ftr = e.feather ?? Math.round((e.tolerance ?? 18) * 0.3)
+            return (
+              <div key={i} className="rounded-lg border border-white/10 p-2 space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-medium text-indigo-300">{CHROMA_ORDINAL[i] || `${i + 1}차`} 키</span>
+                  {entries.length > 1 && (
+                    <button onClick={() => removeEntry(i)} title="이 키 제거"
+                      className="text-[10px] text-slate-400 hover:text-red-300 px-1 rounded">✕</button>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] text-slate-400 w-9 shrink-0">제거색</span>
+                  <span className="w-5 h-5 rounded border border-white/20 shrink-0"
+                    style={{ background: e.key ? keyHex : 'repeating-conic-gradient(#64748b 0% 25%, #334155 0% 50%) 50%/8px 8px' }}
+                    title={e.key ? keyHex : '자동(첫 프레임 모서리)'} />
+                  <button onClick={() => patchEntry(i, { key: null })}
+                    className="text-[10px] text-slate-400 hover:text-slate-200 px-1 py-0.5 rounded border border-white/10">자동</button>
+                  {window.EyeDropper && (
+                    <button onClick={() => pickColor(i)} title="스포이드로 제거색 지정"
+                      className="text-sm px-1 rounded border border-white/10 hover:bg-white/10">💧</button>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] text-slate-400 w-9 shrink-0">허용</span>
+                  <input type="range" min="2" max="60" step="1" value={e.tolerance ?? 18}
+                    onChange={ev => patchEntry(i, { tolerance: Number(ev.target.value) })} className="flex-1" style={{ accentColor: '#6366f1' }} />
+                  <span className="text-[10px] text-slate-500 w-5 text-right">{e.tolerance ?? 18}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] text-slate-400 w-9 shrink-0">경계</span>
+                  <input type="range" min="0" max="30" step="1" value={ftr}
+                    onChange={ev => patchEntry(i, { feather: Number(ev.target.value) })} className="flex-1" style={{ accentColor: '#6366f1' }} />
+                  <span className="text-[10px] text-slate-500 w-5 text-right">{ftr}</span>
+                </div>
+              </div>
+            )
+          })}
+          {entries.length < CHROMA_MAX_KEYS && (
+            <button onClick={addEntry}
+              className="w-full py-1 rounded-lg text-[11px] text-indigo-300 border border-indigo-500/30 bg-indigo-500/10 hover:bg-indigo-500/20">＋ 잔류색 제거(키 추가)</button>
+          )}
+          <div className="flex items-center gap-2 pt-1 border-t border-white/5">
+            <span className="text-[10px] text-slate-400 w-12 shrink-0">색번짐</span>
+            <input type="range" min="0" max="100" step="5" value={despill}
+              onChange={e => setDespill(Number(e.target.value))} className="flex-1" style={{ accentColor: '#10b981' }} />
+            <span className="text-[10px] text-slate-500 w-7 text-right">{despill}</span>
           </div>
+          <p className="text-[10px] text-slate-500">색번짐: 전경에 묻은 키색 끼(녹색/파란빛)를 보정해 자연색으로. 너무 높이면 같은 색 사물도 빠집니다.</p>
+          <button onClick={reset}
+            className="w-full py-1 rounded-lg text-[11px] text-slate-400 border border-white/10 hover:bg-white/10">되돌리기(원본 영상)</button>
         </>
       )}
     </div>

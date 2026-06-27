@@ -1,6 +1,6 @@
 import { useRef, useEffect, useState } from 'react'
 import { BlobStore } from '../core/BlobStore'
-import { applyChromaToImageData, detectBgColorFromCtx } from '../core/chromaKey'
+import { applyChromaToImageData, despillImageData, detectBgColorFromCtx, chromaEntries } from '../core/chromaKey'
 
 // 프레임 처리 캔버스 긴 변 상한 — getImageData/putImageData 픽셀 루프 부하 억제.
 // 표시 크기는 CSS로 박스에 맞추므로(요소 width/height) 처리 해상도만 캡한다.
@@ -34,8 +34,13 @@ export default function ChromaVideoPlayer({ content, playNow, autoplay, loop, mu
 
   const blobUrl = isIdb ? idbUrl : content
 
-  // 키색/허용치가 바뀌면 자동 추정 캐시 무효화
-  useEffect(() => { autoKeyRef.current = null }, [chroma?.key, chroma?.tolerance, chroma?.feather])
+  // 키 항목 배열로 정규화(구버전 단일 키 호환). 매 렌더 새 배열이라 effect 의존엔 직렬화 키 사용.
+  const entries = chromaEntries(chroma)
+  // 키 + 디스필을 합친 시그니처 — 슬라이더 변경 시 정지 프레임도 다시 그리도록.
+  const chromaSig = JSON.stringify({ entries, despill: chroma?.despill ?? 0 })
+
+  // 설정이 바뀌면 자동 추정 캐시 무효화
+  useEffect(() => { autoKeyRef.current = null }, [chromaSig])
 
   useEffect(() => {
     const video = videoRef.current
@@ -64,13 +69,20 @@ export default function ChromaVideoPlayer({ content, playNow, autoplay, loop, mu
       try {
         ctx.drawImage(video, 0, 0, proc.w, proc.h)
         const frame = ctx.getImageData(0, 0, proc.w, proc.h)
-        let key = chroma?.key
-        if (!key) {
-          // 자동: 대표 프레임의 모서리 색을 1회 추정해 캐시
-          if (!autoKeyRef.current) autoKeyRef.current = detectBgColorFromCtx(ctx, proc.w, proc.h)
-          key = autoKeyRef.current
+        // 자동(key=null) 항목은 대표 프레임 모서리 색을 1회 추정해 캐시.
+        // 여러 키를 '순차' 적용 — 1차 제거 후 잔류색을 2차로 더 깎음.
+        let primaryKey = null
+        for (const e of entries) {
+          let key = e.key
+          if (!key) {
+            if (!autoKeyRef.current) autoKeyRef.current = detectBgColorFromCtx(ctx, proc.w, proc.h)
+            key = autoKeyRef.current
+          }
+          if (!primaryKey) primaryKey = key
+          applyChromaToImageData(frame, key, e.tolerance ?? 18, e.feather)
         }
-        applyChromaToImageData(frame, key, chroma?.tolerance ?? 18, chroma?.feather)
+        // 디스필: 키 제거 후 전경에 남은 색번짐을 1차 키색 기준으로 보정
+        if (chroma?.despill > 0 && primaryKey) despillImageData(frame, primaryKey, chroma.despill)
         ctx.putImageData(frame, 0, 0)
       } catch {
         // CORS 등으로 캔버스가 tainted면 읽기 불가 — 루프 중단(호출부가 외부 URL은 차단함)
@@ -122,7 +134,7 @@ export default function ChromaVideoPlayer({ content, playNow, autoplay, loop, mu
       video.removeEventListener('pause', stop)
       video.removeEventListener('seeked', drawFrame)
     }
-  }, [blobUrl, playNow, chroma?.key, chroma?.tolerance, chroma?.feather])
+  }, [blobUrl, playNow, chromaSig]) // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!blobUrl) {
     return <div style={{ width: '100%', height: '100%', background: '#1e293b', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
