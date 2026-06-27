@@ -1,19 +1,19 @@
 import { useRef, useEffect, useState } from 'react'
 import { BlobStore } from '../core/BlobStore'
+import { useEditorStore } from '../store/editorStore'
 import { applyChromaToImageData, despillImageData, detectBgColorFromCtx, chromaEntries } from '../core/chromaKey'
+import { createChromaRenderer, prepareChromaUniforms } from '../core/chromaGL'
 
-// 프레임 처리 캔버스 긴 변 상한 — getImageData/putImageData 픽셀 루프 부하 억제.
-// 표시 크기는 CSS로 박스에 맞추므로(요소 width/height) 처리 해상도만 캡한다.
+// 2D 폴백 처리 캔버스 긴 변 상한 — getImageData/putImageData 픽셀 루프 부하 억제.
 const PROC_MAX = 960
 
 /**
  * ChromaVideoPlayer — 크로마키(배경 단색 제거)가 켜진 영상을 실시간 합성 재생.
  *
- * 숨긴 <video>를 매 프레임 <canvas>에 그리고 키색 기준으로 알파를 깎아 표시한다.
- * 비파괴: 원본 영상은 그대로, element.chroma 설정(key/tolerance/feather)만으로 렌더.
+ * 기본 경로는 WebGL 셰이더(GPU). 미지원/실패 시 CPU(canvas 2D) 폴백.
+ * 숨긴 <video>를 매 프레임 표시 <canvas>에 합성해 키색 알파를 깎고 디스필을 적용한다.
+ * 비파괴: 원본 영상은 그대로, element.chroma 설정(keys/despill)만으로 렌더.
  * 오디오는 <video>가 그대로 재생(canvas는 영상 픽셀만 담당).
- *
- * @param {object} chroma { key:{r,g,b}|null(자동), tolerance, feather }
  */
 export default function ChromaVideoPlayer({ content, playNow, autoplay, loop, muted, hideControls, objectFit, chroma }) {
   const isIdb = BlobStore.isIdbRef(content)
@@ -21,9 +21,19 @@ export default function ChromaVideoPlayer({ content, playNow, autoplay, loop, mu
   const videoRef = useRef(null)
   const canvasRef = useRef(null)
   const rafRef = useRef(0)
-  const usingVfcRef = useRef(false)
-  // 자동(키색 null)일 때 첫 프레임에서 추정한 색을 보관 — 매 프레임 재추정 방지.
-  const autoKeyRef = useRef(null)
+  const autoKeyRef = useRef(null)     // 자동 키색 1회 추정 캐시
+  const sampleCanvasRef = useRef(null) // 자동 키색 코너 샘플용 오프스크린 2D
+  const paramsRef = useRef({ entries: [], despill: 0 }) // 최신 파라미터(재컴파일 없이 매 프레임 참조)
+  const drawFrameRef = useRef(null)   // 정지 프레임 강제 재그리기용
+  // 발표 종료 시 캔버스를 새 요소로 remount해 WebGL 컨텍스트 재확보(손실된 컨텍스트는
+  // 같은 canvas에서 getContext로 못 살리므로 key를 바꿔 새 canvas를 만든다).
+  const [glGen, setGlGen] = useState(0)
+  const mode = useEditorStore(s => s.mode)
+  const prevModeRef = useRef(mode)
+  useEffect(() => {
+    if (prevModeRef.current === 'present' && mode !== 'present') setGlGen(g => g + 1)
+    prevModeRef.current = mode
+  }, [mode])
 
   useEffect(() => {
     if (!isIdb) return
@@ -34,107 +44,128 @@ export default function ChromaVideoPlayer({ content, playNow, autoplay, loop, mu
 
   const blobUrl = isIdb ? idbUrl : content
 
-  // 키 항목 배열로 정규화(구버전 단일 키 호환). 매 렌더 새 배열이라 effect 의존엔 직렬화 키 사용.
-  const entries = chromaEntries(chroma)
-  // 키 + 디스필을 합친 시그니처 — 슬라이더 변경 시 정지 프레임도 다시 그리도록.
+  const entries = chromaEntries(chroma) // 구버전 단일 키도 배열로 정규화
   const chromaSig = JSON.stringify({ entries, despill: chroma?.despill ?? 0 })
 
-  // 설정이 바뀌면 자동 추정 캐시 무효화
-  useEffect(() => { autoKeyRef.current = null }, [chromaSig])
+  // 파라미터 변경: 최신값 저장 + 자동키 캐시 무효화 + 정지 프레임이면 1회 재그리기.
+  useEffect(() => {
+    paramsRef.current = { entries, despill: chroma?.despill ?? 0 }
+    autoKeyRef.current = null
+    drawFrameRef.current?.()
+  }, [chromaSig]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // GL/2D 셋업 + 비디오 루프 — blobUrl/playNow 바뀔 때만(셰이더 재컴파일 회피).
   useEffect(() => {
     const video = videoRef.current
     const canvas = canvasRef.current
     if (!video || !canvas || !blobUrl) return
 
-    const ctx = canvas.getContext('2d', { willReadFrequently: true })
+    // WebGL 우선, 실패 시 2D 폴백. 컨텍스트 손실(발표 모드 등 다중 WebGL로 한도 초과)에
+    // 대비해 glRenderer는 mutable — 손실 시 null, 복구 시 재생성.
+    let glRenderer = createChromaRenderer(canvas)
+    const ctx2d = glRenderer ? null : canvas.getContext('2d', { willReadFrequently: true })
     let proc = { w: 0, h: 0 }
 
-    const sizeCanvas = () => {
+    // 자동 키색: 작은 오프스크린 2D에 코너만 샘플(1회 캐시)
+    const getAutoKey = () => {
+      if (autoKeyRef.current) return autoKeyRef.current
+      const vw = video.videoWidth || 0, vh = video.videoHeight || 0
+      if (!vw || !vh) return null
+      const sc = sampleCanvasRef.current || (sampleCanvasRef.current = document.createElement('canvas'))
+      const s = Math.min(1, 64 / Math.max(vw, vh))
+      sc.width = Math.max(2, Math.round(vw * s)); sc.height = Math.max(2, Math.round(vh * s))
+      const sctx = sc.getContext('2d', { willReadFrequently: true })
+      try {
+        sctx.drawImage(video, 0, 0, sc.width, sc.height)
+        autoKeyRef.current = detectBgColorFromCtx(sctx, sc.width, sc.height)
+      } catch { /* tainted */ }
+      return autoKeyRef.current
+    }
+
+    const sizeCanvas2D = () => {
       const vw = video.videoWidth || 0, vh = video.videoHeight || 0
       if (!vw || !vh) return false
       const scale = Math.min(1, PROC_MAX / Math.max(vw, vh))
       proc = { w: Math.max(1, Math.round(vw * scale)), h: Math.max(1, Math.round(vh * scale)) }
-      if (canvas.width !== proc.w || canvas.height !== proc.h) {
-        canvas.width = proc.w; canvas.height = proc.h
-      }
+      if (canvas.width !== proc.w || canvas.height !== proc.h) { canvas.width = proc.w; canvas.height = proc.h }
       return true
     }
 
     const drawFrame = () => {
-      // 실제 디코딩된 프레임이 없으면(메타데이터만 로드 등) 그리지 않는다.
-      // 안 그러면 빈/검은 프레임으로 키색을 잘못 추정해 전체가 투명해지는 버그 발생.
-      if (video.readyState < 2) return
-      if (!sizeCanvas()) return
-      try {
-        ctx.drawImage(video, 0, 0, proc.w, proc.h)
-        const frame = ctx.getImageData(0, 0, proc.w, proc.h)
-        // 자동(key=null) 항목은 대표 프레임 모서리 색을 1회 추정해 캐시.
-        // 여러 키를 '순차' 적용 — 1차 제거 후 잔류색을 2차로 더 깎음.
-        let primaryKey = null
-        for (const e of entries) {
-          let key = e.key
-          if (!key) {
-            if (!autoKeyRef.current) autoKeyRef.current = detectBgColorFromCtx(ctx, proc.w, proc.h)
-            key = autoKeyRef.current
-          }
-          if (!primaryKey) primaryKey = key
-          applyChromaToImageData(frame, key, e.tolerance ?? 18, e.feather)
-        }
-        // 디스필: 키 제거 후 전경에 남은 색번짐을 1차 키색 기준으로 보정
-        if (chroma?.despill > 0 && primaryKey) despillImageData(frame, primaryKey, chroma.despill)
-        ctx.putImageData(frame, 0, 0)
-      } catch {
-        // CORS 등으로 캔버스가 tainted면 읽기 불가 — 루프 중단(호출부가 외부 URL은 차단함)
-      }
-    }
+      if (video.readyState < 2) return // 디코딩된 프레임 없으면 스킵(검은 첫프레임 오추정 방지)
+      const { entries: ents, despill } = paramsRef.current
+      const needAuto = ents.some(e => !e.key)
+      const auto = needAuto ? getAutoKey() : null
+      const resolved = ents.map(e => (e.key ? e : { ...e, key: auto })).filter(e => e.key)
+      const primaryKey = resolved[0]?.key || null
 
-    // 정지 미리보기(비재생): 검은 인트로 프레임을 피해 대표 프레임(0.1초)으로 seek해 디코딩 강제.
-    // 포스터 생성이 #t=0.1을 쓰던 것과 동일한 이유 — 일관된 첫 프레임 확보.
+      if (glRenderer) {
+        glRenderer.render(video, prepareChromaUniforms(resolved, despill, primaryKey))
+        return
+      }
+      // 2D 폴백
+      if (!ctx2d || !sizeCanvas2D()) return
+      try {
+        ctx2d.drawImage(video, 0, 0, proc.w, proc.h)
+        const frame = ctx2d.getImageData(0, 0, proc.w, proc.h)
+        for (const e of resolved) applyChromaToImageData(frame, e.key, e.tolerance ?? 18, e.feather)
+        if (despill > 0 && primaryKey) despillImageData(frame, primaryKey, despill)
+        ctx2d.putImageData(frame, 0, 0)
+      } catch { /* tainted */ }
+    }
+    drawFrameRef.current = drawFrame
+
+    // 정지 미리보기(비재생): 검은 인트로 프레임 회피 위해 대표 프레임(0.1초)로 seek.
     const ensureStillFrame = () => {
       if (playNow) return
-      try { if ((video.currentTime || 0) < 0.05 && (video.duration || 1) > 0.15) video.currentTime = 0.1 } catch { /* 메타데이터 전이면 무시 */ }
+      try { if ((video.currentTime || 0) < 0.05 && (video.duration || 1) > 0.15) video.currentTime = 0.1 } catch { /* 메타데이터 전 */ }
     }
 
-    // requestVideoFrameCallback 우선(프레임 정확), 미지원 시 rAF 폴백.
     const hasVfc = typeof video.requestVideoFrameCallback === 'function'
-    usingVfcRef.current = hasVfc
-
     const vfcLoop = () => { drawFrame(); rafRef.current = video.requestVideoFrameCallback(vfcLoop) }
     const rafLoop = () => { drawFrame(); rafRef.current = requestAnimationFrame(rafLoop) }
-
-    const start = () => {
-      if (hasVfc) rafRef.current = video.requestVideoFrameCallback(vfcLoop)
-      else rafRef.current = requestAnimationFrame(rafLoop)
-    }
+    const start = () => { rafRef.current = hasVfc ? video.requestVideoFrameCallback(vfcLoop) : requestAnimationFrame(rafLoop) }
     const stop = () => {
       if (!rafRef.current) return
-      if (hasVfc) video.cancelVideoFrameCallback?.(rafRef.current)
-      else cancelAnimationFrame(rafRef.current)
+      if (hasVfc) video.cancelVideoFrameCallback?.(rafRef.current); else cancelAnimationFrame(rafRef.current)
       rafRef.current = 0
     }
 
-    // 메타데이터 로드 후: 정지면 대표 프레임 seek, 재생이면 루프 시작.
     const onLoadedMeta = () => ensureStillFrame()
     const onLoaded = () => { drawFrame(); if (!video.paused) start() }
+
+    // WebGL 컨텍스트 손실/복구 — 발표 모드가 추가 컨텍스트를 만들어 편집 캔버스 컨텍스트가
+    // 회수되면(빈 화면) 자동 복구되지 않으므로 직접 처리. lost는 preventDefault해야 복구 가능.
+    const onCtxLost = (e) => { e.preventDefault(); stop(); glRenderer = null }
+    const onCtxRestored = () => {
+      glRenderer = createChromaRenderer(canvas)
+      autoKeyRef.current = null
+      if (video.readyState >= 2) { drawFrame(); if (!video.paused) start() }
+    }
+    canvas.addEventListener('webglcontextlost', onCtxLost, false)
+    canvas.addEventListener('webglcontextrestored', onCtxRestored, false)
+
     video.addEventListener('loadedmetadata', onLoadedMeta)
     video.addEventListener('loadeddata', onLoaded)
     video.addEventListener('play', start)
     video.addEventListener('pause', stop)
     video.addEventListener('seeked', drawFrame)
-    // 이미 준비된 상태로 마운트된 경우(예: 설정 변경 재실행) 즉시 반영
     if (video.readyState >= 1) ensureStillFrame()
     if (video.readyState >= 2) onLoaded()
 
     return () => {
       stop()
+      drawFrameRef.current = null
+      canvas.removeEventListener('webglcontextlost', onCtxLost, false)
+      canvas.removeEventListener('webglcontextrestored', onCtxRestored, false)
       video.removeEventListener('loadedmetadata', onLoadedMeta)
       video.removeEventListener('loadeddata', onLoaded)
       video.removeEventListener('play', start)
       video.removeEventListener('pause', stop)
       video.removeEventListener('seeked', drawFrame)
+      glRenderer?.dispose()
     }
-  }, [blobUrl, playNow, chromaSig]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [blobUrl, playNow, glGen]) // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!blobUrl) {
     return <div style={{ width: '100%', height: '100%', background: '#1e293b', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -145,19 +176,18 @@ export default function ChromaVideoPlayer({ content, playNow, autoplay, loop, mu
   const controls = playNow && !hideControls
   return (
     <div style={{ width: '100%', height: '100%', position: 'relative' }}>
-      {/* 표시: 합성된 캔버스 (투명 배경) */}
       <canvas
+        key={glGen}
         ref={canvasRef}
         style={{ width: '100%', height: '100%', objectFit: objectFit || 'contain', display: 'block', pointerEvents: 'none' }}
       />
-      {/* 원본 영상: 화면에 안 보이게 숨김(오디오/디코딩 소스). 컨트롤이 필요하면 위에 겹쳐 노출 */}
       <video
         ref={videoRef}
         src={blobUrl}
         preload="metadata"
         style={{
           position: 'absolute', inset: 0, width: '100%', height: '100%',
-          opacity: controls ? 0.001 : 0, // 컨트롤 노출 시 클릭 받도록 거의 투명, 아니면 완전 숨김
+          opacity: controls ? 0.001 : 0,
           pointerEvents: controls ? 'auto' : 'none',
         }}
         controls={controls}
