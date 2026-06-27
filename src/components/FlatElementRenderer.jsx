@@ -6,6 +6,7 @@ import { pointsToSvgPath, connectorCurvePath, connectorLabelMid } from '../core/
 import { tableContainerStyle, cellStyle } from '../core/slideTable'
 import { isCoarsePointer } from '../core/pointerEnv'
 import AudioVisualizer from './AudioVisualizer'
+import ChromaVideoPlayer from './ChromaVideoPlayer'
 
 /**
  * FlatElementRenderer
@@ -278,15 +279,26 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
           opacity: styles.opacity,
         }}>
           {(BlobStore.isIdbRef(content) || isDirectVideo)
-            ? <VideoPlayer
-                content={content}
-                playNow={playNow}
-                autoplay={autoplay}
-                loop={loop}
-                muted={muted}
-                hideControls={hideControls}
-                objectFit={vidFit}
-              />
+            ? (element.chroma?.enabled
+                ? <ChromaVideoPlayer
+                    content={content}
+                    playNow={playNow}
+                    autoplay={autoplay}
+                    loop={loop}
+                    muted={muted}
+                    hideControls={hideControls}
+                    objectFit={vidFit}
+                    chroma={element.chroma}
+                  />
+                : <VideoPlayer
+                    content={content}
+                    playNow={playNow}
+                    autoplay={autoplay}
+                    loop={loop}
+                    muted={muted}
+                    hideControls={hideControls}
+                    objectFit={vidFit}
+                  />)
             : <>
                 <iframe
                   src={playNow ? embedSrc : content}
