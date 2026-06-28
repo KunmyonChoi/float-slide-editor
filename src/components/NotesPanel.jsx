@@ -30,10 +30,13 @@ export default function NotesPanel() {
   const [open, setOpen] = useState(false)
   const [tone, setTone] = useState('friendly')
   const [length, setLength] = useState('medium')
-  const [busy, setBusy] = useState(false)
+  // 진행 중 작업 종류: 'draft'(AI 초안) | 'audio'(음성) | null. 각 버튼에 정확히 '생성 중' 표시.
+  const [busyKind, setBusyKind] = useState(null)
+  const busy = busyKind !== null
   const [err, setErr] = useState('')
   const [audioOpen, setAudioOpen] = useState(false)
   const [voice, setVoice] = useState(() => getTtsVoice())
+  const previewElRef = useRef(null) // 미리듣기용 단일 Audio (겹침 방지 위해 재사용)
   const taRef = useRef(null)
 
   // 단축키(\)로 열렸을 때만 텍스트영역에 포커스 — 버튼으로 열면 포커스 가로채지 않음
@@ -49,7 +52,7 @@ export default function NotesPanel() {
 
   const genCurrent = async () => {
     if (!hasApiKey()) { openAiSettings(); return }
-    setBusy(true); setErr(''); setOpen(false)
+    setBusyKind('draft'); setErr(''); setOpen(false)
     try {
       const els = useFlatStore.getState().flatElements
       const d = slidePageDigest(els)
@@ -59,12 +62,12 @@ export default function NotesPanel() {
       else setErr('생성 결과가 비어 있습니다.')
     } catch (e) {
       setErr(e.message || 'AI 생성 실패')
-    } finally { setBusy(false) }
+    } finally { setBusyKind(null) }
   }
 
   const genAll = async () => {
     if (!hasApiKey()) { openAiSettings(); return }
-    setBusy(true); setErr(''); setOpen(false)
+    setBusyKind('draft'); setErr(''); setOpen(false)
     try {
       const { pages } = await useFlatStore.getState().getAllPagesAsync()
       const keys = sortKeys(pages)
@@ -79,7 +82,7 @@ export default function NotesPanel() {
       useFlatStore.getState().applyNotesToPages(pages, notesByKey)
     } catch (e) {
       setErr(e.message || 'AI 생성 실패')
-    } finally { setBusy(false) }
+    } finally { setBusyKind(null) }
   }
 
   const pickVoice = (v) => { setVoice(v); setTtsVoice(v) }
@@ -88,17 +91,17 @@ export default function NotesPanel() {
     if (!hasApiKey()) { openAiSettings(); return }
     const text = (useFlatStore.getState().pageNotes || '').trim()
     if (!text) { setErr('음성으로 만들 노트가 없습니다.'); return }
-    setBusy(true); setErr(''); setAudioOpen(false)
+    setBusyKind('audio'); setErr(''); setAudioOpen(false)
     try {
       const blob = await synthesizeSpeech(text, { voice })
       const key = await BlobStore.put(blob)
       useFlatStore.getState().setPageNotesAudio(BlobStore.toRef(key), textHash(text))
-    } catch (e) { setErr(e.message || '음성 생성 실패') } finally { setBusy(false) }
+    } catch (e) { setErr(e.message || '음성 생성 실패') } finally { setBusyKind(null) }
   }
 
   const genAudioAll = async () => {
     if (!hasApiKey()) { openAiSettings(); return }
-    setBusy(true); setErr(''); setAudioOpen(false)
+    setBusyKind('audio'); setErr(''); setAudioOpen(false)
     try {
       const { pages } = await useFlatStore.getState().getAllPagesAsync()
       const audioByKey = {}
@@ -111,16 +114,25 @@ export default function NotesPanel() {
       }
       if (!Object.keys(audioByKey).length) { setErr('음성으로 만들 노트가 없습니다.'); return }
       useFlatStore.getState().applyAudioToPages(audioByKey)
-    } catch (e) { setErr(e.message || '음성 생성 실패') } finally { setBusy(false) }
+    } catch (e) { setErr(e.message || '음성 생성 실패') } finally { setBusyKind(null) }
   }
 
   const previewAudio = async () => {
     if (!audioRef) return
+    // 단일 Audio 재사용 — 빠른 연속 클릭에도 새 인스턴스가 겹쳐 재생되지 않게.
+    const a = previewElRef.current || (previewElRef.current = new Audio())
+    a.pause()
     try {
       const url = await BlobStore.getUrl(BlobStore.parseRef(audioRef))
-      if (url) new Audio(url).play()
-    } catch { /* 재생 실패 무시 */ }
+      if (!url) return
+      if (a.src !== url) a.src = url
+      a.currentTime = 0
+      await a.play()
+    } catch { /* 재생 실패/중단 무시 */ }
   }
+
+  // 패널 언마운트 시 미리듣기 정지
+  useEffect(() => () => { if (previewElRef.current) { try { previewElRef.current.pause() } catch { /* noop */ } } }, [])
 
   // 스테일 판정은 생성 시와 동일하게 trim 기준으로 비교(공백 차이로 오탐 방지)
   const audioStale = !!audioRef && audioHash !== textHash((notes || '').trim())
@@ -147,7 +159,7 @@ export default function NotesPanel() {
               borderRadius: 6, color: audioRef && !audioStale ? '#6ee7b7' : '#cbd5e1',
               fontSize: 12, cursor: busy ? 'default' : 'pointer',
             }}
-          >🔊 음성{audioStale ? ' ⚠' : ''} ▾</button>
+          >{busyKind === 'audio' ? '🔊 생성 중…' : `🔊 음성${audioStale ? ' ⚠' : ''} ▾`}</button>
           {audioOpen && !busy && (
             <div style={{
               position: 'absolute', bottom: 30, right: 0, padding: 10, width: 210,
@@ -182,7 +194,7 @@ export default function NotesPanel() {
             border: '1px solid rgba(99,102,241,0.4)', borderRadius: 6,
             color: '#c7d2fe', fontSize: 12, cursor: busy ? 'default' : 'pointer',
           }}
-        >✨ {busy ? '생성 중…' : 'AI 초안 ▾'}</button>
+        >✨ {busyKind === 'draft' ? '생성 중…' : 'AI 초안 ▾'}</button>
         {open && !busy && (
           <div style={{
             position: 'absolute', bottom: 30, right: 0, padding: 10, width: 220,
