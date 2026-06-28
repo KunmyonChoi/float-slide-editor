@@ -68,11 +68,12 @@ export const useAiJobStore = create((set, get) => ({
     set(s => ({ jobs: s.jobs.map(j => (j.id === id ? { ...j, status: 'applied', abort: null } : j)) }))
   },
 
-  /** 결과를 대상에 반영 — job.apply() 호출 후 'applied' 표시. 성공 시 true. */
-  applyJob(id) {
+  /** 결과를 대상에 반영 — job.apply(job, opts) 호출 후 'applied' 표시. 성공 시 true.
+   * opts.mode: 'replace'(원본 교체) | 'add'(새 요소). 러너가 해석. */
+  applyJob(id, opts = {}) {
     const job = get().jobs.find(j => j.id === id)
     if (!job || job.status !== 'ready') return false
-    try { job.apply?.(job) } catch { return false }
+    try { job.apply?.(job, opts) } catch { return false }
     get().markApplied(id)
     return true
   },

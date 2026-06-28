@@ -44,12 +44,30 @@ async function resolveBlob(ref) {
   return await r.blob()
 }
 
-/** 결과 영상 blob → 대상 페이지에 새 비디오 요소로 삽입(원본 보존). 트레이 '적용'이 호출. */
-async function insertResultVideo(job) {
+/** 결과 적용 — mode 'replace'(원본 교체, 기본) | 'add'(새 요소). 트레이 '적용 ▾'이 호출. */
+async function applyResult(job, mode) {
   const blob = job?.result?.blob
   if (!blob) return
   const st = useFlatStore.getState()
   const key = await BlobStore.put(blob)
+  const ref = BlobStore.toRef(key)
+  if (mode !== 'add' && job.targetElementId) {
+    // 원본 구동 영상 요소의 내용을 결과로 교체(같은 위치·크기, objectFit 유지, 되돌리기 가능)
+    const ok = st.applyToElementOnPage(job.targetPageKey, job.targetElementId, {
+      content: ref, isRich: false, type: 'video',
+    })
+    if (ok) return
+    // 대상이 삭제됐으면 새 요소 추가로 폴백
+  }
+  await insertResultVideo(job, key)
+}
+
+/** 결과 영상 → 대상 페이지에 새 비디오 요소로 삽입(원본 보존). key 재사용. */
+async function insertResultVideo(job, key) {
+  const blob = job?.result?.blob
+  if (!blob) return
+  const st = useFlatStore.getState()
+  if (!key) key = await BlobStore.put(blob)
   const cs = st.canvasSize || { w: 1280, h: 720 }
   let w = cs.w * 0.5, h = cs.h * 0.5
   try {
@@ -106,7 +124,7 @@ export function startLipsyncJob({ videoEl, audioSource, pageKey, now = Date.now(
     targetElementId: videoEl?.id || null,
     createdAt: now,
     abort: teardown,
-    apply: (job) => { insertResultVideo(job).catch(() => {}) },
+    apply: (job, opts) => { applyResult(job, opts?.mode || 'replace').catch(() => {}) },
   })
 
   const onMsg = (e) => {

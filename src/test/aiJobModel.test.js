@@ -93,14 +93,14 @@ describe('aiJobStore — 전역 AI 작업 모델', () => {
     expect(useAiJobStore.getState().jobForElement('flat-2')).toBe(null) // failed는 제외
   })
 
-  it('applyJob: ready일 때만 apply 콜백 호출 후 applied', () => {
-    let applied = false
-    const id = useAiJobStore.getState().startJob({ kind: 'lipsync', apply: () => { applied = true }, createdAt: 1 })
+  it('applyJob: ready일 때만 apply 콜백 호출 후 applied, mode 전달', () => {
+    let gotMode = null
+    const id = useAiJobStore.getState().startJob({ kind: 'lipsync', apply: (_j, opts) => { gotMode = opts?.mode }, createdAt: 1 })
     // running 상태에선 적용 불가
-    expect(useAiJobStore.getState().applyJob(id)).toBe(false)
+    expect(useAiJobStore.getState().applyJob(id, { mode: 'replace' })).toBe(false)
     useAiJobStore.getState().completeJob(id, { url: 'blob:x' })
-    expect(useAiJobStore.getState().applyJob(id)).toBe(true)
-    expect(applied).toBe(true)
+    expect(useAiJobStore.getState().applyJob(id, { mode: 'add' })).toBe(true)
+    expect(gotMode).toBe('add') // opts.mode가 apply 콜백에 전달됨
     expect(useAiJobStore.getState().jobs[0].status).toBe('applied')
   })
 })
