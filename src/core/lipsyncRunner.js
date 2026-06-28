@@ -11,8 +11,9 @@ import { nextFlatId } from './FlatExtractor'
  * Genitor(netlify, 크로스오리진)가 직접 호출 불가. 팝업(=Worker SPA, same-origin)에서 사용자가
  * Access 로그인 후 업로드/생성/폴링을 수행하고, 결과 영상 blob을 opener(Genitor)에 회신한다.
  *
- * ⚠️ Worker SPA가 아래 프로토콜을 구현해야 E2E 동작(현재 lipsync 레포 측 미구현 → ready
- *    타임아웃으로 안전 실패). origin/session 검증 필수.
+ * Worker SPA가 아래 프로토콜을 구현하며 E2E 검증 완료. origin/session 검증 필수.
+ * 로그인 단계(=ready 수신 전)엔 짧은 타임아웃으로 팝업을 닫지 말 것 — CF Access OTP 로그인이
+ * 끝나기 전엔 SPA가 ready를 보낼 수 없으므로(LOGIN_SAFETY_MS 참고).
  *   Genitor → 팝업: `${WORKER}?mode=popup&origin=<genitor>&session=<sid>`
  *   팝업 → opener: genitor-lipsync:ready
  *   Genitor → 팝업: genitor-lipsync:input { sessionId, audio:Blob, audioName, video:Blob, videoName }
@@ -23,7 +24,10 @@ import { nextFlatId } from './FlatExtractor'
 
 const DEFAULT_WORKER_URL = 'https://lipsync-worker.skt-ent-ai.workers.dev'
 const MSG = 'genitor-lipsync'
-const READY_TIMEOUT_MS = 30000
+// 로그인 단계 안전망. CF Access 로그인 화면은 SPA보다 먼저 떠서 로그인이 끝나기 전엔 `ready`를
+// 받을 수 없다. 이메일 OTP 입력(코드 받기→메일 확인→타이핑)이 30초~2분 걸리므로 짧은 타임아웃은
+// 사용자가 코드를 입력하기도 전에 팝업을 닫아버린다. 넉넉히 5분. (취소는 popup.closed 폴링이 담당.)
+const LOGIN_SAFETY_MS = 5 * 60 * 1000
 
 function workerBase() {
   try { return localStorage.getItem('lipsync-worker-url') || DEFAULT_WORKER_URL } catch { return DEFAULT_WORKER_URL }
@@ -112,6 +116,8 @@ export function startLipsyncJob({ videoEl, audioSource, pageKey, now = Date.now(
     if (!isRunning()) return
     switch (d.type) {
       case `${MSG}:ready`:
+        // 로그인 완료 → SPA 살아있음. 로그인 안전망 해제(이후엔 progress/result/close가 수명 관리).
+        if (readyTimer) { clearTimeout(readyTimer); readyTimer = null }
         if (pending && win) {
           win.postMessage({
             type: `${MSG}:input`, sessionId: sid,
@@ -154,13 +160,14 @@ export function startLipsyncJob({ videoEl, audioSource, pageKey, now = Date.now(
       win = window.open(`${workerBase()}?${params}`, 'genitor-lipsync', 'width=1100,height=820,noopener=0')
       if (!win) return fail('팝업이 차단되었습니다. 이 사이트의 팝업을 허용한 뒤 다시 시도하세요.')
       store.updateJob(id, { statusText: '팝업에서 로그인 대기 중…' })
-      // ready 미수신 타임아웃(프로토콜 미구현/차단 등)
+      // 로그인 단계 안전망: ready를 끝까지 못 받으면(차단/장애) 실패 처리. 짧은 타임아웃으로 닫지
+      // 말 것 — OTP 로그인 중 팝업이 닫힌다. ready 수신 시 위에서 해제됨. 사용자 취소는 closeTimer가 담당.
       readyTimer = setTimeout(() => {
         const j = useAiJobStore.getState().jobs.find(x => x.id === id)
         if (j && j.status === 'running' && (j.progress || 0) === 0) {
-          fail('립싱크 서버 팝업이 응답하지 않습니다. (서버 측 연동 필요)')
+          fail('립싱크 팝업이 응답하지 않습니다. (로그인 미완료 또는 연동 오류)')
         }
-      }, READY_TIMEOUT_MS)
+      }, LOGIN_SAFETY_MS)
       // 사용자가 팝업을 직접 닫으면 취소 처리
       closeTimer = setInterval(() => {
         if (win && win.closed) { const running = isRunning(); teardown(); if (running) useAiJobStore.getState().failJob(id, '팝업이 닫혔습니다.') }
