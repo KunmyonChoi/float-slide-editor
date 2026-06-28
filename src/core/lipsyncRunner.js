@@ -44,26 +44,34 @@ async function resolveBlob(ref) {
   return await r.blob()
 }
 
-/** 결과 적용 — mode 'replace'(원본 교체, 기본) | 'add'(새 요소). 트레이 '적용 ▾'이 호출. */
-async function applyResult(job, mode) {
+/** 결과 적용 — mode 'replace'(원본 교체, 기본) | 'add'(새 요소). 트레이 '적용 ▾'이 호출.
+ * noteDriven=true(오디오 소스가 노트 음성)면: 영상은 소리를 내고(autoplay) 대신 그 슬라이드
+ * 노트 음성 볼륨을 0으로 자동 설정 → 발표 시 영상이 소리·입 완벽 동기, 노트는 무음 재생으로
+ * 자동진행만 담당(에코·싱크 어긋남 회피). */
+async function applyResult(job, mode, audioKind) {
   const blob = job?.result?.blob
   if (!blob) return
   const st = useFlatStore.getState()
   const key = await BlobStore.put(blob)
   const ref = BlobStore.toRef(key)
+  const noteDriven = audioKind === 'note'
+  // 노트 음성 기반: 그 슬라이드 노트 음성 볼륨을 0으로(영상이 소리 담당)
+  if (noteDriven) st.setPageNotesAudioVolume(0, job.targetPageKey)
   if (mode !== 'add' && job.targetElementId) {
     // 원본 구동 영상 요소의 내용을 결과로 교체(같은 위치·크기, objectFit 유지, 되돌리기 가능)
     const ok = st.applyToElementOnPage(job.targetPageKey, job.targetElementId, {
       content: ref, isRich: false, type: 'video',
+      ...(noteDriven ? { autoplay: true, muted: false } : {}),
     })
     if (ok) return
     // 대상이 삭제됐으면 새 요소 추가로 폴백
   }
-  await insertResultVideo(job, key)
+  await insertResultVideo(job, key, noteDriven)
 }
 
-/** 결과 영상 → 대상 페이지에 새 비디오 요소로 삽입(원본 보존). key 재사용. */
-async function insertResultVideo(job, key) {
+/** 결과 영상 → 대상 페이지에 새 비디오 요소로 삽입(원본 보존). key 재사용.
+ * noteDriven이면 autoplay+소리 on(노트 음성은 볼륨0으로 따로 설정됨). */
+async function insertResultVideo(job, key, noteDriven = false) {
   const blob = job?.result?.blob
   if (!blob) return
   const st = useFlatStore.getState()
@@ -83,7 +91,7 @@ async function insertResultVideo(job, key) {
   const el = {
     id: nextFlatId(), sourceId: null, type: 'video', width: Math.round(w), height: Math.round(h),
     content: BlobStore.toRef(key), isRich: false, merged: false,
-    autoplay: false, loop: false, muted: false, hideControls: false,
+    autoplay: noteDriven, loop: false, muted: false, hideControls: false,
     filename: job.result.filename || undefined,
     x: Math.round((cs.w - w) / 2), y: Math.round((cs.h - h) / 2),
     zIndex: maxZ + 1, styles: { backgroundColor: 'rgba(0,0,0,0)', borderRadius: '8px', opacity: '1' },
@@ -124,7 +132,7 @@ export function startLipsyncJob({ videoEl, audioSource, pageKey, now = Date.now(
     targetElementId: videoEl?.id || null,
     createdAt: now,
     abort: teardown,
-    apply: (job, opts) => { applyResult(job, opts?.mode || 'replace').catch(() => {}) },
+    apply: (job, opts) => { applyResult(job, opts?.mode || 'replace', audioSource?.kind).catch(() => {}) },
   })
 
   const onMsg = (e) => {

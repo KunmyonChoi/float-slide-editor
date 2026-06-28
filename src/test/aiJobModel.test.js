@@ -55,6 +55,21 @@ describe('flatStore 페이지-인지 적용(AI 작업 결과 반영)', () => {
     useFlatStore.getState().goToFlatPage(1)
     expect(useFlatStore.getState().flatElements.some(e => e.id === 'flat-99')).toBe(true)
   })
+
+  it('노트 음성 볼륨: 기본 1, 현재/다른 페이지 설정, 복원·직렬화 유지', async () => {
+    expect(useFlatStore.getState().pageNotesAudioVolume).toBe(1) // 기본
+    // 다른(캐시) 페이지에 0 설정 → 현재 상태 불변
+    useFlatStore.getState().setPageNotesAudioVolume(0, '1-0')
+    expect(useFlatStore.getState().pageNotesAudioVolume).toBe(1)
+    useFlatStore.getState().goToFlatPage(1)
+    expect(useFlatStore.getState().pageNotesAudioVolume).toBe(0) // 복원 시 반영
+    // 현재 페이지 설정
+    useFlatStore.getState().setPageNotesAudioVolume(0.5)
+    expect(useFlatStore.getState().pageNotesAudioVolume).toBe(0.5)
+    // 직렬화에 포함(발표/저장 경로)
+    const { pages } = await useFlatStore.getState().getAllPagesAsync()
+    expect(pages['1-0'].notesAudioVolume).toBe(0.5)
+  })
 })
 
 describe('aiJobStore — 전역 AI 작업 모델', () => {

@@ -339,6 +339,9 @@ export const useFlatStore = create((set, get) => ({
   pageNotesAudio: null,
   /** 음성 생성 시점의 노트 해시 — 현재 노트와 다르면 '재생성 필요'(스테일) */
   pageNotesAudioHash: '',
+  /** 노트 음성 발표 재생 볼륨(0~1, 기본 1). 0이어도 재생은 유지돼 자동진행은 동작.
+   *  립싱크 AI 휴먼처럼 영상이 소리를 낼 때 0으로 두면 에코 없이 영상-입 완벽 동기. */
+  pageNotesAudioVolume: 1,
   /** 페이지 삭제 실행취소 토스트 상태: null | { seq, index } */
   pageDeleteNotice: null,
   /** 디버그 모드 — 품질/변환검증/Phase 라벨/html·split 뷰 등 진단 UI 노출 */
@@ -385,6 +388,15 @@ export const useFlatStore = create((set, get) => ({
       _pageCache[_currentPageKey].notesAudioHash = hash
     }
     set({ pageNotesAudio: ref, pageNotesAudioHash: hash })
+  },
+
+  /** 노트 음성 볼륨 설정(0~1). pageKey 미지정=현재 페이지. 다른 페이지면 캐시만 갱신
+   *  (립싱크 결과 적용이 대상 페이지에 직접 0을 세팅하는 데 사용). */
+  setPageNotesAudioVolume(v, pageKey) {
+    const vol = Math.max(0, Math.min(1, Number(v)))
+    const key = pageKey || _currentPageKey
+    if (key && _pageCache[key]) _pageCache[key].notesAudioVolume = vol
+    if (!pageKey || pageKey === _currentPageKey) set({ pageNotesAudioVolume: vol })
   },
 
   /**
@@ -512,6 +524,7 @@ export const useFlatStore = create((set, get) => ({
       _pageCache[_currentPageKey].notes = get().pageNotes
       _pageCache[_currentPageKey].notesAudio = get().pageNotesAudio
       _pageCache[_currentPageKey].notesAudioHash = get().pageNotesAudioHash
+      _pageCache[_currentPageKey].notesAudioVolume = get().pageNotesAudioVolume
       _pageCache[_currentPageKey].transition = get().pageTransition
     }
     if (get().flatElements.length === 0) return
@@ -529,6 +542,7 @@ export const useFlatStore = create((set, get) => ({
       notes: get().pageNotes,
       notesAudio: get().pageNotesAudio,
       notesAudioHash: get().pageNotesAudioHash,
+      notesAudioVolume: get().pageNotesAudioVolume,
       transition: get().pageTransition,
     }
     get()._syncPageInfo()
@@ -555,6 +569,7 @@ export const useFlatStore = create((set, get) => ({
       pageNotes: cached.notes || '',
       pageNotesAudio: cached.notesAudio || null,
       pageNotesAudioHash: cached.notesAudioHash || '',
+      pageNotesAudioVolume: cached.notesAudioVolume ?? 1,
       pageTransition: cached.transition || null,
     })
     get()._syncPageInfo()
@@ -586,7 +601,7 @@ export const useFlatStore = create((set, get) => ({
       canUndo: false,
       canRedo: false,
       currentPageHtmlBacked: true, // iframe에서 갓 추출 = HTML 백킹
-      pageNotes: '', pageNotesAudio: null, pageNotesAudioHash: '', // 갓 추출 = 노트/음성 없음
+      pageNotes: '', pageNotesAudio: null, pageNotesAudioHash: '', pageNotesAudioVolume: 1, // 갓 추출 = 노트/음성 없음
     })
     get()._syncPageInfo()
 
@@ -638,7 +653,7 @@ export const useFlatStore = create((set, get) => ({
       editingFlatId: null,
       canUndo: false,
       canRedo: false,
-      pageNotes: '', pageNotesAudio: null, pageNotesAudioHash: '',
+      pageNotes: '', pageNotesAudio: null, pageNotesAudioHash: '', pageNotesAudioVolume: 1,
     })
     get()._syncPageInfo()
   },
@@ -762,7 +777,7 @@ export const useFlatStore = create((set, get) => ({
         editingFlatId: null,
         canUndo: false,
         canRedo: false,
-        pageNotes: '', pageNotesAudio: null, pageNotesAudioHash: '',
+        pageNotes: '', pageNotesAudio: null, pageNotesAudioHash: '', pageNotesAudioVolume: 1,
       })
     }, 150)
   },
@@ -2125,6 +2140,7 @@ export const useFlatStore = create((set, get) => ({
         notes: cached.notes || '',
         notesAudio: cached.notesAudio || null,
         notesAudioHash: cached.notesAudioHash || '',
+        notesAudioVolume: cached.notesAudioVolume ?? 1,
         transition: cached.transition || null,
       }
     }
@@ -2138,6 +2154,7 @@ export const useFlatStore = create((set, get) => ({
         notes: get().pageNotes || '',
         notesAudio: get().pageNotesAudio || null,
         notesAudioHash: get().pageNotesAudioHash || '',
+        notesAudioVolume: get().pageNotesAudioVolume ?? 1,
         transition: get().pageTransition || null,
       }
     }
@@ -2258,6 +2275,7 @@ export const useFlatStore = create((set, get) => ({
         notes: pagesData[key].notes || '',
         notesAudio: pagesData[key].notesAudio || null,
         notesAudioHash: pagesData[key].notesAudioHash || '',
+        notesAudioVolume: pagesData[key].notesAudioVolume ?? 1,
         transition: pagesData[key].transition || null,
       }
     }
@@ -2279,6 +2297,7 @@ export const useFlatStore = create((set, get) => ({
         pageNotes: page.notes || '',
         pageNotesAudio: page.notesAudio || null,
         pageNotesAudioHash: page.notesAudioHash || '',
+        pageNotesAudioVolume: page.notesAudioVolume ?? 1,
         pageTransition: page.transition || null,
       })
     }
