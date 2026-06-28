@@ -234,6 +234,14 @@ export const useEditorStore = create((set, get) => ({
   /** 발표 시작 슬라이드 인덱스 (F5=0 처음부터, Shift+F5=현재 페이지) */
   presentStartIndex: 0,
 
+  /** '음성 후 자동 진행' — 발표 전에도 설정 가능하도록 스토어 보관(localStorage 기억). */
+  autoAdvance: (() => { try { return localStorage.getItem('present-auto-advance') === '1' } catch { return false } })(),
+  setAutoAdvance(v) {
+    const on = !!v
+    try { localStorage.setItem('present-auto-advance', on ? '1' : '0') } catch { /* 무시 */ }
+    set({ autoAdvance: on })
+  },
+
   /** 발표 모드 진입 — 브라우저 전체화면 + CSS 전체화면 + 에이전트 비활성 */
   enterPresentation(opts = {}) {
     const { iframeRef } = get()

@@ -105,8 +105,9 @@ const FALLBACK_SAMPLE = `<!DOCTYPE html>
  * 발표 모드에서는 완전히 숨겨진다.
  */
 export default function FloatingToolbar() {
-  const { slideHtml, mode, enterPresentation } = useEditorStore()
-  const { viewMode, setViewMode, extractFromIframe, debugMode, flatPageCount } = useFlatStore()
+  const { slideHtml, mode, enterPresentation, autoAdvance, setAutoAdvance } = useEditorStore()
+  const { viewMode, setViewMode, extractFromIframe, debugMode, flatPageCount, flatCurrentPage } = useFlatStore()
+  const [presentMenuOpen, setPresentMenuOpen] = useState(false)
   const iframeRef = useEditorStore(s => s.iframeRef)
   const [qualityOpen, setQualityOpen] = useState(false)
   const [isFullscreen, setIsFullscreen] = useState(false)
@@ -166,16 +167,16 @@ export default function FloatingToolbar() {
 
       <Divider />
 
-      {/* 발표 모드 진입 — flat 페이지가 있거나 HTML 덱이 있으면 활성(처음부터 시작한
-          프로젝트도 발표 가능) */}
-      <ToolBtn
-        onClick={() => enterPresentation()}
+      {/* 발표 — 메인 버튼(처음부터) + ▾ 옵션(현재부터 / 음성 후 자동 진행). flat 페이지나 HTML 덱이 있으면 활성 */}
+      <PresentMenu
         disabled={flatPageCount === 0 && !slideHtml}
-        title="발표 모드 (F5) — 전체화면, 슬라이드 자체 네비게이션 동작"
-        highlight
-      >
-        <PresentIcon /><span className="text-xs ml-1 tb-label">발표</span>
-      </ToolBtn>
+        open={presentMenuOpen}
+        setOpen={setPresentMenuOpen}
+        autoAdvance={autoAdvance}
+        setAutoAdvance={setAutoAdvance}
+        onStart={() => enterPresentation()}
+        onStartHere={() => enterPresentation({ startIndex: flatCurrentPage || 0 })}
+      />
 
       {/* 튜토리얼 녹화(avatar-recorder 연동) — 화면+음성 녹화 결과를 현재 슬라이드에 삽입 */}
       <AvatarRecorderButton />
@@ -265,6 +266,46 @@ function ViewModeToggle({ viewMode, disabled, onChange }) {
           {label}
         </button>
       ))}
+    </div>
+  )
+}
+
+// 발표 분할 버튼: 메인=처음부터, ▾=옵션(현재부터 / 음성 후 자동 진행 토글)
+function PresentMenu({ disabled, open, setOpen, autoAdvance, setAutoAdvance, onStart, onStartHere }) {
+  useEffect(() => {
+    if (!open) return
+    const onDown = (e) => { if (!e.target.closest?.('[data-present-menu]')) setOpen(false) }
+    document.addEventListener('pointerdown', onDown, true)
+    return () => document.removeEventListener('pointerdown', onDown, true)
+  }, [open, setOpen])
+
+  const item = 'flex items-center gap-2 w-full text-left px-3 py-2 text-xs text-slate-200 hover:bg-white/10 disabled:opacity-40'
+  return (
+    <div data-present-menu className="relative flex items-center">
+      <button
+        onClick={() => { setOpen(false); onStart() }}
+        disabled={disabled}
+        title="처음부터 발표 (F5)"
+        className="flex items-center pl-2.5 pr-2 py-1.5 rounded-l-lg text-sm text-indigo-300 hover:text-white hover:bg-indigo-600/50 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+      >
+        <PresentIcon /><span className="text-xs ml-1 tb-label">발표</span>
+      </button>
+      <button
+        onClick={() => setOpen(o => !o)}
+        disabled={disabled}
+        title="발표 옵션"
+        className="px-1.5 py-1.5 rounded-r-lg text-xs text-indigo-300 hover:text-white hover:bg-indigo-600/50 disabled:opacity-30 disabled:cursor-not-allowed transition-colors border-l border-white/15"
+      >▾</button>
+      {open && (
+        <div className="absolute left-0 top-full mt-1 z-[200] w-40 rounded-lg border border-white/10 bg-slate-800 shadow-xl overflow-hidden">
+          <button className={item} onClick={() => { setOpen(false); onStartHere() }}>현재 페이지</button>
+          <div className="h-px bg-white/10" />
+          <label className="flex items-center gap-2 px-3 py-2 text-xs text-slate-200 cursor-pointer hover:bg-white/10">
+            <input type="checkbox" checked={autoAdvance} onChange={e => setAutoAdvance(e.target.checked)} className="accent-indigo-500" />
+            자동 진행
+          </label>
+        </div>
+      )}
     </div>
   )
 }

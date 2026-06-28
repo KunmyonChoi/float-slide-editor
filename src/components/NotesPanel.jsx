@@ -26,6 +26,7 @@ export default function NotesPanel() {
   const setNotes = useFlatStore(s => s.setPageNotes)
   const audioRef = useFlatStore(s => s.pageNotesAudio)
   const audioHash = useFlatStore(s => s.pageNotesAudioHash)
+  const audioVolume = useFlatStore(s => s.pageNotesAudioVolume)
 
   const [open, setOpen] = useState(false)
   const [tone, setTone] = useState('friendly')
@@ -36,7 +37,10 @@ export default function NotesPanel() {
   const [err, setErr] = useState('')
   const [audioOpen, setAudioOpen] = useState(false)
   const [voice, setVoice] = useState(() => getTtsVoice())
+  const [playing, setPlaying] = useState(false) // 미리듣기 재생 중 여부(토글·정지용)
+  const [audioDragOver, setAudioDragOver] = useState(false) // mp3 드래그 오버(드롭존 하이라이트)
   const previewElRef = useRef(null) // 미리듣기용 단일 Audio (겹침 방지 위해 재사용)
+  const audioFileRef = useRef(null) // 음성 직접 업로드용 숨김 input
   const taRef = useRef(null)
 
   // 단축키(\)로 열렸을 때만 텍스트영역에 포커스 — 버튼으로 열면 포커스 가로채지 않음
@@ -47,6 +51,13 @@ export default function NotesPanel() {
       useFlatStore.setState({ notesAutofocus: false })
     }
   }, [collapsed])
+
+  // 패널 언마운트 시 미리듣기 정지 — 조기 반환 전에 선언(훅 순서 고정)
+  useEffect(() => () => { if (previewElRef.current) { try { previewElRef.current.pause() } catch { /* noop */ } } }, [])
+  // 음성이 바뀌면(생성/업로드/삭제) 미리듣기 정지·상태 초기화
+  useEffect(() => { if (previewElRef.current) { try { previewElRef.current.pause() } catch { /* noop */ } } setPlaying(false) }, [audioRef])
+  // 재생 중 볼륨 슬라이더 변경을 라이브 반영
+  useEffect(() => { if (previewElRef.current) previewElRef.current.volume = audioVolume ?? 1 }, [audioVolume])
 
   if (mode === 'present' || collapsed) return null
 
@@ -117,25 +128,63 @@ export default function NotesPanel() {
     } catch (e) { setErr(e.message || '음성 생성 실패') } finally { setBusyKind(null) }
   }
 
+  // 미리듣기 토글 — 재생 중이면 정지, 아니면 처음부터 재생. 단일 Audio 재사용(겹침 방지).
   const previewAudio = async () => {
     if (!audioRef) return
-    // 단일 Audio 재사용 — 빠른 연속 클릭에도 새 인스턴스가 겹쳐 재생되지 않게.
     const a = previewElRef.current || (previewElRef.current = new Audio())
-    a.pause()
+    if (playing) { a.pause(); setPlaying(false); return }
     try {
       const url = await BlobStore.getUrl(BlobStore.parseRef(audioRef))
       if (!url) return
       if (a.src !== url) a.src = url
       a.currentTime = 0
+      a.volume = audioVolume ?? 1 // 발표 볼륨 슬라이더 반영(0이면 무음)
+      a.onended = () => setPlaying(false)
       await a.play()
-    } catch { /* 재생 실패/중단 무시 */ }
+      setPlaying(true)
+    } catch { setPlaying(false) }
   }
 
-  // 패널 언마운트 시 미리듣기 정지
-  useEffect(() => () => { if (previewElRef.current) { try { previewElRef.current.pause() } catch { /* noop */ } } }, [])
+  // 음성 파일을 이 슬라이드 노트 음성으로 설정(업로드/드롭 공용). hash 빈값=노트변경 stale 제외.
+  const setAudioFromFile = async (f) => {
+    if (!f) return
+    setBusyKind('audio'); setErr(''); setAudioOpen(false)
+    try {
+      const key = await BlobStore.put(f)
+      useFlatStore.getState().setPageNotesAudio(BlobStore.toRef(key), '')
+    } catch (err) { setErr(err.message || '업로드 실패') } finally { setBusyKind(null) }
+  }
+  const onUploadAudio = (e) => {
+    const f = e.target.files?.[0]
+    e.target.value = '' // 같은 파일 재선택 허용
+    setAudioFromFile(f)
+  }
 
-  // 스테일 판정은 생성 시와 동일하게 trim 기준으로 비교(공백 차이로 오탐 방지)
-  const audioStale = !!audioRef && audioHash !== textHash((notes || '').trim())
+  // 노트 영역에 mp3 드래그&드롭 → 업로드와 동일 처리. (캔버스 드롭=비주얼라이저와 별개 영역)
+  const isAudioFile = (f) => f.type.startsWith('audio/') || /\.(mp3|wav|ogg|m4a|flac|aac|opus|weba)$/i.test(f.name)
+  const onAudioDragOver = (e) => {
+    if (!(e.dataTransfer?.types || []).includes('Files')) return // 텍스트 드래그는 기본 동작 유지
+    e.preventDefault(); e.dataTransfer.dropEffect = 'copy'
+    if (!audioDragOver) setAudioDragOver(true)
+  }
+  const onAudioDragLeave = () => setAudioDragOver(false)
+  const onAudioDrop = (e) => {
+    const files = [...(e.dataTransfer?.files || [])]
+    if (!files.length) return // 파일 아님 → 기본 동작(텍스트영역 입력)
+    e.preventDefault(); setAudioDragOver(false)
+    const audio = files.find(isAudioFile)
+    if (audio) setAudioFromFile(audio)
+    else setErr('음성 파일만 추가할 수 있습니다.')
+  }
+  // 음성 삭제 — 미리듣기 정지 후 이 페이지 음성 제거.
+  const deleteAudio = () => {
+    if (previewElRef.current) { try { previewElRef.current.pause() } catch { /* noop */ } }
+    useFlatStore.getState().setPageNotesAudio(null, '')
+    setAudioOpen(false)
+  }
+
+  // 스테일 판정: 생성 음성(hash 있음)만 노트변경과 비교. 업로드 음성(hash 빈값)은 제외.
+  const audioStale = !!audioRef && !!audioHash && audioHash !== textHash((notes || '').trim())
 
   const sel = {
     background: 'rgba(255,255,255,0.06)', color: '#e2e8f0', fontSize: 12,
@@ -143,9 +192,26 @@ export default function NotesPanel() {
   }
 
   return (
-    <div style={{ flexShrink: 0, background: '#0f172a', borderTop: '1px solid rgba(255,255,255,0.06)', position: 'relative' }}>
+    <div
+      onDragOver={onAudioDragOver}
+      onDragLeave={onAudioDragLeave}
+      onDrop={onAudioDrop}
+      style={{
+        flexShrink: 0, background: '#0f172a', position: 'relative',
+        borderTop: '1px solid rgba(255,255,255,0.06)',
+        outline: audioDragOver ? '2px dashed rgba(16,185,129,0.7)' : 'none', outlineOffset: -2,
+      }}
+    >
+      {audioDragOver && (
+        <div style={{
+          position: 'absolute', inset: 0, zIndex: 150, pointerEvents: 'none',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          background: 'rgba(16,185,129,0.10)', color: '#6ee7b7', fontSize: 13, fontWeight: 600,
+        }}>🔊 음성 파일을 놓으면 이 슬라이드 노트 음성으로 추가됩니다</div>
+      )}
       {/* AI 초안 + 음성 버튼(우하단 오버레이 — 텍스트 가림 최소화, 팝업은 위로 열림) */}
-      <div style={{ position: 'absolute', bottom: 10, right: 10, zIndex: 2, display: 'flex', gap: 6 }} data-export-ignore="true">
+      {/* zIndex는 캔버스 배율 플로팅바(zIndex:60)보다 높게 — 팝업이 가려지지 않도록 */}
+      <div style={{ position: 'absolute', bottom: 10, right: 10, zIndex: 200, display: 'flex', gap: 6 }} data-export-ignore="true">
         {/* 음성(TTS) */}
         <div style={{ position: 'relative' }}>
           <button
@@ -173,14 +239,35 @@ export default function NotesPanel() {
                 </select>
               </label>
               {audioRef && (
-                <button onClick={previewAudio} style={{ ...sel, cursor: 'pointer', padding: '5px 0' }}>
-                  ▶ 미리듣기{audioStale ? ' (노트 변경됨 — 재생성 권장)' : ''}
-                </button>
+                <>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <button onClick={previewAudio} style={{ flex: 1, ...sel, cursor: 'pointer', padding: '5px 0' }}>
+                      {playing ? '⏸ 정지' : `▶ 미리듣기${audioStale ? ' ⚠' : ''}`}
+                    </button>
+                    <button onClick={deleteAudio} title="이 페이지 음성 삭제" style={{ ...sel, cursor: 'pointer', padding: '5px 8px', color: '#fca5a5' }}>🗑</button>
+                  </div>
+                  {/* 발표 재생 볼륨 — 0이면 영상(립싱크)이 소리 담당. 0이어도 자동진행은 동작 */}
+                  <label style={{ fontSize: 11, color: '#94a3b8', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ width: 28 }}>볼륨</span>
+                    <input type="range" min="0" max="100" step="5" value={Math.round((audioVolume ?? 1) * 100)}
+                      onChange={e => useFlatStore.getState().setPageNotesAudioVolume(Number(e.target.value) / 100)}
+                      style={{ flex: 1, accentColor: '#10b981' }} />
+                    <span style={{ width: 30, textAlign: 'right', color: '#cbd5e1' }}>{Math.round((audioVolume ?? 1) * 100)}%</span>
+                  </label>
+                  {(audioVolume ?? 1) === 0 && <p style={{ fontSize: 10, color: '#67738a', margin: 0 }}>무음 재생 — 영상이 소리를 담당(자동진행 유지)</p>}
+                </>
               )}
+              {audioStale && <p style={{ fontSize: 10, color: '#fbbd23', margin: 0 }}>노트가 변경됨 — 재생성 권장</p>}
+              <div style={{ fontSize: 10.5, color: '#67738a' }}>AI 생성</div>
               <div style={{ display: 'flex', gap: 6 }}>
                 <button onClick={genAudioCurrent} style={{ flex: 1, ...sel, background: 'rgba(16,185,129,0.22)', color: '#6ee7b7', cursor: 'pointer', padding: '6px 0' }}>현재 페이지</button>
                 <button onClick={genAudioAll} style={{ flex: 1, ...sel, background: 'rgba(16,185,129,0.22)', color: '#6ee7b7', cursor: 'pointer', padding: '6px 0' }}>전체</button>
               </div>
+              <div style={{ fontSize: 10.5, color: '#67738a' }}>또는 파일 사용</div>
+              <button onClick={() => audioFileRef.current?.click()} style={{ ...sel, cursor: 'pointer', padding: '6px 0' }}>
+                {audioRef ? '🔁 다른 파일로 교체' : '⬆ 음성 파일 업로드'}
+              </button>
+              <input ref={audioFileRef} type="file" accept="audio/*" onChange={onUploadAudio} style={{ display: 'none' }} />
             </div>
           )}
         </div>

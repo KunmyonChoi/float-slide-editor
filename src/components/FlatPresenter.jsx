@@ -240,7 +240,8 @@ export default function FlatPresenter() {
   // ── 노트 음성 나레이션 ──
   const audioElRef = useRef(null)
   const [narration, setNarration] = useState(true)
-  const [autoAdvance, setAutoAdvance] = useState(false)
+  // '음성 후 자동 진행'은 발표 전에도 설정 가능하도록 editorStore에 보관(localStorage 기억)
+  const autoAdvance = useEditorStore(s => s.autoAdvance)
   const audioSrc = page?.notesAudio
   const hasAudio = !!audioSrc && BlobStore.isIdbRef(audioSrc)
   // 덱에 음성이 하나라도 있으면 나레이션 컨트롤 노출
@@ -259,10 +260,12 @@ export default function FlatPresenter() {
     BlobStore.getUrl(BlobStore.parseRef(audioSrc)).then(url => {
       if (cancelled || !url || !audioElRef.current) return
       audioElRef.current.src = url
+      // 노트 음성 볼륨(0~1). 0이어도 재생은 유지돼 자동진행은 동작(립싱크 영상이 소리 담당 시 0).
+      audioElRef.current.volume = page?.notesAudioVolume ?? 1
       audioElRef.current.play().catch(() => { /* 자동재생 차단/실패 무시 */ })
     })
     return () => { cancelled = true }
-  }, [currentSlide, narration, hasAudio, audioSrc])
+  }, [currentSlide, narration, hasAudio, audioSrc, page?.notesAudioVolume])
 
   const onAudioEnded = useCallback(() => { if (autoAdvance) goNext() }, [autoAdvance, goNext])
 
@@ -407,11 +410,11 @@ export default function FlatPresenter() {
             style={ctrlBtn(narration)}>{narration ? '🔊' : '🔇'}</button>
           {hasAudio && (
             <button type="button" title="이 슬라이드 음성 다시 재생"
-              onClick={() => { const el = audioElRef.current; if (el && el.src) { el.currentTime = 0; el.play().catch(() => {}) } }}
+              onClick={() => { const el = audioElRef.current; if (el && el.src) { el.currentTime = 0; el.volume = page?.notesAudioVolume ?? 1; el.play().catch(() => {}) } }}
               style={ctrlBtn(false)}>▶</button>
           )}
           <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', color: '#94a3b8' }}>
-            <input type="checkbox" checked={autoAdvance} onChange={e => setAutoAdvance(e.target.checked)} />
+            <input type="checkbox" checked={autoAdvance} onChange={e => useEditorStore.getState().setAutoAdvance(e.target.checked)} />
             음성 후 자동 진행
           </label>
         </div>
