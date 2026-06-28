@@ -1112,6 +1112,16 @@ export const useFlatStore = create((set, get) => ({
     get().goToFlatPage(newIdx)
   },
 
+  /** pageKey로 이동(작업 트레이 '보기'용). 이미 그 페이지면 no-op. 성공 시 true. */
+  goToFlatPageByKey(pageKey) {
+    if (!pageKey) return false
+    if (pageKey === _currentPageKey) return true
+    const idx = _getSortedPageKeys().indexOf(pageKey)
+    if (idx < 0) return false
+    get().goToFlatPage(idx)
+    return true
+  },
+
   setSelectedFlat(id) {
     if (get().editingFlatId && get().editingFlatId !== id) get()._commitActiveEdit()
     set({ selectedFlatIds: id ? [id] : [] })
@@ -1569,6 +1579,49 @@ export const useFlatStore = create((set, get) => ({
       flatElements: [...els, element],
       canUndo: _history.canUndo, canRedo: _history.canRedo,
     })
+  },
+
+  /** 현재 페이지 키 — 비동기 AI 작업이 결과 적용 대상을 (현재 선택과 무관하게) 바인딩하는 데 사용. */
+  getCurrentPageKey() { return _currentPageKey },
+
+  /**
+   * 대상 요소에 변경 적용 — 현재 페이지면 라이브(updateFlatElement, 히스토리),
+   * 다른(캐시된) 페이지면 그 페이지 캐시 요소를 직접 갱신.
+   * 비동기 AI 작업 결과를 '현재 선택/페이지와 무관하게' 대상에 반영하기 위함.
+   * @returns {boolean} 대상을 찾아 적용했으면 true
+   */
+  applyToElementOnPage(pageKey, id, changes) {
+    if (!pageKey || pageKey === _currentPageKey) {
+      if (!get().flatElements.some(e => e.id === id)) return false
+      get().updateFlatElement(id, changes)
+      return true
+    }
+    const cached = _pageCache[pageKey]
+    if (!cached || !Array.isArray(cached.elements)) return false
+    const idx = cached.elements.findIndex(e => e.id === id)
+    if (idx === -1) return false
+    const old = cached.elements[idx]
+    // styles는 중첩 머지(updateFlatElement와 동일 규칙)
+    const merged = (changes.styles && old.styles)
+      ? { ...changes, styles: { ...old.styles, ...changes.styles } }
+      : changes
+    const next = [...cached.elements]
+    next[idx] = { ...old, ...merged }
+    cached.elements = next
+    return true
+  },
+
+  /** 대상 페이지에 요소 추가 — 현재 페이지면 라이브(addFlatElement), 아니면 캐시에 직접 추가.
+   * @returns {boolean} 추가했으면 true (대상 페이지가 없으면 false) */
+  addElementToPage(pageKey, element) {
+    if (!pageKey || pageKey === _currentPageKey) {
+      get().addFlatElement(element)
+      return true
+    }
+    const cached = _pageCache[pageKey]
+    if (!cached) return false
+    cached.elements = [...(cached.elements || []), element]
+    return true
   },
 
   /** 여러 요소를 한 번에 추가 (단일 undo 단위) — 레이아웃 삽입 등 */

@@ -13,6 +13,7 @@ import SlideDeleteToast from './components/SlideDeleteToast'
 import InstallAppBanner from './components/InstallAppBanner'
 import { UrlPromptHost } from './components/UrlPrompt'
 import { AiSettingsHost } from './components/AiSettingsModal'
+import AiJobTray from './components/AiJobTray'
 import { CapabilitiesHost } from './components/CapabilitiesModal'
 import { InfographicHost } from './components/InfographicModal'
 import { ConfirmHost } from './components/ConfirmDialog'
@@ -97,6 +98,8 @@ export default function App() {
       {debugMode && <ComparePanel />}
       {debugMode && <DebugElementsPanel />}
       <InsertPopup />
+      {/* 전역 AI 작업 트레이 — 선택/페이지 무관 진행·결과 (발표 모드에선 숨김) */}
+      {mode !== 'present' && <AiJobTray />}
       {/* flat 모드 발표 — fixed 전체화면 오버레이 */}
       {useFlatPresenter && <FlatPresenter />}
     </div>
