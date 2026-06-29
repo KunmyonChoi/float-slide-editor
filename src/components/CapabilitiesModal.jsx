@@ -7,6 +7,7 @@ import {
 } from '../core/capabilities'
 import { checkBackend, getBackendBuild } from '../core/PptxBackendClient'
 import { checkCutoutBackend, getCutoutDevice } from '../core/CutoutBackendClient'
+import { checkImagenBackend, getImagenDevice } from '../core/ImagenBackendClient'
 
 /**
  * 권한 및 기능 상태 모달 — 파일 메뉴에서 openCapabilities()로 연다.
@@ -28,9 +29,9 @@ function Dialog() {
   const [busy, setBusy] = useState('')
 
   const refresh = useCallback(async () => {
-    const [clipPerm, persisted, est, pptx, cutout] = await Promise.all([
+    const [clipPerm, persisted, est, pptx, cutout, imagen] = await Promise.all([
       clipboardReadPermission(), storagePersisted(), storageEstimate(),
-      checkBackend(true), checkCutoutBackend(true),
+      checkBackend(true), checkCutoutBackend(true), checkImagenBackend(true),
     ])
     setC({
       fsa: fileSystemAccessSupported(),
@@ -39,6 +40,7 @@ function Dialog() {
       storageSupported: storageSupported(), persisted, est,
       pptx, pptxBuild: getBackendBuild(),
       cutout, cutoutDevice: getCutoutDevice(),
+      imagen, imagenDevice: getImagenDevice(),
     })
   }, [])
 
@@ -86,6 +88,9 @@ function Dialog() {
               <Row icon={c.cutout ? '✅' : '⚠️'} title="피사체 분리 서버"
                 desc={c.cutout ? `연결됨${c.cutoutDevice ? ` (${c.cutoutDevice})` : ''}` : '연결 안 됨 — "피사체 뒤 텍스트"에 필요'}
                 action={{ label: '다시 확인', busy: busy === 'be', onClick: () => act('be', () => checkCutoutBackend(true)) }} />
+              <Row icon={c.imagen ? '✅' : '⚠️'} title="레이아웃 이미지 생성 서버"
+                desc={c.imagen ? `연결됨${c.imagenDevice ? ` (${c.imagenDevice})` : ''}` : '연결 안 됨 — "AI 레이아웃 이미지"에 필요 (NVIDIA 40GB+)'}
+                action={{ label: '다시 확인', busy: busy === 'img', onClick: () => act('img', () => checkImagenBackend(true)) }} />
             </div>
           </div>
         )}

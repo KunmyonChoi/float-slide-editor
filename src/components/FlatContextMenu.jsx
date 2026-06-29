@@ -6,6 +6,7 @@ import { copyElementToSystemClipboard } from '../core/SystemClipboard'
 import { computeAlignmentChanges, computeDistributionChanges, isBackgroundElement } from '../core/SnapEngine'
 import { promptUrl } from './UrlPrompt'
 import { openInfographic } from './InfographicModal'
+import { openImagenLayout } from './ImagenLayoutModal'
 import { confirmDialog } from './ConfirmDialog'
 import { useEditorStore } from '../store/editorStore'
 import { isBundlerHtml } from '../core/BundlerUnpacker'
@@ -70,6 +71,7 @@ export default function FlatContextMenu({ x, y, canvasX, canvasY, onClose }) {
   const selectedEls = flatElements.filter(e => selectedFlatIds.includes(e.id))
   const allLocked = selectedEls.length > 0 && selectedEls.every(e => e.locked)
   const singleTextEl = selectedEls.length === 1 && selectedEls[0].type === 'text' ? selectedEls[0] : null
+  const textEls = selectedEls.filter(e => e.type === 'text') // AI 레이아웃 이미지 입력
   const singleImageEl = selectedEls.length === 1 && selectedEls[0].type === 'image' ? selectedEls[0] : null
   const singleVideoEl = selectedEls.length === 1 && selectedEls[0].type === 'video' ? selectedEls[0] : null
 
@@ -366,6 +368,9 @@ export default function FlatContextMenu({ x, y, canvasX, canvasY, onClose }) {
         break
       case 'downloadMedia': downloadSelectedMedia(); break
       case 'aiInfographic': openInfographic(); break
+      case 'aiLayout':
+        openImagenLayout({ els: textEls, canvasSize, pageKey: useFlatStore.getState().getCurrentPageKey() })
+        break
       case 'convertToBg': {
         // 단일 이미지/영상만 배경으로 변환(타입 유지). 원래 위치/크기는 _restore에 보관.
         if (selectedEls.length !== 1) break
@@ -465,6 +470,10 @@ export default function FlatContextMenu({ x, y, canvasX, canvasY, onClose }) {
           { id: 'asBody', label: '이 색을 본문색으로', action: 'setThemeBody' },
         ],
       }] : []),
+    ],
+    // AI — 선택한 텍스트 박스로 레이아웃 이미지 생성
+    [
+      ...(textEls.length >= 1 ? [{ id: 'aiLayout', label: '🖼️ AI 레이아웃 이미지 생성', action: 'aiLayout' }] : []),
     ],
     // 배치
     [
