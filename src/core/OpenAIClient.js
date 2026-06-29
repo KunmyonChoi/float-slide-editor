@@ -454,13 +454,29 @@ export async function generateSpeakerNotes({ slides, tone, length, model, signal
 const TTS_ENDPOINT = 'https://api.openai.com/v1/audio/speech'
 const TTS_MODEL_STORAGE = 'openai-tts-model'
 const TTS_VOICE_STORAGE = 'openai-tts-voice'
+const TTS_INSTRUCTIONS_STORAGE = 'openai-tts-instructions'
 const DEFAULT_TTS_MODEL = 'gpt-4o-mini-tts'
 const DEFAULT_TTS_VOICE = 'alloy'
 
+// 전체 음성(gpt-4o-mini-tts 기준, OpenAI 공식 13종). tts-1/tts-1-hd는 일부만 지원.
 export const TTS_VOICES = [
-  { id: 'alloy', label: 'Alloy' }, { id: 'echo', label: 'Echo' }, { id: 'fable', label: 'Fable' },
-  { id: 'onyx', label: 'Onyx' }, { id: 'nova', label: 'Nova' }, { id: 'shimmer', label: 'Shimmer' },
+  { id: 'alloy', label: 'Alloy' }, { id: 'ash', label: 'Ash' }, { id: 'ballad', label: 'Ballad' },
+  { id: 'coral', label: 'Coral' }, { id: 'echo', label: 'Echo' }, { id: 'fable', label: 'Fable' },
+  { id: 'nova', label: 'Nova' }, { id: 'onyx', label: 'Onyx' }, { id: 'sage', label: 'Sage' },
+  { id: 'shimmer', label: 'Shimmer' }, { id: 'verse', label: 'Verse' },
+  { id: 'marin', label: 'Marin' }, { id: 'cedar', label: 'Cedar' },
 ]
+
+// tts-1 / tts-1-hd가 지원하는 음성(공식). gpt-4o-mini-tts는 전체 지원.
+const TTS1_VOICE_IDS = ['alloy', 'ash', 'coral', 'echo', 'fable', 'onyx', 'nova', 'sage', 'shimmer']
+// instructions(톤·억양·감정·속도 지시)는 gpt-4o-mini-tts 계열만 지원(tts-1/tts-1-hd 미지원).
+export const ttsSupportsInstructions = (model) => /^gpt-4o(-mini)?-tts/.test(model || '')
+
+/** 모델이 지원하는 음성 목록. tts-1/tts-1-hd면 부분집합, 그 외(gpt-4o-mini-tts)는 전체. */
+export function voicesForModel(model) {
+  if (model === 'tts-1' || model === 'tts-1-hd') return TTS_VOICES.filter(v => TTS1_VOICE_IDS.includes(v.id))
+  return TTS_VOICES
+}
 
 export function getTtsModel() {
   try { return localStorage.getItem(TTS_MODEL_STORAGE) || DEFAULT_TTS_MODEL } catch { return DEFAULT_TTS_MODEL }
@@ -480,24 +496,41 @@ export function setTtsVoice(voice) {
     if (v) localStorage.setItem(TTS_VOICE_STORAGE, v); else localStorage.removeItem(TTS_VOICE_STORAGE)
   } catch { /* localStorage 비활성 무시 */ }
 }
+/** 음성 톤 지시(gpt-4o-mini-tts 전용). 빈 문자열=지시 없음. */
+export function getTtsInstructions() {
+  try { return localStorage.getItem(TTS_INSTRUCTIONS_STORAGE) || '' } catch { return '' }
+}
+export function setTtsInstructions(text) {
+  try {
+    const v = (text || '').trim()
+    if (v) localStorage.setItem(TTS_INSTRUCTIONS_STORAGE, v); else localStorage.removeItem(TTS_INSTRUCTIONS_STORAGE)
+  } catch { /* localStorage 비활성 무시 */ }
+}
 
 /**
  * 텍스트 → 음성(mp3 Blob). OpenAI /v1/audio/speech.
+ * instructions(톤·억양·감정·속도 지시)는 gpt-4o-mini-tts 계열에서만 전송(tts-1/tts-1-hd는 무시).
  * @param {string} text
- * @param {{ voice?: string, model?: string, signal?: AbortSignal }} [opts]
+ * @param {{ voice?: string, model?: string, instructions?: string, signal?: AbortSignal }} [opts]
  * @returns {Promise<Blob>} audio/mpeg Blob
  */
-export async function synthesizeSpeech(text, { voice, model, signal } = {}) {
+export async function synthesizeSpeech(text, { voice, model, instructions, signal } = {}) {
   const apiKey = getApiKey()
   if (!apiKey) throw new Error('OpenAI API 키가 설정되지 않았습니다. 먼저 키를 입력하세요.')
   if (!text || !text.trim()) throw new Error('음성으로 변환할 노트가 없습니다.')
+
+  const useModel = model || getTtsModel()
+  const instr = (instructions ?? getTtsInstructions()).trim()
+  const body = { model: useModel, voice: voice || getTtsVoice(), input: text, response_format: 'mp3' }
+  // 모델이 지원할 때만 instructions 포함(미지원 모델에 보내면 400)
+  if (instr && ttsSupportsInstructions(useModel)) body.instructions = instr
 
   let res
   try {
     res = await fetch(TTS_ENDPOINT, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-      body: JSON.stringify({ model: model || getTtsModel(), voice: voice || getTtsVoice(), input: text, response_format: 'mp3' }),
+      body: JSON.stringify(body),
       signal,
     })
   } catch (e) {

@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { useFlatStore } from '../store/flatStore'
 import { useEditorStore } from '../store/editorStore'
-import { hasApiKey, generateSpeakerNotes, NOTES_TONES, NOTES_LENGTHS, synthesizeSpeech, TTS_VOICES, getTtsVoice, setTtsVoice } from '../core/OpenAIClient'
+import { hasApiKey, generateSpeakerNotes, NOTES_TONES, NOTES_LENGTHS, synthesizeSpeech, voicesForModel, ttsSupportsInstructions, getTtsModel, getTtsVoice, setTtsVoice, getTtsInstructions, setTtsInstructions } from '../core/OpenAIClient'
 import { openAiSettings } from './AiSettingsModal'
 import { slidePageDigest } from '../core/slideTextDigest'
 import { textHash } from '../core/textHash'
@@ -38,6 +38,9 @@ export default function NotesPanel() {
   const [err, setErr] = useState('')
   const [audioOpen, setAudioOpen] = useState(false)
   const [voice, setVoice] = useState(() => getTtsVoice())
+  const [instructions, setInstructions] = useState(() => getTtsInstructions())
+  const ttsVoices = voicesForModel(getTtsModel()) // 현재 TTS 모델이 지원하는 음성만 노출
+  const canInstruct = ttsSupportsInstructions(getTtsModel()) // 톤 지시 지원 모델
   const [playing, setPlaying] = useState(false) // 미리듣기 재생 중 여부(토글·정지용)
   const [audioDragOver, setAudioDragOver] = useState(false) // mp3 드래그 오버(드롭존 하이라이트)
   const previewElRef = useRef(null) // 미리듣기용 단일 Audio (겹침 방지 위해 재사용)
@@ -98,6 +101,7 @@ export default function NotesPanel() {
   }
 
   const pickVoice = (v) => { setVoice(v); setTtsVoice(v) }
+  const changeInstructions = (t) => { setInstructions(t); setTtsInstructions(t) }
 
   const genAudioCurrent = async () => {
     if (!hasApiKey()) { openAiSettings(); return }
@@ -105,7 +109,7 @@ export default function NotesPanel() {
     if (!text) { setErr('음성으로 만들 노트가 없습니다.'); return }
     setBusyKind('audio'); setErr(''); setAudioOpen(false)
     try {
-      const blob = await synthesizeSpeech(text, { voice })
+      const blob = await synthesizeSpeech(text, { voice, instructions })
       const key = await BlobStore.put(blob)
       useFlatStore.getState().setPageNotesAudio(BlobStore.toRef(key), textHash(text))
     } catch (e) { setErr(e.message || '음성 생성 실패') } finally { setBusyKind(null) }
@@ -120,7 +124,7 @@ export default function NotesPanel() {
       for (const k of sortKeys(pages)) {
         const text = (pages[k].notes || '').trim()
         if (!text) continue
-        const blob = await synthesizeSpeech(text, { voice })
+        const blob = await synthesizeSpeech(text, { voice, instructions })
         const key = await BlobStore.put(blob)
         audioByKey[k] = { ref: BlobStore.toRef(key), hash: textHash(text) }
       }
@@ -235,9 +239,18 @@ export default function NotesPanel() {
               <label style={{ fontSize: 11, color: '#94a3b8', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 음성
                 <select value={voice} onChange={e => pickVoice(e.target.value)} style={sel}>
-                  {TTS_VOICES.map(v => <option key={v.id} value={v.id}>{v.label}</option>)}
+                  {ttsVoices.map(v => <option key={v.id} value={v.id}>{v.label}</option>)}
                 </select>
               </label>
+              {canInstruct && (
+                <label style={{ fontSize: 11, color: '#94a3b8', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  톤 지시 <span style={{ color: '#67738a', fontSize: 10 }}>(선택 · 다음 AI 생성에 적용)</span>
+                  <input
+                    type="text" value={instructions} onChange={e => changeInstructions(e.target.value)}
+                    placeholder="예: 밝고 활기차게, 약간 빠른 속도로"
+                    style={{ ...sel, width: '100%', cursor: 'text' }} />
+                </label>
+              )}
               {audioRef && (
                 <>
                   <div style={{ display: 'flex', gap: 6 }}>
