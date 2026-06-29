@@ -40,7 +40,8 @@ export function getLocalLlmChatEndpoint() {
 }
 
 export function getLocalLlmModel() {
-  try { return localStorage.getItem(MODEL_KEY) || LLM_DEFAULT_MODEL } catch { return LLM_DEFAULT_MODEL }
+  // trim — 모델명 앞뒤 공백이 끼면 Ollama가 404("model not found")를 낸다(태그 정확 일치 필요).
+  try { return (localStorage.getItem(MODEL_KEY) || LLM_DEFAULT_MODEL).trim() } catch { return LLM_DEFAULT_MODEL }
 }
 export function setLocalLlmModel(m) {
   try {

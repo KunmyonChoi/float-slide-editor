@@ -169,7 +169,7 @@ function AiSettingsDialog() {
               <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 8 }}>
                 <div>
                   <div style={labelClass}>모델</div>
-                  <input value={llmModel} onChange={e => setLlmModelState(e.target.value)} placeholder="qwen2.5:7b" spellCheck={false} style={fieldStyle} />
+                  <input value={llmModel} onChange={e => setLlmModelState(e.target.value.trim())} placeholder="qwen2.5:3b" spellCheck={false} style={fieldStyle} />
                   <div style={{ fontSize: 11, color: '#64748b', marginTop: 3, lineHeight: 1.5 }}>
                     가벼움 <code>qwen2.5:3b</code> · 균형 <code>qwen2.5:7b</code> · 한국어 튜닝 GGUF는 <code>hf.co/&lt;repo&gt;</code> 형식(예: <code>hf.co/MyeongHo0621/Qwen2.5-3B-Korean</code>, GGUF일 때)
                   </div>
