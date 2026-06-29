@@ -68,13 +68,22 @@ export const useAiJobStore = create((set, get) => ({
     set(s => ({ jobs: s.jobs.map(j => (j.id === id ? { ...j, status: 'applied', abort: null } : j)) }))
   },
 
-  /** 결과를 대상에 반영 — job.apply(job, opts) 호출 후 'applied' 표시. 성공 시 true.
-   * opts.mode: 'replace'(원본 교체) | 'add'(새 요소). 러너가 해석. */
+  /** 결과를 대상에 반영 — job.apply(job, opts) 호출. apply가 Promise면 성공 시에만 'applied',
+   * 실패 시 'ready'로 되돌려 트레이에 다시 노출(결과 유실 방지). 동기 apply는 즉시 applied.
+   * opts.mode: 'replace'(원본 교체) | 'add'(새 요소). 러너가 해석. 시작했으면 true. */
   applyJob(id, opts = {}) {
     const job = get().jobs.find(j => j.id === id)
     if (!job || job.status !== 'ready') return false
-    try { job.apply?.(job, opts) } catch { return false }
-    get().markApplied(id)
+    let result
+    try { result = job.apply?.(job, opts) }
+    catch (e) { get().updateJob(id, { error: '적용 실패: ' + (e?.message || e) }); return false }
+    if (result && typeof result.then === 'function') {
+      // 비동기 적용: 성공 후 applied, 실패 시 ready 유지 + 에러 표시(다시 적용 가능)
+      result.then(() => get().markApplied(id))
+        .catch(e => get().updateJob(id, { status: 'ready', error: '적용 실패: ' + (e?.message || e) }))
+    } else {
+      get().markApplied(id)
+    }
     return true
   },
 

@@ -1008,6 +1008,12 @@ export const useFlatStore = create((set, get) => ({
       fontImports: [...(src.fontImports || [])],
       history: { stack: [], pointer: -1 },
       htmlSlideIndex: null, // 복제본은 flat-only
+      // 노트/음성/볼륨/전환도 복제(누락 시 복제본의 나레이션·립싱크 짝 유실)
+      notes: src.notes || '',
+      notesAudio: src.notesAudio || null,
+      notesAudioHash: src.notesAudioHash || '',
+      notesAudioVolume: src.notesAudioVolume ?? 1,
+      transition: src.transition || null,
     }
 
     _currentPageKey = `${insertAt}-0`
@@ -2199,6 +2205,7 @@ export const useFlatStore = create((set, get) => ({
         notes: _pageCache[key].notes || '',
         notesAudio: _pageCache[key].notesAudio || null,
         notesAudioHash: _pageCache[key].notesAudioHash || '',
+        notesAudioVolume: _pageCache[key].notesAudioVolume ?? 1,
         transition: _pageCache[key].transition || null,
       }
     }
@@ -2229,13 +2236,18 @@ export const useFlatStore = create((set, get) => ({
     iframeRef.current.contentWindow.postMessage({ type: 'fe:navigate', page: origH, v: origV }, '*')
     await new Promise(r => setTimeout(r, 350))
 
-    // 현재 페이지가 누락된 경우
+    // 현재 페이지가 누락된 경우 — 노트/음성/볼륨/전환도 함께(누락 시 발표·저장에서 유실)
     if (_currentPageKey && !pages[_currentPageKey]) {
       pages[_currentPageKey] = {
         elements: get().flatElements,
         canvasSize: get().canvasSize,
         fontImports: get().fontImports,
         htmlSlideIndex: get().currentPageHtmlBacked ? _currentPageKey : null,
+        notes: get().pageNotes || '',
+        notesAudio: get().pageNotesAudio || null,
+        notesAudioHash: get().pageNotesAudioHash || '',
+        notesAudioVolume: get().pageNotesAudioVolume ?? 1,
+        transition: get().pageTransition || null,
       }
     }
 

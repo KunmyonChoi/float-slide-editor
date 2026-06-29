@@ -6,6 +6,7 @@ import { openAiSettings } from './AiSettingsModal'
 import { slidePageDigest } from '../core/slideTextDigest'
 import { textHash } from '../core/textHash'
 import { BlobStore } from '../core/BlobStore'
+import { isAudioFile } from '../core/audioSources'
 
 function sortKeys(pages) {
   return Object.keys(pages || {}).sort((a, b) => {
@@ -161,7 +162,6 @@ export default function NotesPanel() {
   }
 
   // 노트 영역에 mp3 드래그&드롭 → 업로드와 동일 처리. (캔버스 드롭=비주얼라이저와 별개 영역)
-  const isAudioFile = (f) => f.type.startsWith('audio/') || /\.(mp3|wav|ogg|m4a|flac|aac|opus|weba)$/i.test(f.name)
   const onAudioDragOver = (e) => {
     if (!(e.dataTransfer?.types || []).includes('Files')) return // 텍스트 드래그는 기본 동작 유지
     e.preventDefault(); e.dataTransfer.dropEffect = 'copy'

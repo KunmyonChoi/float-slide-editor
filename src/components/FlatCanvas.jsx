@@ -21,6 +21,7 @@ import ImageCropOverlay from './ImageCropOverlay'
 import { nextFlatId, isFontUrl } from '../core/FlatExtractor'
 import { AWS_ICON_MIME, AWS_GROUP_MIME } from '../core/awsIcons'
 import { DEFAULT_VIZ } from '../core/audioViz'
+import { isAudioFile } from '../core/audioSources'
 import { isBundlerHtml } from '../core/BundlerUnpacker'
 import { pointsToBBox, absoluteToRelativePoints, pointsToSvgPath } from '../core/PolyShapeUtils'
 import { confirmDialog } from './ConfirmDialog'
@@ -386,7 +387,6 @@ export default function FlatCanvas() {
       return
     }
 
-    const isAudioFile = (f) => f.type.startsWith('audio/') || /\.(mp3|wav|ogg|m4a|flac|aac|opus|weba)$/i.test(f.name)
     const images = allFiles.filter(f => f.type.startsWith('image/'))
     const videos = allFiles.filter(f => f.type.startsWith('video/') && !isAudioFile(f))
     const audios = allFiles.filter(isAudioFile)

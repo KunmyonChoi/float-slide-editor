@@ -132,7 +132,8 @@ export function startLipsyncJob({ videoEl, audioSource, pageKey, now = Date.now(
     targetElementId: videoEl?.id || null,
     createdAt: now,
     abort: teardown,
-    apply: (job, opts) => { applyResult(job, opts?.mode || 'replace', audioSource?.kind).catch(() => {}) },
+    // Promise 반환 → applyJob이 성공 시에만 applied 처리, 실패 시 트레이에 다시 노출(결과 유실 방지)
+    apply: (job, opts) => applyResult(job, opts?.mode || 'replace', audioSource?.kind),
   })
 
   const onMsg = (e) => {
