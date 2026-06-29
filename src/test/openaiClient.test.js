@@ -6,6 +6,7 @@ import {
   chat, generateImagePrompt, analyzeImageForInfographic,
   buildImageEnhancePrompt, generateSpeakerNotes,
   synthesizeSpeech, getTtsVoice, setTtsVoice, getTtsModel, setTtsModel,
+  getTtsInstructions, setTtsInstructions, voicesForModel, TTS_VOICES,
   DEFAULT_MODEL, DEFAULT_IMAGE_MODEL,
 } from '../core/OpenAIClient'
 
@@ -385,6 +386,36 @@ describe('TTS — 설정/합성', () => {
     expect(body.voice).toBe('echo')
     expect(body.input).toBe('안녕하세요')
     expect(body.response_format).toBe('mp3')
+  })
+
+  it('voicesForModel: tts-1 계열은 부분집합, gpt-4o-mini-tts는 전체', () => {
+    expect(voicesForModel('gpt-4o-mini-tts')).toEqual(TTS_VOICES)
+    const tts1 = voicesForModel('tts-1').map(v => v.id)
+    expect(tts1).toContain('alloy')
+    expect(tts1).not.toContain('ballad') // tts-1 미지원 음성
+    expect(tts1).not.toContain('marin')
+    expect(voicesForModel('tts-1-hd').map(v => v.id)).not.toContain('cedar')
+  })
+
+  it('instructions: 기본값·저장', () => {
+    expect(getTtsInstructions()).toBe('')
+    setTtsInstructions('  밝게 ')
+    expect(getTtsInstructions()).toBe('밝게') // trim 저장
+    setTtsInstructions('')
+    expect(getTtsInstructions()).toBe('')
+  })
+
+  it('synthesizeSpeech: instructions는 gpt-4o-mini-tts에만 포함, tts-1엔 제외', async () => {
+    setApiKey('sk-test')
+    const blob = new Blob(['a'], { type: 'audio/mpeg' })
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, blob: async () => blob })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await synthesizeSpeech('안녕', { model: 'gpt-4o-mini-tts', instructions: '밝고 빠르게' })
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).instructions).toBe('밝고 빠르게')
+
+    await synthesizeSpeech('안녕', { model: 'tts-1', instructions: '밝고 빠르게' })
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body).instructions).toBeUndefined()
   })
 
   it('빈 텍스트는 호출 전 에러', async () => {
