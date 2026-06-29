@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { buildCaption } from '../core/ideogramCaption'
 import {
@@ -42,9 +42,16 @@ function Dialog() {
   const [status, setStatus] = useState('checking') // checking | ready | down
   const [device, setDevice] = useState(null)
   const [copied, setCopied] = useState(false)
+  const [showJson, setShowJson] = useState(false)
 
   const textEls = (els || []).filter(e => e && e.type === 'text')
   const presets = getImagenPresets() || DEFAULT_PRESETS
+
+  // 전송될 캡션 — 좌표→bbox(0–1000) + 텍스트 매핑이 그대로 보이게 미리보기에 사용(서버가 받는 객체)
+  const caption = useMemo(
+    () => buildCaption(textEls, canvasSize, { description: description.trim(), background: background.trim() }),
+    [textEls, canvasSize, description, background],
+  )
 
   useEffect(() => {
     let alive = true
@@ -57,7 +64,6 @@ function Dialog() {
   }, [])
 
   const generate = () => {
-    const caption = buildCaption(textEls, canvasSize, { description: description.trim(), background: background.trim() })
     startImagenJob({ caption, canvasSize, preset, pageKey: pageKey || useFlatStore.getState().getCurrentPageKey() })
     close()
   }
@@ -103,6 +109,18 @@ function Dialog() {
                 {presets.map(p => <option key={p} value={p}>{PRESET_LABELS[p] || p}</option>)}
               </select>
             </label>
+            {/* 프롬프트(JSON) 미리보기 — 캔버스 좌표→bbox(0–1000)+텍스트 매핑을 그대로 표시 */}
+            <div style={field}>
+              <button type="button" onClick={() => setShowJson(v => !v)}
+                style={{ ...fieldLabel, background: 'none', border: 'none', padding: 0, cursor: 'pointer', textAlign: 'left', color: '#a5b4fc' }}>
+                {showJson ? '▾' : '▸'} 프롬프트(JSON) 미리보기 · 텍스트 {textEls.length}개 → bbox[y,x,y,x] 0–1000
+              </button>
+              {showJson && (
+                <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontSize: 10.5, lineHeight: 1.45, color: '#cbd5e1', background: 'rgba(0,0,0,0.35)', padding: 8, borderRadius: 6, margin: 0, maxHeight: 220, overflowY: 'auto' }}>
+                  {JSON.stringify(caption, null, 2)}
+                </pre>
+              )}
+            </div>
             <div style={{ fontSize: 11, color: status === 'ready' ? '#6ee7b7' : '#fbbd23' }}>
               {status === 'ready' ? `서버 준비됨${device ? ` (${device})` : ''}`
                 : status === 'loading' ? '서버 모델 로딩 중… 잠시 후 다시 시도(기동 ~3분)'
