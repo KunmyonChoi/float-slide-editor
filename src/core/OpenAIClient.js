@@ -10,6 +10,7 @@
  * 이미지 생성/편집은 로컬 대체가 없어 OpenAI 경로 유지.
  */
 import { isLocalLlmEnabled, getLocalLlmChatEndpoint, getLocalLlmModel } from './LlmBackendClient'
+import { normalizeCaption } from './ideogramCaption'
 
 const KEY_STORAGE = 'openai-api-key'
 const MODEL_STORAGE = 'openai-model'
@@ -161,6 +162,63 @@ export async function generateImagePrompt(text, { model, style, signal } = {}) {
     temperature: 0.8,
     signal,
   })
+}
+
+const IDEOGRAM_CAPTION_SYSTEM = `You convert a presentation slide text box's content into a JSON "caption" for the Ideogram 4 image model, which renders a STANDALONE ILLUSTRATION expressing the meaning of that text (like a slide background or accent graphic).
+
+Output ONLY one valid JSON object (no markdown, no commentary) with this structure and key order:
+{
+  "high_level_description": "one or two sentence summary of the whole image",
+  "style_description": {
+    "aesthetics": "e.g. clean, modern, vibrant",
+    "lighting": "e.g. soft even lighting",
+    "medium": "one of: illustration | photograph | 3d render | graphic_design",
+    "art_style": "concise visual style (OMIT this key and add \\"photo\\":\\"lens/DoF\\" instead when medium is photograph)",
+    "color_palette": ["#RRGGBB", "up to 5 UPPERCASE hex"]
+  },
+  "compositional_deconstruction": {
+    "background": "detailed description of the scene/environment",
+    "elements": [ { "type": "obj", "bbox": [y_min, x_min, y_max, x_max], "desc": "what this object looks like and where" } ]
+  }
+}
+
+Rules:
+- bbox = 0-1000 normalized integers, origin top-left, format [y_min, x_min, y_max, x_max].
+- Describe imagery ONLY. DO NOT output any "text"-type elements and DO NOT request readable words/letters/labels in the image — text output causes garbled glyphs. Convey the message purely through visuals.
+- Use 1-4 "obj" elements placed sensibly; bboxes may overlap when natural.
+- Be concrete and visual; never invent words to display.
+- If a required visual style is given, reflect it in style_description.
+- Output strictly valid JSON only.`
+
+/**
+ * 텍스트 박스 내용 → Ideogram 4 구조화 캡션(객체). 로컬 ideogram 서버(/api/generate)용.
+ * 평문 프롬프트는 ideogram이 가비지 텍스트를 내므로, LLM을 magic-prompt 대체로 써서
+ * 구조화 캡션(obj 요소·텍스트 없음)으로 변환한다. 반환은 normalizeCaption으로 키순서 보정.
+ * @param {string} text
+ * @param {{ model?: string, style?: string, signal?: AbortSignal }} [opts]
+ * @returns {Promise<object>} Ideogram 캡션 객체
+ */
+export async function generateIdeogramCaption(text, { model, style, signal } = {}) {
+  const trimmed = (text || '').trim()
+  if (!trimmed) throw new Error('텍스트 박스에 분석할 내용이 없습니다.')
+  const styleClause = (style || '').trim()
+    ? `\n\nRequired visual style (reflect in style_description): ${style.trim()}`
+    : ''
+  const raw = await chat({
+    system: IDEOGRAM_CAPTION_SYSTEM,
+    user: `Slide text box content:\n"""\n${trimmed}\n"""${styleClause}\n\nOutput the Ideogram 4 caption JSON.`,
+    model,
+    temperature: 0.7,
+    responseFormat: { type: 'json_object' },
+    signal,
+  })
+  let parsed
+  try { parsed = JSON.parse(raw) } catch { throw new Error('AI가 올바른 캡션 JSON을 반환하지 않았습니다.') }
+  const caption = normalizeCaption(parsed)
+  if (!caption.compositional_deconstruction?.elements?.length && !caption.high_level_description) {
+    throw new Error('생성된 캡션이 비어 있습니다.')
+  }
+  return caption
 }
 
 const INFOGRAPHIC_SYSTEM = `You are an expert information designer. You are given a screenshot of a presentation slide.

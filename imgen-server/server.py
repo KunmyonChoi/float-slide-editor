@@ -64,7 +64,10 @@ def health():
 
 
 class GenerateRequest(BaseModel):
-    caption: dict            # Ideogram 4 JSON 캡션(compositional_deconstruction 등)
+    # 둘 중 하나: caption(레이아웃 JSON) 또는 prompt(평문). 평문은 JSON으로 감싸지 말 것 —
+    # 감싸면 모델이 구조를 텍스트로 렌더(가비지 텍스트)함. 평문은 원시 문자열 그대로 전달.
+    caption: dict | None = None   # Ideogram 4 JSON 캡션(compositional_deconstruction 등)
+    prompt: str | None = None     # 평문 프롬프트(레이아웃 없이 OpenAI식 텍스트→이미지)
     width: int = 1024
     height: int = 1024
     preset: str = generator.DEFAULT_PRESET
@@ -74,10 +77,11 @@ class GenerateRequest(BaseModel):
 @app.post("/api/generate")
 def generate(req: GenerateRequest):
     try:
-        if not req.caption:
-            return JSONResponse(status_code=400, content={"error": "빈 캡션입니다."})
+        src = req.prompt if (req.prompt and req.prompt.strip()) else req.caption
+        if not src:
+            return JSONResponse(status_code=400, content={"error": "caption 또는 prompt가 필요합니다."})
         png, infer_ms = generator.generate(
-            req.caption, width=req.width, height=req.height, preset=req.preset, seed=req.seed,
+            src, width=req.width, height=req.height, preset=req.preset, seed=req.seed,
         )
         return Response(
             content=png,

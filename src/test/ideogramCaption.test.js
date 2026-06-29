@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { toBbox, buildCaption, buildStyle } from '../core/ideogramCaption'
+import { toBbox, buildCaption, buildStyle, normalizeCaption } from '../core/ideogramCaption'
 
 const CANVAS = { w: 1280, h: 720 }
 
@@ -64,6 +64,42 @@ describe('ideogramCaption — buildCaption', () => {
     // 키 형태(":" 포함)로 비교 — "text"만 쓰면 "type":"text"의 값과 먼저 매칭됨
     expect(s.indexOf('"type":')).toBeLessThan(s.indexOf('"bbox":'))
     expect(s.indexOf('"bbox":')).toBeLessThan(s.indexOf('"text":'))
+  })
+})
+
+describe('ideogramCaption — normalizeCaption (LLM 출력 정규화)', () => {
+  it('style_description 키순서 보정 + elements 키순서/bbox 정수화', () => {
+    const raw = {
+      high_level_description: 'A scene',
+      style_description: { color_palette: ['#FFFFFF'], medium: 'illustration', aesthetics: 'clean', art_style: 'flat', lighting: 'soft' },
+      compositional_deconstruction: {
+        background: 'sky',
+        elements: [{ desc: 'a tree', bbox: [10.4, 20.6, 800, 900], type: 'obj', junk: 1 }],
+      },
+    }
+    const c = normalizeCaption(raw)
+    expect(Object.keys(c.style_description)).toEqual(['aesthetics', 'lighting', 'medium', 'art_style', 'color_palette'])
+    const e = c.compositional_deconstruction.elements[0]
+    expect(Object.keys(e)).toEqual(['type', 'bbox', 'desc']) // junk 제거, 키순서
+    expect(e.bbox).toEqual([10, 21, 800, 900]) // 정수 반올림
+  })
+
+  it('text 요소는 text 키 포함, obj는 미포함', () => {
+    const c = normalizeCaption({ compositional_deconstruction: { elements: [
+      { type: 'text', bbox: [0, 0, 100, 100], text: 'Hi', desc: 'label' },
+      { type: 'obj', bbox: [0, 0, 100, 100], desc: 'thing' },
+    ] } })
+    expect(Object.keys(c.compositional_deconstruction.elements[0])).toEqual(['type', 'bbox', 'text', 'desc'])
+    expect('text' in c.compositional_deconstruction.elements[1]).toBe(false)
+  })
+
+  it('compositional_deconstruction 누락 시 안전 기본값', () => {
+    const c = normalizeCaption({ high_level_description: 'x' })
+    expect(c.compositional_deconstruction).toEqual({ background: '', elements: [] })
+  })
+
+  it('비객체 입력도 크래시 없이 기본 구조', () => {
+    expect(normalizeCaption(null).compositional_deconstruction.elements).toEqual([])
   })
 })
 

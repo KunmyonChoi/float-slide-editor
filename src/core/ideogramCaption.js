@@ -56,3 +56,36 @@ export function buildStyle({ aesthetics, lighting, medium, art_style, photo, col
   if (color_palette && color_palette.length) s.color_palette = color_palette
   return s
 }
+
+const clampInt = (v) => Math.max(0, Math.min(1000, Math.round(Number(v) || 0)))
+
+/** caption element 1개 정규화 — 키 순서(type,bbox,text?,desc?,color_palette?) + bbox 정수 클램프. */
+function normalizeElement(e) {
+  const type = e?.type === 'text' ? 'text' : 'obj'
+  const out = { type }
+  if (Array.isArray(e?.bbox) && e.bbox.length === 4) out.bbox = e.bbox.map(clampInt)
+  if (type === 'text') out.text = String(e?.text ?? '')
+  if (e?.desc) out.desc = String(e.desc)
+  if (Array.isArray(e?.color_palette) && e.color_palette.length) out.color_palette = e.color_palette.slice(0, 5)
+  return out
+}
+
+/**
+ * 느슨한 캡션 객체(예: LLM 출력)를 스키마 키 순서/형식으로 정규화한다.
+ * style_description은 buildStyle로 키순서 강제, elements는 normalizeElement로 정리.
+ * (LLM이 키 순서를 틀리거나 여분 키를 넣어도 모델이 받는 형태를 일관되게 만든다.)
+ */
+export function normalizeCaption(raw) {
+  const r = raw && typeof raw === 'object' ? raw : {}
+  const out = {}
+  if (r.high_level_description) out.high_level_description = String(r.high_level_description)
+  if (r.style_description && typeof r.style_description === 'object') {
+    const s = buildStyle(r.style_description)
+    if (Object.keys(s).length) out.style_description = s
+  }
+  const cd = (r.compositional_deconstruction && typeof r.compositional_deconstruction === 'object')
+    ? r.compositional_deconstruction : {}
+  const elements = Array.isArray(cd.elements) ? cd.elements.map(normalizeElement) : []
+  out.compositional_deconstruction = { background: String(cd.background || ''), elements }
+  return out
+}
