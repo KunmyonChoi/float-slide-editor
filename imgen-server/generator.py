@@ -29,7 +29,9 @@ WARM_PRESET = os.environ.get("IMGEN_WARM_PRESET", "V4_TURBO_12")
 DEFAULT_PRESET = "V4_TURBO_12"
 
 _pipe = None
-_lock = threading.Lock()
+_lock = threading.Lock()       # 로드 1회 직렬화
+_gen_lock = threading.Lock()   # 생성 직렬화 — FastAPI 동기 엔드포인트는 스레드풀 동시실행이라
+                               # 동시 추론 시 단일 GPU OOM/충돌. 한 번에 한 작업만(28~127s 큐잉).
 
 
 def get_device():
@@ -74,17 +76,18 @@ def generate(caption, width=1024, height=1024, preset=DEFAULT_PRESET, seed=0):
     p = PRESETS[name]
     prompt = _serialize_caption(caption)
 
-    if DEVICE == "cuda":
-        torch.cuda.synchronize()
-    t0 = time.perf_counter()
-    images = _pipe(
-        prompt, height=int(height), width=int(width),
-        num_steps=p.num_steps, guidance_schedule=p.guidance_schedule, mu=p.mu, std=p.std,
-        seed=int(seed), raise_on_caption_issues=False,
-    )
-    if DEVICE == "cuda":
-        torch.cuda.synchronize()
-    infer_ms = int((time.perf_counter() - t0) * 1000)
+    with _gen_lock:  # 단일 GPU — 동시 추론 방지(직렬화). 추가 요청은 대기.
+        if DEVICE == "cuda":
+            torch.cuda.synchronize()
+        t0 = time.perf_counter()
+        images = _pipe(
+            prompt, height=int(height), width=int(width),
+            num_steps=p.num_steps, guidance_schedule=p.guidance_schedule, mu=p.mu, std=p.std,
+            seed=int(seed), raise_on_caption_issues=False,
+        )
+        if DEVICE == "cuda":
+            torch.cuda.synchronize()
+        infer_ms = int((time.perf_counter() - t0) * 1000)
 
     buf = io.BytesIO()
     images[0].save(buf, format="PNG")
