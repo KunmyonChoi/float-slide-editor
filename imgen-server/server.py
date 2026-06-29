@@ -38,7 +38,7 @@ app.add_middleware(
     allow_origins=_allow_origins,
     allow_methods=["*"],
     allow_headers=["*"],
-    expose_headers=["X-Inference-Ms"],
+    expose_headers=["X-Inference-Ms", "X-Safety-Blocked"],
 )
 
 
@@ -80,7 +80,7 @@ def generate(req: GenerateRequest):
         src = req.prompt if (req.prompt and req.prompt.strip()) else req.caption
         if not src:
             return JSONResponse(status_code=400, content={"error": "caption 또는 prompt가 필요합니다."})
-        png, infer_ms = generator.generate(
+        png, infer_ms, blocked = generator.generate(
             src, width=req.width, height=req.height, preset=req.preset, seed=req.seed,
         )
         return Response(
@@ -89,6 +89,8 @@ def generate(req: GenerateRequest):
             headers={
                 "Content-Disposition": "inline; filename=ideogram.png",
                 "X-Inference-Ms": str(infer_ms),
+                # 재시도 후에도 안전필터에 막혔으면(회색 카드) 클라가 에러 처리하도록 신호
+                "X-Safety-Blocked": "true" if blocked else "false",
             },
         )
     except Exception as e:  # noqa: BLE001 — 모든 추론 오류를 JSON으로 변환

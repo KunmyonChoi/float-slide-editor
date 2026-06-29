@@ -88,6 +88,10 @@ export async function generateLayoutImage(caption, { width = 1024, height = 1024
     try { const j = await res.json(); if (j?.error) msg = j.error } catch { /* 비 JSON 응답 */ }
     throw new Error(msg)
   }
+  // 모델 내장 안전필터에 막혔으면(재시도 후에도) 회색 카드 대신 에러로 — 인물 등 오탐 잦음
+  if (res.headers.get('X-Safety-Blocked') === 'true') {
+    throw new Error('모델 안전 필터에 막혔습니다(오탐 가능). 문구를 바꾸거나 다시 시도해 주세요.')
+  }
   const out = await res.blob()
   const ms = Math.round((typeof performance !== 'undefined' ? performance.now() : 0) - t0)
   const serverMs = Number(res.headers.get('X-Inference-Ms')) || null // 순수 추론 시간(서버)

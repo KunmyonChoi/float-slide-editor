@@ -185,7 +185,10 @@ Output ONLY one valid JSON object (no markdown, no commentary) with this structu
 Rules:
 - bbox = 0-1000 normalized integers, origin top-left, format [y_min, x_min, y_max, x_max].
 - Describe imagery ONLY. DO NOT output any "text"-type elements and DO NOT request readable words/letters/labels in the image — text output causes garbled glyphs. Convey the message purely through visuals.
-- Use 1-4 "obj" elements placed sensibly; bboxes may overlap when natural.
+- BACKGROUND vs ELEMENTS: Put the environment, scenery, sky, landscape, lighting and overall setting into "background" as rich prose. Use "elements" ONLY for distinct FOREGROUND subjects/objects that need explicit placement. Do NOT make background scenery (mountains, sky, room, etc.) an obj element.
+- Keep it simple: most slide concepts are ONE main subject — then use exactly ONE obj for that subject (a large, sensibly centered bbox), or zero obj if the scene is best described by background alone. Use multiple obj only for genuinely separate foreground objects. Do NOT over-segment; avoid overlapping boxes unless one object is truly in front of another.
+- Never describe elements as blurred, obscured, faded, or "soft" foreground — that creates muddy artifacts.
+- color_palette is OPTIONAL: include ONLY colors that actually appear in the described scene. If unsure, OMIT the color_palette key. NEVER invent unrelated colors (e.g. no random purple/violet for a nature/portrait scene).
 - Be concrete and visual; never invent words to display.
 - If a required visual style is given, reflect it in style_description.
 - Output strictly valid JSON only.`

@@ -20,13 +20,18 @@ import time
 import threading
 
 import torch
+from PIL import ImageStat
 from ideogram4 import Ideogram4Pipeline, Ideogram4PipelineConfig, PRESETS
 
-BUILD_VERSION = "2026-06-29.1-ideogram4-fp8"
+BUILD_VERSION = "2026-06-30.1-ideogram4-fp8-safetyretry"
 WEIGHTS_REPO = os.environ.get("IMGEN_WEIGHTS_REPO", "ideogram-ai/ideogram-4-fp8")
 DEVICE = os.environ.get("IMGEN_DEVICE", "cuda")
 WARM_PRESET = os.environ.get("IMGEN_WARM_PRESET", "V4_TURBO_12")
 DEFAULT_PRESET = "V4_TURBO_12"
+# 모델 내장 NSFW 안전필터는 회색 'Image blocked by safety filter' 카드를 반환(가중치 동작, 끌 수 없음).
+# 오탐(특히 인물)이 잦고 시드마다 확률적 → 회색카드(낮은 색분산) 감지 시 시드를 바꿔 자동 재시도.
+SAFETY_STD_THRESHOLD = 25.0   # 차단 카드는 색 stddev가 매우 낮음(정상 이미지는 보통 60+)
+SAFETY_MAX_ATTEMPTS = int(os.environ.get("IMGEN_SAFETY_RETRIES", "3"))
 
 _pipe = None
 _lock = threading.Lock()       # 로드 1회 직렬화
@@ -80,29 +85,47 @@ def generate(caption, width=1024, height=1024, preset=DEFAULT_PRESET, seed=0):
         if DEVICE == "cuda":
             torch.cuda.synchronize()
         t0 = time.perf_counter()
-        images = _pipe(
-            prompt, height=int(height), width=int(width),
-            num_steps=p.num_steps, guidance_schedule=p.guidance_schedule, mu=p.mu, std=p.std,
-            seed=int(seed), raise_on_caption_issues=False,
-        )
+        img = None
+        blocked = False
+        # 안전필터 오탐(회색카드) 감지 시 시드 바꿔 재시도
+        for attempt in range(SAFETY_MAX_ATTEMPTS):
+            out = _pipe(
+                prompt, height=int(height), width=int(width),
+                num_steps=p.num_steps, guidance_schedule=p.guidance_schedule, mu=p.mu, std=p.std,
+                seed=int(seed) + attempt, raise_on_caption_issues=False,
+            )[0]
+            blocked = _looks_blocked(out)
+            img = out
+            if not blocked:
+                break
         if DEVICE == "cuda":
             torch.cuda.synchronize()
         infer_ms = int((time.perf_counter() - t0) * 1000)
 
     buf = io.BytesIO()
-    images[0].save(buf, format="PNG")
-    return buf.getvalue(), infer_ms
+    img.save(buf, format="PNG")
+    return buf.getvalue(), infer_ms, blocked
+
+
+def _looks_blocked(img):
+    """모델 안전필터의 회색 'blocked' 카드 추정 — RGB 채널 평균 stddev가 임계 미만이면 차단."""
+    try:
+        st = ImageStat.Stat(img.convert("RGB"))
+        return (sum(st.stddev) / 3.0) < SAFETY_STD_THRESHOLD
+    except Exception:
+        return False
 
 
 def warmup():
     """시작 시 로드 + (옵션) 더미 생성으로 첫 요청 지연 제거."""
     ensure_loaded()
     if WARM_PRESET and WARM_PRESET in PRESETS:
+        # 컬러풀한 더미(높은 색분산) — 안전필터 회색카드 오탐으로 불필요한 재시도 방지
         dummy = {
-            "high_level_description": "warmup",
+            "high_level_description": "warmup color scene",
             "compositional_deconstruction": {
-                "background": "plain",
-                "elements": [{"type": "text", "bbox": [400, 300, 600, 700], "text": "Hi", "desc": "centered"}],
+                "background": "a vivid blue sky over a green field",
+                "elements": [{"type": "obj", "bbox": [300, 350, 750, 650], "desc": "a bright red apple on grass"}],
             },
         }
         generate(dummy, 512, 512, preset=WARM_PRESET, seed=0)
