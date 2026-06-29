@@ -4,6 +4,13 @@
   box-sizing: border-box;
 }
 
+/* 다크 UI의 <select> 드롭다운 목록은 OS 기본(흰 배경)으로 떠서 밝은 글자색이 흰 배경에
+   묻혀 안 보인다. 앱 전역이 다크 테마이므로 option을 다크 배경/밝은 글자로 통일한다. */
+option {
+  background-color: #1e293b;
+  color: #e2e8f0;
+}
+
 html, body {
   /* 모바일 '당겨서 새로고침'(pull-to-refresh) + 오버스크롤 바운스 차단 — 편집 중 오작동 방지 */
   overscroll-behavior: none;
