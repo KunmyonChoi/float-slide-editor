@@ -80,6 +80,17 @@ describe('다중 선택 기본 동작', () => {
     s().selectAllFlats()
     expect(s().selectedFlatIds).toEqual(['a', 'b', 'c'])
   })
+
+  it('selectAllFlats → 배경 레이어는 제외(__bg / isBackground)', () => {
+    seedStore([
+      makeEl({ id: 'bg1', sourceId: '__bg', x: 0, y: 0, zIndex: 0 }),
+      makeEl({ id: 'bg2', isBackground: true, x: 0, y: 0, zIndex: 0 }),
+      makeEl({ id: 'a', x: 10, y: 10, zIndex: 1 }),
+      makeEl({ id: 'b', x: 100, y: 100, zIndex: 2 }),
+    ])
+    s().selectAllFlats()
+    expect(s().selectedFlatIds).toEqual(['a', 'b'])
+  })
 })
 
 // ── 다중 삭제 ────────────────────────────────────────

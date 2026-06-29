@@ -1168,7 +1168,8 @@ export const useFlatStore = create((set, get) => ({
 
   /** 전체 선택 (Ctrl+A) */
   selectAllFlats() {
-    const ids = get().flatElements.map(e => e.id)
+    // 배경 레이어(__bg/isBackground)는 전체 선택에서 제외 — 콘텐츠 요소만 선택
+    const ids = get().flatElements.filter(e => !isBackgroundElement(e)).map(e => e.id)
     set({ selectedFlatIds: ids })
   },
 
