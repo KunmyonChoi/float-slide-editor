@@ -11,7 +11,8 @@ import { useDraggableToolbar, GripHandle } from './useDraggableToolbar'
  * 생성이 컴포넌트 수명에서 분리돼 있으므로, 사용자가 다른 요소를 선택하거나 페이지를
  * 이동해도 여기서 상태를 확인하고 결과를 적용할 수 있다.
  */
-const KIND_ICON = { lipsync: '🎬', 'image-enhance': '🪄', 'image-edit': '✏️', 'video': '🎬', default: '✨' }
+const KIND_ICON = { lipsync: '🎬', imagen: '🖼️', 'image-enhance': '🪄', 'image-edit': '✏️', 'video': '🎬', default: '✨' }
+const IMAGE_KINDS = ['imagen', 'image-enhance', 'image-edit'] // 결과가 이미지(미리보기 <img>)
 
 export default function AiJobTray() {
   const jobs = useAiJobStore(s => s.jobs)
@@ -107,6 +108,7 @@ function JobCard({ job }) {
     applyJob(job.id, { mode })
   }
 
+  const isImg = IMAGE_KINDS.includes(job.kind) // 이미지 결과면 <img> 미리보기 + 단일 '적용'(교체 대상 없음)
   const running = job.status === 'running'
   const ready = job.status === 'ready'
   const failed = job.status === 'failed'
@@ -151,18 +153,26 @@ function JobCard({ job }) {
           {resultUrl && (
             <div onClick={() => setLightbox(true)} title="클릭하여 크게 보기"
               style={{ position: 'relative', borderRadius: 8, overflow: 'hidden', cursor: 'zoom-in', background: '#000' }}>
-              <video src={resultUrl} muted preload="metadata" style={{ width: '100%', display: 'block', maxHeight: 150, objectFit: 'contain' }} />
-              <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 28, color: 'rgba(255,255,255,0.85)', textShadow: '0 1px 4px rgba(0,0,0,0.6)' }}>▶</div>
+              {isImg
+                ? <img src={resultUrl} alt="" style={{ width: '100%', display: 'block', maxHeight: 150, objectFit: 'contain' }} />
+                : <>
+                    <video src={resultUrl} muted preload="metadata" style={{ width: '100%', display: 'block', maxHeight: 150, objectFit: 'contain' }} />
+                    <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 28, color: 'rgba(255,255,255,0.85)', textShadow: '0 1px 4px rgba(0,0,0,0.6)' }}>▶</div>
+                  </>}
             </div>
           )}
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6, marginTop: 8, position: 'relative' }}>
             <button onClick={() => setLightbox(true)} style={ghostBtn}>미리보기</button>
-            {/* 적용 ▾ 분할 버튼: 기본=교체, 펼치면 새로 추가 */}
-            <div style={{ display: 'flex' }}>
-              <button onClick={() => doApply('replace')} style={{ ...primaryBtn, borderTopRightRadius: 0, borderBottomRightRadius: 0 }}>적용</button>
-              <button onClick={() => setMenuOpen(o => !o)} title="적용 방식"
-                style={{ ...primaryBtn, borderTopLeftRadius: 0, borderBottomLeftRadius: 0, padding: '5px 8px', borderLeft: '1px solid rgba(255,255,255,0.25)' }}>▾</button>
-            </div>
+            {/* 교체 대상이 있으면 적용 ▾ 분할(교체/추가), 없으면(레이아웃 이미지 등) 단일 '적용'(추가) */}
+            {job.targetElementId ? (
+              <div style={{ display: 'flex' }}>
+                <button onClick={() => doApply('replace')} style={{ ...primaryBtn, borderTopRightRadius: 0, borderBottomRightRadius: 0 }}>적용</button>
+                <button onClick={() => setMenuOpen(o => !o)} title="적용 방식"
+                  style={{ ...primaryBtn, borderTopLeftRadius: 0, borderBottomLeftRadius: 0, padding: '5px 8px', borderLeft: '1px solid rgba(255,255,255,0.25)' }}>▾</button>
+              </div>
+            ) : (
+              <button onClick={() => doApply('add')} style={primaryBtn}>적용</button>
+            )}
             {menuOpen && (
               <div style={{
                 position: 'absolute', bottom: 'calc(100% + 4px)', right: 0, zIndex: 1,
@@ -189,8 +199,9 @@ function JobCard({ job }) {
       {lightbox && resultUrl && createPortal(
         <div onClick={() => setLightbox(false)}
           style={{ position: 'fixed', inset: 0, zIndex: 10060, background: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'zoom-out' }}>
-          <video src={resultUrl} controls autoPlay onClick={e => e.stopPropagation()}
-            style={{ maxWidth: '92vw', maxHeight: '92vh', borderRadius: 8, background: '#000' }} />
+          {isImg
+            ? <img src={resultUrl} alt="" onClick={e => e.stopPropagation()} style={{ maxWidth: '92vw', maxHeight: '92vh', borderRadius: 8, background: '#000' }} />
+            : <video src={resultUrl} controls autoPlay onClick={e => e.stopPropagation()} style={{ maxWidth: '92vw', maxHeight: '92vh', borderRadius: 8, background: '#000' }} />}
         </div>,
         document.body,
       )}

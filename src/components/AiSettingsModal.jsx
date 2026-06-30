@@ -5,7 +5,15 @@ import { getApiKey, setApiKey, getModel, setModel, getImageModel, setImageModel 
 import {
   isLocalLlmEnabled, setLocalLlmEnabled, getLocalLlmModel, setLocalLlmModel,
   checkOllama, hasLocalModel, detectOS, ollamaInstall, ollamaServeWithOrigin, testLocalLlm,
+  isLocalVisionEnabled, setLocalVisionEnabled, getLocalVisionModel, setLocalVisionModel,
+  setLocalVisionUrl, getLocalLlmUrl,
 } from '../core/LlmBackendClient'
+import {
+  getImagenBase, setImagenBase, checkImagenBackend, getImagenDevice, isImagenReady,
+  imagenDockerRunCommand, IMAGEN_DOCKER_IMAGE,
+} from '../core/ImagenBackendClient'
+
+const IMG_BACKEND_KEY = 'ai-image-backend' // FlatAiBar 토글과 공유
 
 /**
  * AI 설정 모달 — OpenAI(ChatGPT) API 키/모델 입력.
@@ -54,10 +62,35 @@ function AiSettingsDialog() {
     catch (e) { setLlmTest({ ok: false, err: e?.message || String(e) }) }
   }, [llmModel])
 
+  // 비전 모델(이미지 분석) — 텍스트 모델과 분리. 이미지 첨부 chat()만 이쪽으로 라우팅.
+  const [visOn, setVisOn] = useState(() => isLocalVisionEnabled())
+  const [visModel, setVisModel] = useState(() => getLocalVisionModel())
+  const [visUrl, setVisUrl] = useState(() => { try { return localStorage.getItem('local-vision-url') || '' } catch { return '' } })
+  const [visStatus, setVisStatus] = useState(null) // { ok, hasModel }
+  const refreshVis = useCallback(async () => {
+    const base = (visUrl.trim() || getLocalLlmUrl()).replace(/\/+$/, '')
+    try {
+      const r = await fetch(`${base}/api/tags`, { signal: AbortSignal.timeout(2500) })
+      const j = await r.json()
+      const names = (j.models || []).map(m => m.name)
+      setVisStatus({ ok: r.ok, hasModel: names.includes(visModel.trim()) })
+    } catch { setVisStatus({ ok: false, hasModel: false }) }
+  }, [visUrl, visModel])
+
+  // 이미지 생성 백엔드(OpenAI ↔ 로컬 ideogram). 전환 키는 FlatAiBar 토글과 공유.
+  const [imgBackend, setImgBackend] = useState(() => { try { return localStorage.getItem(IMG_BACKEND_KEY) || 'openai' } catch { return 'openai' } })
+  const [imgUrl, setImgUrl] = useState(() => getImagenBase())
+  const [imgStatus, setImgStatus] = useState(null) // { ok, ready, device }
+  const [imgCmdCopied, setImgCmdCopied] = useState(false)
+  const refreshImg = useCallback(async () => {
+    const ok = await checkImagenBackend(true)
+    setImgStatus({ ok, ready: isImagenReady(), device: getImagenDevice() })
+  }, [])
+
   useEffect(() => {
-    const id = requestAnimationFrame(() => { inputRef.current?.focus(); refreshLlm() })
+    const id = requestAnimationFrame(() => { inputRef.current?.focus(); refreshLlm(); refreshImg(); refreshVis() })
     return () => cancelAnimationFrame(id)
-  }, [refreshLlm])
+  }, [refreshLlm, refreshImg, refreshVis])
 
   const save = () => {
     setApiKey(key)
@@ -65,6 +98,11 @@ function AiSettingsDialog() {
     setImageModel(imageModel)
     setLocalLlmEnabled(llmOn)
     setLocalLlmModel(llmModel)
+    setLocalVisionEnabled(visOn)
+    setLocalVisionModel(visModel)
+    setLocalVisionUrl(visUrl)
+    setImagenBase(imgUrl)
+    try { localStorage.setItem(IMG_BACKEND_KEY, imgBackend) } catch { /* ignore */ }
     closeAiSettings()
   }
 
@@ -169,7 +207,7 @@ function AiSettingsDialog() {
               <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 8 }}>
                 <div>
                   <div style={labelClass}>모델</div>
-                  <input value={llmModel} onChange={e => setLlmModelState(e.target.value)} placeholder="qwen2.5:7b" spellCheck={false} style={fieldStyle} />
+                  <input value={llmModel} onChange={e => setLlmModelState(e.target.value.trim())} placeholder="qwen2.5:3b" spellCheck={false} style={fieldStyle} />
                   <div style={{ fontSize: 11, color: '#64748b', marginTop: 3, lineHeight: 1.5 }}>
                     가벼움 <code>qwen2.5:3b</code> · 균형 <code>qwen2.5:7b</code> · 한국어 튜닝 GGUF는 <code>hf.co/&lt;repo&gt;</code> 형식(예: <code>hf.co/MyeongHo0621/Qwen2.5-3B-Korean</code>, GGUF일 때)
                   </div>
@@ -198,6 +236,85 @@ function AiSettingsDialog() {
                       : <> <a href="https://ollama.com/download" target="_blank" rel="noopener noreferrer" style={{ color: '#a5b4fc' }}>{inst.text}</a></>}</div>
                     <div style={{ marginTop: 6 }}>② 모델 받기:<code style={codeStyle}>ollama pull {llmModel}</code></div>
                     <div style={{ marginTop: 6 }}>③ 이 앱(공개 주소)이 호출하려면 Origin 허용 후 실행:<code style={codeStyle}>{ollamaServeWithOrigin()}</code></div>
+                  </div>
+                )}
+              </div>
+            )
+          })()}
+        </div>
+
+        {/* 비전 모델(이미지 분석) — 텍스트 모델과 분리. 인포그래픽 등 이미지 입력 작업에 사용 */}
+        <div style={{ borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: 12 }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+            <input type="checkbox" checked={visOn} onChange={e => setVisOn(e.target.checked)} />
+            로컬 비전 모델 사용 (이미지 분석)
+          </label>
+          <div style={{ fontSize: 11, color: '#64748b', marginTop: 4, lineHeight: 1.5 }}>
+            인포그래픽 등 <b>이미지를 분석</b>하는 작업에만 사용(텍스트 작업은 위 텍스트 모델). 끄면 이미지 분석은 OpenAI 사용.
+            GPU 필요(M1 불가) — 로컬 또는 원격.
+          </div>
+          {visOn && (
+            <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <div>
+                <div style={labelClass}>비전 모델</div>
+                <input value={visModel} onChange={e => setVisModel(e.target.value.trim())} placeholder="qwen3-vl:30b-a3b-thinking" spellCheck={false} style={fieldStyle} />
+              </div>
+              <div>
+                <div style={labelClass}>비전 서버 URL (비우면 텍스트 URL 사용)</div>
+                <input value={visUrl} onChange={e => setVisUrl(e.target.value.trim())} placeholder={getLocalLlmUrl()} spellCheck={false} style={fieldStyle} />
+              </div>
+              <div style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                상태:{' '}
+                {!visStatus ? '확인 중…'
+                  : visStatus.ok
+                    ? <span style={{ color: visStatus.hasModel ? '#16a34a' : '#d97706' }}>{visStatus.hasModel ? `실행 중, ${visModel} 설치됨` : `실행 중, ${visModel} 미설치 (ollama pull 필요)`}</span>
+                    : <span style={{ color: '#dc2626' }}>미연결</span>}
+                <button type="button" onClick={refreshVis} style={{ fontSize: 11, padding: '1px 8px', borderRadius: 6, border: '1px solid rgba(255,255,255,0.14)', background: 'transparent', color: '#cbd5e1', cursor: 'pointer' }}>다시 확인</button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* 이미지 생성 백엔드 — OpenAI ↔ 로컬 ideogram(GPU 서버) */}
+        <div style={{ borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: 12 }}>
+          <div style={{ fontSize: 13, fontWeight: 600 }}>이미지 생성</div>
+          <div style={{ fontSize: 11, color: '#64748b', marginTop: 4, lineHeight: 1.5 }}>
+            텍스트 박스 → AI 이미지 생성에 쓸 엔진. <b>텍스트→이미지 생성에만</b> 적용되고, 이미지 편집·인포그래픽은 OpenAI를 사용합니다.
+            (FlatAiBar의 빠른 전환과 같은 설정을 공유)
+          </div>
+          <div style={{ marginTop: 8 }}>
+            <div style={labelClass}>기본 엔진</div>
+            <select value={imgBackend} onChange={e => setImgBackend(e.target.value)} style={fieldStyle}>
+              <option value="openai" style={optionStyle}>OpenAI (클라우드)</option>
+              <option value="local" style={optionStyle}>로컬 ideogram (GPU 서버)</option>
+            </select>
+          </div>
+          {imgBackend === 'local' && (() => {
+            const ready = imgStatus?.ok && imgStatus?.ready
+            const codeStyle = { display: 'block', userSelect: 'text', fontSize: 11, background: 'rgba(255,255,255,0.06)', padding: '6px 8px', borderRadius: 6, marginTop: 4, wordBreak: 'break-all' }
+            return (
+              <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div>
+                  <div style={labelClass}>서버 URL</div>
+                  <input value={imgUrl} onChange={e => setImgUrl(e.target.value.trim())} placeholder="http://localhost:8323" spellCheck={false} style={fieldStyle} />
+                  <div style={{ fontSize: 11, color: '#64748b', marginTop: 3 }}>로컬 Docker 또는 원격 GPU/프록시 주소</div>
+                </div>
+                <div style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                  상태:{' '}
+                  {!imgStatus ? '확인 중…'
+                    : imgStatus.ok
+                      ? <span style={{ color: ready ? '#16a34a' : '#d97706' }}>{ready ? `연결됨${imgStatus.device ? ` (${imgStatus.device})` : ''}` : '연결됨(모델 로딩 중… 기동 ~3분)'}</span>
+                      : <span style={{ color: '#dc2626' }}>미연결</span>}
+                  <button type="button" onClick={refreshImg} style={{ fontSize: 11, padding: '1px 8px', borderRadius: 6, border: '1px solid rgba(255,255,255,0.14)', background: 'transparent', color: '#cbd5e1', cursor: 'pointer' }}>다시 확인</button>
+                </div>
+                {!ready && (
+                  <div style={{ fontSize: 11.5, color: '#cbd5e1', lineHeight: 1.6, background: 'rgba(255,255,255,0.04)', borderRadius: 8, padding: 10 }}>
+                    <b>실행 안내</b> — NVIDIA GPU(40GB+) 머신에서 (게이트·비상업 모델 → 유효한 HF 토큰 필요):
+                    <code style={codeStyle}>{imagenDockerRunCommand({})}</code>
+                    <button type="button"
+                      onClick={() => { try { navigator.clipboard?.writeText(imagenDockerRunCommand({})); setImgCmdCopied(true); setTimeout(() => setImgCmdCopied(false), 1500) } catch { /* ignore */ } }}
+                      style={{ fontSize: 11, marginTop: 6, padding: '2px 10px', borderRadius: 6, border: '1px solid rgba(255,255,255,0.14)', background: 'transparent', color: '#cbd5e1', cursor: 'pointer' }}>{imgCmdCopied ? '복사됨 ✓' : '명령 복사'}</button>
+                    <span style={{ marginLeft: 8, color: '#64748b' }}>{IMAGEN_DOCKER_IMAGE}</span>
                   </div>
                 )}
               </div>

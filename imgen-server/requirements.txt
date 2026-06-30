@@ -1,0 +1,5 @@
+# torch / transformers / bitsandbytes / accelerate 등은 ideogram-4 패키지가 끌어옴
+# (Dockerfile에서 git 설치). 여기엔 서버 의존성만.
+fastapi>=0.115.0
+uvicorn>=0.32.0
+pillow>=10.0.0

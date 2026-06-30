@@ -1,11 +1,25 @@
 import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { useFlatStore } from '../store/flatStore'
-import { hasApiKey, generateImagePrompt, generateImage } from '../core/OpenAIClient'
+import { hasApiKey, generateImagePrompt, generateImage, generateIdeogramCaption } from '../core/OpenAIClient'
+import { generateLayoutImage, checkImagenBackend, imagenDockerRunCommand } from '../core/ImagenBackendClient'
+import { isLocalLlmEnabled } from '../core/LlmBackendClient'
+import { BlobStore } from '../core/BlobStore'
 import { openAiSettings } from './AiSettingsModal'
 import { IMAGE_STYLES } from '../core/aiImageStyles'
 import { embedPngMetadata } from '../core/pngMeta'
 import { useDraggableToolbar, GripHandle } from './useDraggableToolbar'
+
+const IMG_BACKEND_KEY = 'ai-image-backend' // 'openai' | 'local'
+
+/** 텍스트 박스 비율에 맞춘 생성 크기 — 16배수, 긴변 ~1024, 256–1536 클램프(로컬 ideogram용). */
+function genSizeForBox(w, h, longEdge = 1024) {
+  const r = (w || 1) / (h || 1)
+  const f = (v) => Math.max(256, Math.min(1536, Math.round(v / 16) * 16))
+  let W, H
+  if (r >= 1) { W = longEdge; H = f(longEdge / r) } else { H = longEdge; W = f(longEdge * r) }
+  return { width: f(W), height: f(H) }
+}
 
 /**
  * FlatAiBar — 텍스트 박스(요소)를 단일 선택했을 때 뜨는 전용 AI 플로팅바.
@@ -20,11 +34,23 @@ export default function FlatAiBar({ element, scale, canvasRef }) {
   // 'idle' | 'loading' | 'preview' | 'error'
   const [phase, setPhase] = useState('idle')
   const [styleId, setStyleId] = useState('flat')
+  const [backend, setBackend] = useState(() => {
+    try { return localStorage.getItem(IMG_BACKEND_KEY) || 'openai' } catch { return 'openai' }
+  })
   const [status, setStatus] = useState('')
   const [prompt, setPrompt] = useState('')
   const [imageUrl, setImageUrl] = useState('')
+  const [source, setSource] = useState('openai') // 생성 결과 출처(적용/재생성 분기): 'openai'(dataURL) | 'local'(blob)
   const [error, setError] = useState('')
+  const [imgenDown, setImgenDown] = useState(false) // 로컬 이미지 서버 미연결 → 설치 안내 표시
+  const [cmdCopied, setCmdCopied] = useState(false)
   const abortRef = useRef(null)
+  const blobRef = useRef(null) // 로컬 결과 Blob(적용 시 BlobStore 저장)
+
+  const pickBackend = (b) => { setBackend(b); try { localStorage.setItem(IMG_BACKEND_KEY, b) } catch { /* ignore */ } }
+
+  // 로컬(blob:) 미리보기 URL 누수 방지 — imageUrl 교체/언마운트 시 이전 blob URL 해제(dataURL은 제외)
+  useEffect(() => () => { if (imageUrl && imageUrl.startsWith('blob:')) URL.revokeObjectURL(imageUrl) }, [imageUrl])
   // 선택 요소의 화면 좌표(줌/팬 반영). ref는 렌더 중 읽지 않고 layout effect에서 계산.
   const [rect, setRect] = useState(null)
   const [tick, setTick] = useState(0)
@@ -63,34 +89,52 @@ export default function FlatAiBar({ element, scale, canvasRef }) {
 
   const sourceText = useCallback(() => htmlToPlain(element.content), [element.content])
 
-  // 전체 파이프라인: 텍스트 분석 → 프롬프트 → 이미지 생성
+  // 전체 파이프라인: 텍스트 분석 → 프롬프트/캡션 → 이미지 생성 (백엔드: OpenAI API | 로컬 ideogram)
   const run = useCallback(async () => {
-    if (!hasApiKey()) { openAiSettings(); return }
+    // OpenAI 백엔드는 이미지 API에 키 필수. 로컬 백엔드는 캡션 LLM에 OpenAI 키 또는 로컬 LLM 중 하나 필요.
+    const needKey = backend === 'openai' || !isLocalLlmEnabled()
+    if (needKey && !hasApiKey()) { openAiSettings(); return }
     const text = sourceText()
     if (!text) { setError('텍스트 박스에 분석할 내용이 없습니다.'); setPhase('error'); return }
     abortRef.current?.abort()
     const ctrl = new AbortController()
     abortRef.current = ctrl
-    setPhase('loading'); setError(''); setImageUrl('')
+    setPhase('loading'); setError(''); setImageUrl(''); setImgenDown(false); blobRef.current = null
     try {
-      setStatus('내용 분석 중…')
       const directive = IMAGE_STYLES.find(s => s.id === styleId)?.directive || ''
-      const p = await generateImagePrompt(text, { style: directive, signal: ctrl.signal })
-      if (ctrl.signal.aborted) return
-      setPrompt(p)
-      setStatus('AI 이미지 생성 중… (수십 초 걸릴 수 있어요)')
-      const url = await generateImage(p, { width: element.width, height: element.height, signal: ctrl.signal })
-      if (ctrl.signal.aborted) return
-      setImageUrl(url)
-      setPhase('preview')
+      if (backend === 'local') {
+        setStatus('이미지 서버 확인 중…')
+        if (!(await checkImagenBackend(true))) {
+          setError('로컬 이미지 생성 서버에 연결할 수 없습니다.')
+          setImgenDown(true); setPhase('error'); return
+        }
+        setStatus('장면 설명 작성 중… (LLM)')
+        const caption = await generateIdeogramCaption(text, { style: directive, signal: ctrl.signal })
+        if (ctrl.signal.aborted) return
+        setPrompt(JSON.stringify(caption, null, 2))
+        setStatus('AI 이미지 생성 중… (로컬, 수십 초)')
+        const { width, height } = genSizeForBox(element.width, element.height)
+        const { blob, url } = await generateLayoutImage(caption, { width, height, preset: 'V4_TURBO_12', signal: ctrl.signal })
+        if (ctrl.signal.aborted) { URL.revokeObjectURL(url); return }
+        blobRef.current = blob; setSource('local'); setImageUrl(url); setPhase('preview')
+      } else {
+        setStatus('내용 분석 중…')
+        const p = await generateImagePrompt(text, { style: directive, signal: ctrl.signal })
+        if (ctrl.signal.aborted) return
+        setPrompt(p)
+        setStatus('AI 이미지 생성 중… (수십 초 걸릴 수 있어요)')
+        const url = await generateImage(p, { width: element.width, height: element.height, signal: ctrl.signal })
+        if (ctrl.signal.aborted) return
+        setSource('openai'); setImageUrl(url); setPhase('preview')
+      }
     } catch (e) {
       if (e?.name === 'AbortError') return
       setError(e?.message || 'AI 호출에 실패했습니다.')
       setPhase('error')
     }
-  }, [sourceText, styleId, element.width, element.height])
+  }, [sourceText, styleId, backend, element.width, element.height])
 
-  // 현재 프롬프트(편집 가능)로 이미지만 다시 생성
+  // 현재 프롬프트/캡션(편집 가능)으로 이미지만 다시 생성
   const regenerate = useCallback(async () => {
     const p = prompt.trim()
     if (!p) { run(); return }
@@ -99,37 +143,44 @@ export default function FlatAiBar({ element, scale, canvasRef }) {
     abortRef.current = ctrl
     setPhase('loading'); setError(''); setStatus('AI 이미지 생성 중…')
     try {
-      const url = await generateImage(p, { width: element.width, height: element.height, signal: ctrl.signal })
-      if (ctrl.signal.aborted) return
-      setImageUrl(url)
-      setPhase('preview')
+      if (source === 'local') {
+        let caption
+        try { caption = JSON.parse(p) } catch { run(); return } // 편집본이 JSON 아니면 처음부터
+        const { width, height } = genSizeForBox(element.width, element.height)
+        const { blob, url } = await generateLayoutImage(caption, { width, height, preset: 'V4_TURBO_12', signal: ctrl.signal })
+        if (ctrl.signal.aborted) { URL.revokeObjectURL(url); return }
+        blobRef.current = blob; setImageUrl(url); setPhase('preview')
+      } else {
+        const url = await generateImage(p, { width: element.width, height: element.height, signal: ctrl.signal })
+        if (ctrl.signal.aborted) return
+        setImageUrl(url); setPhase('preview')
+      }
     } catch (e) {
       if (e?.name === 'AbortError') return
       setError(e?.message || '이미지 생성에 실패했습니다.')
       setPhase('error')
     }
-  }, [prompt, run, element.width, element.height])
+  }, [prompt, source, run, element.width, element.height])
 
   // 텍스트 박스를 같은 위치·크기의 이미지 요소로 교체(되돌리기 가능)
-  const apply = useCallback(() => {
+  const apply = useCallback(async () => {
     if (!imageUrl) return
-    const content = embedPngMetadata(imageUrl, {
-      description: sourceText(),
-      prompt,
-    })
-    useFlatStore.getState().updateFlatElement(element.id, {
-      type: 'image',
-      content,
-      isRich: false,
-      styles: {
-        objectFit: 'cover',
-        objectPosition: 'center center',
-        backgroundColor: 'rgba(0, 0, 0, 0)',
-        backgroundImage: 'none',
-      },
-    })
-    setPhase('idle'); setImageUrl('')
-  }, [imageUrl, element.id, sourceText, prompt])
+    const imgStyles = {
+      objectFit: 'cover', objectPosition: 'center center',
+      backgroundColor: 'rgba(0, 0, 0, 0)', backgroundImage: 'none',
+    }
+    let content
+    if (source === 'local') {
+      // 로컬 결과는 Blob → BlobStore(idb://) 보관. (dataURL 메타 임베드는 OpenAI 경로 전용)
+      if (!blobRef.current) return
+      const key = await BlobStore.put(blobRef.current)
+      content = BlobStore.toRef(key)
+    } else {
+      content = embedPngMetadata(imageUrl, { description: sourceText(), prompt })
+    }
+    useFlatStore.getState().updateFlatElement(element.id, { type: 'image', content, isRich: false, styles: imgStyles })
+    setPhase('idle'); setImageUrl(''); blobRef.current = null
+  }, [imageUrl, source, element.id, sourceText, prompt])
 
   const cancel = useCallback(() => {
     abortRef.current?.abort()
@@ -183,6 +234,15 @@ export default function FlatAiBar({ element, scale, canvasRef }) {
         >
           <GripHandle onPointerDown={startDrag} dragging={dragging} />
           <select
+            value={backend}
+            onChange={e => pickBackend(e.target.value)}
+            title="이미지 생성 엔진 — OpenAI(클라우드) 또는 로컬 ideogram(GPU 서버)"
+            style={styleSelectStyle}
+          >
+            <option value="openai" style={{ background: '#1e293b', color: '#f1f5f9' }}>OpenAI</option>
+            <option value="local" style={{ background: '#1e293b', color: '#f1f5f9' }}>로컬 ideogram</option>
+          </select>
+          <select
             value={styleId}
             onChange={e => setStyleId(e.target.value)}
             title="이미지 화풍"
@@ -226,7 +286,18 @@ export default function FlatAiBar({ element, scale, canvasRef }) {
           )}
 
           {phase === 'error' && (
-            <div style={{ fontSize: 12.5, color: '#fca5a5', lineHeight: 1.5 }}>{error}</div>
+            <div style={{ fontSize: 12.5, color: '#fca5a5', lineHeight: 1.5 }}>
+              {error}
+              {imgenDown && (
+                <div style={{ marginTop: 8, color: '#cbd5e1', lineHeight: 1.6 }}>
+                  NVIDIA GPU(40GB+) 머신에서 아래 Docker로 실행하세요 (게이트·비상업 모델 → 유효한 HF 토큰 필요):
+                  <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all', fontSize: 10.5, color: '#cbd5e1', background: 'rgba(0,0,0,0.35)', padding: 8, borderRadius: 6, margin: '6px 0 0' }}>{imagenDockerRunCommand({})}</pre>
+                  <button type="button"
+                    onClick={() => { try { navigator.clipboard?.writeText(imagenDockerRunCommand({})); setCmdCopied(true); setTimeout(() => setCmdCopied(false), 1500) } catch { /* ignore */ } }}
+                    style={{ ...ghostBtnStyle, marginTop: 6 }}>{cmdCopied ? '복사됨 ✓' : '명령 복사'}</button>
+                </div>
+              )}
+            </div>
           )}
 
           {phase === 'preview' && (

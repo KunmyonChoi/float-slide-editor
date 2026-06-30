@@ -9,6 +9,10 @@ import {
   getTtsInstructions, setTtsInstructions, voicesForModel, TTS_VOICES,
   DEFAULT_MODEL, DEFAULT_IMAGE_MODEL,
 } from '../core/OpenAIClient'
+import {
+  setLocalLlmEnabled, setLocalLlmModel, setLocalLlmUrl,
+  setLocalVisionEnabled, setLocalVisionModel, setLocalVisionUrl,
+} from '../core/LlmBackendClient'
 
 function okResponse(content) {
   return {
@@ -286,6 +290,53 @@ describe('OpenAIClient — chat 요청 구성', () => {
   it('네트워크 실패 → 연결 에러 메시지', async () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Failed to fetch')))
     await expect(chat({ user: 'U' })).rejects.toThrow(/연결할 수 없/)
+  })
+})
+
+describe('OpenAIClient — chat 텍스트/비전 라우팅', () => {
+  beforeEach(() => { localStorage.clear(); setApiKey('sk-test') })
+  afterEach(() => { vi.restoreAllMocks() })
+
+  it('이미지 없음 + 로컬 텍스트 ON → 텍스트 엔드포인트/모델', async () => {
+    setLocalLlmEnabled(true); setLocalLlmModel('qwen2.5:3b'); setLocalLlmUrl('http://text:1')
+    const fetchMock = vi.fn().mockResolvedValue(okResponse('ok'))
+    vi.stubGlobal('fetch', fetchMock)
+    await chat({ user: 'U' })
+    const [url, init] = fetchMock.mock.calls[0]
+    expect(url).toBe('http://text:1/v1/chat/completions')
+    expect(JSON.parse(init.body).model).toBe('qwen2.5:3b')
+  })
+
+  it('이미지 있음 + 로컬 비전 ON → 비전 엔드포인트/모델, image_url 포함', async () => {
+    setLocalVisionEnabled(true); setLocalVisionModel('qwen3-vl:30b-a3b-thinking'); setLocalVisionUrl('http://vis:2')
+    const fetchMock = vi.fn().mockResolvedValue(okResponse('seen'))
+    vi.stubGlobal('fetch', fetchMock)
+    await chat({ user: 'describe', images: ['data:image/png;base64,AAAA'] })
+    const [url, init] = fetchMock.mock.calls[0]
+    expect(url).toBe('http://vis:2/v1/chat/completions')
+    const body = JSON.parse(init.body)
+    expect(body.model).toBe('qwen3-vl:30b-a3b-thinking')
+    expect(body.messages[0].content[1]).toEqual({ type: 'image_url', image_url: { url: 'data:image/png;base64,AAAA' } })
+  })
+
+  it('비전 URL 미지정 → 텍스트 URL로 폴백', async () => {
+    setLocalVisionEnabled(true); setLocalVisionModel('qwen3-vl:x'); setLocalLlmUrl('http://shared:3')
+    const fetchMock = vi.fn().mockResolvedValue(okResponse('ok'))
+    vi.stubGlobal('fetch', fetchMock)
+    await chat({ user: 'd', images: ['data:image/png;base64,AAAA'] })
+    expect(fetchMock.mock.calls[0][0]).toBe('http://shared:3/v1/chat/completions')
+  })
+
+  it('이미지 있음 + 로컬 비전 OFF + 키 있음 → OpenAI(비전 모델)', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(okResponse('ok'))
+    vi.stubGlobal('fetch', fetchMock)
+    await chat({ user: 'd', images: ['data:image/png;base64,AAAA'] })
+    expect(fetchMock.mock.calls[0][0]).toContain('api.openai.com')
+  })
+
+  it('이미지 있음 + 로컬 비전 OFF + 키 없음 → 비전 모델 필요 에러', async () => {
+    setApiKey('')
+    await expect(chat({ user: 'd', images: ['data:image/png;base64,AAAA'] })).rejects.toThrow(/비전 모델/)
   })
 })
 

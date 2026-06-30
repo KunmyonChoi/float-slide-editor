@@ -9,7 +9,9 @@
  * 텍스트(chat)는 '로컬 LLM 사용'(Ollama, OpenAI 호환) 시 로컬 엔드포인트로 라우팅된다.
  * 이미지 생성/편집은 로컬 대체가 없어 OpenAI 경로 유지.
  */
-import { isLocalLlmEnabled, getLocalLlmChatEndpoint, getLocalLlmModel } from './LlmBackendClient'
+import { isLocalLlmEnabled, getLocalLlmChatEndpoint, getLocalLlmModel,
+  isLocalVisionEnabled, getLocalVisionChatEndpoint, getLocalVisionModel } from './LlmBackendClient'
+import { normalizeCaption } from './ideogramCaption'
 
 const KEY_STORAGE = 'openai-api-key'
 const MODEL_STORAGE = 'openai-model'
@@ -72,12 +74,20 @@ export { DEFAULT_MODEL, DEFAULT_IMAGE_MODEL }
  * @param {{ system?: string, user: string, images?: string[], model?: string, temperature?: number, signal?: AbortSignal }} opts
  */
 export async function chat({ system, user, images, model, temperature = 0.7, responseFormat, signal } = {}) {
-  const local = isLocalLlmEnabled()
+  // 이미지 첨부 여부로 텍스트/비전 분리 라우팅. 비전(이미지)은 로컬 비전 모델(설정 시),
+  // 아니면 OpenAI(비전 가능 모델). 텍스트는 기존대로 로컬 텍스트 모델 또는 OpenAI.
+  const isVision = !!(images && images.length)
+  const visionLocal = isVision && isLocalVisionEnabled()
+  const textLocal = !isVision && isLocalLlmEnabled()
+  const local = visionLocal || textLocal
   const apiKey = getApiKey()
+  if (isVision && !visionLocal && !apiKey) {
+    throw new Error('이미지 분석에는 비전 모델이 필요합니다. AI 설정에서 OpenAI 키를 입력하거나 로컬 비전 모델을 켜세요.')
+  }
   if (!local && !apiKey) throw new Error('OpenAI API 키가 설정되지 않았습니다. 먼저 키를 입력하세요.')
 
-  const endpoint = local ? getLocalLlmChatEndpoint() : ENDPOINT
-  const useModel = local ? getLocalLlmModel() : (model || getModel())
+  const endpoint = visionLocal ? getLocalVisionChatEndpoint() : textLocal ? getLocalLlmChatEndpoint() : ENDPOINT
+  const useModel = visionLocal ? getLocalVisionModel() : textLocal ? getLocalLlmModel() : (model || getModel())
 
   const messages = []
   if (system) messages.push({ role: 'system', content: system })
@@ -117,7 +127,7 @@ export async function chat({ system, user, images, model, temperature = 0.7, res
       detail = j?.error?.message || ''
     } catch { /* 본문 파싱 실패 무시 */ }
     if (local) {
-      if (res.status === 404) throw new Error(`로컬 LLM 모델(${getLocalLlmModel()})을 찾을 수 없습니다. 'ollama pull ${getLocalLlmModel()}'로 받으세요.`)
+      if (res.status === 404) throw new Error(`로컬 LLM 모델(${useModel})을 찾을 수 없습니다. 'ollama pull ${useModel}'로 받으세요.`)
       throw new Error(`로컬 LLM 오류 (${res.status})${detail ? ': ' + detail : ''}`)
     }
     if (res.status === 401) throw new Error('API 키가 유효하지 않습니다. 키를 다시 확인하세요.')
@@ -161,6 +171,66 @@ export async function generateImagePrompt(text, { model, style, signal } = {}) {
     temperature: 0.8,
     signal,
   })
+}
+
+const IDEOGRAM_CAPTION_SYSTEM = `You convert a presentation slide text box's content into a JSON "caption" for the Ideogram 4 image model, which renders a STANDALONE ILLUSTRATION expressing the meaning of that text (like a slide background or accent graphic).
+
+Output ONLY one valid JSON object (no markdown, no commentary) with this structure and key order:
+{
+  "high_level_description": "one or two sentence summary of the whole image",
+  "style_description": {
+    "aesthetics": "e.g. clean, modern, vibrant",
+    "lighting": "e.g. soft even lighting",
+    "medium": "one of: illustration | photograph | 3d render | graphic_design",
+    "art_style": "concise visual style (OMIT this key and add \\"photo\\":\\"lens/DoF\\" instead when medium is photograph)",
+    "color_palette": ["#RRGGBB", "up to 5 UPPERCASE hex"]
+  },
+  "compositional_deconstruction": {
+    "background": "detailed description of the scene/environment",
+    "elements": [ { "type": "obj", "bbox": [y_min, x_min, y_max, x_max], "desc": "what this object looks like and where" } ]
+  }
+}
+
+Rules:
+- bbox = 0-1000 normalized integers, origin top-left, format [y_min, x_min, y_max, x_max].
+- Describe imagery ONLY. DO NOT output any "text"-type elements and DO NOT request readable words/letters/labels in the image — text output causes garbled glyphs. Convey the message purely through visuals.
+- BACKGROUND vs ELEMENTS: Put the environment, scenery, sky, landscape, lighting and overall setting into "background" as rich prose. Use "elements" ONLY for distinct FOREGROUND subjects/objects that need explicit placement. Do NOT make background scenery (mountains, sky, room, etc.) an obj element.
+- Keep it simple: most slide concepts are ONE main subject — then use exactly ONE obj for that subject (a large, sensibly centered bbox), or zero obj if the scene is best described by background alone. Use multiple obj only for genuinely separate foreground objects. Do NOT over-segment; avoid overlapping boxes unless one object is truly in front of another.
+- Never describe elements as blurred, obscured, faded, or "soft" foreground — that creates muddy artifacts.
+- color_palette is OPTIONAL: include ONLY colors that actually appear in the described scene. If unsure, OMIT the color_palette key. NEVER invent unrelated colors (e.g. no random purple/violet for a nature/portrait scene).
+- Be concrete and visual; never invent words to display.
+- If a required visual style is given, reflect it in style_description.
+- Output strictly valid JSON only.`
+
+/**
+ * 텍스트 박스 내용 → Ideogram 4 구조화 캡션(객체). 로컬 ideogram 서버(/api/generate)용.
+ * 평문 프롬프트는 ideogram이 가비지 텍스트를 내므로, LLM을 magic-prompt 대체로 써서
+ * 구조화 캡션(obj 요소·텍스트 없음)으로 변환한다. 반환은 normalizeCaption으로 키순서 보정.
+ * @param {string} text
+ * @param {{ model?: string, style?: string, signal?: AbortSignal }} [opts]
+ * @returns {Promise<object>} Ideogram 캡션 객체
+ */
+export async function generateIdeogramCaption(text, { model, style, signal } = {}) {
+  const trimmed = (text || '').trim()
+  if (!trimmed) throw new Error('텍스트 박스에 분석할 내용이 없습니다.')
+  const styleClause = (style || '').trim()
+    ? `\n\nRequired visual style (reflect in style_description): ${style.trim()}`
+    : ''
+  const raw = await chat({
+    system: IDEOGRAM_CAPTION_SYSTEM,
+    user: `Slide text box content:\n"""\n${trimmed}\n"""${styleClause}\n\nOutput the Ideogram 4 caption JSON.`,
+    model,
+    temperature: 0.7,
+    responseFormat: { type: 'json_object' },
+    signal,
+  })
+  let parsed
+  try { parsed = JSON.parse(raw) } catch { throw new Error('AI가 올바른 캡션 JSON을 반환하지 않았습니다.') }
+  const caption = normalizeCaption(parsed)
+  if (!caption.compositional_deconstruction?.elements?.length && !caption.high_level_description) {
+    throw new Error('생성된 캡션이 비어 있습니다.')
+  }
+  return caption
 }
 
 const INFOGRAPHIC_SYSTEM = `You are an expert information designer. You are given a screenshot of a presentation slide.
