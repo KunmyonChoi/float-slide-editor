@@ -12,6 +12,13 @@ const ENABLED_KEY = 'local-llm-enabled'
 const URL_KEY = 'local-llm-url'
 const MODEL_KEY = 'local-llm-model'
 
+// 비전(이미지 분석) 전용 — 텍스트 모델과 분리. 이미지 첨부 chat()만 이쪽으로 라우팅.
+// GPU 필요(M1 불가)라 텍스트(가벼운 모델)와 별도 모델/URL을 둔다.
+export const LLM_DEFAULT_VISION_MODEL = 'qwen3-vl:30b-a3b-thinking'
+const VISION_ENABLED_KEY = 'local-vision-enabled'
+const VISION_URL_KEY = 'local-vision-url'
+const VISION_MODEL_KEY = 'local-vision-model'
+
 export function isLocalLlmEnabled() {
   try { return localStorage.getItem(ENABLED_KEY) === '1' } catch { return false }
 }
@@ -37,6 +44,40 @@ export function setLocalLlmUrl(url) {
 /** OpenAI 호환 chat 엔드포인트. */
 export function getLocalLlmChatEndpoint() {
   return `${getLocalLlmUrl()}/v1/chat/completions`
+}
+
+// ── 비전 모델(이미지 분석) ──
+export function isLocalVisionEnabled() {
+  try { return localStorage.getItem(VISION_ENABLED_KEY) === '1' } catch { return false }
+}
+export function setLocalVisionEnabled(on) {
+  try { localStorage.setItem(VISION_ENABLED_KEY, on ? '1' : '0') } catch { /* ignore */ }
+}
+/** 비전 서버 URL — 미지정 시 텍스트 URL로 폴백(같은 Ollama에 두 모델 시 URL 공유). */
+export function getLocalVisionUrl() {
+  try {
+    const o = localStorage.getItem(VISION_URL_KEY)
+    if (o) return o.replace(/\/+$/, '')
+  } catch { /* ignore */ }
+  return getLocalLlmUrl()
+}
+export function setLocalVisionUrl(url) {
+  try {
+    if (url) localStorage.setItem(VISION_URL_KEY, String(url).trim())
+    else localStorage.removeItem(VISION_URL_KEY)
+  } catch { /* ignore */ }
+}
+export function getLocalVisionModel() {
+  try { return (localStorage.getItem(VISION_MODEL_KEY) || LLM_DEFAULT_VISION_MODEL).trim() } catch { return LLM_DEFAULT_VISION_MODEL }
+}
+export function setLocalVisionModel(m) {
+  try {
+    if (m) localStorage.setItem(VISION_MODEL_KEY, String(m).trim())
+    else localStorage.removeItem(VISION_MODEL_KEY)
+  } catch { /* ignore */ }
+}
+export function getLocalVisionChatEndpoint() {
+  return `${getLocalVisionUrl()}/v1/chat/completions`
 }
 
 export function getLocalLlmModel() {

@@ -9,7 +9,8 @@
  * 텍스트(chat)는 '로컬 LLM 사용'(Ollama, OpenAI 호환) 시 로컬 엔드포인트로 라우팅된다.
  * 이미지 생성/편집은 로컬 대체가 없어 OpenAI 경로 유지.
  */
-import { isLocalLlmEnabled, getLocalLlmChatEndpoint, getLocalLlmModel } from './LlmBackendClient'
+import { isLocalLlmEnabled, getLocalLlmChatEndpoint, getLocalLlmModel,
+  isLocalVisionEnabled, getLocalVisionChatEndpoint, getLocalVisionModel } from './LlmBackendClient'
 import { normalizeCaption } from './ideogramCaption'
 
 const KEY_STORAGE = 'openai-api-key'
@@ -73,12 +74,20 @@ export { DEFAULT_MODEL, DEFAULT_IMAGE_MODEL }
  * @param {{ system?: string, user: string, images?: string[], model?: string, temperature?: number, signal?: AbortSignal }} opts
  */
 export async function chat({ system, user, images, model, temperature = 0.7, responseFormat, signal } = {}) {
-  const local = isLocalLlmEnabled()
+  // 이미지 첨부 여부로 텍스트/비전 분리 라우팅. 비전(이미지)은 로컬 비전 모델(설정 시),
+  // 아니면 OpenAI(비전 가능 모델). 텍스트는 기존대로 로컬 텍스트 모델 또는 OpenAI.
+  const isVision = !!(images && images.length)
+  const visionLocal = isVision && isLocalVisionEnabled()
+  const textLocal = !isVision && isLocalLlmEnabled()
+  const local = visionLocal || textLocal
   const apiKey = getApiKey()
+  if (isVision && !visionLocal && !apiKey) {
+    throw new Error('이미지 분석에는 비전 모델이 필요합니다. AI 설정에서 OpenAI 키를 입력하거나 로컬 비전 모델을 켜세요.')
+  }
   if (!local && !apiKey) throw new Error('OpenAI API 키가 설정되지 않았습니다. 먼저 키를 입력하세요.')
 
-  const endpoint = local ? getLocalLlmChatEndpoint() : ENDPOINT
-  const useModel = local ? getLocalLlmModel() : (model || getModel())
+  const endpoint = visionLocal ? getLocalVisionChatEndpoint() : textLocal ? getLocalLlmChatEndpoint() : ENDPOINT
+  const useModel = visionLocal ? getLocalVisionModel() : textLocal ? getLocalLlmModel() : (model || getModel())
 
   const messages = []
   if (system) messages.push({ role: 'system', content: system })
@@ -118,7 +127,7 @@ export async function chat({ system, user, images, model, temperature = 0.7, res
       detail = j?.error?.message || ''
     } catch { /* 본문 파싱 실패 무시 */ }
     if (local) {
-      if (res.status === 404) throw new Error(`로컬 LLM 모델(${getLocalLlmModel()})을 찾을 수 없습니다. 'ollama pull ${getLocalLlmModel()}'로 받으세요.`)
+      if (res.status === 404) throw new Error(`로컬 LLM 모델(${useModel})을 찾을 수 없습니다. 'ollama pull ${useModel}'로 받으세요.`)
       throw new Error(`로컬 LLM 오류 (${res.status})${detail ? ': ' + detail : ''}`)
     }
     if (res.status === 401) throw new Error('API 키가 유효하지 않습니다. 키를 다시 확인하세요.')
