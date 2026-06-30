@@ -34,9 +34,6 @@ export default function FlatAiBar({ element, scale, canvasRef }) {
   // 'idle' | 'loading' | 'preview' | 'error'
   const [phase, setPhase] = useState('idle')
   const [styleId, setStyleId] = useState('flat')
-  const [backend, setBackend] = useState(() => {
-    try { return localStorage.getItem(IMG_BACKEND_KEY) || 'openai' } catch { return 'openai' }
-  })
   const [status, setStatus] = useState('')
   const [prompt, setPrompt] = useState('')
   const [imageUrl, setImageUrl] = useState('')
@@ -47,7 +44,8 @@ export default function FlatAiBar({ element, scale, canvasRef }) {
   const abortRef = useRef(null)
   const blobRef = useRef(null) // 로컬 결과 Blob(적용 시 BlobStore 저장)
 
-  const pickBackend = (b) => { setBackend(b); try { localStorage.setItem(IMG_BACKEND_KEY, b) } catch { /* ignore */ } }
+  // 이미지 생성 엔진은 AI 설정(이미지 생성 > 기본 엔진)을 따른다. 생성 시점에 읽음(설정 변경 즉시 반영).
+  const getBackend = () => { try { return localStorage.getItem(IMG_BACKEND_KEY) || 'openai' } catch { return 'openai' } }
 
   // 로컬(blob:) 미리보기 URL 누수 방지 — imageUrl 교체/언마운트 시 이전 blob URL 해제(dataURL은 제외)
   useEffect(() => () => { if (imageUrl && imageUrl.startsWith('blob:')) URL.revokeObjectURL(imageUrl) }, [imageUrl])
@@ -89,8 +87,9 @@ export default function FlatAiBar({ element, scale, canvasRef }) {
 
   const sourceText = useCallback(() => htmlToPlain(element.content), [element.content])
 
-  // 전체 파이프라인: 텍스트 분석 → 프롬프트/캡션 → 이미지 생성 (백엔드: OpenAI API | 로컬 ideogram)
+  // 전체 파이프라인: 텍스트 분석 → 프롬프트/캡션 → 이미지 생성 (엔진은 AI 설정값을 따름)
   const run = useCallback(async () => {
+    const backend = getBackend()
     // OpenAI 백엔드는 이미지 API에 키 필수. 로컬 백엔드는 캡션 LLM에 OpenAI 키 또는 로컬 LLM 중 하나 필요.
     const needKey = backend === 'openai' || !isLocalLlmEnabled()
     if (needKey && !hasApiKey()) { openAiSettings(); return }
@@ -132,7 +131,7 @@ export default function FlatAiBar({ element, scale, canvasRef }) {
       setError(e?.message || 'AI 호출에 실패했습니다.')
       setPhase('error')
     }
-  }, [sourceText, styleId, backend, element.width, element.height])
+  }, [sourceText, styleId, element.width, element.height])
 
   // 현재 프롬프트/캡션(편집 가능)으로 이미지만 다시 생성
   const regenerate = useCallback(async () => {
@@ -233,15 +232,6 @@ export default function FlatAiBar({ element, scale, canvasRef }) {
           }}
         >
           <GripHandle onPointerDown={startDrag} dragging={dragging} />
-          <select
-            value={backend}
-            onChange={e => pickBackend(e.target.value)}
-            title="이미지 생성 엔진 — OpenAI(클라우드) 또는 로컬 ideogram(GPU 서버)"
-            style={styleSelectStyle}
-          >
-            <option value="openai" style={{ background: '#1e293b', color: '#f1f5f9' }}>OpenAI</option>
-            <option value="local" style={{ background: '#1e293b', color: '#f1f5f9' }}>로컬 ideogram</option>
-          </select>
           <select
             value={styleId}
             onChange={e => setStyleId(e.target.value)}
