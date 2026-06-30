@@ -2,7 +2,7 @@ import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react
 import { createPortal } from 'react-dom'
 import { useFlatStore } from '../store/flatStore'
 import { hasApiKey, generateImagePrompt, generateImage, generateIdeogramCaption } from '../core/OpenAIClient'
-import { generateLayoutImage, checkImagenBackend } from '../core/ImagenBackendClient'
+import { generateLayoutImage, checkImagenBackend, imagenDockerRunCommand } from '../core/ImagenBackendClient'
 import { isLocalLlmEnabled } from '../core/LlmBackendClient'
 import { BlobStore } from '../core/BlobStore'
 import { openAiSettings } from './AiSettingsModal'
@@ -42,6 +42,8 @@ export default function FlatAiBar({ element, scale, canvasRef }) {
   const [imageUrl, setImageUrl] = useState('')
   const [source, setSource] = useState('openai') // 생성 결과 출처(적용/재생성 분기): 'openai'(dataURL) | 'local'(blob)
   const [error, setError] = useState('')
+  const [imgenDown, setImgenDown] = useState(false) // 로컬 이미지 서버 미연결 → 설치 안내 표시
+  const [cmdCopied, setCmdCopied] = useState(false)
   const abortRef = useRef(null)
   const blobRef = useRef(null) // 로컬 결과 Blob(적용 시 BlobStore 저장)
 
@@ -97,14 +99,14 @@ export default function FlatAiBar({ element, scale, canvasRef }) {
     abortRef.current?.abort()
     const ctrl = new AbortController()
     abortRef.current = ctrl
-    setPhase('loading'); setError(''); setImageUrl(''); blobRef.current = null
+    setPhase('loading'); setError(''); setImageUrl(''); setImgenDown(false); blobRef.current = null
     try {
       const directive = IMAGE_STYLES.find(s => s.id === styleId)?.directive || ''
       if (backend === 'local') {
         setStatus('이미지 서버 확인 중…')
         if (!(await checkImagenBackend(true))) {
-          setError('로컬 이미지 생성 서버에 연결할 수 없습니다. (NVIDIA 40GB+ GPU에서 float-imgen 실행 필요)')
-          setPhase('error'); return
+          setError('로컬 이미지 생성 서버에 연결할 수 없습니다.')
+          setImgenDown(true); setPhase('error'); return
         }
         setStatus('장면 설명 작성 중… (LLM)')
         const caption = await generateIdeogramCaption(text, { style: directive, signal: ctrl.signal })
@@ -284,7 +286,18 @@ export default function FlatAiBar({ element, scale, canvasRef }) {
           )}
 
           {phase === 'error' && (
-            <div style={{ fontSize: 12.5, color: '#fca5a5', lineHeight: 1.5 }}>{error}</div>
+            <div style={{ fontSize: 12.5, color: '#fca5a5', lineHeight: 1.5 }}>
+              {error}
+              {imgenDown && (
+                <div style={{ marginTop: 8, color: '#cbd5e1', lineHeight: 1.6 }}>
+                  NVIDIA GPU(40GB+) 머신에서 아래 Docker로 실행하세요 (게이트·비상업 모델 → 유효한 HF 토큰 필요):
+                  <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all', fontSize: 10.5, color: '#cbd5e1', background: 'rgba(0,0,0,0.35)', padding: 8, borderRadius: 6, margin: '6px 0 0' }}>{imagenDockerRunCommand({})}</pre>
+                  <button type="button"
+                    onClick={() => { try { navigator.clipboard?.writeText(imagenDockerRunCommand({})); setCmdCopied(true); setTimeout(() => setCmdCopied(false), 1500) } catch { /* ignore */ } }}
+                    style={{ ...ghostBtnStyle, marginTop: 6 }}>{cmdCopied ? '복사됨 ✓' : '명령 복사'}</button>
+                </div>
+              )}
+            </div>
           )}
 
           {phase === 'preview' && (

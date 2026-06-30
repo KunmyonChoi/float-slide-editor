@@ -6,7 +6,7 @@
  * 실제 텍스트 호출은 OpenAIClient.chat이 isLocalLlmEnabled()일 때 이 base로 보낸다.
  */
 export const LLM_DEFAULT_URL = 'http://localhost:11434'
-export const LLM_DEFAULT_MODEL = 'qwen2.5:7b'
+export const LLM_DEFAULT_MODEL = 'qwen2.5:3b' // M1 등 저사양 PC 구동 가능(~2GB). 더 무거운 작업은 사용자가 7b로 변경
 
 const ENABLED_KEY = 'local-llm-enabled'
 const URL_KEY = 'local-llm-url'
