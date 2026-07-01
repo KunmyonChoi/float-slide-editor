@@ -102,7 +102,11 @@ function AiSettingsDialog() {
     setLocalVisionModel(visModel)
     setLocalVisionUrl(visUrl)
     setImagenBase(imgUrl)
-    try { localStorage.setItem(IMG_BACKEND_KEY, imgBackend) } catch { /* ignore */ }
+    try {
+      localStorage.setItem(IMG_BACKEND_KEY, imgBackend)
+      // 이미지 엔진 변경을 같은 탭 구독자(FlatSelectionAiBar 등)에 알림
+      window.dispatchEvent(new Event('ai-image-backend-change'))
+    } catch { /* ignore */ }
     closeAiSettings()
   }
 
