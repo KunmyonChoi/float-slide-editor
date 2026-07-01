@@ -72,6 +72,8 @@ export default function FlatContextMenu({ x, y, canvasX, canvasY, onClose }) {
   const allLocked = selectedEls.length > 0 && selectedEls.every(e => e.locked)
   const singleTextEl = selectedEls.length === 1 && selectedEls[0].type === 'text' ? selectedEls[0] : null
   const textEls = selectedEls.filter(e => e.type === 'text') // AI 레이아웃 이미지 입력
+  // 레이아웃 이미지(Ideogram)는 이미지 엔진이 로컬 ideogram일 때만 노출(메뉴는 열 때마다 새로 계산됨)
+  const imagenLocal = (() => { try { return localStorage.getItem('ai-image-backend') === 'local' } catch { return false } })()
   const singleImageEl = selectedEls.length === 1 && selectedEls[0].type === 'image' ? selectedEls[0] : null
   const singleVideoEl = selectedEls.length === 1 && selectedEls[0].type === 'video' ? selectedEls[0] : null
 
@@ -473,7 +475,7 @@ export default function FlatContextMenu({ x, y, canvasX, canvasY, onClose }) {
     ],
     // AI — 선택한 텍스트 박스로 레이아웃 이미지 생성
     [
-      ...(textEls.length >= 1 ? [{ id: 'aiLayout', label: '🖼️ AI 레이아웃 이미지 생성', action: 'aiLayout' }] : []),
+      ...(textEls.length >= 1 && imagenLocal ? [{ id: 'aiLayout', label: '🖼️ AI 레이아웃 이미지 생성', action: 'aiLayout' }] : []),
     ],
     // 배치
     [

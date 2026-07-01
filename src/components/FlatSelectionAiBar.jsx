@@ -4,18 +4,31 @@ import { openInfographic } from './InfographicModal'
 import { openImagenLayout } from './ImagenLayoutModal'
 import { useFlatStore } from '../store/flatStore'
 
+const IMG_BACKEND_KEY = 'ai-image-backend' // AI 설정(이미지 엔진)과 공유
+const readImgBackend = () => { try { return localStorage.getItem(IMG_BACKEND_KEY) || 'openai' } catch { return 'openai' } }
+
 /**
  * FlatSelectionAiBar — 여러 요소를 (마퀴 등으로) 다중 선택했을 때 뜨는 전용 AI 플로팅바.
  *
  * 액션 "AI 인포그래픽": 선택 요소들의 bbox 영역을 캡처/분석해 인포그래픽 이미지를 만들고,
  * bbox 크기·위치의 이미지 요소로 삽입(또는 원본 교체)한다 — InfographicModal(selection 모드).
- * 액션 "레이아웃 이미지"(선택이 전부 텍스트일 때만): 텍스트 박스들의 위치·내용을 bbox JSON
- * 캡션으로 만들어 Ideogram 4로 정밀 레이아웃 이미지를 생성 — ImagenLayoutModal.
+ * 액션 "레이아웃 이미지"(선택이 전부 텍스트 + 이미지 엔진이 로컬 ideogram일 때만): 텍스트 박스들의
+ * 위치·내용을 bbox JSON 캡션으로 만들어 Ideogram 4로 정밀 레이아웃 이미지를 생성 — ImagenLayoutModal.
  *
  * 캔버스 줌과 무관하게 읽기 좋도록 document.body 포털 + 화면 좌표로 배치.
  */
 export default function FlatSelectionAiBar({ elements, scale, canvasRef }) {
-  const allText = elements.length > 0 && elements.every(e => e.type === 'text') // 레이아웃 이미지 노출 조건
+  const allText = elements.length > 0 && elements.every(e => e.type === 'text')
+  // 이미지 엔진 설정을 반영해 레이아웃 이미지 버튼 노출 결정(설정 변경 즉시 반영).
+  const [imgBackend, setImgBackend] = useState(readImgBackend)
+  useEffect(() => {
+    const sync = () => setImgBackend(readImgBackend())
+    window.addEventListener('storage', sync)               // 다른 탭에서 변경
+    window.addEventListener('ai-image-backend-change', sync) // 같은 탭(AI 설정 저장)
+    return () => { window.removeEventListener('storage', sync); window.removeEventListener('ai-image-backend-change', sync) }
+  }, [])
+  // 레이아웃 이미지(Ideogram)는 로컬 ideogram 엔진을 쓸 때만 노출
+  const showLayout = allText && imgBackend === 'local'
   const [rect, setRect] = useState(null)
   const [tick, setTick] = useState(0)
 
@@ -55,7 +68,7 @@ export default function FlatSelectionAiBar({ elements, scale, canvasRef }) {
   const placeAbove = rect.top - BAR_H - 8 >= 8
   const top = placeAbove ? rect.top - BAR_H - 8 : rect.top + 8
   // bbox 가로 중앙 정렬(화면 안쪽으로 클램프). 버튼 수에 따라 폭 추정.
-  const barW = allText ? 320 : 160
+  const barW = showLayout ? 320 : 160
   const center = (rect.left + rect.right) / 2
   const left = Math.max(8, Math.min(window.innerWidth - barW - 8, center - barW / 2))
 
@@ -80,7 +93,7 @@ export default function FlatSelectionAiBar({ elements, scale, canvasRef }) {
         <SparkleIcon />
         <span style={{ fontSize: 12, marginLeft: 5 }}>AI 인포그래픽</span>
       </button>
-      {allText && (
+      {showLayout && (
         <button
           type="button"
           onClick={() => {
