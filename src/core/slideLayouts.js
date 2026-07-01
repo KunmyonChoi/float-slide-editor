@@ -77,28 +77,48 @@ export const SLIDE_LAYOUTS = [
 ]
 
 /**
- * 레이아웃 변환 시 기존 레이아웃 요소의 내용을 새 레이아웃 스펙에 역할별로 이어받는다.
+ * 레이아웃 변환 시 기존 레이아웃 요소를 새 레이아웃 스펙에 역할별로 이어받는다.
  * - title/subtitle: 역할 정확 매칭으로 이어받음
- * - 본문 계열(body/left/right): 내용 풀(FIFO)로 이어받음
- * 매칭 안 되는 기존 내용은 버려진다(변환). 새 역할에 매칭 없으면 기본 플레이스홀더 유지.
- * @returns 새 스펙 배열(content가 이어받기로 교체될 수 있음)
+ * - 본문 계열(body/left/right): 요소 풀(FIFO)로 이어받음
+ * 매칭 안 되는 기존 요소는 버려진다(변환). 새 역할에 매칭 없으면 기본 플레이스홀더 유지.
+ *
+ * 텍스트가 아닌 요소(예: 제목 자리를 AI 이미지로 치환한 image/video)는 content만 옮기면
+ * 새 text 슬롯에 이미지 데이터가 문자열로 렌더된다. 따라서 미디어 요소는 type·content·styles를
+ * 함께 이식하고 위치·크기·역할만 새 슬롯 것을 쓴다.
+ * @returns 새 스펙 배열(내용/타입이 이어받기로 교체될 수 있음)
  */
 export function carryLayoutContent(oldLayoutEls, newSpecs) {
   const byRole = {}
-  const contentPool = []
+  const pool = []
   for (const el of oldLayoutEls || []) {
     const r = el.layoutRole
-    if (r === 'title' || r === 'subtitle') byRole[r] = el.content
-    else if (CONTENT_ROLES.has(r)) contentPool.push(el.content)
+    if (r === 'title' || r === 'subtitle') byRole[r] = el
+    else if (CONTENT_ROLES.has(r)) pool.push(el)
   }
   let pi = 0
   return newSpecs.map(spec => {
-    let content = spec.content
+    let old = null
     if ((spec.layoutRole === 'title' || spec.layoutRole === 'subtitle') && byRole[spec.layoutRole] != null) {
-      content = byRole[spec.layoutRole]
-    } else if (CONTENT_ROLES.has(spec.layoutRole) && pi < contentPool.length) {
-      content = contentPool[pi++]
+      old = byRole[spec.layoutRole]
+    } else if (CONTENT_ROLES.has(spec.layoutRole) && pi < pool.length) {
+      old = pool[pi++]
     }
-    return { ...spec, content }
+    if (!old) return spec
+    // 미디어(이미지/영상)로 바뀐 요소: 타입·내용·스타일 이식, 위치·크기·역할은 새 슬롯 유지.
+    if (old.type && old.type !== 'text') {
+      const out = {
+        ...spec,
+        type: old.type,
+        content: old.content,
+        styles: old.styles,
+        isRich: !!old.isRich,
+        merged: !!old.merged,
+        sourceId: old.sourceId ?? null,
+      }
+      delete out.placeholder // 텍스트 전용 필드 제거
+      return out
+    }
+    // 텍스트: 기존처럼 content만 이어받음
+    return { ...spec, content: old.content }
   })
 }
