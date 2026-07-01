@@ -110,7 +110,7 @@ export function carryLayoutContent(oldLayoutEls, newSpecs) {
         ...spec,
         type: old.type,
         content: old.content,
-        styles: old.styles,
+        styles: old.styles || {}, // 방어: styles 없으면 렌더가 objectFit 접근 시 예외
         isRich: !!old.isRich,
         merged: !!old.merged,
         sourceId: old.sourceId ?? null,
