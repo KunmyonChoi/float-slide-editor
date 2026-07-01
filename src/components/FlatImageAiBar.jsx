@@ -569,11 +569,12 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
         </div>
       )}
 
-      {/* 캔버스 전후 비교 오버레이(미리보기) — 요소 위에 결과를 겹쳐 세로 슬라이더로 비교 */}
-      {phase === 'preview' && mode !== 'cutout' && imageUrl && (
+      {/* 캔버스 전후 비교 오버레이(미리보기) — 요소 위에 결과를 겹쳐 세로 슬라이더로 비교.
+          before=편집에 실제 넣은 입력(captureRef: enhance/edit=박스캡처, outpaint=합성) → 전후 동일 프레이밍. */}
+      {phase === 'preview' && mode !== 'cutout' && imageUrl && captureRef.current && (
         <ImageComparePreview
           element={element} scale={scale} canvasRef={canvasRef}
-          resultUrl={imageUrl} objectFit={compareFit}
+          beforeUrl={captureRef.current} resultUrl={imageUrl} objectFit={compareFit}
           split={split} onSplit={setSplit} showOriginal={holding}
         />
       )}
