@@ -43,6 +43,7 @@ export default function FlatAiBar({ element, scale, canvasRef }) {
   const [error, setError] = useState('')
   const [imgenDown, setImgenDown] = useState(false) // 로컬 이미지 서버 미연결 → 설치 안내 표시
   const [cmdCopied, setCmdCopied] = useState(false)
+  const [imgMenuOpen, setImgMenuOpen] = useState(false) // 'AI 이미지 생성' 화풍 드롭다운
   // AI 텍스트 편집 상태
   const [menuOpen, setMenuOpen] = useState(false)       // 텍스트 편집 액션 드롭다운
   const [textAction, setTextAction] = useState(null)    // 'spelling'|'formal'|'markdown'|'prompt'
@@ -96,12 +97,14 @@ export default function FlatAiBar({ element, scale, canvasRef }) {
   const sourceText = useCallback(() => htmlToPlain(element.content), [element.content])
 
   // 전체 파이프라인: 텍스트 분석 → 프롬프트/캡션 → 이미지 생성 (엔진은 AI 설정값을 따름)
-  const run = useCallback(async () => {
+  const run = useCallback(async (styleOverride) => {
     const backend = getBackend()
     // OpenAI 백엔드는 이미지 API에 키 필수. 로컬 백엔드는 캡션 LLM에 OpenAI 키 또는 로컬 LLM 중 하나 필요.
     const needKey = backend === 'openai' || !isLocalLlmEnabled()
     if (needKey && !hasApiKey()) { openAiSettings(); return }
     setTool('image')
+    // 드롭다운에서 고른 화풍(styleOverride)이 있으면 그것을, 없으면 현재 styleId 사용(setState 지연 회피).
+    const sid = styleOverride || styleId
     const text = sourceText()
     if (!text) { setError('텍스트 박스에 분석할 내용이 없습니다.'); setPhase('error'); return }
     abortRef.current?.abort()
@@ -109,7 +112,7 @@ export default function FlatAiBar({ element, scale, canvasRef }) {
     abortRef.current = ctrl
     setPhase('loading'); setError(''); setImageUrl(''); setImgenDown(false); blobRef.current = null
     try {
-      const directive = IMAGE_STYLES.find(s => s.id === styleId)?.directive || ''
+      const directive = IMAGE_STYLES.find(s => s.id === sid)?.directive || ''
       if (backend === 'local') {
         setStatus('이미지 서버 확인 중…')
         if (!(await checkImagenBackend(true))) {
@@ -274,7 +277,6 @@ export default function FlatAiBar({ element, scale, canvasRef }) {
           data-edit-accessory="true"
           // 포털 자식의 React 이벤트는 FlatCanvas(부모)로 버블링되므로 반드시 전파 차단.
           // (안 하면 mousedown이 캔버스 마퀴로 전달돼 mouseup에서 선택 해제→바 언마운트)
-          // preventDefault는 하지 않음 — <select> 드롭다운 열림을 막기 때문.
           onMouseDown={e => e.stopPropagation()}
           onClick={e => e.stopPropagation()}
           style={{
@@ -287,23 +289,28 @@ export default function FlatAiBar({ element, scale, canvasRef }) {
           }}
         >
           <GripHandle onPointerDown={startDrag} dragging={dragging} />
-          <select
-            value={styleId}
-            onChange={e => setStyleId(e.target.value)}
-            title="이미지 화풍"
-            style={styleSelectStyle}
-          >
-            {IMAGE_STYLES.map(s => <option key={s.id} value={s.id} style={{ background: '#1e293b', color: '#f1f5f9' }}>{s.label}</option>)}
-          </select>
-          <button
-            type="button"
-            onClick={run}
-            title="텍스트 박스 내용을 분석해 어울리는 이미지를 생성하고, 이 영역을 이미지로 교체합니다"
-            style={aiBtnStyle}
-          >
-            <SparkleIcon />
-            <span style={{ fontSize: 12, marginLeft: 5 }}>AI 이미지 생성</span>
-          </button>
+          {/* 'AI 이미지 생성' 버튼 자체가 화풍 드롭다운 — 화풍을 고르면 그 스타일로 바로 생성. */}
+          <span style={{ position: 'relative', display: 'inline-flex' }}>
+            <button
+              type="button"
+              onClick={() => setImgMenuOpen(v => !v)}
+              title="화풍을 골라 텍스트 내용에 어울리는 이미지를 생성하고, 이 영역을 이미지로 교체합니다"
+              style={aiBtnStyle}
+            >
+              <SparkleIcon />
+              <span style={{ fontSize: 12, marginLeft: 5 }}>AI 이미지 생성 ▾</span>
+            </button>
+            {imgMenuOpen && (
+              <div style={{ ...menuStyle, left: 0, right: 'auto' }}>
+                {IMAGE_STYLES.map(s => (
+                  <button key={s.id} type="button" style={menuItemStyle}
+                    onClick={() => { setImgMenuOpen(false); setStyleId(s.id); run(s.id) }}>
+                    {s.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </span>
           <span style={{ width: 1, height: 20, background: 'rgba(255,255,255,0.14)', margin: '0 2px' }} />
           <span style={{ position: 'relative', display: 'inline-flex' }}>
             <button
@@ -477,11 +484,6 @@ const aiBtnStyle = {
   display: 'flex', alignItems: 'center', padding: '6px 8px', borderRadius: 8,
   border: 'none', cursor: 'pointer', color: '#c7d2fe',
   background: 'rgba(99,102,241,0.18)',
-}
-const styleSelectStyle = {
-  height: 26, maxWidth: 150, fontSize: 12, padding: '0 6px', borderRadius: 7, cursor: 'pointer',
-  background: 'rgba(255,255,255,0.06)', color: '#e2e8f0',
-  border: '1px solid rgba(255,255,255,0.14)', outline: 'none',
 }
 const ghostBtnStyle = {
   padding: '6px 12px', fontSize: 12.5, borderRadius: 8, cursor: 'pointer',
