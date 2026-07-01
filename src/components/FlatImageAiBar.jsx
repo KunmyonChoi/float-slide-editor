@@ -9,6 +9,17 @@ import { segmentImage, checkCutoutBackend } from '../core/CutoutBackendClient'
 import CutoutInstallModal from './CutoutInstallModal'
 import { BlobStore } from '../core/BlobStore'
 import { useDraggableToolbar, GripHandle } from './useDraggableToolbar'
+import MaskBrushOverlay from './MaskBrushOverlay'
+
+// data URL 이미지의 실제 픽셀 크기
+function imageSize(dataUrl) {
+  return new Promise((resolve, reject) => {
+    const img = new Image()
+    img.onload = () => resolve({ w: img.naturalWidth, h: img.naturalHeight })
+    img.onerror = () => reject(new Error('이미지 크기를 읽지 못했습니다.'))
+    img.src = dataUrl
+  })
+}
 
 // 이미지 요소의 원본 소스(content) → Blob. idb 참조면 BlobStore, 아니면 직접 fetch.
 // (박스 캡처가 아니라 원본을 분리해야 컷아웃 종횡비=원본과 같아 그룹 리사이즈에 어긋나지 않음)
@@ -86,6 +97,12 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
   const [imageUrl, setImageUrl] = useState('')
   const [error, setError] = useState('')
   const [zoom, setZoom] = useState(false)
+  // 마스크(부분 편집) — '설명으로 편집' compose에서 켜면 이미지 위에 브러시 오버레이
+  const [maskOn, setMaskOn] = useState(false)
+  const [brushTool, setBrushTool] = useState('brush') // 'brush' | 'erase'
+  const [brushSize, setBrushSize] = useState(48)
+  const [maskCount, setMaskCount] = useState(0) // 칠한 스트로크 수(버튼 안내용)
+  const maskRef = useRef(null)
   const abortRef = useRef(null)
   const captureRef = useRef('') // 입력 캡처 — 재생성 시 재사용
   const cutoutBlobRef = useRef(null) // 분리 결과 PNG blob — 적용 시 data URL로 변환
@@ -126,6 +143,7 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setPhase('idle'); setMode('enhance'); setError(''); setStatus(''); setPrompt(''); setImageUrl(''); setZoom(false)
     setServerDown(false); setShowInstall(false)
+    setMaskOn(false); setMaskCount(0)
     return () => { abortRef.current?.abort() }
   }, [element.id])
 
@@ -155,8 +173,14 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
       )
       if (ctrl.signal.aborted) return
       captureRef.current = cap
+      // 부분 편집: 마스크가 켜져 있고 칠한 영역이 있으면 캡처 해상도에 맞춰 마스크 생성 → 그 영역만 편집
+      let mask
+      if (useMode === 'edit' && maskOn && maskRef.current?.hasStrokes()) {
+        const { w, h } = await imageSize(cap)
+        mask = maskRef.current.buildMask(w, h) || undefined
+      }
       setStatus(useMode === 'edit' ? 'AI 이미지 편집 중… (수십 초 걸릴 수 있어요)' : '디자인 다듬는 중… (수십 초 걸릴 수 있어요)')
-      const url = await editImage(cap, p, { width: element.width, height: element.height, signal: ctrl.signal })
+      const url = await editImage(cap, p, { width: element.width, height: element.height, mask, signal: ctrl.signal })
       if (ctrl.signal.aborted) return
       setImageUrl(url)
       setPhase('preview')
@@ -165,7 +189,7 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
       setError(e?.message || 'AI 변환에 실패했습니다.')
       setPhase('error')
     }
-  }, [styleId, prompt, element.x, element.y, element.width, element.height])
+  }, [styleId, prompt, maskOn, element.x, element.y, element.width, element.height])
 
   // 현재 프롬프트(편집 가능)로 캡처를 재사용해 다시 변환
   const regenerate = useCallback(async () => {
@@ -407,8 +431,43 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
                 onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); run('edit', prompt) } }}
                 style={textareaStyle}
               />
+              {/* 부분 편집(마스크) — 켜면 이미지 위에 브러시로 편집 영역 지정 */}
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#cbd5e1', cursor: 'pointer' }}>
+                <input type="checkbox" checked={maskOn} onChange={e => setMaskOn(e.target.checked)} />
+                🖌 영역 지정(마스크) — 칠한 부분만 편집
+              </label>
+              {maskOn && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: 12, color: '#cbd5e1' }}>
+                  <div style={{ display: 'flex', gap: 4 }}>
+                    <button type="button" onClick={() => setBrushTool('brush')}
+                      style={{ ...toolBtnStyle, ...(brushTool === 'brush' ? toolBtnActive : {}) }}>브러시</button>
+                    <button type="button" onClick={() => setBrushTool('erase')}
+                      style={{ ...toolBtnStyle, ...(brushTool === 'erase' ? toolBtnActive : {}) }}>지우개</button>
+                  </div>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                    크기<input type="range" min={8} max={160} value={brushSize}
+                      onChange={e => setBrushSize(Number(e.target.value))} style={{ width: 90 }} />
+                  </label>
+                  <button type="button" onClick={() => maskRef.current?.clear()} style={toolBtnStyle}>모두 지우기</button>
+                  <span style={{ color: '#64748b', fontSize: 11 }}>
+                    {maskCount > 0 ? '이미지 위 빨간 영역만 편집됩니다' : '이미지 위를 칠하세요'}
+                  </span>
+                </div>
+              )}
               <div style={{ fontSize: 11, color: '#64748b' }}>입력한 지시대로 이미지를 편집한 결과를 미리 보여드립니다. 확인 후 적용하면 교체됩니다.</div>
             </>
+          )}
+
+          {phase === 'compose' && mode === 'edit' && maskOn && (
+            <MaskBrushOverlay
+              ref={maskRef}
+              element={element}
+              scale={scale}
+              canvasRef={canvasRef}
+              tool={brushTool}
+              brushSize={brushSize}
+              onStrokesChange={setMaskCount}
+            />
           )}
 
           {phase === 'loading' && (
@@ -508,6 +567,11 @@ const aiBtnStyle = {
   border: 'none', cursor: 'pointer', color: '#c7d2fe',
   background: 'rgba(99,102,241,0.18)',
 }
+const toolBtnStyle = {
+  padding: '4px 9px', fontSize: 12, borderRadius: 7, cursor: 'pointer',
+  border: '1px solid rgba(255,255,255,0.14)', background: 'transparent', color: '#cbd5e1',
+}
+const toolBtnActive = { background: 'rgba(99,102,241,0.35)', color: '#fff', borderColor: 'transparent' }
 const menuStyle = {
   position: 'absolute', top: 'calc(100% + 6px)', left: 0, zIndex: 10050,
   display: 'flex', flexDirection: 'column', minWidth: 160, maxHeight: 300, overflowY: 'auto', padding: 4,
