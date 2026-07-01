@@ -127,14 +127,16 @@ function AiSettingsDialog() {
       <div
         onMouseDown={e => e.stopPropagation()}
         style={{
-          width: 'min(480px, 92vw)',
+          width: 'min(480px, 92vw)', maxHeight: '90vh',
           background: 'rgba(15,23,42,0.98)', color: '#e2e8f0',
           border: '1px solid rgba(255,255,255,0.12)', borderRadius: 12,
           boxShadow: '0 12px 40px rgba(0,0,0,0.55)', padding: 18,
           display: 'flex', flexDirection: 'column', gap: 14,
         }}
       >
-        <div style={{ fontSize: 15, fontWeight: 600 }}>AI 설정 (OpenAI)</div>
+        {/* 제목·푸터는 고정, 가운데 본문만 스크롤(설정 항목이 많아 화면을 넘칠 수 있어) */}
+        <div style={{ fontSize: 15, fontWeight: 600, flexShrink: 0 }}>AI 설정 (OpenAI)</div>
+        <div style={{ flex: '1 1 auto', minHeight: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 14, marginRight: -8, paddingRight: 8 }}>
 
         <div>
           <div style={labelClass}>API 키</div>
@@ -321,8 +323,9 @@ function AiSettingsDialog() {
             )
           })()}
         </div>
+        </div>
 
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexShrink: 0 }}>
           <button
             type="button"
             onClick={() => { setApiKey(''); setKey('') }}
