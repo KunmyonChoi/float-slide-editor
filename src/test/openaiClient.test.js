@@ -155,6 +155,19 @@ describe('editImage (image-to-image edits)', () => {
     expect(init.headers.Authorization).toBe('Bearer sk-test')
   })
 
+  it('edits: mask를 주면 FormData에 mask 첨부, 없으면 미첨부', async () => {
+    setImageModel('gpt-image-2')
+    const ok = () => ({ ok: true, status: 200, json: async () => ({ data: [{ b64_json: 'QQ==' }] }) })
+    const fetchMock = vi.fn().mockResolvedValue(ok())
+    vi.stubGlobal('fetch', fetchMock)
+    await editImage('data:image/png;base64,AAAA', 'edit here', { width: 500, height: 500, mask: 'data:image/png;base64,BBBB' })
+    expect(fetchMock.mock.calls[0][1].body.get('mask')).toBeInstanceOf(Blob)
+    const fetchMock2 = vi.fn().mockResolvedValue(ok())
+    vi.stubGlobal('fetch', fetchMock2)
+    await editImage('data:image/png;base64,AAAA', 'edit', { width: 500, height: 500 })
+    expect(fetchMock2.mock.calls[0][1].body.get('mask')).toBeNull()
+  })
+
   it('edits: gpt-image-2가 모델 미지원이면 gpt-image-1.5(프리셋+input_fidelity)로 폴백', async () => {
     setImageModel('gpt-image-2')
     const fetchMock = vi.fn()

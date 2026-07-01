@@ -482,10 +482,11 @@ CRITICAL constraints:
  * 원본의 구도/위치를 유지한 채 변환하는 데 적합하다.
  * @param {string} imageDataUrl  입력 이미지 data URL(캡처/crop)
  * @param {string} prompt  편집 지시 프롬프트
- * @param {{ width?: number, height?: number, size?: string, signal?: AbortSignal }} [opts]
+ * @param {{ width?: number, height?: number, size?: string, quality?: string, mask?: string, signal?: AbortSignal }} [opts]
+ *   mask: 선택. 입력 이미지와 같은 크기의 PNG data URL. 투명 픽셀=편집 영역, 불투명=보존.
  * @returns {Promise<string>} `data:image/png;base64,...`
  */
-export async function editImage(imageDataUrl, prompt, { width, height, size, quality = 'high', signal } = {}) {
+export async function editImage(imageDataUrl, prompt, { width, height, size, quality = 'high', mask, signal } = {}) {
   const apiKey = getApiKey()
   if (!apiKey) throw new Error('OpenAI API 키가 설정되지 않았습니다. 먼저 키를 입력하세요.')
   if (!imageDataUrl) throw new Error('편집할 입력 이미지가 없습니다.')
@@ -495,6 +496,7 @@ export async function editImage(imageDataUrl, prompt, { width, height, size, qua
   // 설정 모델(예: gpt-image-2)로 먼저 edits를 시도하고, '모델 미지원'류 오류면
   // edits 지원이 확실한 gpt-image-1.5로 1회 폴백한다(품질은 설정 모델 우선).
   const blob = dataUrlToBlob(imageDataUrl)
+  const maskBlob = mask ? dataUrlToBlob(mask) : null // 있으면 편집 영역 마스크(투명=편집)
   const configured = getImageModel()
   const candidates = configured === EDIT_FALLBACK_MODEL ? [configured] : [configured, EDIT_FALLBACK_MODEL]
 
@@ -508,6 +510,7 @@ export async function editImage(imageDataUrl, prompt, { width, height, size, qua
     const form = new FormData()
     form.append('model', model)
     form.append('image', blob, 'input.png')
+    if (maskBlob) form.append('mask', maskBlob, 'mask.png') // 부분 편집(인페인팅)
     form.append('prompt', p)
     form.append('size', size || (isImage2 ? flexSize(width, height) : pickImageSize(model, width, height)))
     form.append('quality', quality)
