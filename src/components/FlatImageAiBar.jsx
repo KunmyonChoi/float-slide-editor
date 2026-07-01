@@ -80,6 +80,7 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
   const [phase, setPhase] = useState('idle')
   const [mode, setMode] = useState('enhance') // 'enhance' | 'edit'
   const [styleId, setStyleId] = useState('original')
+  const [styleMenuOpen, setStyleMenuOpen] = useState(false) // '디자인 다듬기' 화풍 드롭다운
   const [status, setStatus] = useState('')
   const [prompt, setPrompt] = useState('') // 활성 프롬프트(편집 지시 / 변환 지시)
   const [imageUrl, setImageUrl] = useState('')
@@ -129,14 +130,16 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
   }, [element.id])
 
   // 캡처 → editImage. enhance는 화풍 기반 향상 프롬프트, edit는 사용자 프롬프트 사용.
-  const run = useCallback(async (useMode, userPrompt) => {
+  const run = useCallback(async (useMode, userPrompt, styleOverride) => {
     if (!hasApiKey()) { openAiSettings(); return }
     let p
     if (useMode === 'edit') {
       p = (userPrompt != null ? userPrompt : prompt).trim()
       if (!p) return // 편집 지시 없으면 실행 안 함
     } else {
-      const directive = INFOGRAPHIC_STYLES.find(s => s.id === styleId)?.directive || ''
+      // 드롭다운에서 고른 화풍(styleOverride)이 있으면 그것을, 없으면 현재 styleId 사용(setState 지연 회피).
+      const sid = styleOverride || styleId
+      const directive = INFOGRAPHIC_STYLES.find(s => s.id === sid)?.directive || ''
       p = buildImageEnhancePrompt(directive)
     }
     setMode(useMode); setPrompt(p)
@@ -318,23 +321,30 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
           }}
         >
           <GripHandle onPointerDown={startDrag} dragging={dragging} />
-          <select
-            value={styleId}
-            onChange={e => setStyleId(e.target.value)}
-            title="디자인 다듬기 화풍"
-            style={styleSelectStyle}
-          >
-            {INFOGRAPHIC_STYLES.map(s => <option key={s.id} value={s.id} style={{ background: '#1e293b', color: '#f1f5f9' }}>{s.label}</option>)}
-          </select>
-          <button
-            type="button"
-            onClick={() => run('enhance')}
-            title="글자·요소 위치는 그대로 두고 디자인을 AI로 보기 좋게 다듬습니다"
-            style={aiBtnStyle}
-          >
-            <SparkleIcon />
-            <span style={{ fontSize: 12, marginLeft: 5 }}>디자인 다듬기</span>
-          </button>
+          {/* '디자인 다듬기' 버튼 자체가 화풍 드롭다운 — 화풍을 고르면 그 스타일로 바로 실행.
+              (별도 콤보가 다른 버튼에도 적용되는 듯 혼동되던 문제 해결) */}
+          <span style={{ position: 'relative', display: 'inline-flex' }}>
+            <button
+              type="button"
+              onClick={() => setStyleMenuOpen(v => !v)}
+              title="화풍을 골라 글자·요소 위치는 그대로 두고 디자인을 AI로 다듬습니다"
+              style={aiBtnStyle}
+            >
+              <SparkleIcon />
+              <span style={{ fontSize: 12, marginLeft: 5 }}>디자인 다듬기 ▾</span>
+            </button>
+            {styleMenuOpen && (
+              <div style={menuStyle}>
+                {INFOGRAPHIC_STYLES.map(s => (
+                  <button key={s.id} type="button" style={menuItemStyle}
+                    onClick={() => { setStyleMenuOpen(false); setStyleId(s.id); run('enhance', null, s.id) }}>
+                    {s.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </span>
+          <span style={{ width: 1, height: 20, background: 'rgba(255,255,255,0.14)', margin: '0 2px' }} />
           <button
             type="button"
             onClick={() => { setMode('edit'); setPrompt(''); setPhase('compose') }}
@@ -498,10 +508,15 @@ const aiBtnStyle = {
   border: 'none', cursor: 'pointer', color: '#c7d2fe',
   background: 'rgba(99,102,241,0.18)',
 }
-const styleSelectStyle = {
-  height: 26, maxWidth: 130, fontSize: 12, padding: '0 6px', borderRadius: 7, cursor: 'pointer',
-  background: 'rgba(255,255,255,0.06)', color: '#e2e8f0',
-  border: '1px solid rgba(255,255,255,0.14)', outline: 'none',
+const menuStyle = {
+  position: 'absolute', top: 'calc(100% + 6px)', left: 0, zIndex: 10050,
+  display: 'flex', flexDirection: 'column', minWidth: 160, maxHeight: 300, overflowY: 'auto', padding: 4,
+  background: 'rgba(15,23,42,0.98)', border: '1px solid rgba(255,255,255,0.14)',
+  borderRadius: 10, boxShadow: '0 12px 40px rgba(0,0,0,0.55)',
+}
+const menuItemStyle = {
+  textAlign: 'left', padding: '7px 10px', fontSize: 12.5, borderRadius: 7, whiteSpace: 'nowrap',
+  border: 'none', background: 'transparent', color: '#e2e8f0', cursor: 'pointer',
 }
 // 투명(전경) 미리보기용 체커 배경
 const CHECKER_BG = {
