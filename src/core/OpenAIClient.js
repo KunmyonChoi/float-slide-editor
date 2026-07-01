@@ -498,7 +498,12 @@ export async function editImage(imageDataUrl, prompt, { width, height, size, qua
   const blob = dataUrlToBlob(imageDataUrl)
   const maskBlob = mask ? dataUrlToBlob(mask) : null // 있으면 편집 영역 마스크(투명=편집)
   const configured = getImageModel()
-  const candidates = configured === EDIT_FALLBACK_MODEL ? [configured] : [configured, EDIT_FALLBACK_MODEL]
+  // 마스크(부분 편집)는 마스크 지원이 확실한 gpt-image-1.5로 고정한다. gpt-image-2는 마스크/부분편집
+  // 동작이 불안정하고 마스크 관련 오류가 '모델 미지원' 패턴과 달라 폴백도 못 타므로, 마스크가 있으면
+  // 설정 모델과 무관하게 1.5만 사용한다(생성 모델 설정은 그대로 유지 — 생성 품질 회귀 방지).
+  const candidates = maskBlob
+    ? [EDIT_FALLBACK_MODEL]
+    : (configured === EDIT_FALLBACK_MODEL ? [configured] : [configured, EDIT_FALLBACK_MODEL])
 
   for (let i = 0; i < candidates.length; i++) {
     const model = candidates[i]

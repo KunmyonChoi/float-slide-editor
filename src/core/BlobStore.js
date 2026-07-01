@@ -143,5 +143,16 @@ function toRef(key) {
   return `idb://${key}`
 }
 
-export const BlobStore = { put, get, getUrl, remove, keys, isIdbRef, parseRef, toRef }
+/**
+ * element.content(idb 참조 또는 일반 URL/dataURL) → 표시 가능한 URL.
+ * idb 참조면 getUrl(캐시된 objectURL, 해제 불필요), 아니면 원본을 그대로 반환.
+ * @param {string} content
+ * @returns {Promise<string>}
+ */
+async function contentUrl(content) {
+  if (isIdbRef(content)) return getUrl(parseRef(content))
+  return content
+}
+
+export const BlobStore = { put, get, getUrl, contentUrl, remove, keys, isIdbRef, parseRef, toRef }
 export default BlobStore

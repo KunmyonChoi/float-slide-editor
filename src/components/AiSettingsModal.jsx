@@ -33,9 +33,10 @@ function closeAiSettings() {
 }
 
 const MODEL_OPTIONS = ['gpt-4o-mini', 'gpt-4o', 'gpt-4.1-mini', 'gpt-4.1']
-// gpt-image-2(기본, 생성 고품질) + gpt-image-1.5(마스크 부분편집 지원이 확실 — 마스크 편집 쓸 땐 권장).
-// 편집은 설정 모델이 미지원이면 1.5로 자동 폴백.
-const IMAGE_MODEL_OPTIONS = ['gpt-image-2', 'gpt-image-1.5']
+// 생성=gpt-image-2(고품질). 편집은 미지원 시 gpt-image-1.5로 자동 폴백하고,
+// 마스크(부분 편집)는 editImage가 gpt-image-1.5로 고정하므로 여기서 1.5를 노출하지 않는다
+// (1.5를 생성 모델로 고르면 모든 이미지 생성이 회귀하는 문제 방지).
+const IMAGE_MODEL_OPTIONS = ['gpt-image-2']
 
 export function AiSettingsHost() {
   const open = useAiSettingsStore(s => s.open)

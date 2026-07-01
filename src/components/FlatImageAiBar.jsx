@@ -8,9 +8,13 @@ import { INFOGRAPHIC_STYLES } from '../core/aiImageStyles'
 import { segmentImage, checkCutoutBackend } from '../core/CutoutBackendClient'
 import CutoutInstallModal from './CutoutInstallModal'
 import { BlobStore } from '../core/BlobStore'
+import { containFitRect } from '../core/imageFit'
 import { useDraggableToolbar, GripHandle } from './useDraggableToolbar'
 import MaskBrushOverlay from './MaskBrushOverlay'
 import ImageComparePreview from './ImageComparePreview'
+
+// 결과가 적용/표시될 objectFit(비교 오버레이·apply 공통 단일소스)
+function resultFit(mode) { return mode === 'outpaint' ? 'cover' : 'contain' }
 
 // data URL 이미지의 실제 픽셀 크기
 function imageSize(dataUrl) {
@@ -53,21 +57,11 @@ async function composeContainFit(content, elementW, elementH) {
     const img = new Image()
     img.onload = () => {
       if (revokeOnDone) URL.revokeObjectURL(imgUrl)
-      const imgAR = img.naturalWidth / img.naturalHeight
-      const boxAR = elementW / elementH
-      let dw, dh, dx, dy
-      if (imgAR >= boxAR) {
-        // 이미지가 박스보다 가로가 넓음 → 상하 여백(letterbox)
-        dw = elementW; dh = elementW / imgAR
-        dx = 0;        dy = (elementH - dh) / 2
-      } else {
-        // 이미지가 박스보다 세로가 긺 → 좌우 여백(pillarbox)
-        dh = elementH; dw = elementH * imgAR
-        dx = (elementW - dw) / 2; dy = 0
-      }
+      // contain 표시 사각형(마스크 오버레이와 동일한 공유 유틸 → 기하 드리프트 방지)
+      const r = containFitRect(elementW, elementH, img.naturalWidth, img.naturalHeight)
       const canvas = document.createElement('canvas')
       canvas.width = elementW; canvas.height = elementH
-      canvas.getContext('2d').drawImage(img, Math.round(dx), Math.round(dy), Math.round(dw), Math.round(dh))
+      canvas.getContext('2d').drawImage(img, Math.round(r.x), Math.round(r.y), Math.round(r.w), Math.round(r.h))
       resolve(canvas.toDataURL('image/png'))
     }
     img.onerror = () => {
@@ -108,7 +102,7 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
   // 캔버스 전후 비교(미리보기)
   const [split, setSplit] = useState(50)   // 세로 구분선 위치(%)
   const [holding, setHolding] = useState(false) // '원본 보기' 홀드 중
-  const compareFit = mode === 'outpaint' ? 'cover' : 'contain' // 적용 시 objectFit과 동일
+  const compareFit = resultFit(mode) // 결과가 적용될 objectFit(비교 오버레이·apply 공통 단일소스)
   const abortRef = useRef(null)
   const captureRef = useRef('') // 입력 캡처 — 재생성 시 재사용
   const cutoutBlobRef = useRef(null) // 분리 결과 PNG blob — 적용 시 data URL로 변환
@@ -213,8 +207,8 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
     abortRef.current = ctrl
     setPhase('loading'); setError(''); setStatus(mode === 'edit' ? 'AI 이미지 편집 중…' : '디자인 다듬는 중…')
     try {
-      // 마스크 편집이었으면 같은 마스크로 재생성(영역 일관 유지)
-      const mask = mode === 'edit' ? (lastMaskRef.current || undefined) : undefined
+      // 마스크가 켜진 편집이면 같은 마스크로 재생성(영역 일관). 마스크를 끈 상태면 전체 편집.
+      const mask = (mode === 'edit' && maskOn) ? (lastMaskRef.current || undefined) : undefined
       const url = await editImage(cap, p, { width: element.width, height: element.height, mask, signal: ctrl.signal })
       if (ctrl.signal.aborted) return
       setImageUrl(url)
@@ -224,7 +218,7 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
       setError(e?.message || '이미지 변환에 실패했습니다.')
       setPhase('error')
     }
-  }, [prompt, mode, run, element.width, element.height])
+  }, [prompt, mode, maskOn, run, element.width, element.height])
 
   // 빈 공간 채우기(아웃페인팅): contain 상태 이미지의 letterbox/pillarbox 영역을 AI로 채움
   const runOutpaint = useCallback(async () => {
@@ -252,16 +246,23 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
   }, [element.content, element.width, element.height])
 
   // 같은 id·위치·크기 유지한 채 이미지 content만 교체(되돌리기 가능).
+  // 미리보기/편집 관련 임시 상태 초기화(적용·취소 공통) — 다음 열림에 이전 상태가 새지 않게
+  const resetEditState = useCallback(() => {
+    setImageUrl(''); setZoom(false)
+    setMaskOn(false); setMaskCount(0); lastMaskRef.current = null
+    setSplit(50); setHolding(false)
+  }, [])
+
   const apply = useCallback(() => {
     if (!imageUrl) return
     useFlatStore.getState().updateFlatElement(element.id, {
       content: imageUrl,
       isRich: false,
-      // 아웃페인팅 결과는 박스 크기에 맞게 생성되었으므로 cover로 빈틈 없이 표시
-      styles: { objectFit: mode === 'outpaint' ? 'cover' : 'contain' },
+      // 결과가 표시될 objectFit(비교 오버레이와 동일한 단일소스: 아웃페인트=cover, 그 외=contain)
+      styles: { objectFit: resultFit(mode) },
     })
-    setPhase('idle'); setImageUrl(''); setZoom(false)
-  }, [imageUrl, element.id, mode])
+    setPhase('idle'); resetEditState()
+  }, [imageUrl, element.id, mode, resetEditState])
 
   // 피사체 분리(서버) → 전경 컷아웃 미리보기
   const runCutout = useCallback(async () => {
@@ -302,13 +303,13 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
     // ProjectSerializer가 저장 시 media/로 패킹). content엔 참조만 들어감.
     const key = await BlobStore.put(blob)
     useFlatStore.getState().applyTextBehindSubject(element.id, BlobStore.toRef(key))
-    setPhase('idle'); setImageUrl(''); setZoom(false)
-  }, [element.id])
+    setPhase('idle'); resetEditState()
+  }, [element.id, resetEditState])
 
   const cancel = useCallback(() => {
     abortRef.current?.abort()
-    setPhase('idle'); setError(''); setImageUrl(''); setZoom(false); setServerDown(false)
-  }, [])
+    setPhase('idle'); setError(''); setServerDown(false); resetEditState()
+  }, [resetEditState])
 
   // 드래그 이동 — 그립 핸들로 idle 액션바를 자유 위치로 옮김(선택 변경 시 자동 복귀)
   const barRef = useRef(null)
@@ -497,18 +498,21 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
 
           {phase === 'preview' && (
             <>
-              <div
-                onClick={() => imageUrl && setZoom(true)}
-                title="클릭하여 크게 보기"
-                style={{
-                  width: '100%', height: 200, borderRadius: 8, overflow: 'hidden',
-                  background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  cursor: imageUrl ? 'zoom-in' : 'default',
-                }}
-              >
-                {imageUrl && <img src={imageUrl} alt="" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', display: 'block', ...(mode === 'cutout' ? CHECKER_BG : null) }} />}
-              </div>
+              {/* 썸네일은 cutout(캔버스 비교 오버레이 없음)에만. 나머지는 캔버스 전후비교로 대체. */}
+              {mode === 'cutout' && (
+                <div
+                  onClick={() => imageUrl && setZoom(true)}
+                  title="클릭하여 크게 보기"
+                  style={{
+                    width: '100%', height: 200, borderRadius: 8, overflow: 'hidden',
+                    background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    cursor: imageUrl ? 'zoom-in' : 'default',
+                  }}
+                >
+                  {imageUrl && <img src={imageUrl} alt="" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', display: 'block', ...CHECKER_BG }} />}
+                </div>
+              )}
               {mode === 'cutout' ? (
                 <div style={{ fontSize: 11, color: '#64748b' }}>
                   분리된 전경(투명 배경). 적용하면 <b>원본 + 타이틀 텍스트 + 전경</b> 3층이 만들어져
@@ -538,7 +542,8 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
             {phase === 'preview' && mode !== 'cutout' && (
               <>
                 <button type="button"
-                  onPointerDown={() => setHolding(true)} onPointerUp={() => setHolding(false)} onPointerLeave={() => setHolding(false)}
+                  onPointerDown={() => setHolding(true)} onPointerUp={() => setHolding(false)}
+                  onPointerLeave={() => setHolding(false)} onPointerCancel={() => setHolding(false)}
                   title="누르는 동안 원본을 보여줍니다" style={{ ...ghostBtnStyle, marginRight: 'auto' }}>원본 보기(꾹)</button>
                 <button type="button" onClick={() => setSplit(50)} title="구분선을 가운데로" style={ghostBtnStyle}>리셋</button>
               </>
