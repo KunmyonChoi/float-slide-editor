@@ -293,7 +293,7 @@ export default function FlatAiBar({ element, scale, canvasRef }) {
           <span style={{ position: 'relative', display: 'inline-flex' }}>
             <button
               type="button"
-              onClick={() => setImgMenuOpen(v => !v)}
+              onClick={() => { setImgMenuOpen(v => !v); setMenuOpen(false) }}
               title="화풍을 골라 텍스트 내용에 어울리는 이미지를 생성하고, 이 영역을 이미지로 교체합니다"
               style={aiBtnStyle}
             >
@@ -315,7 +315,7 @@ export default function FlatAiBar({ element, scale, canvasRef }) {
           <span style={{ position: 'relative', display: 'inline-flex' }}>
             <button
               type="button"
-              onClick={() => setMenuOpen(v => !v)}
+              onClick={() => { setMenuOpen(v => !v); setImgMenuOpen(false) }}
               title="선택한 텍스트 내용을 AI로 다듬습니다(맞춤법·발표체·마크다운·지시 편집)"
               style={aiBtnStyle}
             >
