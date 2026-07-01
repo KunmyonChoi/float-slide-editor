@@ -162,8 +162,8 @@ describe('editImage (image-to-image edits)', () => {
     vi.stubGlobal('fetch', fetchMock)
     await editImage('data:image/png;base64,AAAA', 'edit here', { width: 500, height: 500, mask: 'data:image/png;base64,BBBB' })
     expect(fetchMock.mock.calls[0][1].body.get('mask')).toBeInstanceOf(Blob)
-    // 마스크가 있으면 설정 모델(gpt-image-2)과 무관하게 gpt-image-1.5로 고정
-    expect(fetchMock.mock.calls[0][1].body.get('model')).toBe('gpt-image-1.5')
+    // 마스크도 설정 모델(gpt-image-2)을 그대로 사용
+    expect(fetchMock.mock.calls[0][1].body.get('model')).toBe('gpt-image-2')
     const fetchMock2 = vi.fn().mockResolvedValue(ok())
     vi.stubGlobal('fetch', fetchMock2)
     await editImage('data:image/png;base64,AAAA', 'edit', { width: 500, height: 500 })

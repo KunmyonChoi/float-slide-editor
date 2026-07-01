@@ -33,9 +33,8 @@ function closeAiSettings() {
 }
 
 const MODEL_OPTIONS = ['gpt-4o-mini', 'gpt-4o', 'gpt-4.1-mini', 'gpt-4.1']
-// 생성=gpt-image-2(고품질). 편집은 미지원 시 gpt-image-1.5로 자동 폴백하고,
-// 마스크(부분 편집)는 editImage가 gpt-image-1.5로 고정하므로 여기서 1.5를 노출하지 않는다
-// (1.5를 생성 모델로 고르면 모든 이미지 생성이 회귀하는 문제 방지).
+// 생성·편집·마스크 모두 이 설정 모델(기본 gpt-image-2)을 사용. 편집은 설정 모델이 edits를
+// 지원하지 않을 때만 gpt-image-1.5로 자동 폴백(방어). 목록엔 gpt-image-2만 노출한다.
 const IMAGE_MODEL_OPTIONS = ['gpt-image-2']
 
 export function AiSettingsHost() {
