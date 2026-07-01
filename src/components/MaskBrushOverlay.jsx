@@ -127,19 +127,18 @@ const MaskBrushOverlay = forwardRef(function MaskBrushOverlay(
     drawingRef.current.pts.push(localPt(e))
     redraw()
   }
+  const inEditable = useCallback((p) => inRect(p, contentRect), [contentRect])
+
   const endStroke = (e) => {
     if (!drawingRef.current) return
     e.stopPropagation()
     drawingRef.current = null
-    onStrokesChange?.(strokesRef.current.length)
+    // 편집 가능 영역 안의 브러시 스트로크만 센다(여백만 칠하면 0 → 전체편집으로 오인 방지)
+    onStrokesChange?.(editableBrushCount(strokesRef.current, contentRect))
   }
 
-  // 요소-로컬 점이 편집 가능 영역(contentRect, 없으면 박스 전체) 안인가
-  const inEditable = useCallback((p) => {
-    const r = contentRect
-    if (!r) return true
-    return p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h
-  }, [contentRect])
+  // contentRect(이미지 표시 사각형)이 뒤늦게 로드되면 유효 카운트를 다시 알린다
+  useEffect(() => { onStrokesChange?.(editableBrushCount(strokesRef.current, contentRect)) }, [contentRect, onStrokesChange])
 
   useImperativeHandle(ref, () => ({
     // 편집 가능 영역 안에 칠한 점이 있어야 유효한 마스크
@@ -194,6 +193,13 @@ const MaskBrushOverlay = forwardRef(function MaskBrushOverlay(
     document.body,
   )
 })
+
+// 요소-로컬 점 p가 사각형 r 안인가(r 없으면 항상 true=박스 전체 편집)
+function inRect(p, r) { return !r || (p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h) }
+// 편집 가능 영역 안에 점이 있는 brush 스트로크 수
+function editableBrushCount(strokes, r) {
+  return strokes.filter(s => s.tool === 'brush' && s.pts.some(p => inRect(p, r))).length
+}
 
 // 사각형 r 바깥(상/하/좌/우 4밴드)을 현재 fillStyle로 채운다
 function fillOutside(ctx, r, W, H) {

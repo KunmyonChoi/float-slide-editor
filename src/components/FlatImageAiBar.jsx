@@ -102,8 +102,9 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
   const [maskOn, setMaskOn] = useState(false)
   const [brushTool, setBrushTool] = useState('brush') // 'brush' | 'erase'
   const [brushSize, setBrushSize] = useState(48)
-  const [maskCount, setMaskCount] = useState(0) // 칠한 스트로크 수(버튼 안내용)
+  const [maskCount, setMaskCount] = useState(0) // 칠한(편집가능) 스트로크 수(버튼 안내용)
   const maskRef = useRef(null)
+  const lastMaskRef = useRef(null) // 직전에 사용한 마스크 dataURL(재생성 시 재사용)
   // 캔버스 전후 비교(미리보기)
   const [split, setSplit] = useState(50)   // 세로 구분선 위치(%)
   const [holding, setHolding] = useState(false) // '원본 보기' 홀드 중
@@ -148,7 +149,7 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setPhase('idle'); setMode('enhance'); setError(''); setStatus(''); setPrompt(''); setImageUrl(''); setZoom(false)
     setServerDown(false); setShowInstall(false)
-    setMaskOn(false); setMaskCount(0)
+    setMaskOn(false); setMaskCount(0); lastMaskRef.current = null
     setSplit(50); setHolding(false)
     return () => { abortRef.current?.abort() }
   }, [element.id])
@@ -166,6 +167,10 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
       const directive = INFOGRAPHIC_STYLES.find(s => s.id === sid)?.directive || ''
       p = buildImageEnhancePrompt(directive)
     }
+    // 마스크 핸들을 phase 변경(→오버레이 언마운트) 전에 확보한다. loading으로 바뀌면
+    // MaskBrushOverlay가 언마운트되어 maskRef.current가 null이 되므로 여기서 잡아둔다.
+    // (핸들 객체는 strokes ref·요소 크기·contentRect를 클로저로 보유 → 언마운트 후에도 buildMask 유효)
+    const maskHandle = (useMode === 'edit' && maskOn && maskRef.current?.hasStrokes()) ? maskRef.current : null
     setMode(useMode); setPrompt(p)
     abortRef.current?.abort()
     const ctrl = new AbortController()
@@ -179,12 +184,13 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
       )
       if (ctrl.signal.aborted) return
       captureRef.current = cap
-      // 부분 편집: 마스크가 켜져 있고 칠한 영역이 있으면 캡처 해상도에 맞춰 마스크 생성 → 그 영역만 편집
+      // 부분 편집: 마스크가 있으면 캡처 해상도에 맞춰 생성 → 그 영역만 편집. 재생성 위해 보관.
       let mask
-      if (useMode === 'edit' && maskOn && maskRef.current?.hasStrokes()) {
+      if (maskHandle) {
         const { w, h } = await imageSize(cap)
-        mask = maskRef.current.buildMask(w, h) || undefined
+        mask = maskHandle.buildMask(w, h) || undefined
       }
+      lastMaskRef.current = mask || null
       setStatus(useMode === 'edit' ? 'AI 이미지 편집 중… (수십 초 걸릴 수 있어요)' : '디자인 다듬는 중… (수십 초 걸릴 수 있어요)')
       const url = await editImage(cap, p, { width: element.width, height: element.height, mask, signal: ctrl.signal })
       if (ctrl.signal.aborted) return
@@ -207,7 +213,9 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
     abortRef.current = ctrl
     setPhase('loading'); setError(''); setStatus(mode === 'edit' ? 'AI 이미지 편집 중…' : '디자인 다듬는 중…')
     try {
-      const url = await editImage(cap, p, { width: element.width, height: element.height, signal: ctrl.signal })
+      // 마스크 편집이었으면 같은 마스크로 재생성(영역 일관 유지)
+      const mask = mode === 'edit' ? (lastMaskRef.current || undefined) : undefined
+      const url = await editImage(cap, p, { width: element.width, height: element.height, mask, signal: ctrl.signal })
       if (ctrl.signal.aborted) return
       setImageUrl(url)
       setPhase('preview')
