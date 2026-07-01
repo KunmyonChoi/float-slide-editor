@@ -71,14 +71,16 @@ export { DEFAULT_MODEL, DEFAULT_IMAGE_MODEL }
 /**
  * Chat Completions 호출 → assistant 텍스트 반환.
  * images를 주면 vision(멀티모달) 입력으로 user 메시지에 첨부한다.
- * @param {{ system?: string, user: string, images?: string[], model?: string, temperature?: number, signal?: AbortSignal }} opts
+ * allowLocal=false면 로컬 LLM 설정을 무시하고 항상 OpenAI로 호출한다(품질 보장이 필요한 기능용).
+ * @param {{ system?: string, user: string, images?: string[], model?: string, temperature?: number, responseFormat?: object, allowLocal?: boolean, signal?: AbortSignal }} opts
  */
-export async function chat({ system, user, images, model, temperature = 0.7, responseFormat, signal } = {}) {
+export async function chat({ system, user, images, model, temperature = 0.7, responseFormat, allowLocal = true, signal } = {}) {
   // 이미지 첨부 여부로 텍스트/비전 분리 라우팅. 비전(이미지)은 로컬 비전 모델(설정 시),
-  // 아니면 OpenAI(비전 가능 모델). 텍스트는 기존대로 로컬 텍스트 모델 또는 OpenAI.
+  // 아니면 OpenAI(비전 가능 모델). 텍스트는 로컬 텍스트 모델 또는 OpenAI.
+  // allowLocal=false면 로컬 라우팅을 끈다(항상 OpenAI).
   const isVision = !!(images && images.length)
-  const visionLocal = isVision && isLocalVisionEnabled()
-  const textLocal = !isVision && isLocalLlmEnabled()
+  const visionLocal = isVision && allowLocal && isLocalVisionEnabled()
+  const textLocal = !isVision && allowLocal && isLocalLlmEnabled()
   const local = visionLocal || textLocal
   const apiKey = getApiKey()
   if (isVision && !visionLocal && !apiKey) {
@@ -238,6 +240,7 @@ export async function editSlideText(text, { action, instruction, model, signal }
     user,
     model,
     temperature: action === 'spelling' ? 0.2 : 0.5,
+    allowLocal: false, // 텍스트 편집은 품질 보장 위해 OpenAI 고정(로컬 LLM 무시)
     signal,
   })
   const result = stripReplyDecorations(out)

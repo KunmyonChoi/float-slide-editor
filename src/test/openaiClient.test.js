@@ -272,6 +272,16 @@ describe('editSlideText (AI 텍스트 편집)', () => {
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
+  it('로컬 LLM이 켜져 있어도 OpenAI 엔드포인트로 호출(품질 보장)', async () => {
+    setLocalLlmEnabled(true)
+    setApiKey('sk-test')
+    const fetchMock = vi.fn().mockResolvedValue(okResponse('결과'))
+    vi.stubGlobal('fetch', fetchMock)
+    await editSlideText('원문', { action: 'formal' })
+    expect(fetchMock.mock.calls[0][0]).toContain('api.openai.com')
+    setLocalLlmEnabled(false)
+  })
+
   it('코드펜스/감싼 따옴표 제거(내부 내용 보존)', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(okResponse('```markdown\n# 제목\n- 항목\n```')))
     expect(await editSlideText('x', { action: 'markdown' })).toBe('# 제목\n- 항목')

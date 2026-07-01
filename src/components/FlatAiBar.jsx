@@ -191,9 +191,9 @@ export default function FlatAiBar({ element, scale, canvasRef }) {
   }, [imageUrl, source, element.id, sourceText, prompt])
 
   // ── AI 텍스트 편집 ──────────────────────────────────────────────
-  // 텍스트 편집은 chat() 사용 → 로컬 LLM이 없으면 OpenAI 키 필요.
+  // 텍스트 편집은 OpenAI 고정(품질 보장) → OpenAI 키 필수.
   const runTextEdit = useCallback(async (action, instr) => {
-    if (!isLocalLlmEnabled() && !hasApiKey()) { openAiSettings(); return }
+    if (!hasApiKey()) { openAiSettings(); return }
     const text = sourceText()
     if (!text) { setTool('text'); setTextAction(action); setError('편집할 텍스트가 없습니다.'); setPhase('error'); return }
     abortRef.current?.abort()
