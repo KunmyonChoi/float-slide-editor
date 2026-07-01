@@ -70,9 +70,9 @@ async function composeContainFit(content, elementW, elementH) {
  * FlatImageAiBar — 이미지 요소를 단일 선택했을 때 뜨는 전용 AI 플로팅바.
  *
  * 두 가지 액션(둘 다 OpenAI image-to-image `editImage` 사용):
- *  - "디자인 향상"(enhance): 화풍 선택 → 글자·요소 위치는 유지한 채 시각 스타일만 향상.
- *  - "프롬프트 편집"(edit): 사용자가 입력한 지시대로 이미지를 편집(배경 변경/요소 제거/보정 등).
- * 결과 미리보기(프롬프트 편집·재생성·크게보기) 후 확인하면 같은 자리에서 이미지를 교체한다
+ *  - "디자인 다듬기"(enhance): 화풍 선택 → 글자·요소 위치는 유지한 채 시각 스타일만 향상.
+ *  - "설명으로 편집"(edit): 사용자가 입력한 지시대로 이미지를 편집(배경 변경/요소 제거/보정 등).
+ * 결과 미리보기(설명으로 편집·재생성·크게보기) 후 확인하면 같은 자리에서 이미지를 교체한다
  * (되돌리기 가능). 결과 종횡비가 박스와 어긋나도 잘리지 않도록 objectFit:contain.
  */
 export default function FlatImageAiBar({ element, scale, canvasRef }) {
@@ -152,7 +152,7 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
       )
       if (ctrl.signal.aborted) return
       captureRef.current = cap
-      setStatus(useMode === 'edit' ? 'AI 이미지 편집 중… (수십 초 걸릴 수 있어요)' : 'AI 디자인 변환 중… (수십 초 걸릴 수 있어요)')
+      setStatus(useMode === 'edit' ? 'AI 이미지 편집 중… (수십 초 걸릴 수 있어요)' : '디자인 다듬는 중… (수십 초 걸릴 수 있어요)')
       const url = await editImage(cap, p, { width: element.width, height: element.height, signal: ctrl.signal })
       if (ctrl.signal.aborted) return
       setImageUrl(url)
@@ -172,7 +172,7 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
     abortRef.current?.abort()
     const ctrl = new AbortController()
     abortRef.current = ctrl
-    setPhase('loading'); setError(''); setStatus(mode === 'edit' ? 'AI 이미지 편집 중…' : 'AI 디자인 변환 중…')
+    setPhase('loading'); setError(''); setStatus(mode === 'edit' ? 'AI 이미지 편집 중…' : '디자인 다듬는 중…')
     try {
       const url = await editImage(cap, p, { width: element.width, height: element.height, signal: ctrl.signal })
       if (ctrl.signal.aborted) return
@@ -286,7 +286,7 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
 
   const modeLabel = mode === 'cutout' ? '피사체 뒤 텍스트'
     : mode === 'outpaint' ? 'AI 빈 공간 채우기'
-    : mode === 'edit' ? 'AI 이미지 편집' : 'AI 디자인 향상'
+    : mode === 'edit' ? '설명으로 편집' : '디자인 다듬기'
 
   // objectFit이 contain(맞추기)일 때만 빈 공간 채우기 버튼 노출
   const isContainFit = (element.styles?.objectFit ?? 'contain') === 'contain'
@@ -321,7 +321,7 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
           <select
             value={styleId}
             onChange={e => setStyleId(e.target.value)}
-            title="디자인 향상 화풍"
+            title="디자인 다듬기 화풍"
             style={styleSelectStyle}
           >
             {INFOGRAPHIC_STYLES.map(s => <option key={s.id} value={s.id} style={{ background: '#1e293b', color: '#f1f5f9' }}>{s.label}</option>)}
@@ -329,11 +329,11 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
           <button
             type="button"
             onClick={() => run('enhance')}
-            title="글자·요소 위치는 유지한 채 디자인을 AI로 향상합니다"
+            title="글자·요소 위치는 그대로 두고 디자인을 AI로 보기 좋게 다듬습니다"
             style={aiBtnStyle}
           >
             <SparkleIcon />
-            <span style={{ fontSize: 12, marginLeft: 5 }}>디자인 향상</span>
+            <span style={{ fontSize: 12, marginLeft: 5 }}>디자인 다듬기</span>
           </button>
           <button
             type="button"
@@ -342,7 +342,7 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
             style={aiBtnStyle}
           >
             <EditIcon />
-            <span style={{ fontSize: 12, marginLeft: 5 }}>프롬프트 편집</span>
+            <span style={{ fontSize: 12, marginLeft: 5 }}>설명으로 편집</span>
           </button>
           <button
             type="button"
