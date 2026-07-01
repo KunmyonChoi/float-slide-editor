@@ -91,4 +91,39 @@ describe('carryLayoutContent — 레이아웃 변환 시 내용 이어받기', (
     const out = carryLayoutContent(old, build('twoColumn'))
     expect(out.every(s => s.content === '')).toBe(true)
   })
+
+  it('제목을 이미지로 치환한 경우: 새 title 슬롯에 이미지로 이식(위치·크기·역할은 새 슬롯)', () => {
+    // 제목(title) 텍스트를 AI 이미지로 치환 → type:image, content=이미지데이터, styles=이미지스타일, layoutRole 유지
+    const imgStyles = { objectFit: 'cover', objectPosition: 'center center' }
+    const old = [{ layoutRole: 'title', type: 'image', content: 'idb://abc', styles: imgStyles, isRich: false, sourceId: null }]
+    const titleSlot = build('twoColumn').find(s => s.layoutRole === 'title')
+    const out = carryLayoutContent(old, build('twoColumn'))
+    const t = out.find(s => s.layoutRole === 'title')
+    // 미디어 속성 이식
+    expect(t.type).toBe('image')
+    expect(t.content).toBe('idb://abc')
+    expect(t.styles).toBe(imgStyles)
+    // 위치·크기는 새 슬롯 것(텍스트 스펙 geometry)
+    expect(t.x).toBe(titleSlot.x)
+    expect(t.width).toBe(titleSlot.width)
+    // 텍스트 전용 필드 제거
+    expect('placeholder' in t).toBe(false)
+  })
+
+  it('본문을 이미지로 치환한 경우: 풀(FIFO)로 이어받아 미디어로 이식', () => {
+    const old = [{ layoutRole: 'body', type: 'image', content: 'data:image/png;base64,AAA', styles: { objectFit: 'cover' } }]
+    const out = carryLayoutContent(old, build('twoColumn'))
+    const left = out.find(s => s.layoutRole === 'left')
+    expect(left.type).toBe('image')
+    expect(left.content).toBe('data:image/png;base64,AAA')
+  })
+
+  it('type이 명시된 text 요소도 기존처럼 content만 이어받음', () => {
+    const old = [{ layoutRole: 'title', type: 'text', content: 'T', styles: { color: '#000' } }]
+    const out = carryLayoutContent(old, build('title'))
+    const t = out.find(s => s.layoutRole === 'title')
+    expect(t.type).toBe('text')
+    expect(t.content).toBe('T')
+    expect(t.placeholder).toBe('제목을 입력하세요') // 새 슬롯 안내문 유지
+  })
 })
