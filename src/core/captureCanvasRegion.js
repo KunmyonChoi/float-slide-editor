@@ -53,7 +53,8 @@ export async function captureElementRegion(bbox, { signal } = {}) {
   const cs = st.canvasSize
   const { exportAsImage } = await import('./ImageExporter.js')
   if (signal?.aborted) throw new DOMException('aborted', 'AbortError')
-  const full = await exportAsImage(canvasNode, { format: 'png', scale: 2 })
+  // offscreen=true: 복제본에서 캡처해 살아있는 캔버스를 건드리지 않는다(캡처 중 화면 '움찔' 방지).
+  const full = await exportAsImage(canvasNode, { format: 'png', scale: 2, offscreen: true })
   if (signal?.aborted) throw new DOMException('aborted', 'AbortError')
   return cropToBBox(full, bbox, cs)
 }
