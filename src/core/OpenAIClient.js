@@ -71,14 +71,16 @@ export { DEFAULT_MODEL, DEFAULT_IMAGE_MODEL }
 /**
  * Chat Completions 호출 → assistant 텍스트 반환.
  * images를 주면 vision(멀티모달) 입력으로 user 메시지에 첨부한다.
- * @param {{ system?: string, user: string, images?: string[], model?: string, temperature?: number, signal?: AbortSignal }} opts
+ * allowLocal=false면 로컬 LLM 설정을 무시하고 항상 OpenAI로 호출한다(품질 보장이 필요한 기능용).
+ * @param {{ system?: string, user: string, images?: string[], model?: string, temperature?: number, responseFormat?: object, allowLocal?: boolean, signal?: AbortSignal }} opts
  */
-export async function chat({ system, user, images, model, temperature = 0.7, responseFormat, signal } = {}) {
+export async function chat({ system, user, images, model, temperature = 0.7, responseFormat, allowLocal = true, signal } = {}) {
   // 이미지 첨부 여부로 텍스트/비전 분리 라우팅. 비전(이미지)은 로컬 비전 모델(설정 시),
-  // 아니면 OpenAI(비전 가능 모델). 텍스트는 기존대로 로컬 텍스트 모델 또는 OpenAI.
+  // 아니면 OpenAI(비전 가능 모델). 텍스트는 로컬 텍스트 모델 또는 OpenAI.
+  // allowLocal=false면 로컬 라우팅을 끈다(항상 OpenAI).
   const isVision = !!(images && images.length)
-  const visionLocal = isVision && isLocalVisionEnabled()
-  const textLocal = !isVision && isLocalLlmEnabled()
+  const visionLocal = isVision && allowLocal && isLocalVisionEnabled()
+  const textLocal = !isVision && allowLocal && isLocalLlmEnabled()
   const local = visionLocal || textLocal
   const apiKey = getApiKey()
   if (isVision && !visionLocal && !apiKey) {
@@ -171,6 +173,79 @@ export async function generateImagePrompt(text, { model, style, signal } = {}) {
     temperature: 0.8,
     signal,
   })
+}
+
+// ── AI 텍스트 편집(단일 텍스트 요소 내용 다듬기) ────────────────────────────
+// 평문(plain text) 기준으로 편집한다(OpenAI·소형 로컬 LLM 모두 안정). 리치 서식 재구성은
+// 별도 기능(HTML→Flat)이 담당. 출력은 결과 텍스트만(설명·따옴표·코드펜스 없이).
+// 언어 보존은 최우선 규칙(소형 로컬 LLM이 임의로 중국어/영어로 번역하는 것을 강하게 차단).
+const LANG_GUARD = `CRITICAL LANGUAGE RULE: Write your ENTIRE output in the SAME language/script as the input text. If the input is Korean, the output MUST be Korean; if English, English; etc. This is an editing task, NOT translation — NEVER translate the text into a different language, and never mix in another language.`
+const TEXT_EDIT_SYSTEMS = {
+  spelling: `You are a meticulous proofreader for presentation slide text.
+${LANG_GUARD}
+Fix ONLY spelling, spacing, and obvious typos. Do NOT change meaning, wording, tone, or order. Preserve the line-break structure. If nothing needs fixing, return the text unchanged.
+Output ONLY the corrected text — no preamble, no quotes, no explanation, no code fences.`,
+  formal: `You rewrite presentation slide text into clear, formal presentation language (written, professional tone).
+${LANG_GUARD}
+Preserve every fact, number, and proper noun. Be concise and slide-appropriate — do not pad or add new information. Remove casual filler and first-person chatter.
+Output ONLY the rewritten text — no preamble, no quotes, no explanation, no code fences.`,
+  markdown: `You reorganize presentation slide text into clean, well-structured GitHub-Flavored Markdown.
+${LANG_GUARD}
+Use headings, bullet lists, and bold emphasis as appropriate to clarify structure. Preserve all original meaning and facts — restructure only, never invent content.
+Output ONLY the Markdown source — no surrounding code fences, no preamble, no explanation.`,
+  prompt: `You edit presentation slide text according to the user's instruction.
+${LANG_GUARD} (Exception: obey only if the instruction EXPLICITLY asks to translate.)
+Follow the instruction faithfully and keep it slide-appropriate. Output PLAIN text (no Markdown syntax) unless the instruction explicitly asks for a specific format.
+Output ONLY the resulting text — no preamble, no quotes, no explanation, no code fences.`,
+}
+
+/** LLM 응답에서 실수로 붙은 코드펜스/감싼 따옴표를 제거(내용은 보존). */
+function stripReplyDecorations(s) {
+  let t = (s || '').trim()
+  // ```lang ... ``` 코드펜스 벗기기
+  const fence = t.match(/^```[^\n]*\n([\s\S]*?)\n?```$/)
+  if (fence) t = fence[1].trim()
+  // 전체를 감싼 한 쌍의 따옴표 제거(내부 따옴표는 유지)
+  if (t.length >= 2 && ((t[0] === '"' && t[t.length - 1] === '"') || (t[0] === '“' && t[t.length - 1] === '”'))) {
+    const inner = t.slice(1, -1)
+    if (!inner.includes('"') && !inner.includes('”')) t = inner.trim()
+  }
+  return t
+}
+
+export const TEXT_EDIT_ACTIONS = ['spelling', 'formal', 'markdown', 'prompt']
+
+/**
+ * 단일 텍스트 요소 내용(평문)을 AI로 편집한다.
+ * @param {string} text  편집 대상 평문
+ * @param {{ action: 'spelling'|'formal'|'markdown'|'prompt', instruction?: string, model?: string, signal?: AbortSignal }} opts
+ *   action='prompt'이면 instruction(지시문) 필수.
+ * @returns {Promise<string>} 편집된 텍스트(마크다운 동작이면 마크다운 원문)
+ */
+export async function editSlideText(text, { action, instruction, model, signal } = {}) {
+  const trimmed = (text || '').trim()
+  if (!trimmed) throw new Error('편집할 텍스트가 없습니다.')
+  const system = TEXT_EDIT_SYSTEMS[action]
+  if (!system) throw new Error('알 수 없는 텍스트 편집 동작입니다.')
+  let user
+  if (action === 'prompt') {
+    const instr = (instruction || '').trim()
+    if (!instr) throw new Error('편집 지시문을 입력하세요.')
+    user = `Instruction:\n"""\n${instr}\n"""\n\nText to edit:\n"""\n${trimmed}\n"""`
+  } else {
+    user = `Text to edit:\n"""\n${trimmed}\n"""`
+  }
+  const out = await chat({
+    system,
+    user,
+    model,
+    temperature: action === 'spelling' ? 0.2 : 0.5,
+    allowLocal: false, // 텍스트 편집은 품질 보장 위해 OpenAI 고정(로컬 LLM 무시)
+    signal,
+  })
+  const result = stripReplyDecorations(out)
+  if (!result) throw new Error('편집 결과가 비어 있습니다.')
+  return result
 }
 
 const IDEOGRAM_CAPTION_SYSTEM = `You convert a presentation slide text box's content into a JSON "caption" for the Ideogram 4 image model, which renders a STANDALONE ILLUSTRATION expressing the meaning of that text (like a slide background or accent graphic).

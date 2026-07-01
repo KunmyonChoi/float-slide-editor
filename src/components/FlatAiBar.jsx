@@ -1,9 +1,10 @@
 import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { useFlatStore } from '../store/flatStore'
-import { hasApiKey, generateImagePrompt, generateImage, generateIdeogramCaption } from '../core/OpenAIClient'
+import { hasApiKey, generateImagePrompt, generateImage, generateIdeogramCaption, editSlideText } from '../core/OpenAIClient'
 import { generateLayoutImage, checkImagenBackend, imagenDockerRunCommand } from '../core/ImagenBackendClient'
 import { isLocalLlmEnabled } from '../core/LlmBackendClient'
+import { renderMarkdown } from '../core/markdown'
 import { BlobStore } from '../core/BlobStore'
 import { openAiSettings } from './AiSettingsModal'
 import { IMAGE_STYLES } from '../core/aiImageStyles'
@@ -31,8 +32,9 @@ function genSizeForBox(w, h, longEdge = 1024) {
  * 캔버스 줌과 무관하게 읽기 좋게 하려고 document.body 포털 + 화면 좌표로 배치한다.
  */
 export default function FlatAiBar({ element, scale, canvasRef }) {
-  // 'idle' | 'loading' | 'preview' | 'error'
+  // 'idle' | 'compose' | 'loading' | 'preview' | 'error'  (compose는 텍스트 '설명으로 편집' 지시 입력)
   const [phase, setPhase] = useState('idle')
+  const [tool, setTool] = useState('image') // 패널이 표현하는 작업: 'image' | 'text'
   const [styleId, setStyleId] = useState('flat')
   const [status, setStatus] = useState('')
   const [prompt, setPrompt] = useState('')
@@ -41,6 +43,13 @@ export default function FlatAiBar({ element, scale, canvasRef }) {
   const [error, setError] = useState('')
   const [imgenDown, setImgenDown] = useState(false) // 로컬 이미지 서버 미연결 → 설치 안내 표시
   const [cmdCopied, setCmdCopied] = useState(false)
+  const [imgMenuOpen, setImgMenuOpen] = useState(false) // 'AI 이미지 생성' 화풍 드롭다운
+  // AI 텍스트 편집 상태
+  const [menuOpen, setMenuOpen] = useState(false)       // 텍스트 편집 액션 드롭다운
+  const [textAction, setTextAction] = useState(null)    // 'spelling'|'formal'|'markdown'|'prompt'
+  const [instruction, setInstruction] = useState('')    // '설명으로 편집' 지시문
+  const [origText, setOrigText] = useState('')          // 편집 전 원문(미리보기 비교용)
+  const [resultText, setResultText] = useState('')      // 편집 결과
   const abortRef = useRef(null)
   const blobRef = useRef(null) // 로컬 결과 Blob(적용 시 BlobStore 저장)
 
@@ -88,11 +97,14 @@ export default function FlatAiBar({ element, scale, canvasRef }) {
   const sourceText = useCallback(() => htmlToPlain(element.content), [element.content])
 
   // 전체 파이프라인: 텍스트 분석 → 프롬프트/캡션 → 이미지 생성 (엔진은 AI 설정값을 따름)
-  const run = useCallback(async () => {
+  const run = useCallback(async (styleOverride) => {
     const backend = getBackend()
     // OpenAI 백엔드는 이미지 API에 키 필수. 로컬 백엔드는 캡션 LLM에 OpenAI 키 또는 로컬 LLM 중 하나 필요.
     const needKey = backend === 'openai' || !isLocalLlmEnabled()
     if (needKey && !hasApiKey()) { openAiSettings(); return }
+    setTool('image')
+    // 드롭다운에서 고른 화풍(styleOverride)이 있으면 그것을, 없으면 현재 styleId 사용(setState 지연 회피).
+    const sid = styleOverride || styleId
     const text = sourceText()
     if (!text) { setError('텍스트 박스에 분석할 내용이 없습니다.'); setPhase('error'); return }
     abortRef.current?.abort()
@@ -100,7 +112,7 @@ export default function FlatAiBar({ element, scale, canvasRef }) {
     abortRef.current = ctrl
     setPhase('loading'); setError(''); setImageUrl(''); setImgenDown(false); blobRef.current = null
     try {
-      const directive = IMAGE_STYLES.find(s => s.id === styleId)?.directive || ''
+      const directive = IMAGE_STYLES.find(s => s.id === sid)?.directive || ''
       if (backend === 'local') {
         setStatus('이미지 서버 확인 중…')
         if (!(await checkImagenBackend(true))) {
@@ -181,9 +193,55 @@ export default function FlatAiBar({ element, scale, canvasRef }) {
     setPhase('idle'); setImageUrl(''); blobRef.current = null
   }, [imageUrl, source, element.id, sourceText, prompt])
 
+  // ── AI 텍스트 편집 ──────────────────────────────────────────────
+  // 텍스트 편집은 OpenAI 고정(품질 보장) → OpenAI 키 필수.
+  const runTextEdit = useCallback(async (action, instr) => {
+    if (!hasApiKey()) { openAiSettings(); return }
+    const text = sourceText()
+    if (!text) { setTool('text'); setTextAction(action); setError('편집할 텍스트가 없습니다.'); setPhase('error'); return }
+    abortRef.current?.abort()
+    const ctrl = new AbortController()
+    abortRef.current = ctrl
+    setTool('text'); setTextAction(action); setOrigText(text); setError('')
+    setPhase('loading'); setStatus('AI가 텍스트를 편집 중…')
+    try {
+      const out = await editSlideText(text, { action, instruction: instr, signal: ctrl.signal })
+      if (ctrl.signal.aborted) return
+      setResultText(out); setPhase('preview')
+    } catch (e) {
+      if (e?.name === 'AbortError') return
+      setError(e?.message || 'AI 호출에 실패했습니다.'); setPhase('error')
+    }
+  }, [sourceText])
+
+  // 액션 선택 → 프롬프트 편집은 지시 입력(compose), 나머지는 즉시 실행
+  const startTextEdit = useCallback((action) => {
+    setMenuOpen(false)
+    if (action === 'prompt') {
+      setTool('text'); setTextAction('prompt'); setInstruction(''); setError(''); setPhase('compose')
+      return
+    }
+    runTextEdit(action, '')
+  }, [runTextEdit])
+
+  // 편집 결과를 요소에 적용(되돌리기 1스텝). 마크다운은 마크다운 모드로 전환.
+  const applyText = useCallback(() => {
+    const r = resultText.trim()
+    if (!r) return
+    const st = useFlatStore.getState()
+    if (textAction === 'markdown') {
+      st.updateFlatElement(element.id, { isMarkdown: true, md: r, content: renderMarkdown(r), isRich: true })
+    } else {
+      st.updateFlatElement(element.id, { content: plainToHtml(r), isRich: /\n/.test(r), isMarkdown: false })
+    }
+    st.reflowAutoFit?.()
+    setPhase('idle'); setResultText(''); setOrigText('')
+  }, [resultText, textAction, element.id])
+
   const cancel = useCallback(() => {
     abortRef.current?.abort()
     setPhase('idle'); setError(''); setImageUrl('')
+    setResultText(''); setOrigText(''); setInstruction('')
   }, [])
 
   // 드래그 이동 — 그립 핸들로 idle 액션바를 자유 위치로 옮김(선택 변경 시 자동 복귀)
@@ -219,7 +277,6 @@ export default function FlatAiBar({ element, scale, canvasRef }) {
           data-edit-accessory="true"
           // 포털 자식의 React 이벤트는 FlatCanvas(부모)로 버블링되므로 반드시 전파 차단.
           // (안 하면 mousedown이 캔버스 마퀴로 전달돼 mouseup에서 선택 해제→바 언마운트)
-          // preventDefault는 하지 않음 — <select> 드롭다운 열림을 막기 때문.
           onMouseDown={e => e.stopPropagation()}
           onClick={e => e.stopPropagation()}
           style={{
@@ -232,23 +289,47 @@ export default function FlatAiBar({ element, scale, canvasRef }) {
           }}
         >
           <GripHandle onPointerDown={startDrag} dragging={dragging} />
-          <select
-            value={styleId}
-            onChange={e => setStyleId(e.target.value)}
-            title="이미지 화풍"
-            style={styleSelectStyle}
-          >
-            {IMAGE_STYLES.map(s => <option key={s.id} value={s.id} style={{ background: '#1e293b', color: '#f1f5f9' }}>{s.label}</option>)}
-          </select>
-          <button
-            type="button"
-            onClick={run}
-            title="텍스트 박스 내용을 분석해 어울리는 이미지를 생성하고, 이 영역을 이미지로 교체합니다"
-            style={aiBtnStyle}
-          >
-            <SparkleIcon />
-            <span style={{ fontSize: 12, marginLeft: 5 }}>AI 이미지 생성</span>
-          </button>
+          {/* 'AI 이미지 생성' 버튼 자체가 화풍 드롭다운 — 화풍을 고르면 그 스타일로 바로 생성. */}
+          <span style={{ position: 'relative', display: 'inline-flex' }}>
+            <button
+              type="button"
+              onClick={() => { setImgMenuOpen(v => !v); setMenuOpen(false) }}
+              title="화풍을 골라 텍스트 내용에 어울리는 이미지를 생성하고, 이 영역을 이미지로 교체합니다"
+              style={aiBtnStyle}
+            >
+              <SparkleIcon />
+              <span style={{ fontSize: 12, marginLeft: 5 }}>AI 이미지 생성 ▾</span>
+            </button>
+            {imgMenuOpen && (
+              <div style={{ ...menuStyle, left: 0, right: 'auto' }}>
+                {IMAGE_STYLES.map(s => (
+                  <button key={s.id} type="button" style={menuItemStyle}
+                    onClick={() => { setImgMenuOpen(false); setStyleId(s.id); run(s.id) }}>
+                    {s.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </span>
+          <span style={{ width: 1, height: 20, background: 'rgba(255,255,255,0.14)', margin: '0 2px' }} />
+          <span style={{ position: 'relative', display: 'inline-flex' }}>
+            <button
+              type="button"
+              onClick={() => { setMenuOpen(v => !v); setImgMenuOpen(false) }}
+              title="선택한 텍스트 내용을 AI로 다듬습니다(맞춤법·발표체·마크다운·지시 편집)"
+              style={aiBtnStyle}
+            >
+              <span style={{ fontSize: 12 }}>✍️ 텍스트 편집 ▾</span>
+            </button>
+            {menuOpen && (
+              <div style={menuStyle}>
+                <button type="button" style={menuItemStyle} onClick={() => startTextEdit('spelling')}>맞춤법 교정</button>
+                <button type="button" style={menuItemStyle} onClick={() => startTextEdit('formal')}>공식 발표체로</button>
+                <button type="button" style={menuItemStyle} onClick={() => startTextEdit('markdown')}>마크다운 정리</button>
+                <button type="button" style={menuItemStyle} onClick={() => startTextEdit('prompt')}>설명으로 편집…</button>
+              </div>
+            )}
+          </span>
         </div>
       )}
 
@@ -266,8 +347,29 @@ export default function FlatAiBar({ element, scale, canvasRef }) {
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 600 }}>
-            <SparkleIcon /> AI 이미지 생성
+            <SparkleIcon /> {tool === 'text' ? 'AI 텍스트 편집' : 'AI 이미지 생성'}
           </div>
+
+          {/* 텍스트 '설명으로 편집' 지시 입력 */}
+          {tool === 'text' && phase === 'compose' && (
+            <>
+              <div style={{ fontSize: 11, color: '#64748b' }}>어떻게 편집할지 설명하세요 (예: "3개 불릿으로 요약", "존댓말로", "영어로 번역")</div>
+              <textarea
+                value={instruction}
+                onChange={e => setInstruction(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); if (instruction.trim()) runTextEdit('prompt', instruction) } }}
+                rows={3}
+                autoFocus
+                placeholder="편집 지시문…"
+                style={{
+                  width: '100%', boxSizing: 'border-box', resize: 'vertical',
+                  padding: '8px 10px', fontSize: 12.5, lineHeight: 1.5,
+                  background: 'rgba(255,255,255,0.06)', color: '#f1f5f9',
+                  border: '1px solid rgba(255,255,255,0.16)', borderRadius: 8, outline: 'none',
+                }}
+              />
+            </>
+          )}
 
           {phase === 'loading' && (
             <div style={{ fontSize: 13, color: '#94a3b8', padding: '10px 2px', display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -290,7 +392,8 @@ export default function FlatAiBar({ element, scale, canvasRef }) {
             </div>
           )}
 
-          {phase === 'preview' && (
+          {/* 이미지 미리보기 */}
+          {phase === 'preview' && tool === 'image' && (
             <>
               <div style={{
                 width: '100%', height: 200, borderRadius: 8, overflow: 'hidden',
@@ -318,12 +421,39 @@ export default function FlatAiBar({ element, scale, canvasRef }) {
             </>
           )}
 
+          {/* 텍스트 편집 미리보기(전/후 비교) */}
+          {phase === 'preview' && tool === 'text' && (
+            <>
+              <div style={{ fontSize: 11, color: '#64748b' }}>전 → 후 (적용하면 이 텍스트 요소 내용이 교체됩니다)</div>
+              <div style={diffBoxStyle}>
+                <div style={{ color: '#94a3b8', whiteSpace: 'pre-wrap', marginBottom: 8, opacity: 0.75 }}>{origText}</div>
+                <div style={{ height: 1, background: 'rgba(255,255,255,0.12)', margin: '0 0 8px' }} />
+                <div style={{ color: '#f1f5f9', whiteSpace: 'pre-wrap' }}>{resultText}</div>
+              </div>
+              {textAction === 'markdown' && (
+                <div style={{ fontSize: 11, color: '#64748b' }}>적용 시 마크다운 모드로 전환되어 렌더링됩니다.</div>
+              )}
+            </>
+          )}
+
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
             <button type="button" onClick={cancel} style={ghostBtnStyle}>취소</button>
-            {(phase === 'preview' || phase === 'error') && (
+            {/* 텍스트 흐름 버튼 */}
+            {tool === 'text' && phase === 'compose' && (
+              <button type="button" onClick={() => runTextEdit('prompt', instruction)} disabled={!instruction.trim()}
+                style={{ ...primaryBtnStyle, opacity: instruction.trim() ? 1 : 0.5, cursor: instruction.trim() ? 'pointer' : 'default' }}>실행</button>
+            )}
+            {tool === 'text' && (phase === 'preview' || phase === 'error') && textAction && (
+              <button type="button" onClick={() => runTextEdit(textAction, instruction)} style={ghostBtnStyle}>다시 시도</button>
+            )}
+            {tool === 'text' && phase === 'preview' && (
+              <button type="button" onClick={applyText} style={primaryBtnStyle}>적용</button>
+            )}
+            {/* 이미지 흐름 버튼 */}
+            {tool === 'image' && (phase === 'preview' || phase === 'error') && (
               <button type="button" onClick={regenerate} style={ghostBtnStyle}>재생성</button>
             )}
-            {phase === 'preview' && (
+            {tool === 'image' && phase === 'preview' && (
               <button type="button" onClick={apply} style={primaryBtnStyle}>적용</button>
             )}
           </div>
@@ -343,15 +473,17 @@ function htmlToPlain(content) {
   return (div.textContent || '').replace(/\n{3,}/g, '\n\n').trim()
 }
 
+// 평문 → 안전한 HTML(엔티티 이스케이프 + 줄바꿈 <br>)
+function plainToHtml(s) {
+  return (s || '')
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/\n/g, '<br>')
+}
+
 const aiBtnStyle = {
   display: 'flex', alignItems: 'center', padding: '6px 8px', borderRadius: 8,
   border: 'none', cursor: 'pointer', color: '#c7d2fe',
   background: 'rgba(99,102,241,0.18)',
-}
-const styleSelectStyle = {
-  height: 26, maxWidth: 150, fontSize: 12, padding: '0 6px', borderRadius: 7, cursor: 'pointer',
-  background: 'rgba(255,255,255,0.06)', color: '#e2e8f0',
-  border: '1px solid rgba(255,255,255,0.14)', outline: 'none',
 }
 const ghostBtnStyle = {
   padding: '6px 12px', fontSize: 12.5, borderRadius: 8, cursor: 'pointer',
@@ -360,6 +492,21 @@ const ghostBtnStyle = {
 const primaryBtnStyle = {
   padding: '6px 14px', fontSize: 12.5, borderRadius: 8, cursor: 'pointer',
   border: 'none', background: 'rgba(99,102,241,0.9)', color: '#fff', fontWeight: 600,
+}
+const menuStyle = {
+  position: 'absolute', top: 'calc(100% + 6px)', right: 0, zIndex: 10050,
+  display: 'flex', flexDirection: 'column', minWidth: 150, padding: 4,
+  background: 'rgba(15,23,42,0.98)', border: '1px solid rgba(255,255,255,0.14)',
+  borderRadius: 10, boxShadow: '0 12px 40px rgba(0,0,0,0.55)',
+}
+const menuItemStyle = {
+  textAlign: 'left', padding: '7px 10px', fontSize: 12.5, borderRadius: 7,
+  border: 'none', background: 'transparent', color: '#e2e8f0', cursor: 'pointer',
+}
+const diffBoxStyle = {
+  width: '100%', maxHeight: 220, overflowY: 'auto', boxSizing: 'border-box',
+  padding: '10px 12px', fontSize: 12.5, lineHeight: 1.55,
+  background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8,
 }
 
 function SparkleIcon() {

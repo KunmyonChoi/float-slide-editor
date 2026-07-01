@@ -26,6 +26,9 @@ dist-ssr
 # Claude Code
 .claude/
 
+# Python bytecode/venv (모든 파이썬 서브서버 공통)
+__pycache__/
+*.pyc
 # Python pptx server
 pptx-server/.venv/
 pptx-server/__pycache__/
