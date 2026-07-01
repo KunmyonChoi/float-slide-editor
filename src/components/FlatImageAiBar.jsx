@@ -318,14 +318,8 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
           }}
         >
           <GripHandle onPointerDown={startDrag} dragging={dragging} />
-          <select
-            value={styleId}
-            onChange={e => setStyleId(e.target.value)}
-            title="디자인 다듬기 화풍"
-            style={styleSelectStyle}
-          >
-            {INFOGRAPHIC_STYLES.map(s => <option key={s.id} value={s.id} style={{ background: '#1e293b', color: '#f1f5f9' }}>{s.label}</option>)}
-          </select>
+          {/* '디자인 다듬기' + 그 화풍 콤보 — 콤보는 이 버튼에만 적용되므로 버튼 바로 뒤에 두고
+              구분선으로 나머지 액션과 분리(맨 앞에 있어 전체에 적용되는 듯 혼동되던 문제 수정). */}
           <button
             type="button"
             onClick={() => run('enhance')}
@@ -335,6 +329,15 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
             <SparkleIcon />
             <span style={{ fontSize: 12, marginLeft: 5 }}>디자인 다듬기</span>
           </button>
+          <select
+            value={styleId}
+            onChange={e => setStyleId(e.target.value)}
+            title="'디자인 다듬기'에 적용할 화풍 (다른 버튼에는 적용되지 않습니다)"
+            style={styleSelectStyle}
+          >
+            {INFOGRAPHIC_STYLES.map(s => <option key={s.id} value={s.id} style={{ background: '#1e293b', color: '#f1f5f9' }}>{s.label}</option>)}
+          </select>
+          <span style={{ width: 1, height: 20, background: 'rgba(255,255,255,0.14)', margin: '0 2px' }} />
           <button
             type="button"
             onClick={() => { setMode('edit'); setPrompt(''); setPhase('compose') }}
