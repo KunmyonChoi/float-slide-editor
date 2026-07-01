@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { toBbox, buildCaption, buildStyle, normalizeCaption } from '../core/ideogramCaption'
+import { toBbox, buildCaption, buildStyle, normalizeCaption, boundingBox } from '../core/ideogramCaption'
 
 const CANVAS = { w: 1280, h: 720 }
 
@@ -18,6 +18,27 @@ describe('ideogramCaption — bbox 정규화', () => {
   it('canvasSize 누락/0이어도 안전(NaN/Infinity 방지)', () => {
     const bbox = toBbox({ x: 10, y: 10, width: 10, height: 10 }, undefined)
     expect(bbox.every(v => Number.isInteger(v) && v >= 0 && v <= 1000)).toBe(true)
+  })
+
+  it('frame(x,y 오프셋) 기준 정규화 — 선택 영역 프레이밍', () => {
+    // 프레임 (100,100)~(500,300) 안의 요소 (200,150,w100,h50) → 프레임 상대 (100,50)~(200,100)
+    const el = { x: 200, y: 150, width: 100, height: 50 }
+    const frame = { x: 100, y: 100, w: 400, h: 200 }
+    // 상대: x 100~200 /400 → 250,500 · y 50~100 /200 → 250,500. [y_min,x_min,y_max,x_max]
+    expect(toBbox(el, frame)).toEqual([250, 250, 500, 500])
+  })
+})
+
+describe('ideogramCaption — boundingBox', () => {
+  it('요소 묶음 bbox {x,y,w,h}', () => {
+    const els = [
+      { x: 100, y: 200, width: 300, height: 50 },
+      { x: 500, y: 100, width: 200, height: 400 },
+    ]
+    expect(boundingBox(els)).toEqual({ x: 100, y: 100, w: 600, h: 400 })
+  })
+  it('빈 목록도 안전', () => {
+    expect(boundingBox([])).toEqual({ x: 0, y: 0, w: 1, h: 1 })
   })
 })
 

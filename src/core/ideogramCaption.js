@@ -10,13 +10,30 @@
  */
 import { htmlToPlain } from './slideTextDigest'
 
-/** 요소 박스(px) → bbox [y_min,x_min,y_max,x_max] (0–1000 정규화, 정수, 범위 클램프). */
-export function toBbox(el, canvasSize) {
-  const w = canvasSize?.w || 1
-  const h = canvasSize?.h || 1
+/**
+ * 요소 박스(px) → bbox [y_min,x_min,y_max,x_max] (0–1000 정규화, 정수, 범위 클램프).
+ * frame = 정규화 기준 사각형 {x?,y?,w,h}. x/y 생략 시 원점(캔버스 전체) — 하위호환.
+ * frame에 선택 묶음 bbox를 주면 그 영역 기준(선택 프레이밍)으로 정규화된다.
+ */
+export function toBbox(el, frame) {
+  const w = frame?.w || 1
+  const h = frame?.h || 1
+  const ox = frame?.x || 0, oy = frame?.y || 0
   const n = (v, span) => Math.max(0, Math.min(1000, Math.round((v / span) * 1000)))
-  const x = el.x || 0, y = el.y || 0
+  const x = (el.x || 0) - ox, y = (el.y || 0) - oy
   return [n(y, h), n(x, w), n(y + (el.height || 0), h), n(x + (el.width || 0), w)]
+}
+
+/** 요소들의 묶음 bbox(px) {x,y,w,h}. 선택 프레이밍의 기준 사각형. */
+export function boundingBox(els) {
+  const list = (els || []).filter(Boolean)
+  if (!list.length) return { x: 0, y: 0, w: 1, h: 1 }
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+  for (const e of list) {
+    minX = Math.min(minX, e.x || 0); minY = Math.min(minY, e.y || 0)
+    maxX = Math.max(maxX, (e.x || 0) + (e.width || 0)); maxY = Math.max(maxY, (e.y || 0) + (e.height || 0))
+  }
+  return { x: minX, y: minY, w: Math.max(1, maxX - minX), h: Math.max(1, maxY - minY) }
 }
 
 /** 텍스트 요소 1개 → caption element(키 순서: type, bbox, text, desc?, color_palette?). */
@@ -29,14 +46,14 @@ function textElement(el, canvasSize, desc) {
 /**
  * 선택 텍스트 요소들 → Ideogram 4 caption 객체.
  * @param {Array} textEls  선택된 요소들(type==='text'만 사용, 빈 텍스트 제외)
- * @param {{w:number,h:number}} canvasSize
+ * @param {{x?:number,y?:number,w:number,h:number}} frame  bbox 정규화 기준(선택 묶음 또는 캔버스)
  * @param {{ description?:string, style?:object, background?:string, descById?:Object<string,string> }} [opts]
  */
-export function buildCaption(textEls, canvasSize, opts = {}) {
+export function buildCaption(textEls, frame, opts = {}) {
   const { description = '', style = null, background = '', descById = {} } = opts
   const elements = (textEls || [])
     .filter(el => el && el.type === 'text')
-    .map(el => textElement(el, canvasSize, descById[el.id]))
+    .map(el => textElement(el, frame, descById[el.id]))
     .filter(e => e.text)  // 빈 텍스트 제외
 
   const caption = {}

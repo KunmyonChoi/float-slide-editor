@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { useEffect, useState, useMemo } from 'react'
 import { createPortal } from 'react-dom'
-import { buildCaption } from '../core/ideogramCaption'
+import { buildCaption, boundingBox } from '../core/ideogramCaption'
 import {
   checkImagenBackend, isImagenReady, getImagenPresets, getImagenDevice,
   imagenDockerRunCommand, IMAGEN_DOCKER_IMAGE,
@@ -35,7 +35,7 @@ export function ImagenLayoutHost() {
 }
 
 function Dialog() {
-  const { els, canvasSize, pageKey } = useStore.getState()
+  const { els, pageKey } = useStore.getState()
   const [description, setDescription] = useState('')
   const [background, setBackground] = useState('')
   const [preset, setPreset] = useState('V4_TURBO_12')
@@ -47,10 +47,12 @@ function Dialog() {
   const textEls = (els || []).filter(e => e && e.type === 'text')
   const presets = getImagenPresets() || DEFAULT_PRESETS
 
-  // 전송될 캡션 — 좌표→bbox(0–1000) + 텍스트 매핑이 그대로 보이게 미리보기에 사용(서버가 받는 객체)
+  // 선택 요소 묶음 bbox = 프레이밍 기준(선택 영역만 생성·삽입 — OpenAI 인포그래픽과 동일)
+  const frame = useMemo(() => boundingBox(textEls), [textEls])
+  // 전송될 캡션 — bbox는 선택 영역(frame) 기준 0–1000 정규화. 미리보기에 그대로 노출.
   const caption = useMemo(
-    () => buildCaption(textEls, canvasSize, { description: description.trim(), background: background.trim() }),
-    [textEls, canvasSize, description, background],
+    () => buildCaption(textEls, frame, { description: description.trim(), background: background.trim() }),
+    [textEls, frame, description, background],
   )
 
   useEffect(() => {
@@ -64,7 +66,7 @@ function Dialog() {
   }, [])
 
   const generate = () => {
-    startImagenJob({ caption, canvasSize, preset, pageKey: pageKey || useFlatStore.getState().getCurrentPageKey() })
+    startImagenJob({ caption, frame, preset, pageKey: pageKey || useFlatStore.getState().getCurrentPageKey() })
     close()
   }
 
