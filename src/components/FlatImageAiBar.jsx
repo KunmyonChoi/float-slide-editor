@@ -13,8 +13,14 @@ import { useDraggableToolbar, GripHandle } from './useDraggableToolbar'
 import MaskBrushOverlay from './MaskBrushOverlay'
 import ImageComparePreview from './ImageComparePreview'
 
-// 결과가 적용/표시될 objectFit(비교 오버레이·apply 공통 단일소스)
-function resultFit(mode) { return mode === 'outpaint' ? 'cover' : 'contain' }
+// 결과가 적용/표시될 objectFit(비교 오버레이·apply 공통 단일소스).
+// 아웃페인트는 박스를 꽉 채우도록 cover, 그 외(다듬기/편집)는 요소의 기존 fit을 유지한다.
+// (하드코딩 contain이면 결과 종횡비가 박스와 미세히 달라도 레터박스 빈틈이 생겨 '떨어져' 보임 —
+//  채우기(cover) 요소는 cover로 채워 빈틈/쉬프트 제거. 렌더러와 동일하게 '||'로 기본값 처리.)
+function resultFit(mode, element) {
+  if (mode === 'outpaint') return 'cover'
+  return element?.styles?.objectFit || 'contain'
+}
 
 // data URL 이미지의 실제 픽셀 크기
 function imageSize(dataUrl) {
@@ -102,7 +108,7 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
   // 캔버스 전후 비교(미리보기)
   const [split, setSplit] = useState(50)   // 세로 구분선 위치(%)
   const [holding, setHolding] = useState(false) // '원본 보기' 홀드 중
-  const compareFit = resultFit(mode) // 결과가 적용될 objectFit(비교 오버레이·apply 공통 단일소스)
+  const compareFit = resultFit(mode, element) // 결과가 적용될 objectFit(비교 오버레이·apply 공통)
   const abortRef = useRef(null)
   const captureRef = useRef('') // 입력 캡처 — 재생성 시 재사용
   const cutoutBlobRef = useRef(null) // 분리 결과 PNG blob — 적용 시 data URL로 변환
@@ -258,8 +264,8 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
     useFlatStore.getState().updateFlatElement(element.id, {
       content: imageUrl,
       isRich: false,
-      // 결과가 표시될 objectFit(비교 오버레이와 동일한 단일소스: 아웃페인트=cover, 그 외=contain)
-      styles: { objectFit: resultFit(mode) },
+      // 결과가 표시될 objectFit(비교 오버레이와 동일: 아웃페인트=cover, 그 외=요소 기존 fit 유지)
+      styles: { objectFit: resultFit(mode, element) },
     })
     setPhase('idle'); resetEditState()
   }, [imageUrl, element.id, mode, resetEditState])
@@ -481,7 +487,7 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
               canvasRef={canvasRef}
               tool={brushTool}
               brushSize={brushSize}
-              objectFit={element.styles?.objectFit ?? 'contain'}
+              objectFit={element.styles?.objectFit || 'contain'}
               onStrokesChange={setMaskCount}
             />
           )}
