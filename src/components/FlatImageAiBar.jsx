@@ -10,6 +10,7 @@ import CutoutInstallModal from './CutoutInstallModal'
 import { BlobStore } from '../core/BlobStore'
 import { useDraggableToolbar, GripHandle } from './useDraggableToolbar'
 import MaskBrushOverlay from './MaskBrushOverlay'
+import ImageComparePreview from './ImageComparePreview'
 
 // data URL 이미지의 실제 픽셀 크기
 function imageSize(dataUrl) {
@@ -103,6 +104,10 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
   const [brushSize, setBrushSize] = useState(48)
   const [maskCount, setMaskCount] = useState(0) // 칠한 스트로크 수(버튼 안내용)
   const maskRef = useRef(null)
+  // 캔버스 전후 비교(미리보기)
+  const [split, setSplit] = useState(50)   // 세로 구분선 위치(%)
+  const [holding, setHolding] = useState(false) // '원본 보기' 홀드 중
+  const compareFit = mode === 'outpaint' ? 'cover' : 'contain' // 적용 시 objectFit과 동일
   const abortRef = useRef(null)
   const captureRef = useRef('') // 입력 캡처 — 재생성 시 재사용
   const cutoutBlobRef = useRef(null) // 분리 결과 PNG blob — 적용 시 data URL로 변환
@@ -144,6 +149,7 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
     setPhase('idle'); setMode('enhance'); setError(''); setStatus(''); setPrompt(''); setImageUrl(''); setZoom(false)
     setServerDown(false); setShowInstall(false)
     setMaskOn(false); setMaskCount(0)
+    setSplit(50); setHolding(false)
     return () => { abortRef.current?.abort() }
   }, [element.id])
 
@@ -466,6 +472,7 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
               canvasRef={canvasRef}
               tool={brushTool}
               brushSize={brushSize}
+              objectFit={element.styles?.objectFit ?? 'contain'}
               onStrokesChange={setMaskCount}
             />
           )}
@@ -518,7 +525,16 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
             </>
           )}
 
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            {/* 전후 비교 보조(캔버스 오버레이와 연동) — cutout 제외 */}
+            {phase === 'preview' && mode !== 'cutout' && (
+              <>
+                <button type="button"
+                  onPointerDown={() => setHolding(true)} onPointerUp={() => setHolding(false)} onPointerLeave={() => setHolding(false)}
+                  title="누르는 동안 원본을 보여줍니다" style={{ ...ghostBtnStyle, marginRight: 'auto' }}>원본 보기(꾹)</button>
+                <button type="button" onClick={() => setSplit(50)} title="구분선을 가운데로" style={ghostBtnStyle}>리셋</button>
+              </>
+            )}
             <button type="button" onClick={cancel} style={ghostBtnStyle}>취소</button>
             {serverDown && phase === 'error' && (
               <button type="button" onClick={() => setShowInstall(true)} style={primaryBtnStyle}>설치 안내</button>
@@ -538,6 +554,15 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
             )}
           </div>
         </div>
+      )}
+
+      {/* 캔버스 전후 비교 오버레이(미리보기) — 요소 위에 결과를 겹쳐 세로 슬라이더로 비교 */}
+      {phase === 'preview' && mode !== 'cutout' && imageUrl && (
+        <ImageComparePreview
+          element={element} scale={scale} canvasRef={canvasRef}
+          resultUrl={imageUrl} objectFit={compareFit}
+          split={split} onSplit={setSplit} showOriginal={holding}
+        />
       )}
 
       {/* 크게 보기 라이트박스 */}

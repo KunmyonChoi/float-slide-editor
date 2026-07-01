@@ -1,5 +1,24 @@
 import { useRef, useState, useEffect, useLayoutEffect, useImperativeHandle, forwardRef, useCallback } from 'react'
 import { createPortal } from 'react-dom'
+import { BlobStore } from '../core/BlobStore'
+
+// element.content(idb 참조 또는 URL/dataURL) → 표시 가능한 URL(+해제 함수)
+async function contentToUrl(content) {
+  if (BlobStore.isIdbRef(content)) {
+    const b = await BlobStore.get(BlobStore.parseRef(content))
+    if (!b) throw new Error('이미지 데이터를 불러오지 못했습니다.')
+    const url = URL.createObjectURL(b)
+    return { url, revoke: () => URL.revokeObjectURL(url) }
+  }
+  return { url: content, revoke: () => {} }
+}
+
+// objectFit=contain일 때 요소 박스(W×H) 안에서 이미지가 실제 표시되는 사각형(요소-로컬 px)
+function containRect(W, H, natW, natH) {
+  const boxAR = W / H, imgAR = natW / natH
+  if (imgAR >= boxAR) { const dh = W / imgAR; return { x: 0, y: (H - dh) / 2, w: W, h: dh } }
+  const dw = H * imgAR; return { x: (W - dw) / 2, y: 0, w: dw, h: H }
+}
 
 /**
  * MaskBrushOverlay — 선택한 이미지 요소 '위'에 겹쳐 마스크(편집 영역)를 브러시로 칠하는 오버레이.
@@ -11,7 +30,7 @@ import { createPortal } from 'react-dom'
  * 부모(FlatImageAiBar)는 ref로 buildMask/hasStrokes/clear를 호출한다. 도구/브러시 크기는 props.
  */
 const MaskBrushOverlay = forwardRef(function MaskBrushOverlay(
-  { element, scale, canvasRef, tool = 'brush', brushSize = 40, onStrokesChange },
+  { element, scale, canvasRef, tool = 'brush', brushSize = 40, objectFit = 'contain', onStrokesChange },
   ref,
 ) {
   const canvasElRef = useRef(null)
@@ -19,6 +38,23 @@ const MaskBrushOverlay = forwardRef(function MaskBrushOverlay(
   const drawingRef = useRef(null)     // 진행 중 스트로크
   const [rect, setRect] = useState(null)
   const [tick, setTick] = useState(0)
+  // 편집 가능한 영역(요소-로컬 px). contain이면 이미지 실제 표시 사각형, 아니면 박스 전체.
+  const [contentRect, setContentRect] = useState(null)
+
+  // contain 모드: 이미지 자연 크기를 읽어 표시 사각형 계산(여백은 편집 불가로 클리핑)
+  useEffect(() => {
+    let alive = true, revoke = () => {}
+    if (objectFit !== 'contain') { setContentRect(null); return }
+    ;(async () => {
+      try {
+        const r = await contentToUrl(element.content); revoke = r.revoke
+        const img = new Image()
+        img.onload = () => { if (alive) setContentRect(containRect(element.width, element.height, img.naturalWidth, img.naturalHeight)) }
+        img.src = r.url
+      } catch { /* 실패 시 박스 전체 허용 */ }
+    })()
+    return () => { alive = false; revoke() }
+  }, [element.content, element.width, element.height, objectFit])
 
   useEffect(() => {
     const rerender = () => setTick(n => n + 1)
@@ -57,8 +93,18 @@ const MaskBrushOverlay = forwardRef(function MaskBrushOverlay(
       ctx.lineWidth = Math.max(1, s.size * scale)
       strokePath(ctx, s.pts, scale)
     }
+    // contain 여백은 편집 불가 → 칠한 것도 여기선 지우고(클리핑 미리보기) 어둡게 딤
+    if (contentRect) {
+      const r = { x: contentRect.x * scale, y: contentRect.y * scale, w: contentRect.w * scale, h: contentRect.h * scale }
+      ctx.globalCompositeOperation = 'destination-out'
+      ctx.fillStyle = '#000'
+      fillOutside(ctx, r, cv.width, cv.height) // 여백의 빨간 칠 제거
+      ctx.globalCompositeOperation = 'source-over'
+      ctx.fillStyle = 'rgba(15,23,42,0.45)'
+      fillOutside(ctx, r, cv.width, cv.height) // 여백 딤(편집 불가 표시)
+    }
     ctx.globalCompositeOperation = 'source-over'
-  }, [scale])
+  }, [scale, contentRect])
 
   useEffect(() => { redraw() }, [redraw, rect, tick])
 
@@ -88,12 +134,20 @@ const MaskBrushOverlay = forwardRef(function MaskBrushOverlay(
     onStrokesChange?.(strokesRef.current.length)
   }
 
+  // 요소-로컬 점이 편집 가능 영역(contentRect, 없으면 박스 전체) 안인가
+  const inEditable = useCallback((p) => {
+    const r = contentRect
+    if (!r) return true
+    return p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h
+  }, [contentRect])
+
   useImperativeHandle(ref, () => ({
-    hasStrokes: () => strokesRef.current.some(s => s.tool === 'brush' && s.pts.length),
+    // 편집 가능 영역 안에 칠한 점이 있어야 유효한 마스크
+    hasStrokes: () => strokesRef.current.some(s => s.tool === 'brush' && s.pts.some(inEditable)),
     clear: () => { strokesRef.current = []; drawingRef.current = null; redraw(); onStrokesChange?.(0) },
     // 캡처 해상도(capW×capH) 마스크 PNG data URL. 칠한 영역=투명(편집), 나머지=불투명(보존).
     buildMask: (capW, capH) => {
-      if (!strokesRef.current.some(s => s.tool === 'brush' && s.pts.length)) return null
+      if (!strokesRef.current.some(s => s.tool === 'brush' && s.pts.some(inEditable))) return null
       const off = document.createElement('canvas')
       off.width = capW; off.height = capH
       const ctx = off.getContext('2d')
@@ -107,10 +161,16 @@ const MaskBrushOverlay = forwardRef(function MaskBrushOverlay(
         ctx.lineWidth = Math.max(1, s.size * sx)
         strokePathXY(ctx, s.pts, sx, sy)
       }
+      // contain 여백 클리핑: 표시 사각형 밖은 다시 불투명(보존)으로
+      if (contentRect) {
+        ctx.globalCompositeOperation = 'source-over'
+        ctx.fillStyle = '#000000'
+        fillOutside(ctx, { x: contentRect.x * sx, y: contentRect.y * sy, w: contentRect.w * sx, h: contentRect.h * sy }, capW, capH)
+      }
       ctx.globalCompositeOperation = 'source-over'
       return off.toDataURL('image/png')
     },
-  }), [element.width, element.height, redraw, onStrokesChange])
+  }), [element.width, element.height, contentRect, inEditable, redraw, onStrokesChange])
 
   if (!rect) return null
   return createPortal(
@@ -134,6 +194,14 @@ const MaskBrushOverlay = forwardRef(function MaskBrushOverlay(
     document.body,
   )
 })
+
+// 사각형 r 바깥(상/하/좌/우 4밴드)을 현재 fillStyle로 채운다
+function fillOutside(ctx, r, W, H) {
+  ctx.fillRect(0, 0, W, Math.max(0, r.y))                          // 위
+  ctx.fillRect(0, r.y + r.h, W, Math.max(0, H - (r.y + r.h)))      // 아래
+  ctx.fillRect(0, r.y, Math.max(0, r.x), r.h)                      // 좌
+  ctx.fillRect(r.x + r.w, r.y, Math.max(0, W - (r.x + r.w)), r.h)  // 우
+}
 
 // 요소-로컬 pts를 scale 배로 그린다(표시용)
 function strokePath(ctx, pts, scale) { strokePathXY(ctx, pts, scale, scale) }
