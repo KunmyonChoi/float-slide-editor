@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { useAiJobStore } from '../store/aiJobStore'
 import { useFlatStore } from '../store/flatStore'
 import { useDraggableToolbar, GripHandle } from './useDraggableToolbar'
+import { recoverPendingLipsyncJobs, countRecoverable } from '../core/lipsyncRunner'
 
 /**
  * AiJobTray — 전역 AI 작업 트레이(우하단). 선택/페이지와 무관하게 진행 중·완료·실패 작업을
@@ -23,6 +24,13 @@ export default function AiJobTray() {
   // 위치는 작업이 바뀌어도 유지(고정 resetKey). 드래그 시 자유 위치로.
   const { pos, startDrag, dragging } = useDraggableToolbar('aijobtray', chipRef)
 
+  // 탭 폐기/새로고침으로 유실됐던 진행 중 립싱크 결과 회수 안내(durable 기록 기반).
+  // localStorage라 비반응형 — 렌더마다 값싸게 재계산(jobs 변화가 리렌더를 유발). 클릭 후엔
+  // 결과가 도착해 기록이 정리될 때까지 버튼이 남지 않도록 dismissed로 즉시 숨긴다.
+  const [recoverDismissed, setRecoverDismissed] = useState(false)
+  const recoverable = recoverDismissed ? 0 : countRecoverable()
+  const doRecover = () => { const n = recoverPendingLipsyncJobs(); setRecoverDismissed(true); if (n) setExpanded(true) }
+
   // 새 완료(ready)가 생기면 한 번 펼쳐 알림
   const readyIds = visible.filter(j => j.status === 'ready').map(j => j.id).join(',')
   const prevReady = useRef('')
@@ -31,7 +39,7 @@ export default function AiJobTray() {
     prevReady.current = readyIds
   }, [readyIds])
 
-  if (visible.length === 0) return null
+  if (visible.length === 0 && recoverable === 0) return null
 
   const running = visible.filter(j => j.status === 'running')
   const readyJobs = visible.filter(j => j.status === 'ready')
@@ -43,7 +51,7 @@ export default function AiJobTray() {
     summary = `생성 중 ${running[0].progress || 0}%${running.length > 1 ? ` (+${running.length - 1})` : ''}`
   } else if (readyJobs.length) {
     summary = `완료 ${readyJobs.length}`; dot = '#34d399'
-  } else {
+  } else if (failedJobs.length) {
     summary = `실패 ${failedJobs.length}`; dot = '#f87272'
   }
 
@@ -54,9 +62,9 @@ export default function AiJobTray() {
 
   return (
     <div style={containerStyle}>
-      <div style={{ position: 'relative', pointerEvents: 'auto' }}>
+      <div style={{ position: 'relative', pointerEvents: 'auto', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8 }}>
         {/* 펼침: 카드 목록을 칩 위로 */}
-        {expanded && (
+        {expanded && visible.length > 0 && (
           <div style={{
             position: 'absolute', bottom: 'calc(100% + 8px)', right: 0,
             width: 300, maxWidth: 'calc(100vw - 32px)', maxHeight: '60vh', overflowY: 'auto',
@@ -65,24 +73,41 @@ export default function AiJobTray() {
             {visible.map(job => <JobCard key={job.id} job={job} />)}
           </div>
         )}
+        {/* 복구 안내 — 이전 세션에 진행 중이던 립싱크 결과 회수(사용자 클릭=팝업 열기 제스처) */}
+        {recoverable > 0 && (
+          <button
+            onClick={doRecover}
+            title="이전에 진행 중이던 립싱크 결과를 다시 불러옵니다(팝업이 열립니다)."
+            style={{
+              display: 'flex', alignItems: 'center', gap: 6, height: 32, padding: '0 12px',
+              borderRadius: 999, background: 'rgba(180,83,9,0.95)', color: '#fff',
+              border: '1px solid rgba(253,224,71,0.5)', boxShadow: '0 6px 20px rgba(0,0,0,0.4)',
+              cursor: 'pointer', fontFamily: 'system-ui, sans-serif', fontSize: 12.5, fontWeight: 600,
+            }}
+          >
+            ⟳ 이전 립싱크 결과 복구 {recoverable}
+          </button>
+        )}
         {/* 컴팩트 칩(평소) — 클릭 토글, 그립으로 드래그 */}
-        <div ref={chipRef}
-          style={{
-            display: 'flex', alignItems: 'center', gap: 6, height: 32, padding: '0 10px 0 6px',
-            borderRadius: 999, background: 'rgba(15,23,42,0.96)', color: '#e2e8f0',
-            border: '1px solid rgba(255,255,255,0.14)', boxShadow: '0 6px 20px rgba(0,0,0,0.4)',
-            backdropFilter: 'blur(8px)', cursor: 'pointer', fontFamily: 'system-ui, sans-serif',
-            marginLeft: 'auto', width: 'fit-content',
-          }}
-          onClick={() => setExpanded(o => !o)}
-          title={expanded ? '접기' : '펼치기'}
-        >
-          <GripHandle onPointerDown={startDrag} dragging={dragging} />
-          <span style={{ fontSize: 14 }}>🎬</span>
-          <span style={{ fontSize: 12.5, fontWeight: 600 }}>{summary}</span>
-          {dot && <span style={{ width: 8, height: 8, borderRadius: '50%', background: dot }} />}
-          <span style={{ fontSize: 10, color: '#94a3b8' }}>{expanded ? '▾' : '▴'}</span>
-        </div>
+        {visible.length > 0 && (
+          <div ref={chipRef}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 6, height: 32, padding: '0 10px 0 6px',
+              borderRadius: 999, background: 'rgba(15,23,42,0.96)', color: '#e2e8f0',
+              border: '1px solid rgba(255,255,255,0.14)', boxShadow: '0 6px 20px rgba(0,0,0,0.4)',
+              backdropFilter: 'blur(8px)', cursor: 'pointer', fontFamily: 'system-ui, sans-serif',
+              width: 'fit-content',
+            }}
+            onClick={() => setExpanded(o => !o)}
+            title={expanded ? '접기' : '펼치기'}
+          >
+            <GripHandle onPointerDown={startDrag} dragging={dragging} />
+            <span style={{ fontSize: 14 }}>🎬</span>
+            <span style={{ fontSize: 12.5, fontWeight: 600 }}>{summary}</span>
+            {dot && <span style={{ width: 8, height: 8, borderRadius: '50%', background: dot }} />}
+            <span style={{ fontSize: 10, color: '#94a3b8' }}>{expanded ? '▾' : '▴'}</span>
+          </div>
+        )}
       </div>
     </div>
   )
