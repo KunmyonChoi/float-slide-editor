@@ -77,6 +77,8 @@ export default function FlatAiBar({ element, scale, canvasRef }) {
   // 선택 요소의 화면 좌표(줌/팬 반영). ref는 렌더 중 읽지 않고 layout effect에서 계산.
   const [rect, setRect] = useState(null)
   const [tick, setTick] = useState(0)
+  // 다이어그램 모드면 연결점(도트)을 가리지 않도록 플로팅바를 더 멀리 띄운다(아래 GAP).
+  const diagramMode = useFlatStore(s => s.diagramMode)
 
   useEffect(() => {
     const rerender = () => setTick(n => n + 1)
@@ -279,8 +281,11 @@ export default function FlatAiBar({ element, scale, canvasRef }) {
   const { left: elemLeft, top: elemTop, bottom: elemBottom } = rect
 
   const BAR_H = 36
-  const placeAbove = elemTop - BAR_H - 8 >= 8
-  const anchorTop = placeAbove ? elemTop - BAR_H - 8 : elemBottom + 8
+  // 다이어그램 모드에선 요소 바깥(위·아래 ~14px)에 연결점이 떠 있고 터치 반지름(~13px)까지 겹쳐,
+  // 기본 8px 간격이면 바가 위쪽 연결점을 덮어 모바일에서 잡을 수 없다 → 연결점 위로 넉넉히 띄운다.
+  const GAP = diagramMode ? 30 : 8
+  const placeAbove = elemTop - BAR_H - GAP >= 8
+  const anchorTop = placeAbove ? elemTop - BAR_H - GAP : elemBottom + GAP
   const anchorLeft = Math.max(8, Math.min(window.innerWidth - 360, elemLeft))
   // 드래그된 자유 위치가 있으면 그것을, 없으면 자동 앵커를 사용
   const barLeft = dragPos ? dragPos.left : anchorLeft

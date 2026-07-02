@@ -116,6 +116,8 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
   const [showInstall, setShowInstall] = useState(false)
   const [rect, setRect] = useState(null)
   const [tick, setTick] = useState(0)
+  // 다이어그램 모드면 연결점(도트)을 가리지 않도록 플로팅바를 더 멀리 띄운다(아래 GAP).
+  const diagramMode = useFlatStore(s => s.diagramMode)
 
   useEffect(() => {
     const rerender = () => setTick(n => n + 1)
@@ -326,8 +328,10 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
 
   const BAR_H = 36
   const BAR_W = 600
-  const placeAbove = elemTop - BAR_H - 8 >= 8
-  const anchorTop = placeAbove ? elemTop - BAR_H - 8 : elemBottom + 8
+  // 다이어그램 모드에선 연결점(요소 바깥 ~14px + 터치 반지름 ~13px)을 덮지 않도록 넉넉히 띄운다.
+  const GAP = diagramMode ? 30 : 8
+  const placeAbove = elemTop - BAR_H - GAP >= 8
+  const anchorTop = placeAbove ? elemTop - BAR_H - GAP : elemBottom + GAP
   const anchorLeft = Math.max(8, Math.min(window.innerWidth - BAR_W - 8, elemLeft))
   const barLeft = dragPos ? dragPos.left : anchorLeft
   const barTop = dragPos ? dragPos.top : anchorTop
