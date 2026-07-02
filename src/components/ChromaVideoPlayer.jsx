@@ -15,7 +15,7 @@ const PROC_MAX = 960
  * 비파괴: 원본 영상은 그대로, element.chroma 설정(keys/despill)만으로 렌더.
  * 오디오는 <video>가 그대로 재생(canvas는 영상 픽셀만 담당).
  */
-export default function ChromaVideoPlayer({ content, playNow, autoplay, loop, muted, hideControls, objectFit, chroma }) {
+export default function ChromaVideoPlayer({ content, playNow, autoplay, loop, muted, hideControls, objectFit, chroma, radius }) {
   const isIdb = BlobStore.isIdbRef(content)
   const [idbUrl, setIdbUrl] = useState(null)
   const videoRef = useRef(null)
@@ -182,7 +182,9 @@ export default function ChromaVideoPlayer({ content, playNow, autoplay, loop, mu
       <canvas
         key={glGen}
         ref={canvasRef}
-        style={{ width: '100%', height: '100%', objectFit: objectFit || 'contain', display: 'block', pointerEvents: 'none' }}
+        // 재생 중 캔버스는 자체 컴포지팅 레이어라 상위 overflow:hidden+radius 클립을 벗어난다
+        // (발표 모드에서 모서리 안 둥글던 문제) → border-radius를 캔버스에 직접 적용.
+        style={{ width: '100%', height: '100%', objectFit: objectFit || 'contain', display: 'block', borderRadius: radius, pointerEvents: 'none' }}
       />
       <video
         ref={videoRef}

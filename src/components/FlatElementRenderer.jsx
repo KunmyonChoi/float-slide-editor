@@ -292,6 +292,7 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
                     hideControls={hideControls}
                     objectFit={vidFit}
                     chroma={element.chroma}
+                    radius={styles.borderRadius}
                   />
                 : <VideoPlayer
                     content={content}
@@ -301,6 +302,7 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
                     muted={muted}
                     hideControls={hideControls}
                     objectFit={vidFit}
+                    radius={styles.borderRadius}
                   />)
             : <>
                 <iframe
@@ -716,7 +718,7 @@ function ImageContent({ content, styles }) {
 /**
  * 직접 파일/IndexedDB 참조 비디오 — blob URL 해석 + 첫 프레임 poster 표시.
  */
-function VideoPlayer({ content, playNow, autoplay, loop, muted, hideControls, objectFit }) {
+function VideoPlayer({ content, playNow, autoplay, loop, muted, hideControls, objectFit, radius }) {
   const isIdb = BlobStore.isIdbRef(content)
   const [idbUrl, setIdbUrl] = useState(null)
   const videoRef = useRef(null)
@@ -751,7 +753,9 @@ function VideoPlayer({ content, playNow, autoplay, loop, muted, hideControls, ob
       src={playNow ? blobUrl : blobUrl + '#t=0.1'}
       poster={!playNow && poster ? poster : undefined}
       preload="metadata"
-      style={{ width: '100%', height: '100%', objectFit: objectFit || 'cover', border: 'none', pointerEvents: controls ? 'auto' : 'none' }}
+      // 재생 중인 <video>는 자체 컴포지팅 레이어로 승격돼 상위 overflow:hidden+radius 클립을
+      // 벗어나므로(발표 모드에서 모서리 안 둥글던 문제), border-radius를 요소에 직접 적용한다.
+      style={{ width: '100%', height: '100%', objectFit: objectFit || 'cover', border: 'none', borderRadius: radius, pointerEvents: controls ? 'auto' : 'none' }}
       controls={controls}
       autoPlay={playNow && autoplay}
       loop={loop}
