@@ -13,6 +13,19 @@ import { useDraggableToolbar, GripHandle } from './useDraggableToolbar'
 
 const IMG_BACKEND_KEY = 'ai-image-backend' // 'openai' | 'local'
 
+// AI 번역 대상 언어(라벨=UI, name=프롬프트에 넣는 영어 언어명). 마지막 선택은 localStorage에 기억.
+const TRANSLATE_LANG_KEY = 'ai-translate-lang'
+const TRANSLATE_LANGS = [
+  { code: 'en', label: '영어', name: 'English' },
+  { code: 'ja', label: '일본어', name: 'Japanese' },
+  { code: 'zh-Hans', label: '중국어(간체)', name: 'Simplified Chinese' },
+  { code: 'zh-Hant', label: '중국어(번체)', name: 'Traditional Chinese' },
+  { code: 'ko', label: '한국어', name: 'Korean' },
+  { code: 'es', label: '스페인어', name: 'Spanish' },
+  { code: 'fr', label: '프랑스어', name: 'French' },
+]
+const readLastLang = () => { try { return localStorage.getItem(TRANSLATE_LANG_KEY) || '' } catch { return '' } }
+
 /** 텍스트 박스 비율에 맞춘 생성 크기 — 16배수, 긴변 ~1024, 256–1536 클램프(로컬 ideogram용). */
 function genSizeForBox(w, h, longEdge = 1024) {
   const r = (w || 1) / (h || 1)
@@ -46,7 +59,10 @@ export default function FlatAiBar({ element, scale, canvasRef }) {
   const [imgMenuOpen, setImgMenuOpen] = useState(false) // 'AI 이미지 생성' 화풍 드롭다운
   // AI 텍스트 편집 상태
   const [menuOpen, setMenuOpen] = useState(false)       // 텍스트 편집 액션 드롭다운
-  const [textAction, setTextAction] = useState(null)    // 'spelling'|'formal'|'markdown'|'prompt'
+  const [transOpen, setTransOpen] = useState(false)     // '번역' 언어 하위목록 펼침
+  const [lastLangCode, setLastLangCode] = useState(readLastLang) // 마지막 번역 언어(빠른 재선택)
+  const [transLang, setTransLang] = useState(null)      // 진행 중 번역 대상 {code,label,name}(재시도용)
+  const [textAction, setTextAction] = useState(null)    // 'spelling'|'formal'|'markdown'|'prompt'|'translate'
   const [instruction, setInstruction] = useState('')    // '설명으로 편집' 지시문
   const [origText, setOrigText] = useState('')          // 편집 전 원문(미리보기 비교용)
   const [resultText, setResultText] = useState('')      // 편집 결과
@@ -195,7 +211,7 @@ export default function FlatAiBar({ element, scale, canvasRef }) {
 
   // ── AI 텍스트 편집 ──────────────────────────────────────────────
   // 텍스트 편집은 OpenAI 고정(품질 보장) → OpenAI 키 필수.
-  const runTextEdit = useCallback(async (action, instr) => {
+  const runTextEdit = useCallback(async (action, instr, targetLang) => {
     if (!hasApiKey()) { openAiSettings(); return }
     const text = sourceText()
     if (!text) { setTool('text'); setTextAction(action); setError('편집할 텍스트가 없습니다.'); setPhase('error'); return }
@@ -203,9 +219,9 @@ export default function FlatAiBar({ element, scale, canvasRef }) {
     const ctrl = new AbortController()
     abortRef.current = ctrl
     setTool('text'); setTextAction(action); setOrigText(text); setError('')
-    setPhase('loading'); setStatus('AI가 텍스트를 편집 중…')
+    setPhase('loading'); setStatus(action === 'translate' ? 'AI가 번역 중…' : 'AI가 텍스트를 편집 중…')
     try {
-      const out = await editSlideText(text, { action, instruction: instr, signal: ctrl.signal })
+      const out = await editSlideText(text, { action, instruction: instr, targetLang, signal: ctrl.signal })
       if (ctrl.signal.aborted) return
       setResultText(out); setPhase('preview')
     } catch (e) {
@@ -222,6 +238,15 @@ export default function FlatAiBar({ element, scale, canvasRef }) {
       return
     }
     runTextEdit(action, '')
+  }, [runTextEdit])
+
+  // 번역: 대상 언어 선택 → 즉시 번역 + 마지막 언어 기억
+  const startTranslate = useCallback((lang) => {
+    setMenuOpen(false); setTransOpen(false)
+    setTransLang(lang)
+    setLastLangCode(lang.code)
+    try { localStorage.setItem(TRANSLATE_LANG_KEY, lang.code) } catch { /* ignore */ }
+    runTextEdit('translate', '', lang.name)
   }, [runTextEdit])
 
   // 편집 결과를 요소에 적용(되돌리기 1스텝). 마크다운은 마크다운 모드로 전환.
@@ -242,6 +267,7 @@ export default function FlatAiBar({ element, scale, canvasRef }) {
     abortRef.current?.abort()
     setPhase('idle'); setError(''); setImageUrl('')
     setResultText(''); setOrigText(''); setInstruction('')
+    setMenuOpen(false); setTransOpen(false)
   }, [])
 
   // 드래그 이동 — 그립 핸들로 idle 액션바를 자유 위치로 옮김(선택 변경 시 자동 복귀)
@@ -327,6 +353,15 @@ export default function FlatAiBar({ element, scale, canvasRef }) {
                 <button type="button" style={menuItemStyle} onClick={() => startTextEdit('formal')}>공식 발표체로</button>
                 <button type="button" style={menuItemStyle} onClick={() => startTextEdit('markdown')}>마크다운 정리</button>
                 <button type="button" style={menuItemStyle} onClick={() => startTextEdit('prompt')}>설명으로 편집…</button>
+                <div style={{ height: 1, background: 'rgba(255,255,255,0.1)', margin: '3px 0' }} />
+                {(() => {
+                  const ll = TRANSLATE_LANGS.find(l => l.code === lastLangCode)
+                  return ll ? <button type="button" style={menuItemStyle} onClick={() => startTranslate(ll)}>🌐 번역 → {ll.label}</button> : null
+                })()}
+                <button type="button" style={menuItemStyle} onClick={() => setTransOpen(v => !v)}>🌐 번역{transOpen ? ' ▾' : ' ▸'}</button>
+                {transOpen && TRANSLATE_LANGS.map(l => (
+                  <button key={l.code} type="button" style={{ ...menuItemStyle, paddingLeft: 22 }} onClick={() => startTranslate(l)}>{l.label}</button>
+                ))}
               </div>
             )}
           </span>
@@ -424,7 +459,9 @@ export default function FlatAiBar({ element, scale, canvasRef }) {
           {/* 텍스트 편집 미리보기(전/후 비교) */}
           {phase === 'preview' && tool === 'text' && (
             <>
-              <div style={{ fontSize: 11, color: '#64748b' }}>전 → 후 (적용하면 이 텍스트 요소 내용이 교체됩니다)</div>
+              <div style={{ fontSize: 11, color: '#64748b' }}>
+                {textAction === 'translate' && transLang ? `번역 → ${transLang.label} · ` : ''}전 → 후 (적용하면 이 텍스트 요소 내용이 교체됩니다)
+              </div>
               <div style={diffBoxStyle}>
                 <div style={{ color: '#94a3b8', whiteSpace: 'pre-wrap', marginBottom: 8, opacity: 0.75 }}>{origText}</div>
                 <div style={{ height: 1, background: 'rgba(255,255,255,0.12)', margin: '0 0 8px' }} />
@@ -444,7 +481,7 @@ export default function FlatAiBar({ element, scale, canvasRef }) {
                 style={{ ...primaryBtnStyle, opacity: instruction.trim() ? 1 : 0.5, cursor: instruction.trim() ? 'pointer' : 'default' }}>실행</button>
             )}
             {tool === 'text' && (phase === 'preview' || phase === 'error') && textAction && (
-              <button type="button" onClick={() => runTextEdit(textAction, instruction)} style={ghostBtnStyle}>다시 시도</button>
+              <button type="button" onClick={() => runTextEdit(textAction, instruction, transLang?.name)} style={ghostBtnStyle}>다시 시도</button>
             )}
             {tool === 'text' && phase === 'preview' && (
               <button type="button" onClick={applyText} style={primaryBtnStyle}>적용</button>
@@ -495,7 +532,7 @@ const primaryBtnStyle = {
 }
 const menuStyle = {
   position: 'absolute', top: 'calc(100% + 6px)', right: 0, zIndex: 10050,
-  display: 'flex', flexDirection: 'column', minWidth: 150, padding: 4,
+  display: 'flex', flexDirection: 'column', minWidth: 150, maxHeight: '60vh', overflowY: 'auto', padding: 4,
   background: 'rgba(15,23,42,0.98)', border: '1px solid rgba(255,255,255,0.14)',
   borderRadius: 10, boxShadow: '0 12px 40px rgba(0,0,0,0.55)',
 }

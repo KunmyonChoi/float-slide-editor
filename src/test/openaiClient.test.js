@@ -256,6 +256,24 @@ describe('editSlideText (AI 텍스트 편집)', () => {
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
+  it('번역: 대상 언어를 시스템 프롬프트에 넣어 호출', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(okResponse('Hello world'))
+    vi.stubGlobal('fetch', fetchMock)
+    const out = await editSlideText('안녕 세상', { action: 'translate', targetLang: 'English' })
+    expect(out).toBe('Hello world')
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body)
+    expect(body.messages[0].content).toMatch(/translate the text into English/i)
+    expect(body.messages[1].content).toContain('안녕 세상')
+    expect(fetchMock.mock.calls[0][0]).toContain('api.openai.com') // OpenAI 고정
+  })
+
+  it('번역: 대상 언어 없으면 호출 전 에러', async () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    await expect(editSlideText('원문', { action: 'translate' })).rejects.toThrow(/대상 언어/)
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
   it('빈 텍스트/알 수 없는 동작은 호출 전 에러', async () => {
     const fetchMock = vi.fn()
     vi.stubGlobal('fetch', fetchMock)
