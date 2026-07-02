@@ -20,8 +20,6 @@ const DEFAULT_MODEL = 'gpt-4o-mini'
 const DEFAULT_IMAGE_MODEL = 'gpt-image-2'
 // 유연 해상도(정확한 종횡비)를 지원하는 생성 모델
 const FLEX_SIZE_MODELS = ['gpt-image-2', 'gpt-image-1.5']
-// edits(image-to-image) 폴백 모델 — 설정 모델이 edits를 지원하지 않을 때 사용(지원 확실).
-const EDIT_FALLBACK_MODEL = 'gpt-image-1.5'
 const ENDPOINT = 'https://api.openai.com/v1/chat/completions'
 const IMAGE_ENDPOINT = 'https://api.openai.com/v1/images/generations'
 const IMAGE_EDIT_ENDPOINT = 'https://api.openai.com/v1/images/edits'
@@ -443,13 +441,6 @@ async function throwImageError(res, label) {
   throwImageErrorWith(res.status, await readImageErrorDetail(res), label)
 }
 
-// edits 호출이 '모델 미지원'류로 실패했는지(다른 모델로 폴백할지) 판단.
-function isModelUnsupportedError(status, detail) {
-  if (status !== 400 && status !== 404) return false
-  const d = (detail || '').toLowerCase()
-  return /model/.test(d) || /unsupported/.test(d) || /not.*support/.test(d) || /does not exist/.test(d)
-}
-
 function dataUrlToBlob(dataUrl) {
   const [head, b64] = dataUrl.split(',')
   const mime = head.match(/data:([^;]+)/)?.[1] || 'image/png'
@@ -478,66 +469,57 @@ CRITICAL constraints:
 }
 
 /**
- * 입력 이미지 → 인포그래픽으로 편집(image-to-image). gpt-image-1 edits 사용.
- * 원본의 구도/위치를 유지한 채 변환하는 데 적합하다.
+ * 입력 이미지 → image-to-image 편집(설정 모델의 edits 사용, 기본 gpt-image-2).
+ * 원본의 구도/위치를 유지한 채 변환하는 데 적합하다. mask를 주면 그 영역만 편집(인페인팅).
  * @param {string} imageDataUrl  입력 이미지 data URL(캡처/crop)
  * @param {string} prompt  편집 지시 프롬프트
- * @param {{ width?: number, height?: number, size?: string, signal?: AbortSignal }} [opts]
+ * @param {{ width?: number, height?: number, size?: string, quality?: string, mask?: string, signal?: AbortSignal }} [opts]
+ *   mask: 선택. 입력 이미지와 같은 크기의 PNG data URL. 투명 픽셀=편집 영역, 불투명=보존.
  * @returns {Promise<string>} `data:image/png;base64,...`
  */
-export async function editImage(imageDataUrl, prompt, { width, height, size, quality = 'high', signal } = {}) {
+export async function editImage(imageDataUrl, prompt, { width, height, size, quality = 'high', mask, signal } = {}) {
   const apiKey = getApiKey()
   if (!apiKey) throw new Error('OpenAI API 키가 설정되지 않았습니다. 먼저 키를 입력하세요.')
   if (!imageDataUrl) throw new Error('편집할 입력 이미지가 없습니다.')
   const p = (prompt || '').trim()
   if (!p) throw new Error('이미지 편집 프롬프트가 비어 있습니다.')
 
-  // 설정 모델(예: gpt-image-2)로 먼저 edits를 시도하고, '모델 미지원'류 오류면
-  // edits 지원이 확실한 gpt-image-1.5로 1회 폴백한다(품질은 설정 모델 우선).
+  // 설정 모델(기본 gpt-image-2)로 edits 호출. 마스크(부분편집)도 같은 모델을 쓴다.
   const blob = dataUrlToBlob(imageDataUrl)
-  const configured = getImageModel()
-  const candidates = configured === EDIT_FALLBACK_MODEL ? [configured] : [configured, EDIT_FALLBACK_MODEL]
+  const maskBlob = mask ? dataUrlToBlob(mask) : null // 있으면 편집 영역 마스크(투명=편집)
+  const model = getImageModel()
+  // gpt-image-2: edits에서 유연 크기(정확 종횡비) 지원 + 입력을 자동 high fidelity 처리
+  //   → input_fidelity 파라미터를 받지 않으므로 보내면 안 된다(보내면 오류).
+  // gpt-image-1.5/1: edits는 프리셋 크기만, input_fidelity=high로 원본 보존.
+  const isImage2 = model.startsWith('gpt-image-2')
+  const form = new FormData()
+  form.append('model', model)
+  form.append('image', blob, 'input.png')
+  if (maskBlob) form.append('mask', maskBlob, 'mask.png') // 부분 편집(인페인팅)
+  form.append('prompt', p)
+  form.append('size', size || (isImage2 ? flexSize(width, height) : pickImageSize(model, width, height)))
+  form.append('quality', quality)
+  if (!isImage2) form.append('input_fidelity', 'high')
 
-  for (let i = 0; i < candidates.length; i++) {
-    const model = candidates[i]
-    const isLast = i === candidates.length - 1
-    // gpt-image-2: edits에서 유연 크기(정확 종횡비) 지원 + 입력을 자동 high fidelity 처리
-    //   → input_fidelity 파라미터를 받지 않으므로 보내면 안 된다(보내면 오류).
-    // gpt-image-1.5/1: edits는 프리셋 크기만, input_fidelity=high로 원본 보존.
-    const isImage2 = model.startsWith('gpt-image-2')
-    const form = new FormData()
-    form.append('model', model)
-    form.append('image', blob, 'input.png')
-    form.append('prompt', p)
-    form.append('size', size || (isImage2 ? flexSize(width, height) : pickImageSize(model, width, height)))
-    form.append('quality', quality)
-    if (!isImage2) form.append('input_fidelity', 'high')
-
-    let res
-    try {
-      res = await fetch(IMAGE_EDIT_ENDPOINT, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${apiKey}` }, // multipart: Content-Type은 브라우저가 설정
-        body: form,
-        signal,
-      })
-    } catch (e) {
-      if (e?.name === 'AbortError') throw e
-      throw new Error('OpenAI에 연결할 수 없습니다. 네트워크 연결을 확인하세요.')
-    }
-
-    if (res.ok) {
-      const data = await res.json()
-      const b64 = data?.data?.[0]?.b64_json
-      if (!b64) throw new Error('이미지 응답이 비어 있습니다.')
-      return `data:image/png;base64,${b64}`
-    }
-
-    const detail = await readImageErrorDetail(res)
-    // 모델 미지원류이고 폴백 후보가 남았으면 다음 모델로 재시도, 아니면 오류 전파
-    if (!isLast && isModelUnsupportedError(res.status, detail)) continue
-    throwImageErrorWith(res.status, detail, '이미지 편집')
+  let res
+  try {
+    res = await fetch(IMAGE_EDIT_ENDPOINT, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${apiKey}` }, // multipart: Content-Type은 브라우저가 설정
+      body: form,
+      signal,
+    })
+  } catch (e) {
+    if (e?.name === 'AbortError') throw e
+    throw new Error('OpenAI에 연결할 수 없습니다. 네트워크 연결을 확인하세요.')
   }
+
+  if (!res.ok) throwImageErrorWith(res.status, await readImageErrorDetail(res), '이미지 편집')
+
+  const data = await res.json()
+  const b64 = data?.data?.[0]?.b64_json
+  if (!b64) throw new Error('이미지 응답이 비어 있습니다.')
+  return `data:image/png;base64,${b64}`
 }
 
 // ── 발표자 노트(발표 원고) 생성 ──

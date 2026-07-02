@@ -8,7 +8,29 @@ import { INFOGRAPHIC_STYLES } from '../core/aiImageStyles'
 import { segmentImage, checkCutoutBackend } from '../core/CutoutBackendClient'
 import CutoutInstallModal from './CutoutInstallModal'
 import { BlobStore } from '../core/BlobStore'
+import { containFitRect } from '../core/imageFit'
 import { useDraggableToolbar, GripHandle } from './useDraggableToolbar'
+import MaskBrushOverlay from './MaskBrushOverlay'
+import ImageComparePreview from './ImageComparePreview'
+
+// 결과가 적용/표시될 objectFit(비교 오버레이·apply 공통 단일소스).
+// 아웃페인트는 박스를 꽉 채우도록 cover, 그 외(다듬기/편집)는 요소의 기존 fit을 유지한다.
+// (하드코딩 contain이면 결과 종횡비가 박스와 미세히 달라도 레터박스 빈틈이 생겨 '떨어져' 보임 —
+//  채우기(cover) 요소는 cover로 채워 빈틈/쉬프트 제거. 렌더러와 동일하게 '||'로 기본값 처리.)
+function resultFit(mode, element) {
+  if (mode === 'outpaint') return 'cover'
+  return element?.styles?.objectFit || 'contain'
+}
+
+// data URL 이미지의 실제 픽셀 크기
+function imageSize(dataUrl) {
+  return new Promise((resolve, reject) => {
+    const img = new Image()
+    img.onload = () => resolve({ w: img.naturalWidth, h: img.naturalHeight })
+    img.onerror = () => reject(new Error('이미지 크기를 읽지 못했습니다.'))
+    img.src = dataUrl
+  })
+}
 
 // 이미지 요소의 원본 소스(content) → Blob. idb 참조면 BlobStore, 아니면 직접 fetch.
 // (박스 캡처가 아니라 원본을 분리해야 컷아웃 종횡비=원본과 같아 그룹 리사이즈에 어긋나지 않음)
@@ -41,21 +63,11 @@ async function composeContainFit(content, elementW, elementH) {
     const img = new Image()
     img.onload = () => {
       if (revokeOnDone) URL.revokeObjectURL(imgUrl)
-      const imgAR = img.naturalWidth / img.naturalHeight
-      const boxAR = elementW / elementH
-      let dw, dh, dx, dy
-      if (imgAR >= boxAR) {
-        // 이미지가 박스보다 가로가 넓음 → 상하 여백(letterbox)
-        dw = elementW; dh = elementW / imgAR
-        dx = 0;        dy = (elementH - dh) / 2
-      } else {
-        // 이미지가 박스보다 세로가 긺 → 좌우 여백(pillarbox)
-        dh = elementH; dw = elementH * imgAR
-        dx = (elementW - dw) / 2; dy = 0
-      }
+      // contain 표시 사각형(마스크 오버레이와 동일한 공유 유틸 → 기하 드리프트 방지)
+      const r = containFitRect(elementW, elementH, img.naturalWidth, img.naturalHeight)
       const canvas = document.createElement('canvas')
       canvas.width = elementW; canvas.height = elementH
-      canvas.getContext('2d').drawImage(img, Math.round(dx), Math.round(dy), Math.round(dw), Math.round(dh))
+      canvas.getContext('2d').drawImage(img, Math.round(r.x), Math.round(r.y), Math.round(r.w), Math.round(r.h))
       resolve(canvas.toDataURL('image/png'))
     }
     img.onerror = () => {
@@ -86,6 +98,17 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
   const [imageUrl, setImageUrl] = useState('')
   const [error, setError] = useState('')
   const [zoom, setZoom] = useState(false)
+  // 마스크(부분 편집) — '설명으로 편집' compose에서 켜면 이미지 위에 브러시 오버레이
+  const [maskOn, setMaskOn] = useState(false)
+  const [brushTool, setBrushTool] = useState('brush') // 'brush' | 'erase'
+  const [brushSize, setBrushSize] = useState(48)
+  const [maskCount, setMaskCount] = useState(0) // 칠한(편집가능) 스트로크 수(버튼 안내용)
+  const maskRef = useRef(null)
+  const lastMaskRef = useRef(null) // 직전에 사용한 마스크 dataURL(재생성 시 재사용)
+  // 캔버스 전후 비교(미리보기)
+  const [split, setSplit] = useState(50)   // 세로 구분선 위치(%)
+  const [holding, setHolding] = useState(false) // '원본 보기' 홀드 중
+  const compareFit = resultFit(mode, element) // 결과가 적용될 objectFit(비교 오버레이·apply 공통)
   const abortRef = useRef(null)
   const captureRef = useRef('') // 입력 캡처 — 재생성 시 재사용
   const cutoutBlobRef = useRef(null) // 분리 결과 PNG blob — 적용 시 data URL로 변환
@@ -126,6 +149,8 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setPhase('idle'); setMode('enhance'); setError(''); setStatus(''); setPrompt(''); setImageUrl(''); setZoom(false)
     setServerDown(false); setShowInstall(false)
+    setMaskOn(false); setMaskCount(0); lastMaskRef.current = null
+    setSplit(50); setHolding(false)
     return () => { abortRef.current?.abort() }
   }, [element.id])
 
@@ -142,6 +167,10 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
       const directive = INFOGRAPHIC_STYLES.find(s => s.id === sid)?.directive || ''
       p = buildImageEnhancePrompt(directive)
     }
+    // 마스크 핸들을 phase 변경(→오버레이 언마운트) 전에 확보한다. loading으로 바뀌면
+    // MaskBrushOverlay가 언마운트되어 maskRef.current가 null이 되므로 여기서 잡아둔다.
+    // (핸들 객체는 strokes ref·요소 크기·contentRect를 클로저로 보유 → 언마운트 후에도 buildMask 유효)
+    const maskHandle = (useMode === 'edit' && maskOn && maskRef.current?.hasStrokes()) ? maskRef.current : null
     setMode(useMode); setPrompt(p)
     abortRef.current?.abort()
     const ctrl = new AbortController()
@@ -155,8 +184,15 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
       )
       if (ctrl.signal.aborted) return
       captureRef.current = cap
+      // 부분 편집: 마스크가 있으면 캡처 해상도에 맞춰 생성 → 그 영역만 편집. 재생성 위해 보관.
+      let mask
+      if (maskHandle) {
+        const { w, h } = await imageSize(cap)
+        mask = maskHandle.buildMask(w, h) || undefined
+      }
+      lastMaskRef.current = mask || null
       setStatus(useMode === 'edit' ? 'AI 이미지 편집 중… (수십 초 걸릴 수 있어요)' : '디자인 다듬는 중… (수십 초 걸릴 수 있어요)')
-      const url = await editImage(cap, p, { width: element.width, height: element.height, signal: ctrl.signal })
+      const url = await editImage(cap, p, { width: element.width, height: element.height, mask, signal: ctrl.signal })
       if (ctrl.signal.aborted) return
       setImageUrl(url)
       setPhase('preview')
@@ -165,7 +201,7 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
       setError(e?.message || 'AI 변환에 실패했습니다.')
       setPhase('error')
     }
-  }, [styleId, prompt, element.x, element.y, element.width, element.height])
+  }, [styleId, prompt, maskOn, element.x, element.y, element.width, element.height])
 
   // 현재 프롬프트(편집 가능)로 캡처를 재사용해 다시 변환
   const regenerate = useCallback(async () => {
@@ -177,7 +213,9 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
     abortRef.current = ctrl
     setPhase('loading'); setError(''); setStatus(mode === 'edit' ? 'AI 이미지 편집 중…' : '디자인 다듬는 중…')
     try {
-      const url = await editImage(cap, p, { width: element.width, height: element.height, signal: ctrl.signal })
+      // 마스크가 켜진 편집이면 같은 마스크로 재생성(영역 일관). 마스크를 끈 상태면 전체 편집.
+      const mask = (mode === 'edit' && maskOn) ? (lastMaskRef.current || undefined) : undefined
+      const url = await editImage(cap, p, { width: element.width, height: element.height, mask, signal: ctrl.signal })
       if (ctrl.signal.aborted) return
       setImageUrl(url)
       setPhase('preview')
@@ -186,7 +224,7 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
       setError(e?.message || '이미지 변환에 실패했습니다.')
       setPhase('error')
     }
-  }, [prompt, mode, run, element.width, element.height])
+  }, [prompt, mode, maskOn, run, element.width, element.height])
 
   // 빈 공간 채우기(아웃페인팅): contain 상태 이미지의 letterbox/pillarbox 영역을 AI로 채움
   const runOutpaint = useCallback(async () => {
@@ -214,16 +252,23 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
   }, [element.content, element.width, element.height])
 
   // 같은 id·위치·크기 유지한 채 이미지 content만 교체(되돌리기 가능).
+  // 미리보기/편집 관련 임시 상태 초기화(적용·취소 공통) — 다음 열림에 이전 상태가 새지 않게
+  const resetEditState = useCallback(() => {
+    setImageUrl(''); setZoom(false)
+    setMaskOn(false); setMaskCount(0); lastMaskRef.current = null
+    setSplit(50); setHolding(false)
+  }, [])
+
   const apply = useCallback(() => {
     if (!imageUrl) return
     useFlatStore.getState().updateFlatElement(element.id, {
       content: imageUrl,
       isRich: false,
-      // 아웃페인팅 결과는 박스 크기에 맞게 생성되었으므로 cover로 빈틈 없이 표시
-      styles: { objectFit: mode === 'outpaint' ? 'cover' : 'contain' },
+      // 결과가 표시될 objectFit(비교 오버레이와 동일: 아웃페인트=cover, 그 외=요소 기존 fit 유지)
+      styles: { objectFit: resultFit(mode, element) },
     })
-    setPhase('idle'); setImageUrl(''); setZoom(false)
-  }, [imageUrl, element.id, mode])
+    setPhase('idle'); resetEditState()
+  }, [imageUrl, element.id, mode, resetEditState])
 
   // 피사체 분리(서버) → 전경 컷아웃 미리보기
   const runCutout = useCallback(async () => {
@@ -264,13 +309,13 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
     // ProjectSerializer가 저장 시 media/로 패킹). content엔 참조만 들어감.
     const key = await BlobStore.put(blob)
     useFlatStore.getState().applyTextBehindSubject(element.id, BlobStore.toRef(key))
-    setPhase('idle'); setImageUrl(''); setZoom(false)
-  }, [element.id])
+    setPhase('idle'); resetEditState()
+  }, [element.id, resetEditState])
 
   const cancel = useCallback(() => {
     abortRef.current?.abort()
-    setPhase('idle'); setError(''); setImageUrl(''); setZoom(false); setServerDown(false)
-  }, [])
+    setPhase('idle'); setError(''); setServerDown(false); resetEditState()
+  }, [resetEditState])
 
   // 드래그 이동 — 그립 핸들로 idle 액션바를 자유 위치로 옮김(선택 변경 시 자동 복귀)
   const barRef = useRef(null)
@@ -407,8 +452,44 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
                 onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); run('edit', prompt) } }}
                 style={textareaStyle}
               />
+              {/* 부분 편집(마스크) — 켜면 이미지 위에 브러시로 편집 영역 지정 */}
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#cbd5e1', cursor: 'pointer' }}>
+                <input type="checkbox" checked={maskOn} onChange={e => setMaskOn(e.target.checked)} />
+                🖌 영역 지정(마스크) — 칠한 부분만 편집
+              </label>
+              {maskOn && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: 12, color: '#cbd5e1' }}>
+                  <div style={{ display: 'flex', gap: 4 }}>
+                    <button type="button" onClick={() => setBrushTool('brush')}
+                      style={{ ...toolBtnStyle, ...(brushTool === 'brush' ? toolBtnActive : {}) }}>브러시</button>
+                    <button type="button" onClick={() => setBrushTool('erase')}
+                      style={{ ...toolBtnStyle, ...(brushTool === 'erase' ? toolBtnActive : {}) }}>지우개</button>
+                  </div>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                    크기<input type="range" min={8} max={160} value={brushSize}
+                      onChange={e => setBrushSize(Number(e.target.value))} style={{ width: 90 }} />
+                  </label>
+                  <button type="button" onClick={() => maskRef.current?.clear()} style={toolBtnStyle}>모두 지우기</button>
+                  <span style={{ color: '#64748b', fontSize: 11 }}>
+                    {maskCount > 0 ? '이미지 위 빨간 영역만 편집됩니다' : '이미지 위를 칠하세요'}
+                  </span>
+                </div>
+              )}
               <div style={{ fontSize: 11, color: '#64748b' }}>입력한 지시대로 이미지를 편집한 결과를 미리 보여드립니다. 확인 후 적용하면 교체됩니다.</div>
             </>
+          )}
+
+          {phase === 'compose' && mode === 'edit' && maskOn && (
+            <MaskBrushOverlay
+              ref={maskRef}
+              element={element}
+              scale={scale}
+              canvasRef={canvasRef}
+              tool={brushTool}
+              brushSize={brushSize}
+              objectFit={element.styles?.objectFit || 'contain'}
+              onStrokesChange={setMaskCount}
+            />
           )}
 
           {phase === 'loading' && (
@@ -423,18 +504,21 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
 
           {phase === 'preview' && (
             <>
-              <div
-                onClick={() => imageUrl && setZoom(true)}
-                title="클릭하여 크게 보기"
-                style={{
-                  width: '100%', height: 200, borderRadius: 8, overflow: 'hidden',
-                  background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  cursor: imageUrl ? 'zoom-in' : 'default',
-                }}
-              >
-                {imageUrl && <img src={imageUrl} alt="" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', display: 'block', ...(mode === 'cutout' ? CHECKER_BG : null) }} />}
-              </div>
+              {/* 썸네일은 cutout(캔버스 비교 오버레이 없음)에만. 나머지는 캔버스 전후비교로 대체. */}
+              {mode === 'cutout' && (
+                <div
+                  onClick={() => imageUrl && setZoom(true)}
+                  title="클릭하여 크게 보기"
+                  style={{
+                    width: '100%', height: 200, borderRadius: 8, overflow: 'hidden',
+                    background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    cursor: imageUrl ? 'zoom-in' : 'default',
+                  }}
+                >
+                  {imageUrl && <img src={imageUrl} alt="" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', display: 'block', ...CHECKER_BG }} />}
+                </div>
+              )}
               {mode === 'cutout' ? (
                 <div style={{ fontSize: 11, color: '#64748b' }}>
                   분리된 전경(투명 배경). 적용하면 <b>원본 + 타이틀 텍스트 + 전경</b> 3층이 만들어져
@@ -459,7 +543,17 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
             </>
           )}
 
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            {/* 전후 비교 보조(캔버스 오버레이와 연동) — cutout 제외 */}
+            {phase === 'preview' && mode !== 'cutout' && (
+              <>
+                <button type="button"
+                  onPointerDown={() => setHolding(true)} onPointerUp={() => setHolding(false)}
+                  onPointerLeave={() => setHolding(false)} onPointerCancel={() => setHolding(false)}
+                  title="누르는 동안 원본을 보여줍니다" style={{ ...ghostBtnStyle, marginRight: 'auto' }}>원본 보기(꾹)</button>
+                <button type="button" onClick={() => setSplit(50)} title="구분선을 가운데로" style={ghostBtnStyle}>리셋</button>
+              </>
+            )}
             <button type="button" onClick={cancel} style={ghostBtnStyle}>취소</button>
             {serverDown && phase === 'error' && (
               <button type="button" onClick={() => setShowInstall(true)} style={primaryBtnStyle}>설치 안내</button>
@@ -479,6 +573,16 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
             )}
           </div>
         </div>
+      )}
+
+      {/* 캔버스 전후 비교 오버레이(미리보기) — 요소 위에 결과를 겹쳐 세로 슬라이더로 비교.
+          before=편집에 실제 넣은 입력(captureRef: enhance/edit=박스캡처, outpaint=합성) → 전후 동일 프레이밍. */}
+      {phase === 'preview' && mode !== 'cutout' && imageUrl && captureRef.current && (
+        <ImageComparePreview
+          element={element} scale={scale} canvasRef={canvasRef}
+          beforeUrl={captureRef.current} resultUrl={imageUrl} objectFit={compareFit}
+          split={split} onSplit={setSplit} showOriginal={holding}
+        />
       )}
 
       {/* 크게 보기 라이트박스 */}
@@ -508,6 +612,11 @@ const aiBtnStyle = {
   border: 'none', cursor: 'pointer', color: '#c7d2fe',
   background: 'rgba(99,102,241,0.18)',
 }
+const toolBtnStyle = {
+  padding: '4px 9px', fontSize: 12, borderRadius: 7, cursor: 'pointer',
+  border: '1px solid rgba(255,255,255,0.14)', background: 'transparent', color: '#cbd5e1',
+}
+const toolBtnActive = { background: 'rgba(99,102,241,0.35)', color: '#fff', borderColor: 'transparent' }
 const menuStyle = {
   position: 'absolute', top: 'calc(100% + 6px)', left: 0, zIndex: 10050,
   display: 'flex', flexDirection: 'column', minWidth: 160, maxHeight: 300, overflowY: 'auto', padding: 4,

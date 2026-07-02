@@ -3,6 +3,8 @@
  * dom-to-image-more 사용 (lazy import)
  */
 
+let _cloneSeq = 0 // offscreen 복제본 스코프 id 카운터
+
 /**
  * 캔버스 DOM 노드를 이미지 data URL로 변환
  * @param {HTMLElement} canvasNode - 캡처할 DOM 노드
@@ -12,7 +14,7 @@
  * @param {number} options.quality - JPEG 품질 0~1 (기본: 0.92)
  * @returns {Promise<string>} data URL
  */
-export async function exportAsImage(canvasNode, { format = 'png', scale = 2, quality = 0.92 } = {}) {
+export async function exportAsImage(canvasNode, { format = 'png', scale = 2, quality = 0.92, offscreen = false } = {}) {
   // 웹폰트 로딩 대기
   if (document.fonts && document.fonts.ready) {
     await document.fonts.ready
@@ -21,12 +23,30 @@ export async function exportAsImage(canvasNode, { format = 'png', scale = 2, qua
   // 텍스트 선택 해제 (contentEditable 하이라이트 제거)
   window.getSelection()?.removeAllRanges()
 
-  // 선택 UI 숨기기: outline, 커서 등을 캡처에서 제거하는 임시 스타일 주입
+  // offscreen: 살아있는 캔버스를 건드리지 않도록 복제본에서 캡처한다(캡처 중 화면 '움찔' 방지).
+  // 임시 스타일/인라인 보정을 복제본에만 스코프해 실제 캔버스는 그대로 유지한다.
+  let target = canvasNode
+  let cloneWrap = null
+  let scope = '[data-flat-canvas]'
+  if (offscreen) {
+    const id = `export-clone-${++_cloneSeq}`
+    cloneWrap = document.createElement('div')
+    cloneWrap.id = id
+    cloneWrap.style.cssText = 'position:fixed;left:-100000px;top:0;margin:0;padding:0;pointer-events:none;'
+    cloneWrap.appendChild(canvasNode.cloneNode(true))
+    document.body.appendChild(cloneWrap)
+    target = cloneWrap.firstElementChild
+    scope = `#${id}`
+    // 복제된 이미지가 아직 로드 전이면 캡처가 비어버릴 수 있어 로드 완료를 기다린다
+    await Promise.all([...target.querySelectorAll('img')].map(im => im.complete ? null : new Promise(r => { im.onload = im.onerror = r })))
+  }
+
+  // 선택 UI 숨기기: outline, 커서 등을 캡처에서 제거하는 임시 스타일 주입(offscreen이면 복제본에만 적용)
   const exportStyle = document.createElement('style')
   exportStyle.setAttribute('data-export-style', 'true')
   exportStyle.textContent = `
-    [data-flat-canvas] * { outline: none !important; caret-color: transparent !important; border-style: none; }
-    [data-flat-canvas] ::selection { background: transparent !important; }
+    ${scope} * { outline: none !important; caret-color: transparent !important; border-style: none; }
+    ${scope} ::selection { background: transparent !important; }
   `
   document.head.appendChild(exportStyle)
 
@@ -46,7 +66,7 @@ export async function exportAsImage(canvasNode, { format = 'png', scale = 2, qua
     }
     el.style[prop] = value
   }
-  canvasNode.querySelectorAll('.flat-text').forEach((el) => {
+  target.querySelectorAll('.flat-text').forEach((el) => {
     const cs = window.getComputedStyle(el)
     const ws = cs.whiteSpace
     // 1) 소프트 줄바꿈만 제거(명시적 \n·<br>는 유지). 끄면 가로 오버플로가
@@ -73,8 +93,8 @@ export async function exportAsImage(canvasNode, { format = 'png', scale = 2, qua
     }
   })
 
-  const width = canvasNode.offsetWidth
-  const height = canvasNode.offsetHeight
+  const width = target.offsetWidth
+  const height = target.offsetHeight
 
   // data-export-ignore 속성을 가진 노드(선택 오버레이 등)는 캡처에서 제외
   const filter = (node) => {
@@ -96,15 +116,16 @@ export async function exportAsImage(canvasNode, { format = 'png', scale = 2, qua
 
   try {
     if (format === 'jpeg') {
-      return await domtoimage.toJpeg(canvasNode, { ...config, quality })
+      return await domtoimage.toJpeg(target, { ...config, quality })
     }
-    return await domtoimage.toPng(canvasNode, config)
+    return await domtoimage.toPng(target, config)
   } finally {
-    // 임시 스타일/인라인 보정 복원
+    // 임시 스타일/인라인 보정 복원(offscreen이면 복제본은 곧 제거되므로 복원은 무해).
     exportStyle.remove()
     styleRestore.forEach(([el, props]) => {
       Object.entries(props).forEach(([prop, val]) => { el.style[prop] = val })
     })
+    if (cloneWrap) cloneWrap.remove()
   }
 }
 
