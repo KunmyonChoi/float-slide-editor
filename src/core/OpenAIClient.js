@@ -211,7 +211,7 @@ function stripReplyDecorations(s) {
   return t
 }
 
-export const TEXT_EDIT_ACTIONS = ['spelling', 'formal', 'markdown', 'prompt']
+export const TEXT_EDIT_ACTIONS = ['spelling', 'formal', 'markdown', 'prompt', 'translate']
 
 /**
  * 단일 텍스트 요소 내용(평문)을 AI로 편집한다.
@@ -220,24 +220,35 @@ export const TEXT_EDIT_ACTIONS = ['spelling', 'formal', 'markdown', 'prompt']
  *   action='prompt'이면 instruction(지시문) 필수.
  * @returns {Promise<string>} 편집된 텍스트(마크다운 동작이면 마크다운 원문)
  */
-export async function editSlideText(text, { action, instruction, model, signal } = {}) {
+export async function editSlideText(text, { action, instruction, targetLang, model, signal } = {}) {
   const trimmed = (text || '').trim()
   if (!trimmed) throw new Error('편집할 텍스트가 없습니다.')
-  const system = TEXT_EDIT_SYSTEMS[action]
-  if (!system) throw new Error('알 수 없는 텍스트 편집 동작입니다.')
-  let user
-  if (action === 'prompt') {
-    const instr = (instruction || '').trim()
-    if (!instr) throw new Error('편집 지시문을 입력하세요.')
-    user = `Instruction:\n"""\n${instr}\n"""\n\nText to edit:\n"""\n${trimmed}\n"""`
+  let system, user
+  if (action === 'translate') {
+    // 번역은 대상 언어가 동적이라 시스템 프롬프트를 매번 구성한다.
+    const lang = (targetLang || '').trim()
+    if (!lang) throw new Error('번역할 대상 언어를 지정하세요.')
+    system = `You are a professional translator for presentation slides.
+Translate the text into ${lang}. Auto-detect the source language. If the text is ALREADY entirely in ${lang}, return it unchanged.
+Preserve numbers, proper nouns, URLs, and the line-break structure. Keep it concise and slide-appropriate — do NOT add notes, romanization, pronunciation, or explanations.
+Output ONLY the translated text — no preamble, no quotes, no explanation, no code fences.`
+    user = `Text to translate:\n"""\n${trimmed}\n"""`
   } else {
-    user = `Text to edit:\n"""\n${trimmed}\n"""`
+    system = TEXT_EDIT_SYSTEMS[action]
+    if (!system) throw new Error('알 수 없는 텍스트 편집 동작입니다.')
+    if (action === 'prompt') {
+      const instr = (instruction || '').trim()
+      if (!instr) throw new Error('편집 지시문을 입력하세요.')
+      user = `Instruction:\n"""\n${instr}\n"""\n\nText to edit:\n"""\n${trimmed}\n"""`
+    } else {
+      user = `Text to edit:\n"""\n${trimmed}\n"""`
+    }
   }
   const out = await chat({
     system,
     user,
     model,
-    temperature: action === 'spelling' ? 0.2 : 0.5,
+    temperature: action === 'spelling' ? 0.2 : action === 'translate' ? 0.3 : 0.5,
     allowLocal: false, // 텍스트 편집은 품질 보장 위해 OpenAI 고정(로컬 LLM 무시)
     signal,
   })
