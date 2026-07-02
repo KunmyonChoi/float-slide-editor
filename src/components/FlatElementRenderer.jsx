@@ -1,4 +1,4 @@
-import { useCallback, useState, useEffect } from 'react'
+import { useCallback, useState, useEffect, useRef } from 'react'
 import { useFlatStore, isBackgroundLayer } from '../store/flatStore'
 import { useEditorStore } from '../store/editorStore'
 import { BlobStore } from '../core/BlobStore'
@@ -228,15 +228,18 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
   }
 
   if (type === 'video') {
-    const isPresent = useEditorStore.getState().mode === 'present'
     // 배경 영상은 '라이브 배경' — 편집/발표 모드 모두에서 자동재생·루프·음소거·컨트롤 숨김으로
-    // 캔버스를 꽉 채워 보이게 한다. 일반 영상은 발표 모드에서만 재생.
+    // 캔버스를 꽉 채워 보이게 한다.
+    // 일반 영상 재생 여부는 전역 mode가 아니라 명시적 playNow prop으로 결정한다(오디오 경로와 동일
+    // 규약). FlatPresenter만 playNow=true를 넘기고, 편집 캔버스·썸네일은 playNow=false를 넘긴다.
+    // 전역 mode를 읽으면 발표가 켜졌을 때 뒤에 남아있는 편집 캔버스의 영상(직전 편집 페이지)까지
+    // 함께 자동재생되어 두 페이지 오디오가 겹친다 — 그 문제를 방지한다.
     const isBgVideo = isFullCanvasBg
     const autoplay = isBgVideo ? true : (element.autoplay ?? false)
     const loop = isBgVideo ? true : (element.loop ?? false)
     const muted = isBgVideo ? true : (element.muted ?? true)
     const hideControls = isBgVideo ? true : (element.hideControls ?? false)
-    const playNow = isBgVideo || isPresent
+    const playNow = isBgVideo || playNowProp === true
     const vidFit = isBgVideo ? 'cover' : undefined
 
     // 직접 미디어 파일 URL(data:/blob:/http .mp4 등)인지 — 임베드(YouTube/Vimeo)와 구분.
@@ -716,6 +719,7 @@ function ImageContent({ content, styles }) {
 function VideoPlayer({ content, playNow, autoplay, loop, muted, hideControls, objectFit }) {
   const isIdb = BlobStore.isIdbRef(content)
   const [idbUrl, setIdbUrl] = useState(null)
+  const videoRef = useRef(null)
   useEffect(() => {
     if (!isIdb) return
     let cancelled = false
@@ -724,6 +728,12 @@ function VideoPlayer({ content, playNow, autoplay, loop, muted, hideControls, ob
     })
     return () => { cancelled = true }
   }, [content, isIdb])
+  // 언마운트 시 <video> 정지 — DOM에서 분리된 미디어 요소는 그냥 두면 오디오가 계속 재생된다.
+  // (발표 모드에서 페이지를 넘기면 이전 슬라이드 영상 소리가 남던 문제 방지.)
+  useEffect(() => () => {
+    const v = videoRef.current
+    if (v) { try { v.pause(); v.removeAttribute('src'); v.load() } catch { /* noop */ } }
+  }, [])
   const blobUrl = isIdb ? idbUrl : content
 
   // 재생하지 않을 때만(편집 화면 등) 썸네일 poster를 생성한다.
@@ -737,6 +747,7 @@ function VideoPlayer({ content, playNow, autoplay, loop, muted, hideControls, ob
   const controls = playNow && !hideControls
   return (
     <video
+      ref={videoRef}
       src={playNow ? blobUrl : blobUrl + '#t=0.1'}
       poster={!playNow && poster ? poster : undefined}
       preload="metadata"

@@ -163,6 +163,9 @@ export default function ChromaVideoPlayer({ content, playNow, autoplay, loop, mu
       video.removeEventListener('play', start)
       video.removeEventListener('pause', stop)
       video.removeEventListener('seeked', drawFrame)
+      // 언마운트/소스 변경 시 오디오 정지 — DOM에서 분리된 <video>는 그냥 두면 소리가 계속 난다
+      // (발표 모드 페이지 전환 시 이전 슬라이드 휴먼 영상 음성이 남던 문제 방지).
+      try { video.pause() } catch { /* noop */ }
       glRenderer?.dispose()
     }
   }, [blobUrl, playNow, glGen]) // eslint-disable-line react-hooks/exhaustive-deps
