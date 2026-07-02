@@ -359,10 +359,12 @@ export default function FlatSelectionOverlay({ element, scale, otherRects, canva
   const curR = parseFloat(element.styles?.borderRadius) || 0
   // 핸들은 모서리 근처에만(상한 적용) — 작은 요소에서 중앙을 덮어 이동을 막지 않도록.
   const radiusInset = Math.min(Math.max(curR, RADIUS_HANDLE_MIN_INSET), maxR, RADIUS_HANDLE_MAX_INSET)
-  // 너무 작거나(본체를 덮음) 이미 완전 라운드(원형·필 — 둥글기 조절 무의미)면 숨김
-  const isFullyRound = curR >= maxR - 0.5
+  // 너무 작은 요소(핸들이 본체를 덮음)만 숨긴다. 완전 라운드(원형·필)여도 핸들을 유지해야
+  // 캔버스에서 곡률을 다시 줄일 수 있다 — 숨기면 되돌릴 방법이 없어진다(속성 패널로만 가능).
+  // 핸들은 곡률과 무관하게 모서리 ~18px 안쪽(RADIUS_HANDLE_MAX_INSET)에 머물러 중앙을 침범하지 않고,
+  // 바깥으로 끌면 곡률이 감소하므로 완전 라운드에서도 정상 동작한다.
   const showRadiusHandle = !locked && !element.points && !isBackground
-    && Math.min(width, height) >= RADIUS_HANDLE_MIN_ELEM && !isFullyRound
+    && Math.min(width, height) >= RADIUS_HANDLE_MIN_ELEM
 
   return (
     <div
