@@ -962,7 +962,10 @@ export default function FlatCanvas() {
     const stage = stageRef.current
     if (!stage) return
     const onWheel = (e) => {
-      if (useFlatStore.getState().editingFlatId) return
+      const st = useFlatStore.getState()
+      if (st.editingFlatId) return
+      // 크롭(위치·크기 조정) 중에는 휠이 콘텐츠 확대에 쓰이므로 캔버스 줌은 막는다(스크롤만 차단).
+      if (st.croppingFlatId) { e.preventDefault(); return }
       // 마우스 휠 = 커서 기준 줌. (Shift+휠은 줌 상태에서 가로 팬)
       if (e.shiftKey && scaleRef.current > fitScaleRef.current + 1e-6) {
         e.preventDefault()
