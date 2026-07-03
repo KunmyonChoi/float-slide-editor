@@ -1676,7 +1676,7 @@ export default function FlatCanvas() {
       )}
 
       {/* 선택 해제 (터치 전용) — 요소가 캔버스를 꽉 채우면 빈 곳 탭이 불가하므로, 데스크톱 ESC를
-          대신할 명시적 버튼을 캔버스 상단 중앙에 고정 노출. */}
+          대신할 명시적 버튼을 캔버스 좌하단(줌 플로팅바와 같은 높이)에 고정 노출. */}
       {isTouch && mode !== 'present' && !editingFlatId && !croppingFlatId && selectedFlatIds.length > 0 && (
         <button
           type="button"
@@ -1685,7 +1685,7 @@ export default function FlatCanvas() {
           onMouseDown={(e) => e.stopPropagation()}
           onClick={(e) => { e.stopPropagation(); setSelectedFlats([]) }}
           style={{
-            position: 'absolute', top: 10, left: '50%', transform: 'translateX(-50%)', zIndex: 60,
+            position: 'absolute', left: 12, bottom: 12, zIndex: 60,
             display: 'flex', alignItems: 'center', gap: 6, height: 34, padding: '0 14px',
             borderRadius: 999, background: 'rgba(15,23,42,0.92)', color: '#e2e8f0',
             border: '1px solid rgba(255,255,255,0.15)', boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
