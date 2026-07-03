@@ -15,6 +15,7 @@ const ZOOM_MIN = 1, ZOOM_MAX = 5
 
 export default function ImageCropOverlay({ element, scale }) {
   const { updateFlatElement, previewFlatElement, setCroppingFlat } = useFlatStore()
+  const canvasSize = useFlatStore(s => s.canvasSize)
   const dragRef = useRef(null)
   const commitTimer = useRef(null)
 
@@ -162,6 +163,15 @@ export default function ImageCropOverlay({ element, scale }) {
 
   const rot = element.rotation || 0
   const atDefault = zoom === 1 && !ox && !oy   // 크롭 기본 상태(초기화 버튼 비활성 판정)
+
+  // 줌 컨트롤 위치 — 기본은 프레임 아래, 아래 공간이 없으면(하단 콘텐츠) 위로, 둘 다 없으면 프레임 안 하단.
+  const canvasH = canvasSize?.h ?? 720
+  const ctrlH = 40 / scale, ctrlGap = 10 / scale
+  const ctrlTop = (element.y + element.height + ctrlGap + ctrlH <= canvasH)
+    ? element.y + element.height + ctrlGap
+    : (element.y - ctrlGap - ctrlH >= 0)
+      ? element.y - ctrlGap - ctrlH
+      : element.y + element.height - ctrlH - ctrlGap
   const objPos = `${posX.toFixed(1)}% ${posY.toFixed(1)}%`
   const mediaTransform = `translate(${ox * element.width}px, ${oy * element.height}px) scale(${zoom})`
   const mediaStyle = {
@@ -201,10 +211,10 @@ export default function ImageCropOverlay({ element, scale }) {
           <div style={{ position: 'absolute', top: '66.66%', left: 0, right: 0, height: 1, background: 'rgba(255,255,255,0.3)' }} />
         </div>
       </div>
-      {/* 줌 컨트롤 (프레임 하단 중앙) — 터치에서도 확대/축소 가능 */}
+      {/* 줌 컨트롤 — 프레임 아래(공간 없으면 위/프레임 안). 하단 콘텐츠에서 잘리지 않게. */}
       <div
         style={{
-          position: 'absolute', left: element.x + element.width / 2, top: element.y + element.height + 10 / scale,
+          position: 'absolute', left: element.x + element.width / 2, top: ctrlTop,
           transform: 'translateX(-50%)', zIndex: 9992, pointerEvents: 'auto',
           display: 'flex', alignItems: 'center', gap: 8 / scale, padding: `${6 / scale}px ${10 / scale}px`,
           borderRadius: 10 / scale, background: 'rgba(15,23,42,0.92)', border: `${1 / scale}px solid rgba(255,255,255,0.15)`,
