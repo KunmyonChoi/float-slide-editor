@@ -88,6 +88,8 @@ export default function FlatCanvas() {
   const panToolRef = useRef(false)
   panToolRef.current = panTool
   const pointerPanRef = useRef(null)   // 손 도구 포인터 드래그 진행 상태
+  const activePointersRef = useRef(new Map()) // 손 도구: 눌린 포인터들 {id -> {x,y}} — 핀치 판별용
+  const pinchRef = useRef(null)        // 손 도구: 두 손가락 핀치 줌 진행 상태
   const pendingTapDeselectRef = useRef(null) // 손 도구: 편집 중 빈영역 탭 → 편집 종료 후 선택 해제 예약
   const [marquee, setMarquee] = useState(null)
   const marqueeRef = useRef(null) // 마키 시작 좌표 기억
@@ -1053,15 +1055,54 @@ export default function FlatCanvas() {
         return
       }
       e.preventDefault(); e.stopPropagation()
-      pointerPanRef.current = {
-        id: e.pointerId, startX: e.clientX, startY: e.clientY,
-        startPanX: panRef.current.x, startPanY: panRef.current.y,
-        empty: isEmptyTarget(e.target),
-      }
+      activePointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
       try { stage.setPointerCapture(e.pointerId) } catch { /* 무시 */ }
-      stage.style.cursor = 'grabbing'
+      if (activePointersRef.current.size >= 2) {
+        // 두 손가락 → 핀치 줌 시작. 단일 팬은 중단(점프 방지).
+        pointerPanRef.current = null
+        const pts = [...activePointersRef.current.values()]
+        const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y) || 1
+        pinchRef.current = {
+          startDist: dist,
+          startScale: scaleRef.current,
+          startPan: { ...panRef.current },
+          startMid: { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 },
+        }
+        stage.style.cursor = 'grab'
+      } else {
+        pointerPanRef.current = {
+          id: e.pointerId, startX: e.clientX, startY: e.clientY,
+          startPanX: panRef.current.x, startPanY: panRef.current.y,
+          empty: isEmptyTarget(e.target),
+        }
+        stage.style.cursor = 'grabbing'
+      }
     }
     const onMove = (e) => {
+      const rec = activePointersRef.current.get(e.pointerId)
+      if (rec) { rec.x = e.clientX; rec.y = e.clientY }
+      // 두 손가락 핀치: 거리비→줌, 중점 이동→팬. 시작값 기준 절대 계산(누적 드리프트 없음).
+      const pinch = pinchRef.current
+      if (pinch && activePointersRef.current.size >= 2) {
+        const pts = [...activePointersRef.current.values()]
+        const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y) || 1
+        const midX = (pts[0].x + pts[1].x) / 2, midY = (pts[0].y + pts[1].y) / 2
+        const rect = stageRef.current?.getBoundingClientRect()
+        if (!rect) return
+        const ns = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, pinch.startScale * (dist / pinch.startDist)))
+        fitModeRef.current = false
+        if (ns > fitScaleRef.current) {
+          const scx = rect.left + rect.width / 2, scy = rect.top + rect.height / 2
+          const ratio = ns / pinch.startScale
+          const nx = midX - scx - (pinch.startMid.x - scx - pinch.startPan.x) * ratio
+          const ny = midY - scy - (pinch.startMid.y - scy - pinch.startPan.y) * ratio
+          setPan(clampPan({ x: nx, y: ny }, ns))
+        } else {
+          setPan({ x: 0, y: 0 }) // 맞춤 이하로 줄이면 중앙 정렬
+        }
+        setScale(ns)
+        return
+      }
       const d = pointerPanRef.current
       if (!d || d.id !== e.pointerId) return
       setPan(clampPan({ x: d.startPanX + (e.clientX - d.startX), y: d.startPanY + (e.clientY - d.startY) }, scaleRef.current))
@@ -1075,6 +1116,25 @@ export default function FlatCanvas() {
         if (Math.hypot(e.clientX - pd.x, e.clientY - pd.y) < TAP) {
           useFlatStore.getState().setSelectedFlat(null)
           setHoverShapeId(null)
+        }
+        return
+      }
+      activePointersRef.current.delete(e.pointerId)
+      // 핀치 중 한 손가락을 떼면: 남은 한 손가락으로 팬 재개(기준 재설정→점프 방지),
+      // 둘 다 떼면 핀치 종료. 핀치였던 제스처는 탭-해제 판정을 하지 않는다.
+      if (pinchRef.current) {
+        if (activePointersRef.current.size < 2) {
+          pinchRef.current = null
+          if (activePointersRef.current.size === 1) {
+            const [id, p] = [...activePointersRef.current.entries()][0]
+            pointerPanRef.current = {
+              id, startX: p.x, startY: p.y,
+              startPanX: panRef.current.x, startPanY: panRef.current.y, empty: false,
+            }
+            stage.style.cursor = 'grabbing'
+          } else {
+            stage.style.cursor = panToolRef.current ? 'grab' : ''
+          }
         }
         return
       }
