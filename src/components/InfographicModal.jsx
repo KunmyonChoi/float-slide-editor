@@ -7,6 +7,7 @@ import { hasApiKey, analyzeImageForInfographic, generateImage, editImage } from 
 import { openAiSettings } from './AiSettingsModal'
 import { INFOGRAPHIC_STYLES } from '../core/aiImageStyles'
 import { captureElementRegion } from '../core/captureCanvasRegion'
+import { BlobStore } from '../core/BlobStore'
 
 /**
  * AI 인포그래픽 변환.
@@ -45,11 +46,21 @@ function bboxOf(ids) {
   return { x: minX, y: minY, w: maxX - minX, h: maxY - minY }
 }
 
-function buildImageEl(dataUrl, rect, zIndex) {
+// 생성 이미지(대용량 base64 data URL)를 BlobStore(idb)에 저장하고 짧은 참조를 반환한다.
+// data URL을 요소 content에 직접 넣으면 _saveCurrentPage·undo가 매번 통째로 복제해 메모리가
+// 급증(→ 탭 OOM 크래시/브라우저 재로드)한다. 변환 실패 시 원본 data URL로 폴백.
+async function toStoredRef(url) {
+  try {
+    const blob = await fetch(url).then(r => r.blob())
+    return BlobStore.toRef(await BlobStore.put(blob))
+  } catch { return url }
+}
+
+function buildImageEl(content, rect, zIndex) {
   return {
     id: nextFlatId(), sourceId: null,
     type: 'image', width: rect.w, height: rect.h,
-    content: dataUrl, isRich: false, merged: false,
+    content, isRich: false, merged: false,
     styles: {
       backgroundColor: 'rgba(0, 0, 0, 0)', backgroundImage: 'none',
       borderRadius: '0px', border: '0px none', boxShadow: 'none',
@@ -160,38 +171,41 @@ function InfographicDialog() {
   }, [])
 
   // 대상 영역(targetRef) 위치·크기로 현재 탭 이미지를 현재 페이지 맨 위에 삽입
-  const insertHere = useCallback(() => {
+  const insertHere = useCallback(async () => {
     const url = results[method]
     if (!url || !targetRef.current) return
+    const ref = await toStoredRef(url)
     const st = useFlatStore.getState()
     const maxZ = st.flatElements.length ? Math.max(...st.flatElements.map(e => e.zIndex)) : 0
-    const el = buildImageEl(url, targetRef.current, maxZ + 1)
+    const el = buildImageEl(ref, targetRef.current, maxZ + 1)
     st.addFlatElement(el)
     st.setSelectedFlat(el.id)
     closeInfographic()
   }, [results, method])
 
   // (page) 현재 페이지 바로 뒤에 빈 슬라이드 추가 후 인포그래픽 이미지 배치
-  const addNextSlide = useCallback(() => {
+  const addNextSlide = useCallback(async () => {
     const url = results[method]
     if (!url) return
+    const ref = await toStoredRef(url)
     const st = useFlatStore.getState()
     st.addPage()
     const cs = useFlatStore.getState().canvasSize
-    useFlatStore.getState().addFlatElement(buildImageEl(url, { x: 0, y: 0, w: cs.w, h: cs.h }, 1))
+    useFlatStore.getState().addFlatElement(buildImageEl(ref, { x: 0, y: 0, w: cs.w, h: cs.h }, 1))
     closeInfographic()
   }, [results, method])
 
   // (selection) 선택 원본 삭제 후 bbox 자리에 현재 탭 이미지 삽입
-  const replaceOriginals = useCallback(() => {
+  const replaceOriginals = useCallback(async () => {
     const url = results[method]
     if (!url || !targetRef.current) return
+    const ref = await toStoredRef(url)
     const st = useFlatStore.getState()
     st.setSelectedFlats(ids)
     st.removeSelectedElements() // batch_remove (undo 1회)
     const after = useFlatStore.getState()
     const maxZ = after.flatElements.length ? Math.max(...after.flatElements.map(e => e.zIndex)) : 0
-    const el = buildImageEl(url, targetRef.current, maxZ + 1)
+    const el = buildImageEl(ref, targetRef.current, maxZ + 1)
     after.addFlatElement(el)
     after.setSelectedFlat(el.id)
     closeInfographic()
