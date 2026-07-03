@@ -890,6 +890,8 @@ export const useFlatStore = create((set, get) => ({
       const routes = buildRevealRoutes(es)
       if (!iframeRef?.current || routes.length <= 1) {
         set({ _preloading: false, preloadProgress: null })
+        // 단일 페이지 import 덱: 현재 페이지의 원격 자산도 자립형으로 내려받는다
+        if (es.htmlImported) get().materializeRemoteAssets()
         return
       }
 
@@ -933,11 +935,58 @@ export const useFlatStore = create((set, get) => ({
 
       console.log(`Preload: ${routes.length} pages cached`)
       get()._syncPageInfo()
+      // import된 덱이면 전 페이지의 원격(http) 이미지/영상 URL을 idb로 내려받아 자립화
+      if (es.htmlImported) get().materializeRemoteAssets()
     } catch (e) {
       console.warn('Preload failed:', e.message)
     } finally {
       set({ _preloading: false, preloadProgress: null })
     }
+  },
+
+  /**
+   * import된 덱의 원격(http/https) 이미지·영상 URL을 내부 저장소(idb ref)로 내려받아
+   * 덱을 자립형으로 만든다. 외부 자산(예: Higgsfield hosted URL)의 만료나
+   * export 시 tainted-canvas(원격 CORS 미허용) 문제를 방지한다.
+   * best-effort: fetch 실패(CORS 미허용·네트워크 오류) 시 해당 URL은 원격 그대로 둔다.
+   * 추출기는 <img>/<video>의 src를 원격 URL 그대로 content에 담으므로(FlatExtractor),
+   * flat 모델 계층에서 1회 변환한다.
+   */
+  async materializeRemoteAssets() {
+    const isRemote = (c) => typeof c === 'string' && /^https?:\/\//i.test(c)
+    const urls = new Set()
+    const collect = (els) => {
+      for (const e of els || []) {
+        if ((e.type === 'image' || e.type === 'video') && isRemote(e.content)) urls.add(e.content)
+      }
+    }
+    collect(get().flatElements)
+    for (const k in _pageCache) collect(_pageCache[k]?.elements)
+    if (!urls.size) return
+
+    const { BlobStore } = await import('../core/BlobStore')
+    const map = new Map() // 원격 URL → idb ref (URL당 1회만 fetch)
+    await Promise.all([...urls].map(async (u) => {
+      try {
+        const res = await fetch(u, { mode: 'cors' })
+        if (!res.ok) return
+        const blob = await res.blob()
+        if (!blob.size) return
+        map.set(u, BlobStore.toRef(await BlobStore.put(blob)))
+      } catch { /* CORS/네트워크 실패 → 원격 URL 유지(무해) */ }
+    }))
+    if (!map.size) return
+
+    const rewrite = (els) => {
+      let changed = false
+      const next = els.map((e) => (map.has(e.content) ? (changed = true, { ...e, content: map.get(e.content) }) : e))
+      return changed ? next : els
+    }
+    for (const k in _pageCache) {
+      if (_pageCache[k]?.elements) _pageCache[k].elements = rewrite(_pageCache[k].elements)
+    }
+    const liveNext = rewrite(get().flatElements)
+    if (liveNext !== get().flatElements) set({ flatElements: liveNext })
   },
 
   // ── Flat 모드 페이지 관리 ──
