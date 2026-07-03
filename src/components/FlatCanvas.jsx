@@ -1251,6 +1251,11 @@ export default function FlatCanvas() {
 
   // 우클릭 컨텍스트 메뉴
   const handleContextMenu = useCallback((e) => {
+    // 캔버스 위에 뜬 팝업(예: 이미지 '설명으로 편집')의 입력 필드에서 우클릭하면
+    // 이벤트가 stage로 버블링돼 캔버스 컨텍스트 메뉴가 뜬다. 입력 필드/편집 영역
+    // 우클릭은 시스템 메뉴(복사/붙여넣기 등)로 넘긴다.
+    const t = e.target
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable || t.closest?.('input, textarea, [contenteditable="true"]'))) return
     // 편집 중에는 우리 메뉴를 열지 않고 브라우저 기본 동작도 막지 않음
     // — 모바일 롱프레스로 텍스트 단어선택/네이티브 콜아웃을 보존
     if (useFlatStore.getState().editingFlatId) return
@@ -1668,6 +1673,31 @@ export default function FlatCanvas() {
             </p>
           </div>
         </div>
+      )}
+
+      {/* 선택 해제 (터치 전용) — 요소가 캔버스를 꽉 채우면 빈 곳 탭이 불가하므로, 데스크톱 ESC를
+          대신할 명시적 버튼을 캔버스 상단 중앙에 고정 노출. */}
+      {isTouch && mode !== 'present' && !editingFlatId && !croppingFlatId && selectedFlatIds.length > 0 && (
+        <button
+          type="button"
+          data-edit-accessory="true"
+          onPointerDown={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
+          onClick={(e) => { e.stopPropagation(); setSelectedFlats([]) }}
+          style={{
+            position: 'absolute', top: 10, left: '50%', transform: 'translateX(-50%)', zIndex: 60,
+            display: 'flex', alignItems: 'center', gap: 6, height: 34, padding: '0 14px',
+            borderRadius: 999, background: 'rgba(15,23,42,0.92)', color: '#e2e8f0',
+            border: '1px solid rgba(255,255,255,0.15)', boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
+            fontSize: 13, fontWeight: 600, backdropFilter: 'blur(8px)', cursor: 'pointer',
+            touchAction: 'manipulation', whiteSpace: 'nowrap',
+          }}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
+            <line x1="6" y1="6" x2="18" y2="18" /><line x1="18" y1="6" x2="6" y2="18" />
+          </svg>
+          선택 해제
+        </button>
       )}
 
       {/* 줌 컨트롤 (우하단 플로팅) */}
