@@ -1,6 +1,7 @@
 import { useRef, useState, useEffect, useCallback } from 'react'
 import { useEditorStore } from '../store/editorStore'
 import { useFlatStore } from '../store/flatStore'
+import { isBackgroundElement } from '../core/SnapEngine'
 import { nextFlatId } from '../core/FlatExtractor'
 import { SLIDE_LAYOUTS, carryLayoutContent } from '../core/slideLayouts'
 import ThemeMenu from './ThemeMenu'
@@ -140,7 +141,16 @@ export default function EditToolbar() {
     if (!layout) return
     const existingLayoutEls = flatElements.filter(e => e.layoutRole)
     const specs = carryLayoutContent(existingLayoutEls, layout.build(canvasSize))
-    const maxZ = flatElements.length > 0 ? Math.max(...flatElements.map(e => e.zIndex)) : 0
+    // 레이아웃 요소(제목·본문)는 레이아웃과 무관한 '추가 요소'들 아래로 깔린다.
+    // → 남는 추가 요소(비배경·비레이아웃)의 최소 zIndex보다 낮게 배치.
+    //   추가 요소가 없으면 배경 바로 위(없으면 1)부터.
+    const extraZs = flatElements
+      .filter(e => !e.layoutRole && !isBackgroundElement(e))
+      .map(e => e.zIndex)
+    const bgZs = flatElements.filter(e => isBackgroundElement(e)).map(e => e.zIndex)
+    const baseZ = extraZs.length
+      ? Math.min(...extraZs) - specs.length
+      : (bgZs.length ? Math.max(...bgZs) + 1 : 1)
     // 레이아웃의 하드코딩 색 대신 현재 테마(사용자정의 포함)의 역할색/굵기/그림자 적용
     const theme = useFlatStore.getState()._currentTheme()
     const els = specs.map((s, i) => {
@@ -148,7 +158,7 @@ export default function EditToolbar() {
         sourceId: null, rotation: 0, merged: false, isRich: false,
         ...s,
         id: nextFlatId(),
-        zIndex: maxZ + 1 + i,
+        zIndex: baseZ + i,
       }
       if (el.type === 'text' && el.layoutRole) {
         const rs = themeRoleStyles(theme, el.layoutRole)
