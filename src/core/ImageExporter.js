@@ -32,7 +32,11 @@ export async function exportAsImage(canvasNode, { format = 'png', scale = 2, qua
     const id = `export-clone-${++_cloneSeq}`
     cloneWrap = document.createElement('div')
     cloneWrap.id = id
-    cloneWrap.style.cssText = 'position:fixed;left:-100000px;top:0;margin:0;padding:0;pointer-events:none;'
+    // 화면 밖·포인터 차단. transform으로 컨테이닝 블록을 만들어 복제 내부의 중첩 position:fixed
+    // 자손이 뷰포트로 튀어나오지 못하게 하고(스크롤바/움찔 방지), overflow:hidden으로 문서
+    // 스크롤 확장 여지를 완전히 차단한다. dom-to-image는 복제본 자체를 offset/computed로 읽으므로
+    // 래퍼의 clip/transform은 캡처 결과에 영향을 주지 않는다.
+    cloneWrap.style.cssText = 'position:fixed;left:-100000px;top:0;overflow:hidden;transform:translateZ(0);margin:0;padding:0;pointer-events:none;opacity:0;'
     cloneWrap.appendChild(canvasNode.cloneNode(true))
     document.body.appendChild(cloneWrap)
     target = cloneWrap.firstElementChild
@@ -114,12 +118,24 @@ export async function exportAsImage(canvasNode, { format = 'png', scale = 2, qua
     filter,
   }
 
+  // dom-to-image-more는 렌더링을 위해 전체 크기(예: 2560×1440) <svg>를 잠시 document.body에
+  // 붙였다 뗀다(makeImage). 그 순간 문서에 스크롤바가 생겼다 사라지며 화면이 '움찔'한다.
+  // 캡처 동안만 문서 스크롤을 잠가(이 앱은 전체화면 overflow:hidden이라 원래 스크롤바 없음)
+  // 이 전이 스크롤바를 원천 차단한다.
+  const docEl = document.documentElement
+  const prevHtmlOverflow = docEl.style.overflow
+  const prevBodyOverflow = document.body.style.overflow
+  docEl.style.overflow = 'hidden'
+  document.body.style.overflow = 'hidden'
+
   try {
     if (format === 'jpeg') {
       return await domtoimage.toJpeg(target, { ...config, quality })
     }
     return await domtoimage.toPng(target, config)
   } finally {
+    docEl.style.overflow = prevHtmlOverflow
+    document.body.style.overflow = prevBodyOverflow
     // 임시 스타일/인라인 보정 복원(offscreen이면 복제본은 곧 제거되므로 복원은 무해).
     exportStyle.remove()
     styleRestore.forEach(([el, props]) => {

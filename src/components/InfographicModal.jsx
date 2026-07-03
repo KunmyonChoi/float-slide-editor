@@ -96,7 +96,8 @@ function InfographicDialog() {
       const cs = useFlatStore.getState().canvasSize
       const { exportAsImage } = await import('../core/ImageExporter.js')
       targetRef.current = { x: 0, y: 0, w: cs.w, h: cs.h }
-      input = await exportAsImage(canvasNode, { format: 'png', scale: 2 })
+      // offscreen=true: 복제본에서 캡처해 살아있는 캔버스를 건드리지 않는다(캡처 중 화면 '움찔'/리플로우 방지)
+      input = await exportAsImage(canvasNode, { format: 'png', scale: 2, offscreen: true })
     }
     captureRef.current = input
     return input
