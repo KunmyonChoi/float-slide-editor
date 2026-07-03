@@ -51,9 +51,10 @@ export default function ImageCropOverlay({ element, scale }) {
     return () => { cancelled = true }
   }, [element.content])
 
-  // 오프셋 클램프 — 확대 배율에 따른 오버플로 범위(±(z-1)/2·박스크기) 안으로. 잘림 없이 항상 박스를 덮음.
-  const maxOff = (z) => ({ x: (z - 1) / 2 * element.width, y: (z - 1) / 2 * element.height })
-  const clampOff = (x, y, z) => { const m = maxOff(z); return { x: Math.max(-m.x, Math.min(m.x, x)), y: Math.max(-m.y, Math.min(m.y, y)) } }
+  // 오프셋(비율) 클램프 — 확대 배율에 따른 오버플로 범위(±(z-1)/2) 안으로. 잘림 없이 항상 박스를 덮음.
+  // 비율이라 요소를 리사이즈해도 크롭 위치가 박스에 비례해 유지된다(px면 리사이즈 시 어긋남).
+  const maxOff = (z) => (z - 1) / 2
+  const clampOff = (x, y, z) => { const m = maxOff(z); return { x: Math.max(-m, Math.min(m, x)), y: Math.max(-m, Math.min(m, y)) } }
 
   const previewCrop = (z, x, y) => {
     const cl = clampOff(x, y, z)
@@ -116,7 +117,8 @@ export default function ImageCropOverlay({ element, scale }) {
       const dx = (e.clientX - d.startClientX) / scale
       const dy = (e.clientY - d.startClientY) / scale
       if (d.panMode) {
-        const cl = previewCrop(zoom, d.startOx + dx, d.startOy + dy)
+        // px 이동을 박스 대비 비율로 환산해 오프셋에 더한다.
+        const cl = previewCrop(zoom, d.startOx + dx / element.width, d.startOy + dy / element.height)
         d.lastX = cl.x; d.lastY = cl.y
       } else {
         const dpx = (dx / element.width) * 100
@@ -161,7 +163,7 @@ export default function ImageCropOverlay({ element, scale }) {
   const rot = element.rotation || 0
   const atDefault = zoom === 1 && !ox && !oy   // 크롭 기본 상태(초기화 버튼 비활성 판정)
   const objPos = `${posX.toFixed(1)}% ${posY.toFixed(1)}%`
-  const mediaTransform = `translate(${ox}px, ${oy}px) scale(${zoom})`
+  const mediaTransform = `translate(${ox * element.width}px, ${oy * element.height}px) scale(${zoom})`
   const mediaStyle = {
     width: '100%', height: '100%', objectFit: element.styles.objectFit || 'contain',
     objectPosition: objPos, transform: mediaTransform, transformOrigin: 'center center',

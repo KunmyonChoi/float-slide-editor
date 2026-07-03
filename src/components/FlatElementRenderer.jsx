@@ -13,15 +13,17 @@ import ChromaVideoPlayer from './ChromaVideoPlayer'
  * 단일 FlatElement를 절대 좌표로 렌더링한다.
  * 클릭으로 선택, 드래그로 이동 (Phase 3에서 추가).
  */
-// 채우기(cover) 크롭 — 바운딩 박스는 고정, 컨텐츠를 확대(zoom)·이동(x,y px)해 표시 영역을 미세 조정.
+// 채우기(cover) 크롭 — 바운딩 박스는 고정, 컨텐츠를 확대(zoom)·이동(x,y)해 표시 영역을 미세 조정.
 // transform으로 미디어(img/video/canvas)를 스케일·이동하고 overflow:hidden으로 잘라낸다.
+// x,y는 박스 대비 '비율'(예: 0.1 = 박스 너비/높이의 10%) — px가 아니라 비율이라 요소를 리사이즈해도
+// 크롭 위치가 박스에 비례해 따라온다(px면 리사이즈 시 상대 위치가 어긋나 잘림·불안정).
 // objectFit이 'cover'가 아니거나 zoom=1·오프셋0이면 변환 없음(기존과 동일 = 하위호환).
 function cropCss(element, styles) {
   const c = element.crop
   const z = c?.zoom || 1
   const x = c?.x || 0, y = c?.y || 0
   if (styles.objectFit !== 'cover' || (z === 1 && !x && !y)) return null
-  return `translate(${x}px, ${y}px) scale(${z})`
+  return `translate(${x * element.width}px, ${y * element.height}px) scale(${z})`
 }
 
 export default function FlatElementRenderer({ element, isSelected, isEditing, scale, canvasSize: canvasSizeProp, playNow: playNowProp }) {
