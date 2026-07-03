@@ -6,94 +6,85 @@ description: >-
   (float-editor) that needs original AI visuals — e.g. "make a 6-slide pitch deck
   with AI hero images I can edit in Genitor", "build Genitor slides and generate
   the product shots with Higgsfield", "animate the cover with Higgsfield and put
-  it in a Genitor deck". This skill is the BRIDGE: it drives the Higgsfield CLI
-  to create assets, then embeds the returned hosted URLs into the exact HTML
+  it in a Genitor deck". This skill is the BRIDGE only: it delegates the actual
+  generation to whatever Higgsfield surface is available (the official Higgsfield
+  Generate skill or CLI in Claude Code; the Higgsfield MCP connector in Claude
+  Desktop / claude.ai), then embeds the returned hosted URLs into the exact HTML
   format Genitor imports losslessly (see the genitor-slides skill for that
   format). The user then hands off the single HTML file to Genitor.
 ---
 
 # Genitor × Higgsfield 핸드오프 브리지
 
-이 스킬은 두 도구를 **합성**한다:
+이 스킬은 **합성(bridge)만** 담당한다. **자산 생성 자체는 다시 가르치지 않고 위임한다.**
 
-1. **Higgsfield CLI** — 이미지/영상/오디오를 생성하고 **hosted URL**을 돌려준다.
-2. **Genitor 슬라이드 규약**(`genitor-slides` 스킬) — 그 URL을 고정 캔버스 위
-   `position:absolute` 인라인 div에 꽂아 **단일 자립형 `.html` 덱**으로 출력한다.
-
-결과 HTML을 사용자가 Genitor 캔버스에 **붙여넣기(Ctrl/Cmd+V)** 하면 각 텍스트·도형·
-이미지·비디오가 편집 가능한 요소로 들어간다. Genitor는 import 시 원격 이미지/영상 URL을
-가능한 경우 내부 저장소로 내려받아 **덱을 자립형으로** 만든다(아래 "URL 내구성" 참고).
+- **생성 = Higgsfield의 공식 도구**(Generate 스킬 / CLI / MCP)가 정본. 모델명·플래그·인증은
+  전부 그쪽이 소유한다. 이 스킬은 그걸 재기술하지 않는다(플래그가 바뀌어도 안 낡도록).
+- **이 스킬이 소유하는 것 = Genitor 고유 계약**: 요소 박스 크기·종횡비에 맞춘 생성 요청,
+  받은 hosted URL을 genitor-slides 스캐폴드에 임베드, URL 내구성, 핸드오프.
 
 > **먼저 `genitor-slides` 스킬을 읽어라.** 캔버스 크기(1280×720 또는 1920×1080),
 > `position:absolute` px 배치, 카드+텍스트 병합, 추출이 깨지는 패턴 등 **레이아웃 규약은
 > 전부 그 스킬이 정본**이다. 이 스킬은 "그 규약 + Higgsfield 자산"만 추가로 다룬다.
 
-## 0. 사전 준비 (한 번)
+결과 HTML을 사용자가 Genitor 캔버스에 **붙여넣기(Ctrl/Cmd+V)** 하면 각 텍스트·도형·
+이미지·비디오가 편집 가능한 요소로 들어간다. Genitor는 import 시 원격 이미지/영상 URL을
+가능한 경우 내부 저장소로 내려받아 **덱을 자립형으로** 만든다(아래 "URL 내구성" 참고).
 
-```bash
-# Higgsfield CLI 설치
-curl -fsSL https://raw.githubusercontent.com/higgsfield-ai/cli/main/install.sh | sh
-# 브라우저 device-flow 로그인 (API 키 불필요, ~/.config/higgsfield/credentials.json 저장)
-higgsfield auth login
-```
+## 0. 생성 경로 고르기 (환경에 따라 위임)
 
-설치가 안 됐거나 `higgsfield: command not found`면 위 두 줄을 먼저 실행하도록 안내한다.
-인증이 안 되어 있으면 `higgsfield auth login`을 실행하게 한다. **직접 API 호출 금지** —
-CLI만 사용한다(인증·재시도·검증을 CLI가 처리).
+지금 도는 환경에서 쓸 수 있는 Higgsfield 표면을 하나 고른다. **어느 쪽이든 이 스킬은
+"박스에 맞는 종횡비로 자산 하나 생성 → 최종 hosted URL 회수"까지만 요구**한다.
+
+- **Claude Code (셸 있음)** — 공식 **Higgsfield Generate 스킬**이나 **CLI**를 쓴다.
+  - 공식 스킬 설치: `npx skills add higgsfield-ai/skills`
+  - 인증(한 번): `higgsfield auth login` → 이어서 `higgsfield workspace list` 후
+    `higgsfield workspace set <workspace_id>` (워크스페이스 미선택 시 명령이 실패한다).
+  - 모델·플래그는 공식 스킬/CLI가 정본. 확실치 않으면 `higgsfield model list --json`,
+    `higgsfield model get <model> --json`로 **직접 조회**한다(이 문서에 외우지 않는다).
+- **Claude Desktop / claude.ai (셸 없음)** — **Higgsfield MCP 커넥터**를 쓴다.
+  - 연결(한 번): Settings ▸ Connectors ▸ Add custom connector →
+    URL `https://mcp.higgsfield.ai/mcp` → Connect → Higgsfield 계정 로그인(OAuth, API 키 불필요).
+  - 연결되면 이미지/영상 생성 도구가 대화에서 바로 호출된다.
+
+**공통 규칙**: 한 번에 자산 하나씩, 합리적 기본값 먼저. 결과에서 **최종 hosted URL만** 취하고
+raw job ID·JSON 덤프는 사용자에게 노출하지 않는다. **직접 REST API 호출 금지**(공개 키 없음 —
+인증은 공식 도구가 쥔다).
 
 ## 1. 워크플로
 
 1. **덱 뼈대부터 설계** — `genitor-slides` 규약대로 슬라이드 수·레이아웃·각 요소의
    `left/top/width/height`(px)를 먼저 확정한다. **어떤 요소가 이미지/영상인지, 그 박스의
-   정확한 px 크기와 종횡비**를 여기서 정한다(생성 해상도를 이 박스에 맞추기 위함).
-2. **필요한 자산만 생성** — 각 이미지/영상 요소마다 Higgsfield CLI를 호출한다.
-   `--wait`로 완료까지 블록하고 결과 URL을 받는다. 여러 자산이 필요하면 순차로,
-   한 번에 하나씩 만든다(배치 질문 금지).
+   정확한 px 크기와 종횡비**를 여기서 정한다(생성 종횡비를 이 박스에 맞추기 위함).
+2. **필요한 자산만 생성** — 각 이미지/영상 요소마다 위에서 고른 Higgsfield 표면으로
+   자산을 하나씩 만들고 hosted URL을 받는다. **박스 종횡비에 맞춰 요청**한다(아래 표).
 3. **URL 임베드** — 받은 hosted URL을 해당 요소의 `<img src>` / `<video src>`에 넣는다.
 4. **단일 HTML로 출력** — `genitor-slides` 스캐폴드에 모든 요소를 합쳐 하나의
    `<!DOCTYPE html>` 문서로 내보낸다.
 5. **핸드오프 안내** — "이 HTML 소스를 복사해 Genitor 캔버스에서 Ctrl/Cmd+V" 또는
    `.html`로 저장해 드래그&드롭/파일 열기.
 
-## 2. 자산 생성 명령 (요소 박스에 맞춰)
+## 2. 박스 → 종횡비 매핑 (이 스킬이 소유하는 유일한 생성 파라미터)
 
-박스가 `width:520px; height:300px`(≈16:9)면 그 종횡비로 생성한다. Higgsfield는 정확한
-px가 아니라 **종횡비 + 해상도 프리셋**을 받는다 — 요소 박스에 가장 가까운 종횡비를 고른다.
+Higgsfield는 정확한 px가 아니라 **종횡비 + 해상도 프리셋**을 받는다. 요소 박스의
+`width/height` 비율에 **가장 가까운 종횡비**를 골라 생성 도구에 넘긴다:
 
-**이미지 (기본 `gpt_image_2`):**
+| 요소 박스(예) | 비율 | 요청 종횡비 |
+|---|---|---|
+| 520×300, 1120×630, 풀캔버스 1280×720 | ≈16:9 | `16:9` |
+| 360×360 카드, 아이콘 | 1:1 | `1:1` |
+| 640×480 | 4:3 | `4:3` |
+| 360×640 세로 히어로, 모바일 | 9:16 | `9:16` |
+| 세로 카드 | 3:4 | `3:4` |
 
-```bash
-higgsfield generate create gpt_image_2 \
-  --prompt "editorial product hero shot of a matte-black espresso machine on concrete, soft window light, muted palette" \
-  --aspect_ratio 16:9 --resolution 2k --wait
-```
+- 해상도는 넉넉히(예: 2K) — Genitor에서 박스에 `object-fit:cover`로 채운다.
+- 참조 이미지가 있으면 공식 도구의 image/start-image 파라미터로 전달한다(플래그명은 공식 도구 참조).
+- 정지 이미지 → 영상(image-to-video)도 마찬가지로 공식 도구의 start-image 입력을 쓴다.
 
-- 흔한 종횡비: `16:9`(와이드/히어로), `1:1`(아이콘/정사각 카드), `4:3`, `3:4`/`9:16`(세로).
-- 요소 박스의 `width/height` 비율에 가장 가까운 것을 고른다(예: 520×300→16:9, 360×360→1:1).
-- 캐릭터/일러스트 톤이면 `nano_banana_2`, 참조 이미지가 있으면 `--image ./ref.png`.
+> 구체적 CLI 예시가 필요하면 공식 Higgsfield Generate 스킬을 참조한다. 이 문서는 명령을
+> 외우지 않는다 — 요구는 "박스 비율에 맞는 자산 하나 + 최종 URL"뿐이다.
 
-**영상 (기본 `seedance_2_0`):**
-
-```bash
-higgsfield generate create seedance_2_0 \
-  --prompt "slow dolly-in across a foggy mountain ridge at dawn, cinematic" \
-  --duration 8 --resolution 2k --wait
-# 정지 이미지에서 시작(이미지→영상): --start-image ./cover.png
-```
-
-**모델/파라미터가 불확실하면** 먼저 카탈로그를 조회한다:
-
-```bash
-higgsfield model list --json          # 사용 가능한 모델(job_set_type)
-higgsfield model get gpt_image_2 --json   # 특정 모델의 허용 파라미터
-```
-
-**CLI 사용 규칙 (Higgsfield 스킬과 동일):**
-- `generate create ... --wait`를 항상 쓴다(완료까지 블록 + 결과 URL 출력).
-- 결과에서 **최종 hosted URL**만 취해 HTML에 넣는다. raw job ID·JSON 덤프는 사용자에게 노출 금지.
-- 한 번에 하나씩 생성하고, 합리적 기본값을 먼저 고른다.
-
-## 3. 임베드 레시피 (genitor-slides 형식)
+## 3. 임베드 레시피 (genitor-slides 형식 — 이 스킬의 핵심)
 
 받은 URL을 요소 박스에 `object-fit:cover`로 채운다. **박스는 미리 정한 px 그대로.**
 
@@ -147,7 +138,8 @@ Genitor는 덱 import 시 원격 이미지/영상 URL을 가능한 한 내부 �
 
 ## 5. 하지 말 것
 
-- **직접 Higgsfield API 호출**(REST) — CLI만. 공개 API 키가 없고 CLI가 인증을 쥔다.
+- **직접 Higgsfield REST API 호출** — 공개 API 키가 없다. 인증은 공식 도구(스킬/CLI/MCP)가 쥔다.
+- **생성 명령·모델명·플래그를 이 스킬에 하드코딩** — 공식 도구가 정본. 낡으면 그쪽을 따른다.
 - **data: URI로 이미지 임베드** — 붙여넣기 시 거대 base64가 편집 히스토리에 복제돼 성능 저하.
   hosted URL을 쓰고 내구성은 Genitor의 저장/materialize에 맡긴다.
 - **반응형 단위/JS 레이아웃** — `genitor-slides` 규약대로 px 고정 배치만.
@@ -157,12 +149,10 @@ Genitor는 덱 import 시 원격 이미지/영상 URL을 가능한 한 내부 �
 
 사용자: "Genitor에서 편집할 표지 한 장 만들어줘. 배경은 새벽 산맥 시네마틱 이미지를 Higgsfield로."
 
-```bash
-higgsfield generate create gpt_image_2 \
-  --prompt "cinematic foggy mountain ridge at dawn, muted teal palette, wide" \
-  --aspect_ratio 16:9 --resolution 2k --wait
-# → https://media.higgsfield.ai/…/dawn.png
-```
+1. 표지 레이아웃 확정(풀캔버스 배경 1280×720 → 비율 **16:9**).
+2. 현재 환경의 Higgsfield 표면으로 16:9 이미지 하나 생성(Claude Code면 공식 Generate 스킬/CLI,
+   Desktop이면 MCP 커넥터) → 예: `https://media.higgsfield.ai/…/dawn.png`.
+3. genitor-slides 스캐폴드에 임베드:
 
 ```html
 <!DOCTYPE html>
