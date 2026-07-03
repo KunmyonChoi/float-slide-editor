@@ -159,6 +159,7 @@ export default function ImageCropOverlay({ element, scale }) {
   const handleOverlayClick = useCallback(() => { setCroppingFlat(null) }, [setCroppingFlat])
 
   const rot = element.rotation || 0
+  const atDefault = zoom === 1 && !ox && !oy   // 크롭 기본 상태(초기화 버튼 비활성 판정)
   const objPos = `${posX.toFixed(1)}% ${posY.toFixed(1)}%`
   const mediaTransform = `translate(${ox}px, ${oy}px) scale(${zoom})`
   const mediaStyle = {
@@ -213,11 +214,11 @@ export default function ImageCropOverlay({ element, scale }) {
         <button type="button" onClick={() => applyZoom(zoom / 1.15)} style={zoomBtn(scale)}>−</button>
         <span style={{ minWidth: 44 / scale, textAlign: 'center', fontVariantNumeric: 'tabular-nums' }}>{Math.round(zoom * 100)}%</span>
         <button type="button" onClick={() => applyZoom(zoom * 1.15)} style={zoomBtn(scale)}>＋</button>
-        {(zoom !== 1 || ox || oy) && (
-          <button type="button"
-            onClick={() => { setPosX(50); setPosY(50); previewFlatElement(element.id, { styles: { objectPosition: '50% 50%' } }); updateFlatElement(element.id, { crop: { zoom: 1, x: 0, y: 0 }, styles: { objectPosition: '50% 50%' } }); setZoom(1); setOx(0); setOy(0) }}
-            style={{ ...zoomBtn(scale), width: 'auto', padding: `0 ${8 / scale}px`, color: '#fca5a5' }}>초기화</button>
-        )}
+        {/* 초기화는 항상 자리 유지(기본 상태면 비활성). 조건부 렌더 시 폭이 변해 −/＋가 밀려 오클릭 발생. */}
+        <button type="button"
+          disabled={atDefault}
+          onClick={atDefault ? undefined : () => { setPosX(50); setPosY(50); previewFlatElement(element.id, { styles: { objectPosition: '50% 50%' } }); updateFlatElement(element.id, { crop: { zoom: 1, x: 0, y: 0 }, styles: { objectPosition: '50% 50%' } }); setZoom(1); setOx(0); setOy(0) }}
+          style={{ ...zoomBtn(scale), width: 'auto', padding: `0 ${8 / scale}px`, color: atDefault ? '#64748b' : '#fca5a5', opacity: atDefault ? 0.4 : 1, cursor: atDefault ? 'default' : 'pointer' }}>초기화</button>
       </div>
     </div>
   )
