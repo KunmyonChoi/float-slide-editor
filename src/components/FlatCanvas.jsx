@@ -1098,7 +1098,14 @@ export default function FlatCanvas() {
           const ny = midY - scy - (pinch.startMid.y - scy - pinch.startPan.y) * ratio
           setPan(clampPan({ x: nx, y: ny }, ns))
         } else {
-          setPan({ x: 0, y: 0 }) // 맞춤 이하로 줄이면 중앙 정렬
+          setPan({ x: 0, y: 0 }) // 맞춤 이하면 캔버스는 컨테이너 중앙 고정
+          // 맞춤 이하 구간은 항상 중앙 고정이라 focal 기준점(startMid/startPan)이 무의미하다.
+          // 기준을 매 프레임 현재값으로 재설정해, '맞춤을 넘어 팬이 가능해지는 순간'의
+          // 손가락 중점·스케일에서 자연스럽게 이어지게 한다(넘는 시점 위치 튐 방지).
+          pinch.startDist = dist
+          pinch.startScale = ns
+          pinch.startPan = { x: 0, y: 0 }
+          pinch.startMid = { x: midX, y: midY }
         }
         setScale(ns)
         return
