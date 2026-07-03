@@ -196,7 +196,7 @@ function SingleElementPanel({ el, animTab, setAnimTab, updateFlatElement, previe
 
         {el.type === 'video' && (
           <div className="pt-1 border-t border-white/5">
-            <VideoSection el={el} update={update} />
+            <VideoSection el={el} update={update} updateStyle={updateStyle} previewStyle={previewStyle} />
           </div>
         )}
 
@@ -1650,8 +1650,9 @@ function LineSection({ styles, updateStyle, updateStyles, previewStyle }) {
   )
 }
 
-function ImageSection({ styles, updateStyle, previewStyle, elementId }) {
-  const { setCroppingFlat } = useFlatStore()
+// 맞춤(objectFit)·위치(objectPosition) 제어 — 이미지·동영상 공용.
+// cover일 때만 위치(9포인트 그리드 + X/Y)를 노출한다.
+function ObjectFitControl({ styles, updateStyle, previewStyle }) {
   const objFit = styles.objectFit || 'contain'
   const objPos = styles.objectPosition || 'center center'
 
@@ -1666,8 +1667,7 @@ function ImageSection({ styles, updateStyle, previewStyle, elementId }) {
   const { px, py } = parsePos(objPos)
 
   return (
-    <div className="space-y-2">
-      <SectionTitle>이미지</SectionTitle>
+    <>
       <div>
         <p className={`${labelClass} mb-0.5`}>맞춤</p>
         <div className="flex gap-1">
@@ -1724,15 +1724,28 @@ function ImageSection({ styles, updateStyle, previewStyle, elementId }) {
               />
             </div>
           </div>
-          <button
-            onClick={() => setCroppingFlat(elementId)}
-            className="mt-1.5 flex items-center justify-center w-full text-xs text-indigo-400 bg-indigo-500/10 hover:bg-indigo-500/20 rounded-lg px-2.5 py-1.5 border border-indigo-500/20 transition-colors"
-          >
-            드래그로 위치 조정
-          </button>
         </div>
       )}
+    </>
+  )
+}
 
+function ImageSection({ styles, updateStyle, previewStyle, elementId }) {
+  const { setCroppingFlat } = useFlatStore()
+  const objFit = styles.objectFit || 'contain'
+
+  return (
+    <div className="space-y-2">
+      <SectionTitle>이미지</SectionTitle>
+      <ObjectFitControl styles={styles} updateStyle={updateStyle} previewStyle={previewStyle} />
+      {objFit === 'cover' && (
+        <button
+          onClick={() => setCroppingFlat(elementId)}
+          className="mt-1.5 flex items-center justify-center w-full text-xs text-indigo-400 bg-indigo-500/10 hover:bg-indigo-500/20 rounded-lg px-2.5 py-1.5 border border-indigo-500/20 transition-colors"
+        >
+          드래그로 위치 조정
+        </button>
+      )}
       <ImageChromaKey elementId={elementId} />
     </div>
   )
@@ -2532,7 +2545,7 @@ function TableSection({ el, update, updateStyle }) {
   )
 }
 
-function VideoSection({ el, update }) {
+function VideoSection({ el, update, updateStyle, previewStyle }) {
   const autoplay = el.autoplay ?? false
   const loop = el.loop ?? false
   const muted = el.muted ?? true
@@ -2541,6 +2554,8 @@ function VideoSection({ el, update }) {
   return (
     <div className="space-y-2">
       <SectionTitle>영상 옵션</SectionTitle>
+      {/* 맞춤·위치 — 이미지와 동일(편집·발표 모드 모두 반영) */}
+      <ObjectFitControl styles={el.styles} updateStyle={updateStyle} previewStyle={previewStyle} />
       <label className="flex items-center gap-2 cursor-pointer">
         <input
           type="checkbox"

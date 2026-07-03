@@ -240,7 +240,10 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
     const muted = isBgVideo ? true : (element.muted ?? true)
     const hideControls = isBgVideo ? true : (element.hideControls ?? false)
     const playNow = isBgVideo || playNowProp === true
-    const vidFit = isBgVideo ? 'cover' : undefined
+    // 일반 영상도 이미지처럼 맞춤(objectFit)·위치(objectPosition)를 사용자가 설정할 수 있게 한다.
+    // 배경 영상은 항상 화면을 꽉 채움('cover'). 미설정 기본값은 이미지와 동일하게 'contain'(전체 표시).
+    const vidFit = isBgVideo ? 'cover' : (styles.objectFit || 'contain')
+    const vidPos = isBgVideo ? undefined : styles.objectPosition
 
     // 직접 미디어 파일 URL(data:/blob:/http .mp4 등)인지 — 임베드(YouTube/Vimeo)와 구분.
     // 임베드는 <iframe>, 직접 파일은 네이티브 <video>로 재생한다(import된 <video> 추출 포함).
@@ -291,6 +294,7 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
                     muted={muted}
                     hideControls={hideControls}
                     objectFit={vidFit}
+                    objectPosition={vidPos}
                     chroma={element.chroma}
                     radius={styles.borderRadius}
                   />
@@ -302,6 +306,7 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
                     muted={muted}
                     hideControls={hideControls}
                     objectFit={vidFit}
+                    objectPosition={vidPos}
                     radius={styles.borderRadius}
                   />)
             : <>
@@ -718,7 +723,7 @@ function ImageContent({ content, styles }) {
 /**
  * 직접 파일/IndexedDB 참조 비디오 — blob URL 해석 + 첫 프레임 poster 표시.
  */
-function VideoPlayer({ content, playNow, autoplay, loop, muted, hideControls, objectFit, radius }) {
+function VideoPlayer({ content, playNow, autoplay, loop, muted, hideControls, objectFit, objectPosition, radius }) {
   const isIdb = BlobStore.isIdbRef(content)
   const [idbUrl, setIdbUrl] = useState(null)
   const videoRef = useRef(null)
@@ -755,7 +760,7 @@ function VideoPlayer({ content, playNow, autoplay, loop, muted, hideControls, ob
       preload="metadata"
       // 재생 중인 <video>는 자체 컴포지팅 레이어로 승격돼 상위 overflow:hidden+radius 클립을
       // 벗어나므로(발표 모드에서 모서리 안 둥글던 문제), border-radius를 요소에 직접 적용한다.
-      style={{ width: '100%', height: '100%', objectFit: objectFit || 'cover', border: 'none', borderRadius: radius, pointerEvents: controls ? 'auto' : 'none' }}
+      style={{ width: '100%', height: '100%', objectFit: objectFit || 'contain', objectPosition, border: 'none', borderRadius: radius, pointerEvents: controls ? 'auto' : 'none' }}
       controls={controls}
       autoPlay={playNow && autoplay}
       loop={loop}
