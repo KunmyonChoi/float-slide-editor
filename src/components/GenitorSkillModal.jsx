@@ -22,36 +22,59 @@ const SKILLS = [
   {
     name: 'genitor-higgsfield',
     title: 'genitor-higgsfield',
-    desc: 'Higgsfield AI로 이미지·영상을 생성해 덱에 임베드하는 브리지. genitor-slides에 의존하므로 함께 설치.',
+    desc: 'Higgsfield AI 이미지·영상을 덱에 임베드하는 브리지. 생성은 공식 Higgsfield(Claude Code=CLI / Desktop=MCP 커넥터)에 위임하고, 임베딩 규약만 담당. genitor-slides에 의존하므로 함께 설치.',
   },
 ]
 
 const base = import.meta.env.BASE_URL || '/'
 const skillUrl = (name) => `${base}skills/${name}/SKILL.md`
 
+async function fetchSkill(name) {
+  const text = await fetch(skillUrl(name)).then(r => {
+    if (!r.ok) throw new Error(`${name}: ${r.status}`)
+    return r.text()
+  })
+  return { name, text }
+}
+
+function triggerDownload(blob, filename) {
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+}
+
+// Claude Code용: 두 스킬을 폴더 2개 담은 하나의 zip으로 (unzip → ~/.claude/skills/).
 async function downloadZip(setBusy) {
-  setBusy(true)
+  setBusy('all')
   try {
-    const files = await Promise.all(
-      SKILLS.map(async (s) => ({ name: s.name, text: await fetch(skillUrl(s.name)).then(r => {
-        if (!r.ok) throw new Error(`${s.name}: ${r.status}`)
-        return r.text()
-      }) }))
-    )
+    const files = await Promise.all(SKILLS.map(s => fetchSkill(s.name)))
     const JSZip = (await import('jszip')).default
     const zip = new JSZip()
     for (const f of files) zip.file(`${f.name}/SKILL.md`, f.text)
-    const blob = await zip.generateAsync({ type: 'blob' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = 'genitor-claude-skills.zip'
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
-    URL.revokeObjectURL(url)
+    triggerDownload(await zip.generateAsync({ type: 'blob' }), 'genitor-claude-skills.zip')
   } catch (e) {
     alert('스킬 파일을 준비하지 못했습니다: ' + (e?.message || e) + '\n아래 개별 다운로드 링크를 사용하세요.')
+  } finally {
+    setBusy(false)
+  }
+}
+
+// Claude Desktop·웹(claude.ai)용: 스킬 하나만 담은 zip (Settings ▸ Features 업로드는 스킬당 zip).
+async function downloadSkillZip(name, setBusy) {
+  setBusy(name)
+  try {
+    const f = await fetchSkill(name)
+    const JSZip = (await import('jszip')).default
+    const zip = new JSZip()
+    zip.file(`${f.name}/SKILL.md`, f.text)
+    triggerDownload(await zip.generateAsync({ type: 'blob' }), `${name}.zip`)
+  } catch (e) {
+    alert('스킬 zip을 준비하지 못했습니다: ' + (e?.message || e))
   } finally {
     setBusy(false)
   }
@@ -99,25 +122,31 @@ function Dialog() {
       <div onMouseDown={e => e.stopPropagation()} style={panel}>
         <div style={{ fontSize: 15, fontWeight: 600 }}>✨ Claude 슬라이드 스킬</div>
         <div style={{ fontSize: 11.5, color: '#94a3b8', lineHeight: 1.6 }}>
-          <b style={{ color: '#cbd5e1' }}>Claude Code</b>(터미널·데스크톱)에 설치하는 스킬입니다. Claude에게
-          “Genitor에서 편집할 슬라이드 만들어줘”라고 하면 이 규약대로 덱 HTML을 작성하고,
+          <b style={{ color: '#cbd5e1' }}>Claude Code</b>(터미널) 또는 <b style={{ color: '#cbd5e1' }}>Claude Desktop·웹(claude.ai)</b>에
+          설치하는 스킬입니다. Claude에게 “Genitor에서 편집할 슬라이드 만들어줘”라고 하면 이 규약대로 덱 HTML을 작성하고,
           필요하면 Higgsfield AI로 이미지·영상을 생성해 넣어 줍니다. 결과 HTML을 이 앱의
           <b style={{ color: '#cbd5e1' }}> 파일 ▸ 가져오기</b> 또는 캔버스에 붙여넣기(Ctrl/Cmd+V)로 가져오면 됩니다.
         </div>
 
         <Section title="1. 스킬 다운로드">
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {SKILLS.map(s => (
               <div key={s.name} style={{ display: 'flex', gap: 8, alignItems: 'baseline' }}>
-                <a href={skillUrl(s.name)} download={`${s.name}.SKILL.md`}
-                  style={{ fontSize: 12.5, fontWeight: 600, color: '#a5b4fc', whiteSpace: 'nowrap' }}>{s.title}</a>
+                <button type="button" disabled={!!busy} onClick={() => downloadSkillZip(s.name, setBusy)}
+                  style={{ ...ghostBtn, opacity: busy ? 0.6 : 1, cursor: busy ? 'default' : 'pointer' }}>
+                  {busy === s.name ? '준비 중…' : `⬇ ${s.title}.zip`}
+                </button>
                 <span style={{ fontSize: 11.5, color: '#94a3b8', lineHeight: 1.5 }}>{s.desc}</span>
               </div>
             ))}
-            <button type="button" disabled={busy} onClick={() => downloadZip(setBusy)}
-              style={{ ...primaryBtn, alignSelf: 'flex-start', marginTop: 4, opacity: busy ? 0.6 : 1, cursor: busy ? 'default' : 'pointer' }}>
-              {busy ? '준비 중…' : '⬇ 스킬 zip 다운로드 (두 스킬 함께)'}
+            <button type="button" disabled={!!busy} onClick={() => downloadZip(setBusy)}
+              style={{ ...primaryBtn, alignSelf: 'flex-start', marginTop: 2, opacity: busy ? 0.6 : 1, cursor: busy ? 'default' : 'pointer' }}>
+              {busy === 'all' ? '준비 중…' : '⬇ 두 스킬 함께 (Claude Code용 zip)'}
             </button>
+            <div style={{ fontSize: 11, color: '#64748b', lineHeight: 1.5 }}>
+              Claude Code는 <b style={{ color: '#94a3b8' }}>함께 zip</b>(폴더 2개)을, Claude Desktop·웹은
+              <b style={{ color: '#94a3b8' }}> 스킬별 zip</b>을 받아 각각 업로드합니다(아래 참고).
+            </div>
           </div>
         </Section>
 
@@ -134,17 +163,34 @@ function Dialog() {
           </ol>
         </Section>
 
-        <Section title="3. Higgsfield 사전 준비" badge="AI 이미지·영상을 쓸 때만">
+        <Section title="3. Claude Desktop·웹(claude.ai)에 설치">
+          <ol style={{ margin: '2px 0 0', paddingLeft: 18, fontSize: 12.5, color: '#cbd5e1', lineHeight: 1.75 }}>
+            <li>위에서 <b>스킬별 zip</b>(genitor-slides.zip, genitor-higgsfield.zip)을 각각 내려받습니다.</li>
+            <li><b>Settings ▸ Features</b>에서 커스텀 스킬로 <b>각 zip을 하나씩 업로드</b>합니다.
+              <div style={{ fontSize: 11.5, color: '#94a3b8', marginTop: 2 }}>
+                Pro·Max·Team·Enterprise 플랜 + 코드 실행(code execution) 활성화 필요. 스킬은 사용자별로 저장됩니다.
+              </div>
+            </li>
+            <li>“Genitor용 슬라이드 만들어줘”처럼 요청하거나 <b>/</b>로 직접 호출하면 사용됩니다.</li>
+          </ol>
+        </Section>
+
+        <Section title="4. Higgsfield 사전 준비" badge="AI 이미지·영상을 쓸 때만">
           <div style={{ fontSize: 12, color: '#94a3b8', lineHeight: 1.6 }}>
-            genitor-higgsfield 스킬이 Higgsfield CLI를 호출합니다. 처음 한 번 설치·로그인·워크스페이스 선택이 필요합니다.
+            genitor-higgsfield는 생성을 <b style={{ color: '#cbd5e1' }}>공식 Higgsfield</b>에 위임합니다.
+            환경에 따라 한쪽만 준비하면 됩니다(계정 로그인이면 되고 API 키는 필요 없습니다).
           </div>
-          <div style={{ fontSize: 11.5, color: '#cbd5e1', marginTop: 8 }}>① CLI 설치</div>
+          <div style={{ fontSize: 11.5, color: '#cbd5e1', marginTop: 10, fontWeight: 700 }}>Claude Code — CLI</div>
+          <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>① 설치 ② 로그인 ③ 워크스페이스 선택(미선택 시 명령 실패)</div>
           <CopyRow text="curl -fsSL https://raw.githubusercontent.com/higgsfield-ai/cli/main/install.sh | sh" />
-          <div style={{ fontSize: 11.5, color: '#cbd5e1', marginTop: 8 }}>② 로그인 (브라우저 OAuth, API 키 불필요)</div>
           <CopyRow text="higgsfield auth login" />
-          <div style={{ fontSize: 11.5, color: '#cbd5e1', marginTop: 8 }}>③ 워크스페이스 선택 (목록 확인 후 ID 지정)</div>
           <CopyRow text="higgsfield workspace list" />
           <CopyRow text="higgsfield workspace set <workspace_id>" />
+          <div style={{ fontSize: 11.5, color: '#cbd5e1', marginTop: 12, fontWeight: 700 }}>Claude Desktop·웹 — MCP 커넥터</div>
+          <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2, lineHeight: 1.6 }}>
+            <b>Settings ▸ Connectors ▸ Add custom connector</b>에 아래 URL을 넣고 Connect → Higgsfield 계정 로그인(OAuth).
+          </div>
+          <CopyRow text="https://mcp.higgsfield.ai/mcp" />
         </Section>
 
         <div style={{ fontSize: 11, color: '#64748b', lineHeight: 1.5 }}>
@@ -164,3 +210,4 @@ function Dialog() {
 const overlay = { position: 'fixed', inset: 0, zIndex: 20000, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }
 const panel = { width: 'min(540px, 94vw)', maxHeight: '88vh', overflowY: 'auto', background: 'rgba(15,23,42,0.98)', color: '#e2e8f0', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 12, boxShadow: '0 12px 40px rgba(0,0,0,0.55)', padding: 18, display: 'flex', flexDirection: 'column', gap: 14 }
 const primaryBtn = { padding: '7px 14px', fontSize: 13, borderRadius: 8, cursor: 'pointer', border: 'none', background: 'rgba(99,102,241,0.9)', color: '#fff', fontWeight: 600 }
+const ghostBtn = { padding: '5px 10px', fontSize: 12, borderRadius: 8, border: '1px solid rgba(129,140,248,0.5)', background: 'rgba(99,102,241,0.14)', color: '#c7d2fe', fontWeight: 600, whiteSpace: 'nowrap' }
