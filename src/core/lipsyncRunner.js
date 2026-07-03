@@ -113,20 +113,23 @@ async function insertResultVideo(job, key, noteDriven = false) {
  */
 const popupHub = (() => {
   let win = null, ready = false, sid = null, loginTimer = null, closeTimer = null, bound = false, seq = 0
+  let holdCount = 0        // 잡이 없어도 팝업을 열어둘 홀드(아바타 선택 중 등). 0이면 유휴 시 닫힘.
+  let avatarsCb = null     // list-avatars 회신 대기 콜백
   const jobs = new Map()   // jobId → { onReady, onProgress, onResult, onError }
-  const queue = []         // ready 전 대기 입력: { jobId, audioBlob, videoBlob }
+  const queue = []         // ready 전 대기 항목: input/recover/list
 
   const send = (i) => {
     if (!win || win.closed) return
+    if (i.list) { i._run(); return }   // 아바타 목록 요청
     if (i.recover) {
       // 복구: 업로드·생성 없이 기존 Worker 잡(providerJobId) 결과만 회수.
       win.postMessage({ type: `${MSG}:recover`, sessionId: sid, jobId: i.jobId, providerJobId: i.providerJobId }, workerOrigin())
     } else {
-      win.postMessage({
-        type: `${MSG}:input`, sessionId: sid, jobId: i.jobId,
-        audio: i.audioBlob, audioName: 'note-audio',
-        video: i.videoBlob, videoName: 'driving.mp4',
-      }, workerOrigin())
+      // 구동 소스: avatarId(등록 아바타) 우선, 없으면 video Blob 업로드. 오디오는 공통.
+      const msg = { type: `${MSG}:input`, sessionId: sid, jobId: i.jobId, audio: i.audioBlob, audioName: 'note-audio' }
+      if (i.avatarId) msg.avatarId = i.avatarId
+      else { msg.video = i.videoBlob; msg.videoName = 'driving.mp4' }
+      win.postMessage(msg, workerOrigin())
     }
     jobs.get(i.jobId)?.onReady?.()
   }
@@ -141,6 +144,7 @@ const popupHub = (() => {
       while (queue.length) send(queue.shift())
       return
     }
+    if (d.type === `${MSG}:avatars`) { const cb = avatarsCb; avatarsCb = null; cb?.({ avatars: d.avatars || [], error: d.error }); return }
     const h = d.jobId ? jobs.get(d.jobId) : null
     if (!h) return
     switch (d.type) {
@@ -152,8 +156,13 @@ const popupHub = (() => {
     }
   }
 
-  const failAll = (msg) => { const hs = [...jobs.values()]; jobs.clear(); queue.length = 0; teardown(); hs.forEach(h => h.onError?.(msg)) }
-  const teardownIfIdle = () => { if (jobs.size === 0) teardown() }
+  const failAll = (msg) => {
+    const hs = [...jobs.values()]; jobs.clear(); queue.length = 0; holdCount = 0
+    const acb = avatarsCb; avatarsCb = null
+    teardown()
+    hs.forEach(h => h.onError?.(msg)); acb?.({ avatars: [], error: msg })
+  }
+  const teardownIfIdle = () => { if (jobs.size === 0 && holdCount === 0) teardown() }
   function teardown() {
     if (loginTimer) { clearTimeout(loginTimer); loginTimer = null }
     if (closeTimer) { clearInterval(closeTimer); closeTimer = null }
@@ -174,12 +183,25 @@ const popupHub = (() => {
     return true
   }
   return {
-    submit(job) {   // { jobId, audioBlob, videoBlob, onReady, onSubmitted, onProgress, onResult, onError }
-      const { jobId, audioBlob, videoBlob, ...cb } = job
+    submit(job) {   // { jobId, audioBlob, videoBlob?|avatarId?, onReady, onSubmitted, onProgress, onResult, onError }
+      const { jobId, audioBlob, videoBlob, avatarId, ...cb } = job
       jobs.set(jobId, cb)
       if (!win || win.closed) { if (!open()) { jobs.delete(jobId); cb.onError?.('팝업이 차단되었습니다. 이 사이트의 팝업을 허용한 뒤 다시 시도하세요.'); return } }
-      const input = { jobId, audioBlob, videoBlob }
+      const input = { jobId, audioBlob, videoBlob, avatarId }
       ready ? send(input) : queue.push(input)
+    },
+    // 등록 아바타 목록 요청 — 팝업(인증)이 /api/avatars 조회해 회신. **사용자 제스처(클릭) 안에서** 호출.
+    // 반환된 release()를 선택 완료/취소 시 호출해야 팝업이 유휴로 닫힌다(그 전까지 홀드로 열어둠).
+    requestAvatars(onAvatars) {
+      holdCount++
+      avatarsCb = onAvatars
+      if (!win || win.closed) {
+        if (!open()) { holdCount--; avatarsCb = null; onAvatars?.({ avatars: [], error: '팝업이 차단되었습니다. 이 사이트의 팝업을 허용한 뒤 다시 시도하세요.' }); return () => {} }
+      }
+      const run = () => win && !win.closed && win.postMessage({ type: `${MSG}:list-avatars`, sessionId: sid }, workerOrigin())
+      ready ? run() : queue.push({ list: true, _run: run })
+      let released = false
+      return () => { if (released) return; released = true; if (holdCount > 0) holdCount--; teardownIfIdle() }
     },
     recover(jobId, providerJobId, handlers) {   // 이전 세션에 제출됐던 잡 결과만 회수
       jobs.set(jobId, handlers)
