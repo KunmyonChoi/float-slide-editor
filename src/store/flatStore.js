@@ -292,6 +292,10 @@ export const useFlatStore = create((set, get) => ({
   drawMode: null,
   /** 다이어그램 모드: 켜면 도형 호버 시 연결점 표시 + 커넥터 생성 가능(이동/선택은 그대로) */
   diagramMode: false,
+  /** 다중 선택 모드(모바일 전용): 켜면 요소 탭이 선택 토글(추가/해제)로 동작, 빈 곳 탭은 선택 유지 */
+  multiSelect: false,
+  setMultiSelect(v) { set({ multiSelect: !!v }) },
+  toggleMultiSelect() { set({ multiSelect: !get().multiSelect }) },
   /** 새 커넥터 기본 스타일 — 마지막 사용 설정을 기억해 다음 커넥터에 적용 */
   connectorDefaults: {
     startArrow: 'none', endArrow: 'triangle',
@@ -1107,6 +1111,7 @@ export const useFlatStore = create((set, get) => ({
     if (pageIndex < 0 || pageIndex >= keys.length) return
     const key = keys[pageIndex]
     get()._restoreFromCache(key)
+    if (get().multiSelect) set({ multiSelect: false }) // 페이지 전환 시 다중 선택 모드 초기화
     // split 모드: iframe을 이 페이지의 '실제 HTML 슬라이드 인덱스'로 이동.
     // flat-only 페이지(htmlSlideIndex=null)는 대응 슬라이드가 없으므로 iframe을 건드리지 않는다
     // (엉뚱한 슬라이드 표시 방지). 인덱스 어긋남도 이 저장값으로 해소.

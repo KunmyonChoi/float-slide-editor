@@ -109,6 +109,7 @@ export default function FlatCanvas() {
   const animPanelOpen = useFlatStore(s => s.animPanelOpen)
   const animPreview = useFlatStore(s => s.animPreview)
   const animPreviewTick = useFlatStore(s => s.animPreviewTick)
+  const multiSelect = useFlatStore(s => s.multiSelect)
   const [dragOver, setDragOver] = useState(false)
   const [hoverShapeId, setHoverShapeId] = useState(null) // 다이어그램 모드 연결점 표시용
   const isTouch = useIsTouch()
@@ -1156,7 +1157,8 @@ export default function FlatCanvas() {
           if (st.croppingFlatId) {
             st.setCroppingFlat(null)
             setHoverShapeId(null)
-          } else if (d.empty) {
+          } else if (d.empty && !st.multiSelect) {
+            // 다중 선택 모드에선 빈 영역 탭으로 선택을 지우지 않는다
             st.setSelectedFlat(null)
             setHoverShapeId(null)
           }
@@ -1273,7 +1275,8 @@ export default function FlatCanvas() {
       // 손가락은 굵어 임계치를 키운다.
       const tapThresh = m.touch ? 8 : 3
       if (x2 - x1 < tapThresh && y2 - y1 < tapThresh) {
-        if (!shiftKey) useFlatStore.getState().setSelectedFlat(null)
+        // 다중 선택 모드에선 빈 곳 탭으로 선택을 지우지 않는다(실수 방지 — '선택 해제' 버튼으로만)
+        if (!shiftKey && !useFlatStore.getState().multiSelect) useFlatStore.getState().setSelectedFlat(null)
         setHoverShapeId(null) // 다이어그램 모드: 빈 영역 탭 시 stale 호버 연결점 제거
         return
       }
@@ -1295,7 +1298,7 @@ export default function FlatCanvas() {
         // 그룹 일부만 잡혔으면 그룹 전체 포함
         const expanded = useFlatStore.getState().expandSelectionToGroups(hits)
         useFlatStore.getState().setSelectedFlats(expanded)
-      } else if (!shiftKey) {
+      } else if (!shiftKey && !useFlatStore.getState().multiSelect) {
         useFlatStore.getState().setSelectedFlat(null)
       }
     }
@@ -1750,7 +1753,7 @@ export default function FlatCanvas() {
           data-edit-accessory="true"
           onPointerDown={(e) => e.stopPropagation()}
           onMouseDown={(e) => e.stopPropagation()}
-          onClick={(e) => { e.stopPropagation(); setSelectedFlats([]) }}
+          onClick={(e) => { e.stopPropagation(); setSelectedFlats([]); useFlatStore.getState().setMultiSelect(false) }}
           style={{
             position: 'absolute', left: 12, bottom: 12, zIndex: 60,
             display: 'flex', alignItems: 'center', gap: 6, height: 34, padding: '0 14px',
@@ -1764,6 +1767,33 @@ export default function FlatCanvas() {
             <line x1="6" y1="6" x2="18" y2="18" /><line x1="18" y1="6" x2="6" y2="18" />
           </svg>
           선택 해제
+        </button>
+      )}
+
+      {/* 다중 선택 토글 (터치 전용) — 켜면 요소 탭이 선택 토글(추가·해제)로 동작. '선택 해제' 위에 표시. */}
+      {isTouch && mode !== 'present' && !editingFlatId && !croppingFlatId && (selectedFlatIds.length > 0 || multiSelect) && (
+        <button
+          type="button"
+          data-edit-accessory="true"
+          onPointerDown={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
+          onClick={(e) => { e.stopPropagation(); useFlatStore.getState().toggleMultiSelect() }}
+          style={{
+            position: 'absolute', left: 12, bottom: 54, zIndex: 60,
+            display: 'flex', alignItems: 'center', gap: 6, height: 34, padding: '0 14px',
+            borderRadius: 999,
+            background: multiSelect ? 'rgba(79,70,229,0.95)' : 'rgba(15,23,42,0.92)',
+            color: multiSelect ? '#fff' : '#e2e8f0',
+            border: `1px solid ${multiSelect ? 'rgba(165,180,252,0.9)' : 'rgba(255,255,255,0.15)'}`,
+            boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
+            fontSize: 13, fontWeight: 600, backdropFilter: 'blur(8px)', cursor: 'pointer',
+            touchAction: 'manipulation', whiteSpace: 'nowrap',
+          }}
+        >
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M9 11l3 3L22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
+          </svg>
+          {multiSelect ? `다중 선택 · ${selectedFlatIds.length}` : '다중 선택'}
         </button>
       )}
 

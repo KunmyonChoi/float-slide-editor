@@ -101,8 +101,8 @@ export default function FlatSelectionOverlay({ element, scale, otherRects, canva
         })
         .sort((a, b) => b.zIndex - a.zIndex)[0]
       if (hit) {
-        if (e.shiftKey) {
-          toggleSelectFlat(hit.id)
+        if (e.shiftKey || st.multiSelect) {
+          st.selectFlatGroupAware(hit.id, true) // 다중 선택/Shift: 토글(추가·해제)
         } else {
           setSelectedFlat(hit.id)
         }
@@ -310,6 +310,12 @@ export default function FlatSelectionOverlay({ element, scale, otherRects, canva
           updateFlatElement(element.id, { rotation: newRotation })
         }
       } else if (d.mode === 'move') {
+        // 다중 선택 모드: 움직이지 않은 탭이면 이 요소를 선택에서 토글(해제)
+        const movedScreen = e ? Math.hypot((e.clientX ?? 0) - d.startMouseX, (e.clientY ?? 0) - d.startMouseY) : 999
+        if (useFlatStore.getState().multiSelect && movedScreen < 8) {
+          useFlatStore.getState().selectFlatGroupAware(element.id, true)
+          return
+        }
         if (current.x !== d.startX || current.y !== d.startY) {
           const newX = current.x, newY = current.y
           previewFlatElement(element.id, { x: d.startX, y: d.startY })
@@ -854,15 +860,22 @@ export function FlatGroupOverlay({ elements, scale, otherRects, canvasSize, onSn
         // 탭 지점이 (배경 제외) 어떤 요소 위도 아니면 빈 영역 탭으로 보고 선택 해제.
         const movedScreen = e ? Math.hypot((e.clientX ?? 0) - d.startMouseX, (e.clientY ?? 0) - d.startMouseY) : 999
         if (movedScreen < 8) {
+          const st = useFlatStore.getState()
           const canvasEl = document.querySelector('[data-flat-canvas]')
-          let onEl = false
+          let hit = null
           if (canvasEl && e) {
             const r = canvasEl.getBoundingClientRect()
             const px = (e.clientX - r.left) / scale, py = (e.clientY - r.top) / scale
-            onEl = els.some(el => !isBackgroundElement(el)
-              && px >= el.x && px <= el.x + el.width && py >= el.y && py <= el.y + el.height)
+            hit = els.filter(el => !isBackgroundElement(el)
+                && px >= el.x && px <= el.x + el.width && py >= el.y && py <= el.y + el.height)
+              .sort((a, b) => b.zIndex - a.zIndex)[0] || null
           }
-          if (!onEl) useFlatStore.getState().setSelectedFlats([])
+          // 다중 선택 모드: 탭한 요소를 토글(추가·해제), 빈 곳 탭은 선택 유지
+          if (st.multiSelect) {
+            if (hit) st.selectFlatGroupAware(hit.id, true)
+            return
+          }
+          if (!hit) st.setSelectedFlats([])
           return
         }
         // 현재(프리뷰) 값 저장 후 원래 값으로 되돌리고 commit → undo 가능

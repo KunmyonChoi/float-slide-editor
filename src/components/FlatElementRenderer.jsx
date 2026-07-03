@@ -64,7 +64,8 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
     }
     e.stopPropagation()
     e.preventDefault() // 브라우저 텍스트 선택 방지
-    selectFlatGroupAware(element.id, e.shiftKey)
+    // 다중 선택 모드(모바일)에선 탭이 토글(추가/해제)로 동작 — Shift+클릭과 동일 경로
+    selectFlatGroupAware(element.id, e.shiftKey || st.multiSelect)
     useEditorStore.getState().setSelected(null)
   }, [element.id, isFullCanvasBg, selectFlatGroupAware])
 
@@ -73,7 +74,8 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
     if (!isFullCanvasBg) return
     // 마키 드래그 직후면 배경 선택 무시
     if (useFlatStore.getState()._skipBgClick) return
-    // 배경 클릭 (드래그 없이) → 선택
+    // 배경 클릭 (드래그 없이) → 선택. 다중 선택 모드면 선택을 유지(빈 배경 탭이 멀티선택을 지우지 않도록).
+    if (useFlatStore.getState().multiSelect) return
     if (e.shiftKey) {
       toggleSelectFlat(element.id)
     } else {
