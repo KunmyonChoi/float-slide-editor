@@ -670,11 +670,16 @@ function OrderSection({ el }) {
 }
 
 function PositionSection({ el, update, preview }) {
-  // 캔버스에 꽉 채우기 (위치 0,0 + 캔버스 크기)
-  const fillCanvas = () => {
-    const cs = useFlatStore.getState().canvasSize
-    update({ x: 0, y: 0, width: cs.w, height: cs.h })
-  }
+  // 화면 배치 — 전체/반쪽 채우기 + 정사각형(1:1). 캔버스 기준 좌표.
+  const canvas = () => useFlatStore.getState().canvasSize
+  const place = (x, y, w, h) => update({ x: Math.round(x), y: Math.round(y), width: Math.round(w), height: Math.round(h) })
+  const fillCanvas = () => { const c = canvas(); place(0, 0, c.w, c.h) }
+  const fillLeft = () => { const c = canvas(); place(0, 0, c.w / 2, c.h) }
+  const fillRight = () => { const c = canvas(); place(c.w / 2, 0, c.w / 2, c.h) }
+  const fillTop = () => { const c = canvas(); place(0, 0, c.w, c.h / 2) }
+  const fillBottom = () => { const c = canvas(); place(0, c.h / 2, c.w, c.h / 2) }
+  // 정사각형 — 현재 박스 안에 들어가는 1:1(짧은 변 기준), 중심 유지.
+  const makeSquare = () => { const s = Math.min(el.width, el.height); const cx = el.x + el.width / 2, cy = el.y + el.height / 2; place(cx - s / 2, cy - s / 2, s, s) }
   // 이미지 원본(실제 픽셀) 크기로 복원 — 현재 중심을 유지한 채 자연 크기 적용
   const originalSize = async () => {
     if (el.type !== 'image' || !el.content) return
@@ -718,36 +723,29 @@ function PositionSection({ el, update, preview }) {
         <NumInput label="W" value={el.width} onChange={v => update({ width: v })} onPreview={preview && (v => preview({ width: v }))} min={1} />
         <NumInput label="H" value={el.height} onChange={v => update({ height: v })} onPreview={preview && (v => preview({ height: v }))} min={1} />
         <NumInput label="회전" value={el.rotation || 0} onChange={v => update({ rotation: v })} onPreview={preview && (v => preview({ rotation: v }))} unit="°" />
-        {/* 화면 채우기 / 원본 크기 — 아이콘 버튼(공간 절약) */}
-        <div className="flex items-end gap-1">
-          <button
-            type="button"
-            onClick={fillCanvas}
-            title="화면 채우기 (캔버스에 꽉 채움)"
-            className="flex items-center justify-center px-2 py-1.5 rounded-lg bg-white/5 text-slate-300 border border-white/10 hover:bg-white/10 transition-colors"
-          >
-            <FillCanvasIcon />
-          </button>
-          {el.type === 'image' && (
-            <button
-              type="button"
-              onClick={restoreAspect}
-              title="원본 비율 (현재 크기 안에서 원본 종횡비로 보정)"
-              className="flex items-center justify-center px-2 py-1.5 rounded-lg bg-white/5 text-slate-300 border border-white/10 hover:bg-white/10 transition-colors"
-            >
-              <AspectRatioIcon />
-            </button>
-          )}
-          {el.type === 'image' && (
-            <button
-              type="button"
-              onClick={originalSize}
-              title="원본 크기 (이미지 실제 픽셀 크기로)"
-              className="flex items-center justify-center px-2 py-1.5 rounded-lg bg-white/5 text-slate-300 border border-white/10 hover:bg-white/10 transition-colors"
-            >
-              <OriginalSizeIcon />
-            </button>
-          )}
+      </div>
+      {/* 배치 — 방향 채우기(십자: 가운데=전체, 상하좌우=반쪽) + 정사각형/원본 비율·크기 */}
+      <div className="mt-2">
+        <p className={`${labelClass} mb-1`}>배치</p>
+        <div className="flex items-start gap-3">
+          {/* 방향 채우기 — 공간 배치(＋)로 직관적 */}
+          <div className="grid grid-cols-3 gap-1" style={{ width: 'max-content' }}>
+            <span />
+            <LayoutBtn onClick={fillTop} title="위쪽 반 채우기" region="top" />
+            <span />
+            <LayoutBtn onClick={fillLeft} title="왼쪽 반 채우기" region="left" />
+            <LayoutBtn onClick={fillCanvas} title="전체 화면 채우기" region="full" />
+            <LayoutBtn onClick={fillRight} title="오른쪽 반 채우기" region="right" />
+            <span />
+            <LayoutBtn onClick={fillBottom} title="아래쪽 반 채우기" region="bottom" />
+            <span />
+          </div>
+          {/* 비율 — 정사각형(1:1), 이미지는 원본 비율·원본 크기 */}
+          <div className="flex flex-col gap-1">
+            <LayoutBtn onClick={makeSquare} title="정사각형 (1:1 비율, 짧은 변 기준·중심 유지)" icon={<SquareFitIcon />} />
+            {el.type === 'image' && <LayoutBtn onClick={restoreAspect} title="원본 비율 (현재 크기 안에서 원본 종횡비로 보정)" icon={<AspectRatioIcon />} />}
+            {el.type === 'image' && <LayoutBtn onClick={originalSize} title="원본 크기 (이미지 실제 픽셀 크기로)" icon={<OriginalSizeIcon />} />}
+          </div>
         </div>
       </div>
     </div>
@@ -822,6 +820,46 @@ function OriginalSizeIcon() {
       <circle cx="8.5" cy="8.5" r="1.5" />
       <path d="M21 15l-5-5L5 21" />
     </svg>
+  )
+}
+
+// 채우기 영역 아이콘 — 캔버스 외곽선 + 채워질 영역 음영(전체/좌/우/상/하).
+function LayoutFillIcon({ region }) {
+  const R = {
+    full: { x: 1, y: 1, w: 16, h: 10 },
+    left: { x: 1, y: 1, w: 8, h: 10 },
+    right: { x: 9, y: 1, w: 8, h: 10 },
+    top: { x: 1, y: 1, w: 16, h: 5 },
+    bottom: { x: 1, y: 6, w: 16, h: 5 },
+  }[region] || { x: 1, y: 1, w: 16, h: 10 }
+  return (
+    <svg width="16" height="12" viewBox="0 0 18 12" fill="none" aria-hidden="true">
+      <rect x="1" y="1" width="16" height="10" rx="1.5" stroke="currentColor" strokeWidth="1" opacity="0.55" />
+      <rect x={R.x} y={R.y} width={R.w} height={R.h} rx="1.5" fill="currentColor" opacity="0.8" />
+    </svg>
+  )
+}
+
+// 정사각형(1:1) 아이콘.
+function SquareFitIcon() {
+  return (
+    <svg width="14" height="12" viewBox="0 0 18 12" fill="none" aria-hidden="true">
+      <rect x="4.5" y="1.5" width="9" height="9" rx="1.5" stroke="currentColor" strokeWidth="1.4" />
+    </svg>
+  )
+}
+
+// 배치 버튼 — 아이콘 하나 담는 작은 정사각 버튼(방향 채우기·정사각형·비율).
+function LayoutBtn({ onClick, title, region, icon }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={title}
+      className="flex items-center justify-center w-8 h-7 rounded-lg bg-white/5 text-slate-300 border border-white/10 hover:bg-white/10 transition-colors"
+    >
+      {icon || <LayoutFillIcon region={region} />}
+    </button>
   )
 }
 
