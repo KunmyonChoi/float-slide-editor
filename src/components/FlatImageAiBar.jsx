@@ -1,7 +1,7 @@
 import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { useFlatStore } from '../store/flatStore'
-import { hasApiKey, editImage, buildImageEnhancePrompt } from '../core/OpenAIClient'
+import { hasApiKey, editImage, buildImageEnhancePrompt, analyzeImageForRemix, generateImage } from '../core/OpenAIClient'
 import { captureElementRegion } from '../core/captureCanvasRegion'
 import { openAiSettings } from './AiSettingsModal'
 import { INFOGRAPHIC_STYLES } from '../core/aiImageStyles'
@@ -111,6 +111,7 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
   const compareFit = resultFit(mode, element) // 결과가 적용될 objectFit(비교 오버레이·apply 공통)
   const abortRef = useRef(null)
   const captureRef = useRef('') // 입력 캡처 — 재생성 시 재사용
+  const remixPromptRef = useRef('') // 리믹스: 비전 분석으로 만든 생성 프롬프트(디버그/재사용용)
   const cutoutBlobRef = useRef(null) // 분리 결과 PNG blob — 적용 시 data URL로 변환
   const [serverDown, setServerDown] = useState(false) // 분리 서버 미연결 → 설치 안내 노출
   const [showInstall, setShowInstall] = useState(false)
@@ -160,20 +161,27 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
   const run = useCallback(async (useMode, userPrompt, styleOverride) => {
     if (!hasApiKey()) { openAiSettings(); return }
     let p
+    let promptToKeep // compose/재생성용으로 상태에 남길 텍스트
     if (useMode === 'edit') {
       p = (userPrompt != null ? userPrompt : prompt).trim()
       if (!p) return // 편집 지시 없으면 실행 안 함
+      promptToKeep = p
+    } else if (useMode === 'remix') {
+      // 리믹스: 방향(선택)만 보관. 실제 생성 프롬프트는 아래에서 비전 분석으로 만든다.
+      p = (userPrompt != null ? userPrompt : prompt).trim()
+      promptToKeep = p
     } else {
       // 드롭다운에서 고른 화풍(styleOverride)이 있으면 그것을, 없으면 현재 styleId 사용(setState 지연 회피).
       const sid = styleOverride || styleId
       const directive = INFOGRAPHIC_STYLES.find(s => s.id === sid)?.directive || ''
       p = buildImageEnhancePrompt(directive)
+      promptToKeep = p
     }
     // 마스크 핸들을 phase 변경(→오버레이 언마운트) 전에 확보한다. loading으로 바뀌면
     // MaskBrushOverlay가 언마운트되어 maskRef.current가 null이 되므로 여기서 잡아둔다.
     // (핸들 객체는 strokes ref·요소 크기·contentRect를 클로저로 보유 → 언마운트 후에도 buildMask 유효)
     const maskHandle = (useMode === 'edit' && maskOn && maskRef.current?.hasStrokes()) ? maskRef.current : null
-    setMode(useMode); setPrompt(p)
+    setMode(useMode); setPrompt(promptToKeep)
     abortRef.current?.abort()
     const ctrl = new AbortController()
     abortRef.current = ctrl
@@ -193,8 +201,19 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
         mask = maskHandle.buildMask(w, h) || undefined
       }
       lastMaskRef.current = mask || null
-      setStatus(useMode === 'edit' ? 'AI 이미지 편집 중… (수십 초 걸릴 수 있어요)' : '디자인 다듬는 중… (수십 초 걸릴 수 있어요)')
-      const url = await editImage(cap, p, { width: element.width, height: element.height, mask, signal: ctrl.signal })
+      let url
+      if (useMode === 'remix') {
+        // 분석→생성: 원본 픽셀 대신 스타일·구도 '설명'으로 새 이미지를 생성(진짜 재창조)
+        setStatus('원본 스타일·구도 분석 중…')
+        const genPrompt = await analyzeImageForRemix(cap, { direction: p, signal: ctrl.signal })
+        if (ctrl.signal.aborted) return
+        remixPromptRef.current = genPrompt
+        setStatus('이미지 리믹스 생성 중… (수십 초 걸릴 수 있어요)')
+        url = await generateImage(genPrompt, { width: element.width, height: element.height, signal: ctrl.signal })
+      } else {
+        setStatus(useMode === 'edit' ? 'AI 이미지 편집 중… (수십 초 걸릴 수 있어요)' : '디자인 다듬는 중… (수십 초 걸릴 수 있어요)')
+        url = await editImage(cap, p, { width: element.width, height: element.height, mask, signal: ctrl.signal })
+      }
       if (ctrl.signal.aborted) return
       setImageUrl(url)
       setPhase('preview')
@@ -207,6 +226,8 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
 
   // 현재 프롬프트(편집 가능)로 캡처를 재사용해 다시 변환
   const regenerate = useCallback(async () => {
+    // 리믹스: 방향 편집 반영 + 변주를 위해 재분석→재생성(run이 캡처·분석·생성을 다시 수행).
+    if (mode === 'remix') { run('remix', prompt); return }
     const cap = captureRef.current
     const p = prompt.trim()
     if (!cap || !p) { run(mode, prompt); return }
@@ -338,6 +359,7 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
 
   const modeLabel = mode === 'cutout' ? '전경 분리'
     : mode === 'outpaint' ? 'AI 빈 공간 채우기'
+    : mode === 'remix' ? '리믹스'
     : mode === 'edit' ? '설명으로 편집' : '디자인 다듬기'
 
   // objectFit이 contain(맞추기)일 때만 빈 공간 채우기 버튼 노출
@@ -403,6 +425,15 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
             <EditIcon />
             <span style={{ fontSize: 12, marginLeft: 5 }}>설명으로 편집</span>
           </button>
+          <button
+            type="button"
+            onClick={() => { setMode('remix'); setPrompt(''); setPhase('compose') }}
+            title="원본의 스타일·구도를 이어받아 완전히 새로운 이미지로 재창조합니다 (방향 입력은 선택)"
+            style={aiBtnStyle}
+          >
+            <RemixIcon />
+            <span style={{ fontSize: 12, marginLeft: 5 }}>리믹스</span>
+          </button>
           {isContainFit && (
             <button
               type="button"
@@ -445,41 +476,53 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
 
           {phase === 'compose' && (
             <>
-              <div style={{ fontSize: 11, color: '#64748b' }}>이미지를 어떻게 편집할까요?</div>
+              <div style={{ fontSize: 11, color: '#64748b' }}>
+                {mode === 'remix' ? '어떤 방향으로 새로 그릴까요? (선택 — 비우면 스타일·구도 유지 재창조)' : '이미지를 어떻게 편집할까요?'}
+              </div>
               <textarea
                 value={prompt}
                 onChange={e => setPrompt(e.target.value)}
                 rows={3}
                 autoFocus
                 spellCheck={false}
-                placeholder="예: 배경을 흰색으로 · 워터마크/잡티 제거 · 색감을 더 밝고 선명하게 · 손글씨를 깔끔한 인쇄체로"
-                onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); run('edit', prompt) } }}
+                placeholder={mode === 'remix'
+                  ? '예: 겨울 밤 분위기로 · 수채화 스타일로 · 소재를 로봇으로 · 비우면 원본 스타일·구도로 자유 재창조'
+                  : '예: 배경을 흰색으로 · 워터마크/잡티 제거 · 색감을 더 밝고 선명하게 · 손글씨를 깔끔한 인쇄체로'}
+                onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); run(mode, prompt) } }}
                 style={textareaStyle}
               />
-              {/* 부분 편집(마스크) — 켜면 이미지 위에 브러시로 편집 영역 지정 */}
-              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#cbd5e1', cursor: 'pointer' }}>
-                <input type="checkbox" checked={maskOn} onChange={e => setMaskOn(e.target.checked)} />
-                🖌 영역 지정(마스크) — 칠한 부분만 편집
-              </label>
-              {maskOn && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: 12, color: '#cbd5e1' }}>
-                  <div style={{ display: 'flex', gap: 4 }}>
-                    <button type="button" onClick={() => setBrushTool('brush')}
-                      style={{ ...toolBtnStyle, ...(brushTool === 'brush' ? toolBtnActive : {}) }}>브러시</button>
-                    <button type="button" onClick={() => setBrushTool('erase')}
-                      style={{ ...toolBtnStyle, ...(brushTool === 'erase' ? toolBtnActive : {}) }}>지우개</button>
-                  </div>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                    크기<input type="range" min={8} max={160} value={brushSize}
-                      onChange={e => setBrushSize(Number(e.target.value))} style={{ width: 90 }} />
+              {/* 부분 편집(마스크) — 편집(edit) 모드에서만. 리믹스는 전체 재창조라 마스크 없음. */}
+              {mode === 'edit' && (
+                <>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#cbd5e1', cursor: 'pointer' }}>
+                    <input type="checkbox" checked={maskOn} onChange={e => setMaskOn(e.target.checked)} />
+                    🖌 영역 지정(마스크) — 칠한 부분만 편집
                   </label>
-                  <button type="button" onClick={() => maskRef.current?.clear()} style={toolBtnStyle}>모두 지우기</button>
-                  <span style={{ color: '#64748b', fontSize: 11 }}>
-                    {maskCount > 0 ? '이미지 위 빨간 영역만 편집됩니다' : '이미지 위를 칠하세요'}
-                  </span>
-                </div>
+                  {maskOn && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: 12, color: '#cbd5e1' }}>
+                      <div style={{ display: 'flex', gap: 4 }}>
+                        <button type="button" onClick={() => setBrushTool('brush')}
+                          style={{ ...toolBtnStyle, ...(brushTool === 'brush' ? toolBtnActive : {}) }}>브러시</button>
+                        <button type="button" onClick={() => setBrushTool('erase')}
+                          style={{ ...toolBtnStyle, ...(brushTool === 'erase' ? toolBtnActive : {}) }}>지우개</button>
+                      </div>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                        크기<input type="range" min={8} max={160} value={brushSize}
+                          onChange={e => setBrushSize(Number(e.target.value))} style={{ width: 90 }} />
+                      </label>
+                      <button type="button" onClick={() => maskRef.current?.clear()} style={toolBtnStyle}>모두 지우기</button>
+                      <span style={{ color: '#64748b', fontSize: 11 }}>
+                        {maskCount > 0 ? '이미지 위 빨간 영역만 편집됩니다' : '이미지 위를 칠하세요'}
+                      </span>
+                    </div>
+                  )}
+                </>
               )}
-              <div style={{ fontSize: 11, color: '#64748b' }}>입력한 지시대로 이미지를 편집한 결과를 미리 보여드립니다. 확인 후 적용하면 교체됩니다.</div>
+              <div style={{ fontSize: 11, color: '#64748b' }}>
+                {mode === 'remix'
+                  ? '원본의 스타일·구도를 이어받아 새 이미지를 그려 미리 보여드립니다. 확인 후 적용하면 교체됩니다.'
+                  : '입력한 지시대로 이미지를 편집한 결과를 미리 보여드립니다. 확인 후 적용하면 교체됩니다.'}
+              </div>
             </>
           )}
 
@@ -532,7 +575,7 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
               ) : (
                 <>
                   <div style={{ fontSize: 11, color: '#64748b' }}>
-                    {mode === 'edit' ? '편집 지시' : '변환 지시'}(편집 후 재생성 가능)
+                    {mode === 'edit' ? '편집 지시' : mode === 'remix' ? '리믹스 방향(선택)' : '변환 지시'}(편집 후 재생성 가능)
                   </div>
                   <textarea
                     value={prompt}
@@ -563,7 +606,9 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
               <button type="button" onClick={() => setShowInstall(true)} style={primaryBtnStyle}>설치 안내</button>
             )}
             {phase === 'compose' && (
-              <button type="button" onClick={() => run('edit', prompt)} style={primaryBtnStyle}>편집 실행</button>
+              <button type="button" onClick={() => run(mode, prompt)} style={primaryBtnStyle}>
+                {mode === 'remix' ? '리믹스 실행' : '편집 실행'}
+              </button>
             )}
             {(phase === 'preview' || phase === 'error') && (
               <button type="button"
@@ -687,6 +732,18 @@ function LayersIcon() {
       <path d="M12 2 2 7l10 5 10-5-10-5z" />
       <path d="M2 17l10 5 10-5" />
       <path d="M2 12l10 5 10-5" />
+    </svg>
+  )
+}
+
+// 리믹스: 두 화살표 순환(재창조) + 반짝임
+function RemixIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M21 2v6h-6" />
+      <path d="M3 12a9 9 0 0 1 15-6.7L21 8" />
+      <path d="M3 22v-6h6" />
+      <path d="M21 12a9 9 0 0 1-15 6.7L3 16" />
     </svg>
   )
 }

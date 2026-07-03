@@ -360,6 +360,44 @@ export async function analyzeImageForInfographic(imageDataUrl, { model, style, s
   })
 }
 
+const REMIX_SYSTEM = `You are an art director. Look at the reference image and write ONE detailed English image-generation prompt to RE-CREATE it as a brand-new artwork.
+
+Capture and preserve from the reference:
+- VISUAL STYLE: art medium/technique, rendering, color palette, lighting, mood, texture, level of detail.
+- COMPOSITION: framing, aspect intent, subject placement, camera angle/perspective, foreground/background layering, negative space.
+
+But REIMAGINE the subject and details so the result is a distinct new image (not a copy) that clearly shares the same style and composition. Describe concrete subject matter (the generator has no reference image — it only gets your text), so name the subjects, setting and key elements explicitly.
+
+If any text/lettering appears in the reference, you may describe it, but keep wording generic — do not rely on exact glyphs.
+
+Output ONLY the final prompt as a single plain-text paragraph. No preamble, no quotes, no lists, no explanations.`
+
+/**
+ * 리믹스용: 캡처 이미지를 비전으로 분석해 '새 이미지 생성 프롬프트'(영문)를 만든다.
+ * editImage(img2img)와 달리 원본 픽셀에 얽매이지 않고 스타일·구도를 텍스트로만 이어받아
+ * generateImage로 완전히 새 이미지를 재창조하기 위한 프롬프트.
+ * @param {string} imageDataUrl  캡처 data URL
+ * @param {{ direction?: string, model?: string, signal?: AbortSignal }} [opts]
+ *   direction: 사용자 방향(선택) — 소재/무드를 틀 지시.
+ * @returns {Promise<string>} 영문 생성 프롬프트
+ */
+export async function analyzeImageForRemix(imageDataUrl, { direction, model, signal } = {}) {
+  if (!imageDataUrl) throw new Error('리믹스할 캡처 이미지가 없습니다.')
+  const d = (direction || '').trim()
+  const dirClause = d
+    ? `\n\nApply this creative direction to the new image (steer subject/mood/setting accordingly while keeping the original's style and composition): ${d}`
+    : ''
+  return chat({
+    system: REMIX_SYSTEM,
+    user: 'Here is the reference image. Write the single image-generation prompt.' + dirClause,
+    images: [imageDataUrl],
+    model,
+    temperature: 0.9, // 재창조 다양성
+    allowLocal: false, // 비전 분석은 OpenAI 고정
+    signal,
+  })
+}
+
 // gpt-image-2/1.5: 유연 해상도 — 대상 종횡비를 16배수로 맞춤(최대변 3840, 종횡비 ≤3:1).
 export function flexSize(width, height, longEdge = 1536) {
   const r = (width || 1) / (height || 1)
