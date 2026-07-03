@@ -47,6 +47,7 @@ export default function FlatSelectionOverlay({ element, scale, otherRects, canva
   const { previewFlatElement, updateFlatElement, editingFlatId, setEditingFlat,
           setSelectedFlat, toggleSelectFlat, flatElements } = useFlatStore()
   const diagramMode = useFlatStore(s => s.diagramMode)
+  const multiSelect = useFlatStore(s => s.multiSelect)
   const isTouch = useIsTouch()
   const dragRef = useRef(null)
   // 커넥터 끝점 재연결 드래그 중 하이라이트할 대상 도형 bbox(절대 캔버스 좌표) | null
@@ -101,8 +102,8 @@ export default function FlatSelectionOverlay({ element, scale, otherRects, canva
         })
         .sort((a, b) => b.zIndex - a.zIndex)[0]
       if (hit) {
-        if (e.shiftKey || st.multiSelect) {
-          st.selectFlatGroupAware(hit.id, true) // 다중 선택/Shift: 토글(추가·해제)
+        if (e.shiftKey) {
+          toggleSelectFlat(hit.id)
         } else {
           setSelectedFlat(hit.id)
         }
@@ -310,12 +311,6 @@ export default function FlatSelectionOverlay({ element, scale, otherRects, canva
           updateFlatElement(element.id, { rotation: newRotation })
         }
       } else if (d.mode === 'move') {
-        // 다중 선택 모드: 움직이지 않은 탭이면 이 요소를 선택에서 토글(해제)
-        const movedScreen = e ? Math.hypot((e.clientX ?? 0) - d.startMouseX, (e.clientY ?? 0) - d.startMouseY) : 999
-        if (useFlatStore.getState().multiSelect && movedScreen < 8) {
-          useFlatStore.getState().selectFlatGroupAware(element.id, true)
-          return
-        }
         if (current.x !== d.startX || current.y !== d.startY) {
           const newX = current.x, newY = current.y
           previewFlatElement(element.id, { x: d.startX, y: d.startY })
@@ -385,7 +380,8 @@ export default function FlatSelectionOverlay({ element, scale, otherRects, canva
         cursor: locked ? 'default' : 'move',
         // 커넥터는 본체 이동이 없고 bbox가 (대각선이면) 크다 → 컨테이너가 아래 도형 클릭을
         // 막지 않도록 pointer 통과. 끝점 핸들만 따로 auto로 받는다.
-        pointerEvents: (locked || isConnector) ? 'none' : 'auto',
+        // 다중 선택 모드: 포인터 투명 → 탭이 요소 렌더러로 전달돼 개별 토글(해제/추가).
+        pointerEvents: (locked || isConnector || multiSelect) ? 'none' : 'auto',
         // 터치로 선택 요소를 끌어 이동 — 브라우저 기본 제스처(스크롤 등) 차단
         touchAction: (locked || isConnector) ? undefined : 'none',
         transform: rot ? `rotate(${rot}deg)` : undefined,
@@ -684,6 +680,7 @@ const GROUP_HANDLES = [
 
 export function FlatGroupOverlay({ elements, scale, otherRects, canvasSize, onSnapGuides }) {
   const { batchPreviewFlatElements, batchUpdateFlatElementsIndividual, setEditingFlat } = useFlatStore()
+  const multiSelect = useFlatStore(s => s.multiSelect)
   const dragRef = useRef(null)
   const isTouch = useIsTouch()
 
@@ -860,22 +857,15 @@ export function FlatGroupOverlay({ elements, scale, otherRects, canvasSize, onSn
         // 탭 지점이 (배경 제외) 어떤 요소 위도 아니면 빈 영역 탭으로 보고 선택 해제.
         const movedScreen = e ? Math.hypot((e.clientX ?? 0) - d.startMouseX, (e.clientY ?? 0) - d.startMouseY) : 999
         if (movedScreen < 8) {
-          const st = useFlatStore.getState()
           const canvasEl = document.querySelector('[data-flat-canvas]')
-          let hit = null
+          let onEl = false
           if (canvasEl && e) {
             const r = canvasEl.getBoundingClientRect()
             const px = (e.clientX - r.left) / scale, py = (e.clientY - r.top) / scale
-            hit = els.filter(el => !isBackgroundElement(el)
-                && px >= el.x && px <= el.x + el.width && py >= el.y && py <= el.y + el.height)
-              .sort((a, b) => b.zIndex - a.zIndex)[0] || null
+            onEl = els.some(el => !isBackgroundElement(el)
+              && px >= el.x && px <= el.x + el.width && py >= el.y && py <= el.y + el.height)
           }
-          // 다중 선택 모드: 탭한 요소를 토글(추가·해제), 빈 곳 탭은 선택 유지
-          if (st.multiSelect) {
-            if (hit) st.selectFlatGroupAware(hit.id, true)
-            return
-          }
-          if (!hit) st.setSelectedFlats([])
+          if (!onEl) useFlatStore.getState().setSelectedFlats([])
           return
         }
         // 현재(프리뷰) 값 저장 후 원래 값으로 되돌리고 commit → undo 가능
@@ -942,7 +932,9 @@ export function FlatGroupOverlay({ elements, scale, otherRects, canvasSize, onSn
         height: bbox.h,
         zIndex: 9999,
         cursor: movableElements.length === 0 ? 'default' : 'move',
-        pointerEvents: 'auto',
+        // 다중 선택 모드: 오버레이를 포인터 투명으로 → 박스 안 요소 탭이 각 요소 렌더러로
+        // 바로 전달돼 개별 토글(추가/해제)된다. (모드 중 그룹 이동은 비활성 — 선택 편집 전용)
+        pointerEvents: multiSelect ? 'none' : 'auto',
         // 터치로 그룹을 끌어 이동 — 브라우저 기본 제스처(스크롤 등) 차단
         touchAction: movableElements.length === 0 ? undefined : 'none',
         border: '2px dashed rgba(99,102,241,0.6)',
