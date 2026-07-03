@@ -46,6 +46,13 @@ export default function NotesPanel() {
   const previewElRef = useRef(null) // 미리듣기용 단일 Audio (겹침 방지 위해 재사용)
   const audioFileRef = useRef(null) // 음성 직접 업로드용 숨김 input
   const taRef = useRef(null)
+  // 마이크 녹음 상태 — 녹음 완료 시 업로드와 동일 경로(setAudioFromFile)로 취급
+  const [recording, setRecording] = useState(false)
+  const [recSecs, setRecSecs] = useState(0)
+  const mediaRecRef = useRef(null)
+  const recChunksRef = useRef([])
+  const recStreamRef = useRef(null)
+  const recTimerRef = useRef(null)
 
   // 단축키(\)로 열렸을 때만 텍스트영역에 포커스 — 버튼으로 열면 포커스 가로채지 않음
   useEffect(() => {
@@ -56,8 +63,13 @@ export default function NotesPanel() {
     }
   }, [collapsed])
 
-  // 패널 언마운트 시 미리듣기 정지 — 조기 반환 전에 선언(훅 순서 고정)
-  useEffect(() => () => { if (previewElRef.current) { try { previewElRef.current.pause() } catch { /* noop */ } } }, [])
+  // 패널 언마운트 시 미리듣기 정지 + 녹음/마이크/타이머 정리 — 조기 반환 전에 선언(훅 순서 고정)
+  useEffect(() => () => {
+    if (previewElRef.current) { try { previewElRef.current.pause() } catch { /* noop */ } }
+    if (recTimerRef.current) clearInterval(recTimerRef.current)
+    try { if (mediaRecRef.current && mediaRecRef.current.state !== 'inactive') mediaRecRef.current.stop() } catch { /* noop */ }
+    recStreamRef.current?.getTracks().forEach(t => t.stop())
+  }, [])
   // 음성이 바뀌면(생성/업로드/삭제) 미리듣기 정지·상태 초기화
   useEffect(() => { if (previewElRef.current) { try { previewElRef.current.pause() } catch { /* noop */ } } setPlaying(false) }, [audioRef])
   // 재생 중 볼륨 슬라이더 변경을 라이브 반영
@@ -165,6 +177,47 @@ export default function NotesPanel() {
     setAudioFromFile(f)
   }
 
+  // 마이크 녹음 → 중지 시 Blob을 업로드와 동일하게 이 슬라이드 노트 음성으로 저장.
+  const fmtSecs = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
+  const startRecording = async () => {
+    setErr('')
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
+      setErr('이 브라우저는 녹음을 지원하지 않습니다.'); return
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      recStreamRef.current = stream
+      // 지원 컨테이너 우선순위(webm/opus → webm → mp4). setAudioFromFile은 Blob이면 형식 무관.
+      const cand = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4']
+      const mime = cand.find(t => MediaRecorder.isTypeSupported?.(t)) || ''
+      const rec = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream)
+      recChunksRef.current = []
+      rec.ondataavailable = (ev) => { if (ev.data && ev.data.size) recChunksRef.current.push(ev.data) }
+      rec.onstop = async () => {
+        recStreamRef.current?.getTracks().forEach(t => t.stop()) // 마이크 해제
+        recStreamRef.current = null
+        const type = rec.mimeType || mime || 'audio/webm'
+        const blob = new Blob(recChunksRef.current, { type })
+        recChunksRef.current = []
+        if (blob.size > 0) await setAudioFromFile(blob)
+      }
+      mediaRecRef.current = rec
+      rec.start()
+      setRecording(true); setRecSecs(0)
+      recTimerRef.current = setInterval(() => setRecSecs(s => s + 1), 1000)
+    } catch (e) {
+      setErr(e?.name === 'NotAllowedError' ? '마이크 권한이 필요합니다.' : (e?.message || '녹음을 시작할 수 없습니다.'))
+      recStreamRef.current?.getTracks().forEach(t => t.stop())
+      recStreamRef.current = null
+    }
+  }
+  const stopRecording = () => {
+    if (recTimerRef.current) { clearInterval(recTimerRef.current); recTimerRef.current = null }
+    setRecording(false)
+    try { if (mediaRecRef.current && mediaRecRef.current.state !== 'inactive') mediaRecRef.current.stop() } catch { /* noop */ }
+    mediaRecRef.current = null
+  }
+
   // 노트 영역에 mp3 드래그&드롭 → 업로드와 동일 처리. (캔버스 드롭=비주얼라이저와 별개 영역)
   const onAudioDragOver = (e) => {
     if (!(e.dataTransfer?.types || []).includes('Files')) return // 텍스트 드래그는 기본 동작 유지
@@ -219,17 +272,17 @@ export default function NotesPanel() {
         {/* 음성(TTS) */}
         <div style={{ position: 'relative' }}>
           <button
-            onClick={() => { setAudioOpen(o => !o); setOpen(false) }}
+            onClick={() => { if (recording) { setAudioOpen(true); return } setAudioOpen(o => !o); setOpen(false) }}
             disabled={busy}
-            title="발표자 노트 음성(TTS)"
+            title="발표 나레이션 음성 — 발표 재생 및 AI 휴먼 음성 입력에 사용"
             style={{
               display: 'flex', alignItems: 'center', gap: 4, height: 24, padding: '0 8px',
-              background: audioRef && !audioStale ? 'rgba(16,185,129,0.2)' : 'rgba(255,255,255,0.06)',
-              border: '1px solid ' + (audioRef && !audioStale ? 'rgba(16,185,129,0.4)' : 'rgba(255,255,255,0.12)'),
-              borderRadius: 6, color: audioRef && !audioStale ? '#6ee7b7' : '#cbd5e1',
+              background: recording ? 'rgba(239,68,68,0.2)' : (audioRef && !audioStale ? 'rgba(16,185,129,0.2)' : 'rgba(255,255,255,0.06)'),
+              border: '1px solid ' + (recording ? 'rgba(239,68,68,0.5)' : (audioRef && !audioStale ? 'rgba(16,185,129,0.4)' : 'rgba(255,255,255,0.12)')),
+              borderRadius: 6, color: recording ? '#fca5a5' : (audioRef && !audioStale ? '#6ee7b7' : '#cbd5e1'),
               fontSize: 12, cursor: busy ? 'default' : 'pointer',
             }}
-          >{busyKind === 'audio' ? '🔊 생성 중…' : `🔊 음성${audioStale ? ' ⚠' : ''} ▾`}</button>
+          >{busyKind === 'audio' ? '🔊 생성 중…' : recording ? `🔴 녹음 중 ${fmtSecs(recSecs)}` : `🔊 나레이션 음성${audioStale ? ' ⚠' : ''} ▾`}</button>
           {audioOpen && !busy && (
             <div style={{
               position: 'absolute', bottom: 30, right: 0, padding: 10, width: 210,
@@ -276,10 +329,21 @@ export default function NotesPanel() {
                 <button onClick={genAudioCurrent} style={{ flex: 1, ...sel, background: 'rgba(16,185,129,0.22)', color: '#6ee7b7', cursor: 'pointer', padding: '6px 0' }}>현재 페이지</button>
                 <button onClick={genAudioAll} style={{ flex: 1, ...sel, background: 'rgba(16,185,129,0.22)', color: '#6ee7b7', cursor: 'pointer', padding: '6px 0' }}>전체</button>
               </div>
-              <div style={{ fontSize: 10.5, color: '#67738a' }}>또는 파일 사용</div>
-              <button onClick={() => audioFileRef.current?.click()} style={{ ...sel, cursor: 'pointer', padding: '6px 0' }}>
-                {audioRef ? '🔁 다른 파일로 교체' : '⬆ 음성 파일 업로드'}
-              </button>
+              <div style={{ fontSize: 10.5, color: '#67738a' }}>또는 파일 업로드 · 직접 녹음</div>
+              {recording ? (
+                <button onClick={stopRecording} style={{ ...sel, cursor: 'pointer', padding: '6px 0', background: 'rgba(239,68,68,0.22)', color: '#fca5a5', border: '1px solid rgba(239,68,68,0.5)' }}>
+                  ⏹ 녹음 중지 · {fmtSecs(recSecs)}
+                </button>
+              ) : (
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <button onClick={() => audioFileRef.current?.click()} style={{ flex: 1, ...sel, cursor: 'pointer', padding: '6px 0' }}>
+                    {audioRef ? '🔁 파일 교체' : '⬆ 파일 업로드'}
+                  </button>
+                  <button onClick={startRecording} title="마이크로 나레이션 녹음" style={{ flex: 1, ...sel, cursor: 'pointer', padding: '6px 0' }}>
+                    🎙 {audioRef ? '녹음 교체' : '녹음'}
+                  </button>
+                </div>
+              )}
               <input ref={audioFileRef} type="file" accept="audio/*" onChange={onUploadAudio} style={{ display: 'none' }} />
             </div>
           )}
@@ -294,7 +358,7 @@ export default function NotesPanel() {
             border: '1px solid rgba(99,102,241,0.4)', borderRadius: 6,
             color: '#c7d2fe', fontSize: 12, cursor: busy ? 'default' : 'pointer',
           }}
-        >✨ {busyKind === 'draft' ? '생성 중…' : 'AI 초안 ▾'}</button>
+        >✨ {busyKind === 'draft' ? '생성 중…' : 'AI 노트초안 ▾'}</button>
         {open && !busy && (
           <div style={{
             position: 'absolute', bottom: 30, right: 0, padding: 10, width: 220,
