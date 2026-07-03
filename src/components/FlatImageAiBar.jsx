@@ -1,6 +1,7 @@
 import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { useFlatStore } from '../store/flatStore'
+import { nextFlatId } from '../core/FlatExtractor'
 import { hasApiKey, editImage, buildImageEnhancePrompt, analyzeImageForRemix, generateImage } from '../core/OpenAIClient'
 import { captureElementRegion } from '../core/captureCanvasRegion'
 import { openAiSettings } from './AiSettingsModal'
@@ -282,16 +283,54 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
     setSplit(50); setHolding(false)
   }, [])
 
-  const apply = useCallback(() => {
+  // 결과(수 MB base64 data URL)를 BlobStore(idb)에 저장하고 짧은 참조를 반환한다.
+  // data URL을 그대로 content에 넣으면 _saveCurrentPage·undo 히스토리가 액션마다 통째로
+  // 복제(structuredClone)해 메모리가 급증 → 탭 OOM 크래시(→ 브라우저 자동 재로드)를 유발한다.
+  const storeResultRef = useCallback(async (url) => {
+    try {
+      const blob = await fetch(url).then(r => r.blob())
+      return BlobStore.toRef(await BlobStore.put(blob))
+    } catch { return url } // 변환 실패 시 data URL 그대로(안전)
+  }, [])
+
+  // 원본 이미지를 결과로 교체
+  const apply = useCallback(async () => {
     if (!imageUrl) return
+    const ref = await storeResultRef(imageUrl)
     useFlatStore.getState().updateFlatElement(element.id, {
-      content: imageUrl,
+      content: ref,
       isRich: false,
       // 결과가 표시될 objectFit(비교 오버레이와 동일: 아웃페인트=cover, 그 외=요소 기존 fit 유지)
       styles: { objectFit: resultFit(mode, element) },
     })
     setPhase('idle'); resetEditState()
-  }, [imageUrl, element.id, mode, resetEditState])
+  }, [imageUrl, element.id, mode, resetEditState, storeResultRef])
+
+  // 원본은 그대로 두고 결과를 새 이미지 요소로 추가(원본 위에 살짝 오프셋, 최상위)
+  const addAsNew = useCallback(async () => {
+    if (!imageUrl) return
+    const ref = await storeResultRef(imageUrl)
+    const st = useFlatStore.getState()
+    const els = st.flatElements
+    const maxZ = els.length ? Math.max(...els.map(e => e.zIndex)) : 0
+    const cs = st.canvasSize
+    const OFF = 24
+    const x = Math.max(0, Math.min(element.x + OFF, (cs?.w || element.x + element.width) - element.width))
+    const y = Math.max(0, Math.min(element.y + OFF, (cs?.h || element.y + element.height) - element.height))
+    const newEl = {
+      ...element,
+      id: nextFlatId(),
+      sourceId: null,
+      content: ref,
+      isRich: false, merged: false,
+      groupId: undefined, layoutRole: undefined, // 원본 그룹/레이아웃 역할 상속 안 함
+      x, y, zIndex: maxZ + 1,
+      styles: { ...element.styles, objectFit: resultFit(mode, element) },
+    }
+    st.addFlatElement(newEl)
+    st.setSelectedFlat(newEl.id)
+    setPhase('idle'); resetEditState()
+  }, [imageUrl, element, mode, resetEditState, storeResultRef])
 
   // 피사체 분리(서버) → 전경 컷아웃 미리보기
   const runCutout = useCallback(async () => {
@@ -597,7 +636,7 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
                 <button type="button"
                   onPointerDown={() => setHolding(true)} onPointerUp={() => setHolding(false)}
                   onPointerLeave={() => setHolding(false)} onPointerCancel={() => setHolding(false)}
-                  title="누르는 동안 원본을 보여줍니다" style={{ ...ghostBtnStyle, marginRight: 'auto' }}>원본 보기(꾹)</button>
+                  title="누르는 동안 원본을 보여줍니다" style={{ ...ghostBtnStyle, marginRight: 'auto' }}>원본(꾹)</button>
                 <button type="button" onClick={() => setSplit(50)} title="구분선을 가운데로" style={ghostBtnStyle}>리셋</button>
               </>
             )}
@@ -617,8 +656,11 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
                 {mode === 'cutout' ? '다시 시도' : '재생성'}
               </button>
             )}
+            {phase === 'preview' && mode !== 'cutout' && (
+              <button type="button" onClick={addAsNew} title="원본은 그대로 두고 결과를 새 이미지 요소로 추가합니다" style={ghostBtnStyle}>새로 추가</button>
+            )}
             {phase === 'preview' && (
-              <button type="button" onClick={mode === 'cutout' ? applyCutout : apply} style={primaryBtnStyle}>적용</button>
+              <button type="button" onClick={mode === 'cutout' ? applyCutout : apply} style={primaryBtnStyle}>{mode === 'cutout' ? '적용' : '적용(교체)'}</button>
             )}
           </div>
         </div>
