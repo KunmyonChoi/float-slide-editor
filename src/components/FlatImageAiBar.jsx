@@ -403,15 +403,6 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
             <EditIcon />
             <span style={{ fontSize: 12, marginLeft: 5 }}>설명으로 편집</span>
           </button>
-          <button
-            type="button"
-            onClick={runCutout}
-            title="피사체(인물/객체)를 분리해 그 '뒤'에 텍스트를 넣는 3층 구성을 만듭니다"
-            style={aiBtnStyle}
-          >
-            <LayersIcon />
-            <span style={{ fontSize: 12, marginLeft: 5 }}>전경 분리</span>
-          </button>
           {isContainFit && (
             <button
               type="button"
@@ -423,6 +414,15 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
               <span style={{ fontSize: 12, marginLeft: 5 }}>빈 공간 채우기</span>
             </button>
           )}
+          <button
+            type="button"
+            onClick={runCutout}
+            title="피사체(인물/객체)를 분리해 그 '뒤'에 텍스트를 넣는 3층 구성을 만듭니다"
+            style={aiBtnStyle}
+          >
+            <LayersIcon />
+            <span style={{ fontSize: 12, marginLeft: 5 }}>전경 분리</span>
+          </button>
         </div>
       )}
 
