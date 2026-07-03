@@ -36,6 +36,22 @@ export default function App() {
     }
   }, [])
 
+  // 버튼을 마우스/터치로 누르면 클릭 후에도 포커스가 남아 ①포커스 링이 보이고
+  // ②Space(캔버스 팬·발표 넘김) 같은 키가 그 버튼을 재활성화한다. 포인터로 활성화한
+  // 버튼은 손을 뗄 때 blur해 포커스를 캔버스로 돌려준다. (키보드 Tab 포커스는 pointerup이
+  // 없으므로 그대로 유지 → :focus-visible 링도 정상 동작.)
+  useEffect(() => {
+    const onPointerUp = (e) => {
+      const active = document.activeElement
+      if (!active || active.tagName !== 'BUTTON') return
+      // 방금 손을 뗀 그 버튼일 때만 걷어낸다(다른 곳의 포커스는 건드리지 않음).
+      const released = e.target?.closest?.('button')
+      if (released === active) active.blur()
+    }
+    window.addEventListener('pointerup', onPointerUp)
+    return () => window.removeEventListener('pointerup', onPointerUp)
+  }, [])
+
   // 전체화면이 해제됐는데 발표 중이면(ESC로 전체화면만 빠져나온 경우) 발표도 종료
   useEffect(() => {
     const onFsChange = () => {

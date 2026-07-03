@@ -17,6 +17,19 @@ html, body {
   height: 100%;
 }
 
+/* 포커스 링: 마우스/터치 클릭 후에는 표시하지 않고(키보드 탐색 시에만 :focus-visible) 링을 준다.
+   버튼이 클릭 후 포커스를 계속 쥐고 있으면 UA 링이 남거나, Space 등 키가 그 버튼을 재활성화한다
+   (App.jsx의 pointerup blur가 실제 포커스도 걷어낸다). */
+button:focus:not(:focus-visible),
+[role="button"]:focus:not(:focus-visible) {
+  outline: none;
+}
+button:focus-visible,
+[role="button"]:focus-visible {
+  outline: 2px solid #6366f1;
+  outline-offset: 2px;
+}
+
 body {
   margin: 0;
   font-family: system-ui, sans-serif;
