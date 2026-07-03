@@ -350,7 +350,7 @@ export default function FlatAiBar({ element, scale, canvasRef }) {
               title="선택한 텍스트 내용을 AI로 다듬습니다(맞춤법·발표체·마크다운·지시 편집)"
               style={aiBtnStyle}
             >
-              <span style={{ fontSize: 12 }}>✍️ 텍스트 편집 ▾</span>
+              <span style={{ fontSize: 12 }}>✍️ AI 텍스트 수정 ▾</span>
             </button>
             {menuOpen && (
               <div style={menuStyle}>

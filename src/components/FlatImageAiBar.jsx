@@ -336,7 +336,7 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
   const barLeft = dragPos ? dragPos.left : anchorLeft
   const barTop = dragPos ? dragPos.top : anchorTop
 
-  const modeLabel = mode === 'cutout' ? '피사체 뒤 텍스트'
+  const modeLabel = mode === 'cutout' ? '전경 분리'
     : mode === 'outpaint' ? 'AI 빈 공간 채우기'
     : mode === 'edit' ? '설명으로 편집' : '디자인 다듬기'
 
@@ -410,7 +410,7 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
             style={aiBtnStyle}
           >
             <LayersIcon />
-            <span style={{ fontSize: 12, marginLeft: 5 }}>피사체 뒤 텍스트</span>
+            <span style={{ fontSize: 12, marginLeft: 5 }}>전경 분리</span>
           </button>
           {isContainFit && (
             <button
