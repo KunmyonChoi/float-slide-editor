@@ -1374,8 +1374,8 @@ export default function FlatCanvas() {
             {selectedEls.length === 1 && selectedEl && selectedEl.type === 'image' && !editingFlatId && !croppingFlatId && mode !== 'present' && (
               <FlatImageAiBar element={selectedEl} scale={scale} canvasRef={canvasRef} />
             )}
-            {/* 비디오 단일 선택 시 전용 AI 립싱크 플로팅바 (편집 중·발표 중에는 숨김) */}
-            {selectedEls.length === 1 && selectedEl && selectedEl.type === 'video' && !editingFlatId && mode !== 'present' && (
+            {/* 비디오 단일 선택 시 전용 AI 립싱크 플로팅바 (편집·발표·크롭 중에는 숨김) */}
+            {selectedEls.length === 1 && selectedEl && selectedEl.type === 'video' && !editingFlatId && !croppingFlatId && mode !== 'present' && (
               <FlatVideoAiBar element={selectedEl} scale={scale} canvasRef={canvasRef} />
             )}
             {/* 커넥터 단일 선택 시 빠른 편집 미니툴바 */}

@@ -13,6 +13,17 @@ import ChromaVideoPlayer from './ChromaVideoPlayer'
  * 단일 FlatElement를 절대 좌표로 렌더링한다.
  * 클릭으로 선택, 드래그로 이동 (Phase 3에서 추가).
  */
+// 채우기(cover) 크롭 — 바운딩 박스는 고정, 컨텐츠를 확대(zoom)·이동(x,y px)해 표시 영역을 미세 조정.
+// transform으로 미디어(img/video/canvas)를 스케일·이동하고 overflow:hidden으로 잘라낸다.
+// objectFit이 'cover'가 아니거나 zoom=1·오프셋0이면 변환 없음(기존과 동일 = 하위호환).
+function cropCss(element, styles) {
+  const c = element.crop
+  const z = c?.zoom || 1
+  const x = c?.x || 0, y = c?.y || 0
+  if (styles.objectFit !== 'cover' || (z === 1 && !x && !y)) return null
+  return `translate(${x}px, ${y}px) scale(${z})`
+}
+
 export default function FlatElementRenderer({ element, isSelected, isEditing, scale, canvasSize: canvasSizeProp, playNow: playNowProp }) {
   // 개별 선택자 구독 — 스토어 전체를 구독하면 현재 페이지 변경 등 무관한 갱신마다
   // 모든 인스턴스(특히 썸네일)가 재렌더되어 깜빡임(움찔)이 생긴다. 함수는 안정 참조.
@@ -105,9 +116,11 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
   }
 
   if (type === 'image') {
+    const ct = cropCss(element, styles)
     return (
-      <div style={baseStyle} onMouseDown={handleMouseDown} onClick={handleClick} onDoubleClick={handleDoubleClick}>
-        <ImageContent content={content} styles={styles} />
+      <div style={ct ? { ...baseStyle, overflow: 'hidden', borderRadius: styles.borderRadius } : baseStyle}
+        onMouseDown={handleMouseDown} onClick={handleClick} onDoubleClick={handleDoubleClick}>
+        <ImageContent content={content} styles={styles} transform={ct} />
       </div>
     )
   }
@@ -244,6 +257,7 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
     // 배경 영상은 항상 화면을 꽉 채움('cover'). 미설정 기본값은 이미지와 동일하게 'contain'(전체 표시).
     const vidFit = isBgVideo ? 'cover' : (styles.objectFit || 'contain')
     const vidPos = isBgVideo ? undefined : styles.objectPosition
+    const cropT = isBgVideo ? null : cropCss(element, styles) // 채우기 크롭(확대·이동)
 
     // 직접 미디어 파일 URL(data:/blob:/http .mp4 등)인지 — 임베드(YouTube/Vimeo)와 구분.
     // 임베드는 <iframe>, 직접 파일은 네이티브 <video>로 재생한다(import된 <video> 추출 포함).
@@ -295,6 +309,7 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
                     hideControls={hideControls}
                     objectFit={vidFit}
                     objectPosition={vidPos}
+                    transform={cropT}
                     chroma={element.chroma}
                     radius={styles.borderRadius}
                   />
@@ -307,6 +322,7 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
                     hideControls={hideControls}
                     objectFit={vidFit}
                     objectPosition={vidPos}
+                    transform={cropT}
                     radius={styles.borderRadius}
                   />)
             : <>
@@ -690,7 +706,7 @@ function useVideoPoster(url, enabled) {
  * 이미지 요소 — content가 idb:// 참조면 blob URL로 해석해 표시(데이터/HTTP URL은 그대로).
  * (피사체 뒤 텍스트 컷아웃 등 idb 저장 이미지가 안 보이던 문제 수정)
  */
-function ImageContent({ content, styles }) {
+function ImageContent({ content, styles, transform }) {
   const isIdb = BlobStore.isIdbRef(content)
   const [idbUrl, setIdbUrl] = useState(null)
   useEffect(() => {
@@ -715,6 +731,9 @@ function ImageContent({ content, styles }) {
         border: styles.border,
         opacity: styles.opacity,
         display: 'block',
+        // 채우기 크롭(확대·이동) — cover에서만. 박스 중심 기준으로 스케일·이동.
+        transform: transform || undefined,
+        transformOrigin: 'center center',
       }}
     />
   )
@@ -723,7 +742,7 @@ function ImageContent({ content, styles }) {
 /**
  * 직접 파일/IndexedDB 참조 비디오 — blob URL 해석 + 첫 프레임 poster 표시.
  */
-function VideoPlayer({ content, playNow, autoplay, loop, muted, hideControls, objectFit, objectPosition, radius }) {
+function VideoPlayer({ content, playNow, autoplay, loop, muted, hideControls, objectFit, objectPosition, transform, radius }) {
   const isIdb = BlobStore.isIdbRef(content)
   const [idbUrl, setIdbUrl] = useState(null)
   const videoRef = useRef(null)
@@ -760,7 +779,7 @@ function VideoPlayer({ content, playNow, autoplay, loop, muted, hideControls, ob
       preload="metadata"
       // 재생 중인 <video>는 자체 컴포지팅 레이어로 승격돼 상위 overflow:hidden+radius 클립을
       // 벗어나므로(발표 모드에서 모서리 안 둥글던 문제), border-radius를 요소에 직접 적용한다.
-      style={{ width: '100%', height: '100%', objectFit: objectFit || 'contain', objectPosition, border: 'none', borderRadius: radius, pointerEvents: controls ? 'auto' : 'none' }}
+      style={{ width: '100%', height: '100%', objectFit: objectFit || 'contain', objectPosition, transform: transform || undefined, transformOrigin: 'center center', border: 'none', borderRadius: radius, pointerEvents: controls ? 'auto' : 'none' }}
       controls={controls}
       autoPlay={playNow && autoplay}
       loop={loop}

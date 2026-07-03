@@ -190,7 +190,7 @@ function SingleElementPanel({ el, animTab, setAnimTab, updateFlatElement, previe
 
         {el.type === 'image' && (
           <div className="pt-1 border-t border-white/5">
-            <ImageSection styles={el.styles} updateStyle={updateStyle} previewStyle={previewStyle} elementId={el.id} />
+            <ImageSection el={el} updateStyle={updateStyle} previewStyle={previewStyle} />
           </div>
         )}
 
@@ -1651,8 +1651,10 @@ function LineSection({ styles, updateStyle, updateStyles, previewStyle }) {
 }
 
 // 맞춤(objectFit)·위치(objectPosition) 제어 — 이미지·동영상 공용.
-// cover일 때만 위치(9포인트 그리드 + X/Y)를 노출한다.
-function ObjectFitControl({ styles, updateStyle, previewStyle }) {
+// cover일 때만 위치(9포인트 그리드 + X/Y)와 확대·이동 크롭(위치·크기 조정) 진입을 노출한다.
+function ObjectFitControl({ el, updateStyle, previewStyle }) {
+  const { setCroppingFlat } = useFlatStore()
+  const styles = el.styles
   const objFit = styles.objectFit || 'contain'
   const objPos = styles.objectPosition || 'center center'
 
@@ -1724,29 +1726,24 @@ function ObjectFitControl({ styles, updateStyle, previewStyle }) {
               />
             </div>
           </div>
+          <button
+            onClick={() => setCroppingFlat(el.id)}
+            className="mt-1.5 flex items-center justify-center w-full text-xs text-indigo-400 bg-indigo-500/10 hover:bg-indigo-500/20 rounded-lg px-2.5 py-1.5 border border-indigo-500/20 transition-colors"
+          >
+            위치·크기 조정 (드래그·휠로 확대)
+          </button>
         </div>
       )}
     </>
   )
 }
 
-function ImageSection({ styles, updateStyle, previewStyle, elementId }) {
-  const { setCroppingFlat } = useFlatStore()
-  const objFit = styles.objectFit || 'contain'
-
+function ImageSection({ el, updateStyle, previewStyle }) {
   return (
     <div className="space-y-2">
       <SectionTitle>이미지</SectionTitle>
-      <ObjectFitControl styles={styles} updateStyle={updateStyle} previewStyle={previewStyle} />
-      {objFit === 'cover' && (
-        <button
-          onClick={() => setCroppingFlat(elementId)}
-          className="mt-1.5 flex items-center justify-center w-full text-xs text-indigo-400 bg-indigo-500/10 hover:bg-indigo-500/20 rounded-lg px-2.5 py-1.5 border border-indigo-500/20 transition-colors"
-        >
-          드래그로 위치 조정
-        </button>
-      )}
-      <ImageChromaKey elementId={elementId} />
+      <ObjectFitControl el={el} updateStyle={updateStyle} previewStyle={previewStyle} />
+      <ImageChromaKey elementId={el.id} />
     </div>
   )
 }
@@ -2554,8 +2551,8 @@ function VideoSection({ el, update, updateStyle, previewStyle }) {
   return (
     <div className="space-y-2">
       <SectionTitle>영상 옵션</SectionTitle>
-      {/* 맞춤·위치 — 이미지와 동일(편집·발표 모드 모두 반영) */}
-      <ObjectFitControl styles={el.styles} updateStyle={updateStyle} previewStyle={previewStyle} />
+      {/* 맞춤·위치·크롭 — 이미지와 동일(편집·발표 모드 모두 반영) */}
+      <ObjectFitControl el={el} updateStyle={updateStyle} previewStyle={previewStyle} />
       <label className="flex items-center gap-2 cursor-pointer">
         <input
           type="checkbox"
