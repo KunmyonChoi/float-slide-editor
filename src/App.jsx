@@ -15,6 +15,7 @@ import { UrlPromptHost } from './components/UrlPrompt'
 import { AiSettingsHost } from './components/AiSettingsModal'
 import AiJobTray from './components/AiJobTray'
 import { CapabilitiesHost } from './components/CapabilitiesModal'
+import { GenitorSkillHost } from './components/GenitorSkillModal'
 import { InfographicHost } from './components/InfographicModal'
 import { ImagenLayoutHost } from './components/ImagenLayoutModal'
 import { ConfirmHost } from './components/ConfirmDialog'
@@ -110,6 +111,7 @@ export default function App() {
       <UrlPromptHost />
       <AiSettingsHost />
       <CapabilitiesHost />
+      <GenitorSkillHost />
       <InfographicHost />
       <ImagenLayoutHost />
       <ConfirmHost />
