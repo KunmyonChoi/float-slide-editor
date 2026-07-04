@@ -122,11 +122,27 @@ body { width: 1280px; height: 720px; overflow: hidden; position: relative; backg
 </div>
 ```
 
-**이미지** — div 안에 `<img>`, object-fit으로 채움:
+**이미지** — div로 감싸 `<img>`를 object-fit으로 채운다. **테두리·라운드·그림자는 래퍼가 아니라 `<img>`에 직접** 준다:
 ```html
-<div style="position:absolute;left:680px;top:240px;width:520px;height:300px;border-radius:16px;overflow:hidden;">
+<div style="position:absolute;left:680px;top:240px;width:520px;height:300px;overflow:hidden;border-radius:16px;">
   <img src="https://example.com/photo.jpg" alt=""
-       style="width:100%;height:100%;object-fit:cover;display:block;" />
+       style="width:100%;height:100%;object-fit:cover;display:block;
+              border-radius:16px;border:1px solid rgba(255,255,255,0.15);box-sizing:border-box;" />
+</div>
+```
+
+> **미디어를 도형이 덮지 않게 하라(중요).** Genitor는 클릭 시 **최상위 요소**를 선택한다. 이미지/영상
+> 위에 전면 오버레이·테두리 도형을 얹거나, 래퍼 div에 배경/테두리/그림자를 주면 **래퍼가 "도형"으로
+> 추출돼 미디어를 덮는다** → 미디어 대신 그 도형이 선택되어 "이미지가 도형으로 로드"되고 이미지
+> AI(디자인 다듬기·리믹스 등)도 안 뜬다. 그러므로:
+> - **래퍼 div엔 `overflow`·`border-radius`만.** 배경·테두리·그림자는 `<img>`/`<video>` 요소에 직접.
+> - 가독성용 그라디언트 오버레이는 **전체가 아니라 하단 스트립 등 부분만** 덮어 미디어의 클릭 영역을 남긴다.
+
+**영상** — 이미지와 동일(테두리는 `<video>`에 직접). `<video>`의 재생 속성은 보존된다:
+```html
+<div style="position:absolute;left:80px;top:120px;width:520px;height:300px;overflow:hidden;border-radius:16px;">
+  <video src="https://example.com/clip.mp4" autoplay muted loop playsinline
+         style="width:100%;height:100%;object-fit:cover;display:block;border-radius:16px;"></video>
 </div>
 ```
 
@@ -160,6 +176,8 @@ body { width: 1280px; height: 720px; overflow: hidden; position: relative; backg
 - `position:fixed`/`onclick` 요소에 **슬라이드 콘텐츠**를 담기 → 내비로 간주되어 제외됨.
 - `scale()` 외 복합 transform(skew/3D) → scale만 반영되고 나머지 소실.
 - `::before content:attr()/counter()/url()`, `<input>` placeholder → 추출 안 됨.
+- 이미지/영상 **래퍼 div에 배경·테두리·그림자** → 래퍼가 도형으로 추출돼 미디어를 덮는다(미디어 선택·이미지 AI 불가). 장식은 `<img>`/`<video>`에 직접.
+- 이미지/영상 **위에 전면 오버레이/테두리 도형**을 얹기 → 최상위 도형이 선택돼 미디어를 못 고른다. 오버레이는 부분(스트립)만.
 
 ## 완성 예시 (2장, 그대로 붙여넣기 가능)
 
