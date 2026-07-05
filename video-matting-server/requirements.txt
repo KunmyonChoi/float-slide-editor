@@ -1,0 +1,7 @@
+# torch / torchvision 은 베이스 이미지(pytorch CUDA/CPU 휠)에서 설치 → 여기 넣지 않음
+# RVM(Robust Video Matting) 모델은 torch.hub로 로드(pip 패키지 없음) → git 필요(Dockerfile)
+# 영상 디코드/알파 WebM 인코드는 ffmpeg(libvpx) 사용 → Dockerfile apt로 설치
+fastapi>=0.115.0
+uvicorn>=0.32.0
+python-multipart>=0.0.9
+numpy>=1.26.0
