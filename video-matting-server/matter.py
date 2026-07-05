@@ -16,7 +16,7 @@ import subprocess
 import numpy as np
 import torch
 
-BUILD_VERSION = "2026-07-05.1-rvm"
+BUILD_VERSION = "2026-07-05.2-rvm-audio"
 MODEL_VARIANT = os.environ.get("MATTE_MODEL", "mobilenetv3")  # mobilenetv3 | resnet50
 DEVICE_ENV = os.environ.get("MATTE_DEVICE", "cuda")
 DOWNSAMPLE = float(os.environ.get("MATTE_DOWNSAMPLE", "0.25"))  # RVM HD 권장 0.25
@@ -89,10 +89,15 @@ def matte_to_webm(in_path, out_path):
         ["ffmpeg", "-v", "error", "-i", in_path, "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
         stdout=subprocess.PIPE,
     )
+    # 매트 영상(stdin 0) + 원본 오디오(input 1)를 먹스 → 알파 WebM에 소리 보존.
+    # 원본에 오디오가 없으면 1:a:0? 의 '?'로 생략(실패 없음). WebM 오디오 코덱=Opus.
     enc = subprocess.Popen(
         ["ffmpeg", "-v", "error", "-y",
          "-f", "rawvideo", "-pix_fmt", "rgba", "-s", f"{w}x{h}", "-r", str(fps), "-i", "-",
-         "-c:v", "libvpx-vp9", "-pix_fmt", "yuva420p", "-b:v", _BITRATE, "-an", out_path],
+         "-i", in_path,
+         "-map", "0:v:0", "-map", "1:a:0?",
+         "-c:v", "libvpx-vp9", "-pix_fmt", "yuva420p", "-b:v", _BITRATE,
+         "-c:a", "libopus", "-b:a", "128k", "-shortest", out_path],
         stdin=subprocess.PIPE,
     )
 
