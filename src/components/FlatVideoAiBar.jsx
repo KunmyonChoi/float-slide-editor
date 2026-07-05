@@ -4,6 +4,9 @@ import { useFlatStore } from '../store/flatStore'
 import { BlobStore } from '../core/BlobStore'
 import { listAudioSources } from '../core/audioSources'
 import { startLipsyncJob } from '../core/lipsyncRunner'
+import { startVideoMatteJob } from '../core/videoMatteRunner'
+import { checkMatteHealth } from '../core/VideoMatteBackendClient'
+import MatteInstallModal from './MatteInstallModal'
 import { useDraggableToolbar, GripHandle } from './useDraggableToolbar'
 
 /**
@@ -17,6 +20,8 @@ import { useDraggableToolbar, GripHandle } from './useDraggableToolbar'
 export default function FlatVideoAiBar({ element, scale, canvasRef }) {
   const [phase, setPhase] = useState('idle') // 'idle' | 'compose'
   const [pickIdx, setPickIdx] = useState(0)
+  const [showInstall, setShowInstall] = useState(false)
+  const [matteBusy, setMatteBusy] = useState(false)
   const [rect, setRect] = useState(null)
   const [tick, setTick] = useState(0)
   const barRef = useRef(null)
@@ -66,6 +71,19 @@ export default function FlatVideoAiBar({ element, scale, canvasRef }) {
     setPhase('idle') // 진행은 트레이에서
   }, [audioSources, pickIdx, element])
 
+  // 전경 분리(고품질, B2) — 서버 헬스체크 후 잡 시작(없으면 설치 안내)
+  const runMatte = useCallback(async () => {
+    if (!usable || matteBusy) return
+    setMatteBusy(true)
+    try {
+      const h = await checkMatteHealth()
+      if (!h.ok) { setShowInstall(true); return }
+      startVideoMatteJob({ videoEl: element, pageKey: useFlatStore.getState().getCurrentPageKey() })
+    } finally {
+      setMatteBusy(false)
+    }
+  }, [usable, matteBusy, element])
+
   if (!rect) return null
   const { left: elemLeft, top: elemTop, bottom: elemBottom } = rect
   const BAR_H = 36
@@ -112,8 +130,25 @@ export default function FlatVideoAiBar({ element, scale, canvasRef }) {
             <span style={{ fontSize: 14 }}>🎬</span>
             <span style={{ fontSize: 12, marginLeft: 5 }}>AI 립싱크</span>
           </button>
+          <button
+            type="button"
+            onClick={runMatte}
+            disabled={!usable || matteBusy}
+            title={usable ? '영상에서 사람만 남긴 투명 배경 영상(고품질) — 로컬 서버 필요'
+              : '임베드/외부 URL 영상은 쓸 수 없습니다 (로컬·업로드 영상만)'}
+            style={{
+              display: 'flex', alignItems: 'center', padding: '6px 8px', borderRadius: 8, border: 'none',
+              cursor: (usable && !matteBusy) ? 'pointer' : 'not-allowed', color: usable ? '#c7d2fe' : '#64748b',
+              background: usable ? 'rgba(99,102,241,0.18)' : 'rgba(255,255,255,0.04)', opacity: matteBusy ? 0.6 : 1,
+            }}
+          >
+            <span style={{ fontSize: 14 }}>✂️</span>
+            <span style={{ fontSize: 12, marginLeft: 5 }}>{matteBusy ? '확인 중…' : '전경 분리'}</span>
+          </button>
         </div>
       )}
+
+      {showInstall && <MatteInstallModal onClose={() => setShowInstall(false)} />}
 
       {phase === 'compose' && (
         <div
