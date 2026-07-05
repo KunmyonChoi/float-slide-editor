@@ -16,6 +16,7 @@ import { AiSettingsHost } from './components/AiSettingsModal'
 import AiJobTray from './components/AiJobTray'
 import { CapabilitiesHost } from './components/CapabilitiesModal'
 import { GenitorSkillHost } from './components/GenitorSkillModal'
+import { CameraCaptureHost } from './components/CameraCaptureModal'
 import { InfographicHost } from './components/InfographicModal'
 import { ImagenLayoutHost } from './components/ImagenLayoutModal'
 import { ConfirmHost } from './components/ConfirmDialog'
@@ -112,6 +113,7 @@ export default function App() {
       <AiSettingsHost />
       <CapabilitiesHost />
       <GenitorSkillHost />
+      <CameraCaptureHost />
       <InfographicHost />
       <ImagenLayoutHost />
       <ConfirmHost />

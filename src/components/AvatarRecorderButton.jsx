@@ -1,48 +1,10 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
-import { useFlatStore } from '../store/flatStore'
-import { BlobStore } from '../core/BlobStore'
-import { nextFlatId } from '../core/FlatExtractor'
+import { insertVideoBlob } from '../core/insertVideoBlob'
 
 // avatar-recoder 연동 규약(integration-api.md): 팝업 + postMessage. Genitor는 호출자(opener).
 const RECORDER_URL = 'https://avatar-recoder.netlify.app'
 const RECORDER_ORIGIN = 'https://avatar-recoder.netlify.app'
 const MSG = 'avatar-recoder' // 메시지 타입 접두사(규격) — 도메인과 동일 철자
-
-// 결과 Blob → 현재 슬라이드에 비디오 요소로 삽입(기존 비디오 삽입 경로와 동일 구성)
-async function insertVideoBlob(blob, filename) {
-  const st = useFlatStore.getState()
-  const key = await BlobStore.put(blob)
-  const blobUrl = await BlobStore.getUrl(key)
-  // 메타데이터로 내재 해상도 측정 → 캔버스의 60% 이내로 축소 배치
-  const video = document.createElement('video')
-  video.preload = 'metadata'
-  video.src = blobUrl
-  await new Promise(r => { video.onloadedmetadata = r; video.onerror = r })
-  let w = video.videoWidth || 560
-  let h = video.videoHeight || 315
-  const cs = st.canvasSize || { w: 1920, h: 1080 }
-  const maxW = cs.w * 0.6, maxH = cs.h * 0.6
-  if (w > maxW || h > maxH) {
-    const ratio = Math.min(maxW / w, maxH / h)
-    w = Math.round(w * ratio); h = Math.round(h * ratio)
-  }
-  const els = st.flatElements
-  const maxZ = els.length > 0 ? Math.max(...els.map(e => e.zIndex)) : 0
-  const el = {
-    id: nextFlatId(), sourceId: null,
-    type: 'video', width: w, height: h,
-    content: BlobStore.toRef(key),
-    isRich: false, merged: false,
-    // 튜토리얼 영상: 컨트롤 표시 + 자동재생 off
-    autoplay: false, loop: false, muted: false, hideControls: false,
-    filename: filename || undefined,
-    x: Math.round((cs.w - w) / 2), y: Math.round((cs.h - h) / 2),
-    zIndex: maxZ + 1,
-    styles: { backgroundColor: 'rgba(0,0,0,0)', borderRadius: '8px', opacity: '1' },
-  }
-  st.addFlatElement(el)
-  st.setSelectedFlat(el.id)
-}
 
 /**
  * 튜토리얼 녹화 — avatar-recoder 팝업을 열어(음성+화면 녹화) 결과 영상을

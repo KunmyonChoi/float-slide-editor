@@ -7,6 +7,7 @@ import FileMenu from './ExportMenu'
 import PptExportButton from './PptExportButton'
 import ShortcutsButton from './ShortcutsButton'
 import AvatarRecorderButton from './AvatarRecorderButton'
+import CameraCaptureButton from './CameraCaptureButton'
 
 const FALLBACK_SAMPLE = `<!DOCTYPE html>
 <html lang="ko">
@@ -177,6 +178,9 @@ export default function FloatingToolbar() {
         onStart={() => enterPresentation()}
         onStartHere={() => enterPresentation({ startIndex: flatCurrentPage || 0 })}
       />
+
+      {/* 웹캠 녹화(인앱) — 자기 촬영 → 립싱크·배경 제거용 구동 영상 */}
+      <CameraCaptureButton />
 
       {/* 튜토리얼 녹화(avatar-recorder 연동) — 화면+음성 녹화 결과를 현재 슬라이드에 삽입 */}
       <AvatarRecorderButton />
