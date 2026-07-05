@@ -7,6 +7,7 @@ import { tableContainerStyle, cellStyle } from '../core/slideTable'
 import { isCoarsePointer } from '../core/pointerEnv'
 import AudioVisualizer from './AudioVisualizer'
 import ChromaVideoPlayer from './ChromaVideoPlayer'
+import MatteVideoPlayer from './MatteVideoPlayer'
 
 /**
  * FlatElementRenderer
@@ -304,7 +305,20 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
         }}>
           {(BlobStore.isIdbRef(content) || isDirectVideo)
             ? (element.chroma?.enabled
-                ? <ChromaVideoPlayer
+                ? (element.chroma?.matte === 'ai'
+                ? <MatteVideoPlayer
+                    content={content}
+                    playNow={playNow}
+                    autoplay={autoplay}
+                    loop={loop}
+                    muted={muted}
+                    hideControls={hideControls}
+                    objectFit={vidFit}
+                    objectPosition={vidPos}
+                    transform={cropT}
+                    radius={styles.borderRadius}
+                  />
+                : <ChromaVideoPlayer
                     content={content}
                     playNow={playNow}
                     autoplay={autoplay}
@@ -316,7 +330,7 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
                     transform={cropT}
                     chroma={element.chroma}
                     radius={styles.borderRadius}
-                  />
+                  />)
                 : <VideoPlayer
                     content={content}
                     playNow={playNow}
