@@ -2653,9 +2653,16 @@ function VideoChromaKey({ el, update }) {
   const addEntry = () => { if (entries.length < CHROMA_MAX_KEYS) writeEntries([...entries, { key: null, tolerance: 18, feather: null }]) }
   const removeEntry = (i) => writeEntries(entries.filter((_, j) => j !== i))
 
-  const setEnabled = (on) => update({ chroma: { ...chroma, enabled: on, keys: entries } })
   const setDespill = (v) => update({ chroma: { ...chroma, enabled: true, keys: entries, despill: v } })
   const reset = () => update({ chroma: { enabled: false, keys: [{ key: null, tolerance: 18, feather: null }], despill: 0 } })
+
+  // 배경 제거 모드: 끔 / 크로마키(색상) / AI 자동(사람 전경 분리)
+  const mode = !enabled ? 'off' : (chroma?.matte === 'ai' ? 'ai' : 'color')
+  const setMode = (m) => {
+    if (m === 'off') update({ chroma: { ...(chroma || {}), enabled: false } })
+    else if (m === 'ai') update({ chroma: { enabled: true, matte: 'ai' } })
+    else update({ chroma: { enabled: true, keys: entries, despill } })
+  }
 
   // 스포이드: 해당 키가 '노릴 색'이 보이도록 그 키만 뺀 결과를 잠시 보여주고(비히스토리 preview)
   // 클릭한 색을 그 키에 커밋. (1차는 다른 키가 없으면 원본 노출, 2차는 1차 적용 결과=잔류색 노출)
@@ -2677,11 +2684,19 @@ function VideoChromaKey({ el, update }) {
 
   return (
     <div className="border-t border-white/5 pt-2 mt-1 space-y-1.5">
-      <label className="flex items-center gap-2 cursor-pointer">
-        <input type="checkbox" checked={enabled} onChange={e => setEnabled(e.target.checked)} className="accent-indigo-500" />
-        <span className={labelClass}>배경 지우기 (크로마키)</span>
-      </label>
-      {enabled && (
+      <p className={labelClass}>배경 제거</p>
+      <div className="grid grid-cols-3 gap-1">
+        {[['off', '끔'], ['color', '크로마키'], ['ai', 'AI 자동']].map(([m, lbl]) => (
+          <button key={m} onClick={() => setMode(m)}
+            className={`py-1 rounded-lg text-[11px] border transition-colors ${mode === m ? 'border-indigo-500/60 bg-indigo-500/20 text-indigo-200' : 'border-white/10 text-slate-400 hover:bg-white/5'}`}>{lbl}</button>
+        ))}
+      </div>
+      {mode === 'ai' && (
+        <p className="text-[10px] text-slate-400 leading-relaxed border border-white/10 rounded-lg p-2">
+          사람을 배경에서 <b className="text-slate-200">자동 분리</b>합니다(그린스크린 불필요). 처음 한 번 AI 모델을 내려받고 재생 중 실시간 합성됩니다. 립싱크 후 적용하면 투명 아바타가 됩니다.
+        </p>
+      )}
+      {mode === 'color' && (
         <>
           {entries.map((e, i) => {
             const keyHex = e.key ? `rgb(${e.key.r},${e.key.g},${e.key.b})` : 'transparent'
