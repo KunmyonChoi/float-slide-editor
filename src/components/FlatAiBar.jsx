@@ -8,6 +8,7 @@ import { renderMarkdown } from '../core/markdown'
 import { BlobStore } from '../core/BlobStore'
 import { openAiSettings } from './AiSettingsModal'
 import { IMAGE_STYLES } from '../core/aiImageStyles'
+import { openLettering } from './LetteringModal'
 import { embedPngMetadata } from '../core/pngMeta'
 import { useDraggableToolbar, GripHandle } from './useDraggableToolbar'
 
@@ -339,6 +340,12 @@ export default function FlatAiBar({ element, scale, canvasRef }) {
                     {s.label}
                   </button>
                 ))}
+                <div style={{ height: 1, background: 'rgba(255,255,255,0.1)', margin: '3px 0' }} />
+                <button type="button" style={menuItemStyle}
+                  title="선택 텍스트를 방송용 위치·스타일의 레터링 이미지로 생성"
+                  onClick={() => { setImgMenuOpen(false); openLettering(element) }}>
+                  ✨ 이미지 레터링…
+                </button>
               </div>
             )}
           </span>

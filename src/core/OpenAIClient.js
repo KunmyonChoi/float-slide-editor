@@ -438,7 +438,7 @@ export function pickImageSize(model, width, height) {
  * @param {{ model?: string, width?: number, height?: number, size?: string, signal?: AbortSignal }} [opts]
  * @returns {Promise<string>} `data:image/png;base64,...`
  */
-export async function generateImage(prompt, { model, width, height, size, quality, signal } = {}) {
+export async function generateImage(prompt, { model, width, height, size, quality, background, signal } = {}) {
   const apiKey = getApiKey()
   if (!apiKey) throw new Error('OpenAI API 키가 설정되지 않았습니다. 먼저 키를 입력하세요.')
   const p = (prompt || '').trim()
@@ -453,6 +453,9 @@ export async function generateImage(prompt, { model, width, height, size, qualit
   }
   if (m.startsWith('gpt-image')) body.quality = quality || 'medium' // gpt-image 계열은 b64 기본 반환
   else body.response_format = 'b64_json' // dall-e 계열만 명시해야 b64 반환
+  // 투명 배경(레터링 오버레이 등). gpt-image-2는 미지원 — gpt-image-1 계열에서만 사용.
+  // png(기본)만 투명 지원. 'transparent' | 'opaque' | 'auto'.
+  if (background && m.startsWith('gpt-image')) body.background = background
 
   let res
   try {

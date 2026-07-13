@@ -9,6 +9,7 @@ import { INFOGRAPHIC_STYLES } from '../core/aiImageStyles'
 import { segmentImage, checkCutoutBackend } from '../core/CutoutBackendClient'
 import CutoutInstallModal from './CutoutInstallModal'
 import { BlobStore } from '../core/BlobStore'
+import { storeResultRef } from '../core/aiResult'
 import { containFitRect } from '../core/imageFit'
 import { useDraggableToolbar, GripHandle } from './useDraggableToolbar'
 import MaskBrushOverlay from './MaskBrushOverlay'
@@ -283,17 +284,7 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
     setSplit(50); setHolding(false)
   }, [])
 
-  // 결과(수 MB base64 data URL)를 BlobStore(idb)에 저장하고 짧은 참조를 반환한다.
-  // data URL을 그대로 content에 넣으면 _saveCurrentPage·undo 히스토리가 액션마다 통째로
-  // 복제(structuredClone)해 메모리가 급증 → 탭 OOM 크래시(→ 브라우저 자동 재로드)를 유발한다.
-  const storeResultRef = useCallback(async (url) => {
-    try {
-      const blob = await fetch(url).then(r => r.blob())
-      return BlobStore.toRef(await BlobStore.put(blob))
-    } catch { return url } // 변환 실패 시 data URL 그대로(안전)
-  }, [])
-
-  // 원본 이미지를 결과로 교체
+  // 원본 이미지를 결과로 교체 (storeResultRef: 수 MB dataURL을 idb로 옮겨 undo/저장 OOM 방지)
   const apply = useCallback(async () => {
     if (!imageUrl) return
     const ref = await storeResultRef(imageUrl)
@@ -304,7 +295,7 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
       styles: { objectFit: resultFit(mode, element) },
     })
     setPhase('idle'); resetEditState()
-  }, [imageUrl, element.id, mode, resetEditState, storeResultRef])
+  }, [imageUrl, element.id, mode, resetEditState])
 
   // 원본은 그대로 두고 결과를 새 이미지 요소로 추가(원본 위에 살짝 오프셋, 최상위)
   const addAsNew = useCallback(async () => {
@@ -330,7 +321,7 @@ export default function FlatImageAiBar({ element, scale, canvasRef }) {
     st.addFlatElement(newEl)
     st.setSelectedFlat(newEl.id)
     setPhase('idle'); resetEditState()
-  }, [imageUrl, element, mode, resetEditState, storeResultRef])
+  }, [imageUrl, element, mode, resetEditState])
 
   // 피사체 분리(서버) → 전경 컷아웃 미리보기
   const runCutout = useCallback(async () => {
