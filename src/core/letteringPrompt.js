@@ -13,7 +13,10 @@ import { findLetteringStyle, findLetteringPosition, findLetteringBg } from './ai
 export function buildLetteringPrompt({ text, mode = 'inplace', bgId = 'scene', positionId = 'lower-third', styleId = 'youtube' } = {}) {
   const t = (text || '').trim()
   const style = findLetteringStyle(styleId)
-  const bg = findLetteringBg(bgId)
+  // 'transparent'는 UI 배경 목록엔 없고 "투명 재생성(글자만)" 경로 내부용.
+  const bg = bgId === 'transparent'
+    ? { id: 'transparent', prompt: 'on a fully transparent background (no background at all), just the lettering itself' }
+    : findLetteringBg(bgId)
   const placement = mode === 'title'
     ? findLetteringPosition(positionId).prompt
     : 'filling the frame, well-composed with small safe margins'
