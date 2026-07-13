@@ -16,6 +16,14 @@ import { openAiSettings } from './AiSettingsModal'
 
 const TRANSPARENT_MODEL = 'gpt-image-1.5' // gpt-image-2는 투명 미지원 → 투명 직접생성용 모델
 
+// gpt-image-1.5는 유동 크기 미지원 → 지원 고정 크기(1024²/1024x1536/1536x1024)에서 비율로 선택.
+function supportedSize(width, height) {
+  const r = (width || 1) / (height || 1)
+  if (r > 1.2) return '1536x1024'
+  if (r < 0.83) return '1024x1536'
+  return '1024x1024'
+}
+
 /**
  * AI 이미지 레터링 — 선택 텍스트를 방송용 위치·스타일의 레터링 이미지로 생성.
  * openLettering(element)로 연다. 결과는 열 때의 페이지에 바인딩된다(비동기 중 페이지 전환 대비).
@@ -125,7 +133,7 @@ function Dialog({ element, pageKey }) {
         const { width, height } = targetSize()
         // 씬 참조 없는 투명 전용 프롬프트로 새로 생성(gpt-image-1.5 네이티브 알파).
         const prompt = buildLetteringPrompt({ text: text.trim(), mode, bgId: 'transparent', positionId, styleId })
-        const url = await generateImage(prompt, { model: TRANSPARENT_MODEL, background: 'transparent', width, height, signal: ctrl.signal })
+        const url = await generateImage(prompt, { model: TRANSPARENT_MODEL, background: 'transparent', size: supportedSize(width, height), signal: ctrl.signal })
         if (ctrl.signal.aborted) return
         setImageUrl(url); setIsolated(true)
       } else if (method === 'cutout') {
