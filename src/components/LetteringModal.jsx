@@ -9,7 +9,34 @@ import { LETTERING_STYLES, LETTERING_POSITIONS, LETTERING_BG } from '../core/aiL
 import { BlobStore } from '../core/BlobStore'
 import { embedPngMetadata } from '../core/pngMeta'
 import { nextFlatId } from '../core/FlatExtractor'
+import { applyChromaToImageData } from '../core/chromaKey'
+import { segmentImage } from '../core/CutoutBackendClient'
 import { openAiSettings } from './AiSettingsModal'
+
+const TRANSPARENT_MODEL = 'gpt-image-1.5' // gpt-image-2는 투명 미지원 → 투명 직접생성용 모델
+
+// 이미지 dataURL 로드
+function loadImage(src) {
+  return new Promise((resolve, reject) => {
+    const im = new Image()
+    im.onload = () => resolve(im)
+    im.onerror = reject
+    im.src = src
+  })
+}
+
+// 단색 배경(검정/흰색)을 크로마로 제거 → 투명 PNG dataURL
+async function keyOutSolid(dataUrl, key) {
+  const img = await loadImage(dataUrl)
+  const w = img.naturalWidth || img.width, h = img.naturalHeight || img.height
+  const c = document.createElement('canvas'); c.width = w; c.height = h
+  const ctx = c.getContext('2d', { willReadFrequently: true })
+  ctx.drawImage(img, 0, 0)
+  const id = ctx.getImageData(0, 0, w, h)
+  applyChromaToImageData(id, key, 14, 8) // 단색이라 tolerance/feather 여유
+  ctx.putImageData(id, 0, 0)
+  return c.toDataURL('image/png')
+}
 
 /**
  * AI 이미지 레터링 — 선택 텍스트를 방송용 위치·스타일의 레터링 이미지로 생성.
@@ -49,6 +76,9 @@ function Dialog({ element }) {
   const [status, setStatus] = useState('')
   const [error, setError] = useState('')
   const [imageUrl, setImageUrl] = useState('')
+  const [lastPrompt, setLastPrompt] = useState('')
+  const [isolated, setIsolated] = useState(false) // 배경 제거(투명 레터링) 적용됨
+  const [isoBusy, setIsoBusy] = useState('')       // 진행 중 분리 방법 라벨
   const abortRef = useRef(null)
 
   useEffect(() => () => abortRef.current?.abort(), [])
@@ -68,9 +98,10 @@ function Dialog({ element }) {
     abortRef.current?.abort()
     const ctrl = new AbortController()
     abortRef.current = ctrl
-    setPhase('loading'); setError(''); setImageUrl('')
+    setPhase('loading'); setError(''); setImageUrl(''); setIsolated(false)
     const { width, height } = targetSize()
     const prompt = buildLetteringPrompt({ text: t, mode, bgId, positionId, styleId })
+    setLastPrompt(prompt)
     try {
       let url
       if (bgId === 'scene') {
@@ -104,6 +135,34 @@ function Dialog({ element }) {
     }
   }, [text, mode, bgId, positionId, styleId, targetSize, element.id, element.x, element.y, element.width, element.height, element.styles])
 
+  // 글자만 남기기(투명): keyout(단색 크로마)/transparent(gpt-image-1.5)/cutout(BiRefNet)
+  const isolate = useCallback(async (method) => {
+    if (!imageUrl || isoBusy) return
+    setIsoBusy(method); setError('')
+    try {
+      if (method === 'keyout') {
+        const key = bgId === 'white' ? { r: 255, g: 255, b: 255 } : { r: 0, g: 0, b: 0 }
+        setImageUrl(await keyOutSolid(imageUrl, key)); setIsolated(true)
+      } else if (method === 'transparent') {
+        const ctrl = new AbortController(); abortRef.current = ctrl
+        const { width, height } = targetSize()
+        const url = await generateImage(lastPrompt, { model: TRANSPARENT_MODEL, background: 'transparent', width, height, signal: ctrl.signal })
+        if (ctrl.signal.aborted) return
+        setImageUrl(url); setIsolated(true)
+      } else if (method === 'cutout') {
+        const blob = await fetch(imageUrl).then(r => r.blob())
+        const r = await segmentImage(blob)
+        const url = await new Promise((res, rej) => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.onerror = rej; fr.readAsDataURL(r.blob) })
+        setImageUrl(url); setIsolated(true)
+      }
+    } catch (e) {
+      if (e?.name === 'AbortError') return
+      setError(method === 'cutout'
+        ? '전경 분리 서버에 연결할 수 없습니다 (이미지 전경 분리와 동일한 로컬 서버 필요).'
+        : (e?.message || '배경 제거에 실패했습니다.'))
+    } finally { setIsoBusy('') }
+  }, [imageUrl, isoBusy, bgId, lastPrompt, targetSize])
+
   const apply = useCallback(async () => {
     if (!imageUrl) return
     // 큰 dataURL은 idb로 보관(언두/저장 비대화 방지). 메타 임베드 후 저장.
@@ -114,7 +173,8 @@ function Dialog({ element }) {
       content = BlobStore.toRef(await BlobStore.put(blob))
     } catch { /* 실패 시 dataURL 유지 */ }
     const st = useFlatStore.getState()
-    const imgStyles = { objectFit: 'cover', objectPosition: 'center center', backgroundColor: 'rgba(0,0,0,0)', backgroundImage: 'none', opacity: '1' }
+    // 투명(글자만) 결과는 잘리지 않게 contain, 그 외는 cover.
+    const imgStyles = { objectFit: isolated ? 'contain' : 'cover', objectPosition: 'center center', backgroundColor: 'rgba(0,0,0,0)', backgroundImage: 'none', opacity: '1' }
     if (mode === 'title') {
       const cs = st.canvasSize || { w: 1280, h: 720 }
       const maxZ = st.flatElements.length ? Math.max(...st.flatElements.map(e => e.zIndex)) : 1
@@ -128,7 +188,7 @@ function Dialog({ element }) {
       st.updateFlatElement(element.id, { type: 'image', content, isRich: false, styles: { ...element.styles, ...imgStyles } })
     }
     close()
-  }, [imageUrl, text, styleId, mode, element.id, element.styles])
+  }, [imageUrl, text, styleId, mode, isolated, element.id, element.styles])
 
   const onClose = useCallback(() => { abortRef.current?.abort(); close() }, [])
 
@@ -178,6 +238,22 @@ function Dialog({ element }) {
             <div style={previewBox}>
               {imageUrl && <img src={imageUrl} alt="" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', display: 'block' }} />}
             </div>
+            {/* 글자만 남기기(투명) — 배경 제거 3경로 */}
+            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6 }}>
+              <span style={{ ...hint, marginRight: 2 }}>글자만 남기기{isolated ? ' ✓(투명)' : ''}:</span>
+              {(bgId === 'black' || bgId === 'white') && (
+                <button type="button" onClick={() => isolate('keyout')} disabled={!!isoBusy} style={chipBtn}>
+                  {isoBusy === 'keyout' ? '…' : '단색 키아웃'}
+                </button>
+              )}
+              <button type="button" onClick={() => isolate('transparent')} disabled={!!isoBusy} style={chipBtn} title="gpt-image-1.5로 투명 배경 재생성">
+                {isoBusy === 'transparent' ? '재생성…' : '투명 재생성(1.5)'}
+              </button>
+              <button type="button" onClick={() => isolate('cutout')} disabled={!!isoBusy} style={chipBtn} title="로컬 전경 분리 서버(BiRefNet)">
+                {isoBusy === 'cutout' ? '분리…' : '전경 분리'}
+              </button>
+            </div>
+            {error && <div style={{ fontSize: 11.5, color: '#fca5a5', lineHeight: 1.5 }}>{error}</div>}
             <div style={hint}>
               {mode === 'title' ? '적용하면 풀캔버스 이미지로 새 레이어에 추가됩니다.' : '적용하면 이 텍스트가 같은 위치·크기의 이미지로 교체됩니다.'} (되돌리기 가능)
             </div>
@@ -227,5 +303,6 @@ const textareaStyle = { width: '100%', boxSizing: 'border-box', resize: 'vertica
 const selectStyle = { width: '100%', padding: '7px 10px', fontSize: 12.5, borderRadius: 8, background: '#0b1220', color: '#e2e8f0', border: '1px solid rgba(255,255,255,0.16)' }
 const previewBox = { width: '100%', height: 220, borderRadius: 8, overflow: 'hidden', background: 'repeating-conic-gradient(#334155 0% 25%, #1e293b 0% 50%) 50%/16px 16px', border: '1px solid rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }
 const hint = { fontSize: 11, color: '#64748b', lineHeight: 1.5 }
+const chipBtn = { padding: '5px 10px', fontSize: 11.5, borderRadius: 8, cursor: 'pointer', border: '1px solid rgba(129,140,248,0.4)', background: 'rgba(99,102,241,0.14)', color: '#c7d2fe', whiteSpace: 'nowrap' }
 const ghostBtn = { padding: '7px 14px', fontSize: 13, borderRadius: 8, cursor: 'pointer', border: '1px solid rgba(255,255,255,0.16)', background: 'transparent', color: '#cbd5e1' }
 const primaryBtn = { padding: '7px 14px', fontSize: 13, borderRadius: 8, cursor: 'pointer', border: 'none', background: 'rgba(99,102,241,0.9)', color: '#fff', fontWeight: 600 }
