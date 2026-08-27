@@ -12,6 +12,12 @@
   NODE_VERSION = "20"
   # VITE_PPTX_BACKEND_URL = "https://your-backend.example.com"  # 클라우드 백엔드 사용 시
 
+# 공유 링크 기능(파일 > 공유 링크 만들기) — Netlify Functions + Blobs.
+# .flatproj(슬라이드+발표자노트+나레이션 음성)를 30일간 보관하고 링크로 즉시 열람/재생하게 한다.
+[functions]
+  directory = "netlify/functions"
+  node_bundler = "esbuild"
+
 # PWA 매니페스트 MIME 교정(기본 octet-stream → 규격 타입)
 [[headers]]
   for = "/manifest.webmanifest"

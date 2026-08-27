@@ -5,6 +5,7 @@ import { exportFlatHtml, exportFlatHtmlAllPages, downloadHtml } from '../core/Fl
 import { openAiSettings } from './AiSettingsModal'
 import { openCapabilities } from './CapabilitiesModal'
 import { openGenitorSkill } from './GenitorSkillModal'
+import { openShareLinkModal } from './ShareLinkModal'
 import { openFile } from '../core/FilePicker'
 import { confirmDialog } from './ConfirmDialog'
 import { isBundlerHtml } from '../core/BundlerUnpacker'
@@ -28,7 +29,7 @@ export default function FileMenu({ fallbackSample }) {
   const menuRef = useRef(null)
 
   const { flatElements, canvasSize, fontImports,
-          setViewMode, loadAllPages, clearPageCache, regenerateAllPages, debugMode, setDebugMode } = useFlatStore()
+          clearPageCache, regenerateAllPages, debugMode, setDebugMode } = useFlatStore()
   const { loadHtml, htmlImported } = useEditorStore()
   const { canInstall } = usePwaInstall()
 
@@ -176,23 +177,22 @@ export default function FileMenu({ fallbackSample }) {
     await useFlatStore.getState().saveProject({ saveAs: true })
   }, [])
 
+  // 공유 링크 만들기 — 발표자노트 나레이션(음성) 포함 프로젝트를 업로드해 링크 발급 (모달에서 진행)
+  const handleShareLink = useCallback(() => {
+    setOpen(false)
+    openShareLinkModal()
+  }, [])
+
   // 프로젝트 파일(File) + 핸들을 로드해 적용 + 최근목록 기록 (열기/최근열기 공용)
   const loadProjectFromFile = useCallback(async (file, handle) => {
     const { loadProjectFile } = await import('../core/ProjectSerializer.js')
     const data = await loadProjectFile(file)
-    // 이전 HTML 덱(slideHtml/요소/reveal 구조) 초기화 — 안 하면 HTML 모드에 이전 프로젝트 내용이 남는다.
-    // (.flatproj는 HTML 원본을 저장하지 않으므로 flat 스크래치 상태로 둔다)
-    useEditorStore.getState().resetDeck()
-    loadAllPages(data.pages, data.currentPageKey)
-    useFlatStore.getState().setCustomTheme(data.customTheme)
-    useFlatStore.getState().setThemeId(data.themeId)
+    const { applyLoadedProject } = await import('../core/ProjectLoader.js')
+    applyLoadedProject(data)
     useFlatStore.getState().setProjectFile(handle, file.name)
-    useFlatStore.getState().setHtmlSourceName(null) // 프로젝트명이 기본 파일명 기준이 됨
-    useEditorStore.getState().setHtmlImported(false)
-    if (useFlatStore.getState().viewMode === 'html') setViewMode('flat')
     const { addRecent } = await import('../core/RecentProjects.js')
     await addRecent(handle, file.name) // 핸들 있으면 최근목록에 기록
-  }, [loadAllPages, setViewMode])
+  }, [])
 
   // 프로젝트 열기 — 확장자 필터(.flatproj). 파일명/핸들을 기억해 재저장에 사용.
   const handleOpenProject = useCallback(async () => {
@@ -363,6 +363,7 @@ export default function FileMenu({ fallbackSample }) {
       children: recents.map((e, i) => ({ id: 'recent-' + i, label: e.name, action: () => openRecent(e) })) },
     { id: 'saveProject', label: '프로젝트 저장', shortcut: 'Ctrl+S', action: handleSaveProject, disabled: !hasContent },
     { id: 'saveProjectAs', label: '다른 이름으로 저장', action: handleSaveProjectAs, disabled: !hasContent },
+    { id: 'shareLink', label: '공유 링크 만들기', shortcut: '🔗', action: handleShareLink, disabled: !hasContent },
     { id: 'sep1', type: 'separator' },
     { id: 'export', label: '내보내기', submenu: 'export', disabled: !hasContent,
       children: [
