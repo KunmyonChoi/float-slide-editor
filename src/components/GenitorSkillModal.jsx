@@ -27,14 +27,27 @@ const SKILLS = [
 ]
 
 const base = import.meta.env.BASE_URL || '/'
-const skillUrl = (name) => `${base}skills/${name}/SKILL.md`
+const skillUrl = (name, path) => `${base}skills/${name}/${path}`
+
+// 스킬별 SKILL.md 외 부속 파일(있으면 zip에 함께 담는다). genitor-slides는 SKILL.md가
+// scripts/verify_deck.py를 참조하므로 같이 내려받아야 검증 스크립트를 실제로 쓸 수 있다.
+const EXTRA_FILES = {
+  'genitor-slides': ['scripts/verify_deck.py'],
+}
 
 async function fetchSkill(name) {
-  const text = await fetch(skillUrl(name)).then(r => {
+  const text = await fetch(skillUrl(name, 'SKILL.md')).then(r => {
     if (!r.ok) throw new Error(`${name}: ${r.status}`)
     return r.text()
   })
-  return { name, text }
+  const extras = await Promise.all((EXTRA_FILES[name] || []).map(async (path) => {
+    const content = await fetch(skillUrl(name, path)).then(r => {
+      if (!r.ok) throw new Error(`${name}/${path}: ${r.status}`)
+      return r.text()
+    })
+    return { path, content }
+  }))
+  return { name, text, extras }
 }
 
 function triggerDownload(blob, filename) {
@@ -55,7 +68,10 @@ async function downloadZip(setBusy) {
     const files = await Promise.all(SKILLS.map(s => fetchSkill(s.name)))
     const JSZip = (await import('jszip')).default
     const zip = new JSZip()
-    for (const f of files) zip.file(`${f.name}/SKILL.md`, f.text)
+    for (const f of files) {
+      zip.file(`${f.name}/SKILL.md`, f.text)
+      for (const extra of f.extras) zip.file(`${f.name}/${extra.path}`, extra.content)
+    }
     triggerDownload(await zip.generateAsync({ type: 'blob' }), 'genitor-claude-skills.zip')
   } catch (e) {
     alert('스킬 파일을 준비하지 못했습니다: ' + (e?.message || e) + '\n아래 개별 다운로드 링크를 사용하세요.')
@@ -72,6 +88,7 @@ async function downloadSkillZip(name, setBusy) {
     const JSZip = (await import('jszip')).default
     const zip = new JSZip()
     zip.file(`${f.name}/SKILL.md`, f.text)
+    for (const extra of f.extras) zip.file(`${f.name}/${extra.path}`, extra.content)
     triggerDownload(await zip.generateAsync({ type: 'blob' }), `${name}.zip`)
   } catch (e) {
     alert('스킬 zip을 준비하지 못했습니다: ' + (e?.message || e))
