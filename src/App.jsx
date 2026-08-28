@@ -34,6 +34,20 @@ function getShareIdFromUrl() {
   } catch { return null }
 }
 
+// Claude(특히 Desktop — 파일 저장/드래그&드롭이 마땅치 않은 환경)가 생성한 슬라이드 덱을
+// 곧바로 가져올 수 있도록 `#import=<encodeURIComponent(html)>` 해시로 진입하는 경로.
+// 해시는 서버로 전송되지 않으므로 별도 백엔드 없이(=공유 링크와 달리 네트워크 요청 없이)
+// 그 자리에서 동기적으로 디코드해 로드한다.
+const IMPORT_HASH_PREFIX = '#import='
+function getImportHtmlFromUrl() {
+  try {
+    const hash = window.location.hash
+    if (!hash || !hash.startsWith(IMPORT_HASH_PREFIX)) return null
+    const encoded = hash.slice(IMPORT_HASH_PREFIX.length)
+    return encoded ? decodeURIComponent(encoded) : null
+  } catch { return null }
+}
+
 export default function App() {
   const rawViewMode = useFlatStore(s => s.viewMode)
   const debugMode = useFlatStore(s => s.debugMode)
@@ -65,6 +79,23 @@ export default function App() {
         }
       })()
       return
+    }
+
+    // 새로고침/북마크 시 재로딩되지 않도록, 또 대용량 콘텐츠가 주소창에 남지 않도록
+    // (성공/실패와 무관하게) 해시를 즉시 제거한다.
+    const importHtml = getImportHtmlFromUrl()
+    if (importHtml) window.history.replaceState(null, '', window.location.pathname + window.location.search)
+
+    // 해시 자체가 URL 최대 길이를 넘겨 잘려 들어왔을 수 있으므로 최소 형태 검증 후 로드.
+    // (공유 링크와 달리 서버 호출이 없어 동기적으로 즉시 반영된다.)
+    if (importHtml && /<!doctype\s+html|<html[\s>]/i.test(importHtml)) {
+      fs.clearPageCache()
+      fs.setProjectFile(null, null)
+      es.loadHtml(importHtml, { imported: true })
+      return
+    }
+    if (importHtml) {
+      console.warn('[import] URL 해시의 HTML이 불완전해 보여 가져오기를 건너뜁니다')
     }
 
     if (fs.flatPageCount === 0 && !es.slideHtml) {

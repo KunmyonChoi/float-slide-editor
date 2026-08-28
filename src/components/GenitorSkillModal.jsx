@@ -126,6 +126,9 @@ function Dialog() {
           설치하는 스킬입니다. Claude에게 “Genitor에서 편집할 슬라이드 만들어줘”라고 하면 이 규약대로 덱 HTML을 작성하고,
           필요하면 Higgsfield AI로 이미지·영상을 생성해 넣어 줍니다. 결과 HTML을 이 앱의
           <b style={{ color: '#cbd5e1' }}> 파일 ▸ 가져오기</b> 또는 캔버스에 붙여넣기(Ctrl/Cmd+V)로 가져오면 됩니다.
+          Claude Desktop처럼 파일 저장이 번거로운 환경에서는 Claude가 이 주소 뒤에
+          <b style={{ color: '#cbd5e1' }}> #import=&lt;URL 인코딩된 HTML&gt;</b>을 붙인 링크를 만들어 줄 수도 있습니다
+          — 그 링크를 열기만 하면 자동으로 가져옵니다.
         </div>
 
         <Section title="1. 스킬 다운로드">
