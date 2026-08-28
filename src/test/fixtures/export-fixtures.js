@@ -200,7 +200,9 @@ export const svgElement = {
   elements: [
     makeElement({
       type: 'svg',
-      content: '<svg viewBox="0 0 100 100"><circle cx="50" cy="50" r="40" fill="#00e5ff"/></svg>',
+      // DOMPurify(ProjectSerializer 로드 시 svg 새니타이즈)가 self-closing 태그를 닫는 태그로
+      // 정규화하므로, Project 라운드트립 비교가 어긋나지 않도록 처음부터 닫는 태그로 작성한다.
+      content: '<svg viewBox="0 0 100 100"><circle cx="50" cy="50" r="40" fill="#00e5ff"></circle></svg>',
       x: 500, y: 300, width: 120, height: 120, zIndex: 3,
       styles: {},
     }),
