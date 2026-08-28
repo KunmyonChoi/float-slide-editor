@@ -25,11 +25,25 @@ Genitor(float-editor)는 HTML을 받아 **편집 가능한 flat 요소(text·sha
 
 ## 핸드오프 (사용자가 Genitor로 가져가는 법)
 
-생성한 HTML을 사용자가 셋 중 하나로 가져간다:
+생성한 HTML을 사용자가 다음 중 하나로 가져간다:
 1. **붙여넣기** — HTML 소스 전체를 복사해 Genitor 캔버스에서 `Ctrl/Cmd+V`. (온전한
    `<!DOCTYPE html>` 문서일 때만 덱 가져오기로 인식한다.)
 2. **드래그&드롭** — `.html` 파일을 캔버스에 떨군다.
 3. **파일 열기** — File 메뉴 ▸ "HTML 열기".
+4. **URL 임포트 링크** (Claude Desktop처럼 파일 저장·드래그가 마땅치 않은 환경에 권장) —
+   생성한 HTML 문서 전체를 `encodeURIComponent`로 URL 인코딩해
+   `<Genitor 앱 주소>#import=<인코딩된 HTML>` 형태의 링크를 만들어 사용자에게
+   클릭 가능한 링크로 전달한다. Genitor는 페이지 로드 시 `#import=` 해시를 감지하면
+   그 자리에서 자동으로 디코드해 덱을 가져온다(서버 왕복 없음, 새로고침 방지를 위해
+   가져온 뒤 해시는 주소창에서 즉시 제거됨).
+   - Genitor 앱 주소를 모르면 사용자에게 먼저 물어본다(예: `https://your-genitor.app/`).
+     경로 뒤에 그대로 `#import=...`만 붙이면 되고, 이미 있는 쿼리스트링은 유지해도 된다.
+   - 인코딩은 정확해야 하므로(한글·특수문자 다수) **가능하면 코드 실행으로 처리** —
+     예: `python3 -c "import urllib.parse,sys; print(urllib.parse.quote(open('deck.html').read(), safe=''))"`.
+     코드 실행이 없는 환경에서 직접 손으로 퍼센트 인코딩하지 말 것(누락·오류 위험).
+   - 인코딩 후 URL이 매우 길어지면(이미지 base64 데이터 URL을 다량 인라인한 경우 등)
+     브라우저·클라이언트가 링크를 잘라먹을 수 있다. 그런 덱은 방법 1~3(붙여넣기/드래그/파일
+     열기)을 대신 권장한다.
 
 따라서 출력은 **항상 단일 자립형(self-contained) `.html` 문서**여야 한다(외부 JS 의존 금지,
 폰트만 CDN `<link>` 허용).
@@ -115,8 +129,10 @@ body { width: 1920px; height: 1080px; overflow: hidden; position: relative; back
             border-radius:24px;box-shadow:0 15px 45px rgba(0,0,0,0.3);"></div>
 ```
 
-**카드 + 텍스트(병합)** — 배경/테두리가 있는 div에 텍스트 하나면 **하나의 편집 가능한
-텍스트 요소**로 병합된다. 카드 안의 글은 중앙정렬이 깔끔:
+**카드 + 텍스트(병합)** — 배경/테두리가 있는 div에 **텍스트 노드 한 줄만** 있을 때, 하나의
+편집 가능한 텍스트 요소로 병합된다. 카드 안의 글은 중앙정렬이 깔끔. **이 레시피는 한 줄짜리
+카드 전용이다.** `<br>`이나 두 개 이상의 `<strong>`/`<span>`이 필요해지는 순간 아래
+"여러 줄 카드"로 갈아탈 것:
 ```html
 <div style="position:absolute;left:120px;top:360px;width:780px;height:240px;
             background:#1e293b;border-radius:24px;padding:36px;
@@ -125,6 +141,28 @@ body { width: 1920px; height: 1080px; overflow: hidden; position: relative; back
   카드 본문 텍스트
 </div>
 ```
+
+**여러 줄 카드 (라벨 + 제목 + 수치 + 본문)** — 카드는 **텍스트 없는 도형 하나**로 두고,
+그 위에 텍스트를 **각각 독립된 절대 위치 블록**으로 쌓는다. flex를 쓰지 않으므로 브라우저
+렌더와 Genitor 추출 결과가 일치하고, 라벨·제목·수치·본문이 각각 하나의 편집 요소로 들어간다.
+세로 중앙 정렬이 필요하면 flex 대신 좌표를 계산해서 top을 정한다:
+```html
+<!-- 카드(도형) -->
+<div style="position:absolute;left:120px;top:318px;width:393px;height:450px;
+            background:#f8fafc;border:1px solid #e5e7eb;border-radius:20px;"></div>
+<!-- 그 위에 얹는 텍스트들 (좌표 = 카드 좌표 + 패딩, 아래로 누적) -->
+<div style="position:absolute;left:153px;top:357px;width:327px;height:32px;
+            font-size:21px;font-weight:700;color:#EA002C;line-height:1.5;">최대 할인</div>
+<div style="position:absolute;left:153px;top:401px;width:327px;height:41px;
+            font-size:28px;font-weight:700;color:#111827;line-height:1.4;">삼성카드 T프리미엄</div>
+<div style="position:absolute;left:153px;top:450px;width:327px;height:57px;
+            font-size:42px;font-weight:900;color:#EA002C;line-height:1.35;">96만 원</div>
+<div style="position:absolute;left:153px;top:525px;width:327px;height:119px;
+            font-size:23px;color:#6b7280;line-height:1.75;">월 3만 5천 원 × 24개월<br>+ 캐시백 12만 원<br>전월 실적 80만 원 ↑</div>
+```
+
+> 블록 높이는 `줄 수 × font-size × line-height`로 계산해 넣는다. 텍스트가 많은 덱이라면
+> 이 좌표 누적을 손으로 하지 말고 작은 생성 스크립트(파이썬 등)로 뽑는 편이 훨씬 안전하다.
 
 **리치 텍스트** — `<strong>` `<em>` `<span style>` `<br>`는 보존된다:
 ```html
@@ -145,11 +183,27 @@ body { width: 1920px; height: 1080px; overflow: hidden; position: relative; back
 </div>
 ```
 
-**이미지** — div 안에 `<img>`, object-fit으로 채움:
+**이미지** — div로 감싸 `<img>`를 object-fit으로 채운다. **테두리·라운드·그림자는 래퍼가 아니라 `<img>`에 직접** 준다:
 ```html
-<div style="position:absolute;left:1020px;top:360px;width:780px;height:450px;border-radius:24px;overflow:hidden;">
+<div style="position:absolute;left:1020px;top:360px;width:780px;height:450px;overflow:hidden;border-radius:24px;">
   <img src="https://example.com/photo.jpg" alt=""
-       style="width:100%;height:100%;object-fit:cover;display:block;" />
+       style="width:100%;height:100%;object-fit:cover;display:block;
+              border-radius:24px;border:1px solid rgba(255,255,255,0.15);box-sizing:border-box;" />
+</div>
+```
+
+> **미디어를 도형이 덮지 않게 하라(중요).** Genitor는 클릭 시 **최상위 요소**를 선택한다. 이미지/영상
+> 위에 전면 오버레이·테두리 도형을 얹거나, 래퍼 div에 배경/테두리/그림자를 주면 **래퍼가 "도형"으로
+> 추출돼 미디어를 덮는다** → 미디어 대신 그 도형이 선택되어 "이미지가 도형으로 로드"되고 이미지
+> AI(디자인 다듬기·리믹스 등)도 안 뜬다. 그러므로:
+> - **래퍼 div엔 `overflow`·`border-radius`만.** 배경·테두리·그림자는 `<img>`/`<video>` 요소에 직접.
+> - 가독성용 그라디언트 오버레이는 **전체가 아니라 하단 스트립 등 부분만** 덮어 미디어의 클릭 영역을 남긴다.
+
+**영상** — 이미지와 동일(테두리는 `<video>`에 직접). `<video>`의 재생 속성은 보존된다:
+```html
+<div style="position:absolute;left:120px;top:180px;width:780px;height:450px;overflow:hidden;border-radius:24px;">
+  <video src="https://example.com/clip.mp4" autoplay muted loop playsinline
+         style="width:100%;height:100%;object-fit:cover;display:block;border-radius:24px;"></video>
 </div>
 ```
 
@@ -178,12 +232,39 @@ body { width: 1920px; height: 1080px; overflow: hidden; position: relative; back
 - **장마다 레이아웃·강조를 바꿔** 단조로움을 피한다("스타일 다양성" 절).
 
 **피할 것 (추출이 망가지는 패턴)**
+- **`display:flex` 카드 안에 자식 요소를 넣기** → `<strong>` `<span>` `<br>`이 전부 개별 flex
+  item이 되어 **가로로 늘어선다.** `<br>`은 폭 0짜리 아이템이라 줄바꿈이 되지 않고, 각 조각은
+  좁게 수축돼 내부에서 강제로 줄바꿈되며, 아이템 사이에 공백이 없어 글자가 붙어 보인다.
+  (예: 262px 카드가 `①`(24px) + `T 나는 폰교체`(99px) + 본문(97px) 3열로 쪼개짐.)
+  여러 줄이 필요하면 위의 "여러 줄 카드" 패턴을 쓸 것.
 - 레이아웃을 **JS로** 잡기, `<canvas>`/WebGL 그리기 → 추출 안 됨.
 - 반응형 단위(`vw`,`vh`,`%` 폭, `clamp()`)로 핵심 배치 → 폭/줄바꿈이 어긋남. px로.
 - `opacity:0`로 내용 숨기기 → 숨김 처리되어 사라짐(보일 내용만 둘 것).
 - `position:fixed`/`onclick` 요소에 **슬라이드 콘텐츠**를 담기 → 내비로 간주되어 제외됨.
 - `scale()` 외 복합 transform(skew/3D) → scale만 반영되고 나머지 소실.
 - `::before content:attr()/counter()/url()`, `<input>` placeholder → 추출 안 됨.
+- 이미지/영상 **래퍼 div에 배경·테두리·그림자** → 래퍼가 도형으로 추출돼 미디어를 덮는다(미디어 선택·이미지 AI 불가). 장식은 `<img>`/`<video>`에 직접.
+- 이미지/영상 **위에 전면 오버레이/테두리 도형**을 얹기 → 최상위 도형이 선택돼 미디어를 못 고른다. 오버레이는 부분(스트립)만.
+
+## 내보내기 전 검증 (코드 실행이 가능한 환경이면 필수)
+
+폭 계산을 머리로 하면 flex가 레이아웃을 뒤집는 것 같은 문제를 놓친다. 반드시 실제로 렌더해서
+확인한다. `scripts/verify_deck.py`가 네 가지를 잡아준다:
+
+1. **FLEX+children** — 자식 요소를 가진 flex 컨테이너(위의 치명적 패턴)
+2. **WRAP** — 선언한 `<br>` 수보다 실제 렌더된 줄 수가 많은 요소(의도치 않은 줄바꿈)
+3. **OVERFLOW** — `scrollHeight`가 지정 height를 넘는 요소
+4. **OUTSIDE** — 캔버스(기본 1920×1080, 다른 크기는 `--size`로 지정) 밖으로 나간 요소
+
+```bash
+pip install playwright --break-system-packages && playwright install chromium   # 최초 1회
+python3 scripts/verify_deck.py deck.html                # 문제 목록 출력, 없으면 "OK" (기본 1920x1080)
+python3 scripts/verify_deck.py deck.html --size 1280x720   # 캔버스가 1920x1080이 아닐 때
+python3 scripts/verify_deck.py deck.html --shots out/      # 슬라이드별 PNG + 컨택트시트
+```
+
+출력이 비어 있어야 사용자에게 넘긴다. `--shots`로 뽑은 이미지를 눈으로도 한 번 볼 것 —
+숫자 검증은 통과해도 카드 안 여백이 한쪽으로 쏠리는 등은 보이지 않는다.
 
 ## 형식 데모 (2장 — 배선 확인용. 색·레이아웃은 복제하지 말 것)
 

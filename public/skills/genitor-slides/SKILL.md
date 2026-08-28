@@ -106,8 +106,9 @@ body { width: 1280px; height: 720px; overflow: hidden; position: relative; backg
             border-radius:16px;box-shadow:0 10px 30px rgba(0,0,0,0.3);"></div>
 ```
 
-**카드 + 텍스트(병합)** — 배경/테두리가 있는 div에 텍스트 하나면 **하나의 편집 가능한
-텍스트 요소**로 병합된다. 카드 안의 글은 중앙정렬이 깔끔:
+**카드 + 텍스트(병합)** — 배경/테두리가 있는 div에 **텍스트 노드 한 줄만** 있을 때, 하나의
+편집 가능한 텍스트 요소로 병합된다. **이 레시피는 한 줄짜리 카드 전용이다.** `<br>`이나
+두 개 이상의 `<strong>`/`<span>`이 필요해지는 순간 아래 "여러 줄 카드"로 갈아탈 것:
 ```html
 <div style="position:absolute;left:80px;top:240px;width:520px;height:160px;
             background:#1e293b;border-radius:16px;padding:24px;
@@ -116,6 +117,28 @@ body { width: 1280px; height: 720px; overflow: hidden; position: relative; backg
   카드 본문 텍스트
 </div>
 ```
+
+**여러 줄 카드 (라벨 + 제목 + 수치 + 본문)** — 카드는 **텍스트 없는 도형 하나**로 두고,
+그 위에 텍스트를 **각각 독립된 절대 위치 블록**으로 쌓는다. flex를 쓰지 않으므로 브라우저
+렌더와 Genitor 추출 결과가 일치하고, 라벨·제목·수치·본문이 각각 하나의 편집 요소로 들어간다.
+세로 중앙 정렬이 필요하면 flex 대신 좌표를 계산해서 top을 정한다:
+```html
+<!-- 카드(도형) -->
+<div style="position:absolute;left:80px;top:212px;width:262px;height:300px;
+            background:#f8fafc;border:1px solid #e5e7eb;border-radius:20px;"></div>
+<!-- 그 위에 얹는 텍스트들 (좌표 = 카드 좌표 + 패딩, 아래로 누적) -->
+<div style="position:absolute;left:102px;top:238px;width:218px;height:21px;
+            font-size:14px;font-weight:700;color:#EA002C;line-height:1.5;">최대 할인</div>
+<div style="position:absolute;left:102px;top:267px;width:218px;height:27px;
+            font-size:19px;font-weight:700;color:#111827;line-height:1.4;">삼성카드 T프리미엄</div>
+<div style="position:absolute;left:102px;top:300px;width:218px;height:38px;
+            font-size:28px;font-weight:900;color:#EA002C;line-height:1.35;">96만 원</div>
+<div style="position:absolute;left:102px;top:350px;width:218px;height:79px;
+            font-size:15px;color:#6b7280;line-height:1.75;">월 3만 5천 원 × 24개월<br>+ 캐시백 12만 원<br>전월 실적 80만 원 ↑</div>
+```
+
+> 블록 높이는 `줄 수 × font-size × line-height`로 계산해 넣는다. 텍스트가 많은 덱이라면
+> 이 좌표 누적을 손으로 하지 말고 작은 생성 스크립트(파이썬 등)로 뽑는 편이 훨씬 안전하다.
 
 **리치 텍스트** — `<strong>` `<em>` `<span style>` `<br>`는 보존된다:
 ```html
@@ -184,6 +207,11 @@ body { width: 1280px; height: 720px; overflow: hidden; position: relative; backg
   레터박스(스캐폴드 기본값)로 남기면 깔끔하다.
 
 **피할 것 (추출이 망가지는 패턴)**
+- **`display:flex` 카드 안에 자식 요소를 넣기** → `<strong>` `<span>` `<br>`이 전부 개별 flex
+  item이 되어 **가로로 늘어선다.** `<br>`은 폭 0짜리 아이템이라 줄바꿈이 되지 않고, 각 조각은
+  좁게 수축돼 내부에서 강제로 줄바꿈되며, 아이템 사이에 공백이 없어 글자가 붙어 보인다.
+  (예: 262px 카드가 `①`(24px) + `T 나는 폰교체`(99px) + 본문(97px) 3열로 쪼개짐.)
+  여러 줄이 필요하면 위의 "여러 줄 카드" 패턴을 쓸 것.
 - 레이아웃을 **JS로** 잡기, `<canvas>`/WebGL 그리기 → 추출 안 됨.
 - 반응형 단위(`vw`,`vh`,`%` 폭, `clamp()`)로 핵심 배치 → 폭/줄바꿈이 어긋남. px로.
 - `opacity:0`로 내용 숨기기 → 숨김 처리되어 사라짐(보일 내용만 둘 것).
@@ -192,6 +220,25 @@ body { width: 1280px; height: 720px; overflow: hidden; position: relative; backg
 - `::before content:attr()/counter()/url()`, `<input>` placeholder → 추출 안 됨.
 - 이미지/영상 **래퍼 div에 배경·테두리·그림자** → 래퍼가 도형으로 추출돼 미디어를 덮는다(미디어 선택·이미지 AI 불가). 장식은 `<img>`/`<video>`에 직접.
 - 이미지/영상 **위에 전면 오버레이/테두리 도형**을 얹기 → 최상위 도형이 선택돼 미디어를 못 고른다. 오버레이는 부분(스트립)만.
+
+## 내보내기 전 검증 (코드 실행이 가능한 환경이면 필수)
+
+폭 계산을 머리로 하면 flex가 레이아웃을 뒤집는 것 같은 문제를 놓친다. 반드시 실제로 렌더해서
+확인한다. `scripts/verify_deck.py`가 네 가지를 잡아준다:
+
+1. **FLEX+children** — 자식 요소를 가진 flex 컨테이너(위의 치명적 패턴)
+2. **WRAP** — 선언한 `<br>` 수보다 실제 렌더된 줄 수가 많은 요소(의도치 않은 줄바꿈)
+3. **OVERFLOW** — `scrollHeight`가 지정 height를 넘는 요소
+4. **OUTSIDE** — 캔버스(1280×720) 밖으로 나간 요소
+
+```bash
+pip install playwright --break-system-packages && playwright install chromium   # 최초 1회
+python3 scripts/verify_deck.py deck.html            # 문제 목록 출력, 없으면 "OK"
+python3 scripts/verify_deck.py deck.html --shots out/   # 슬라이드별 PNG + 컨택트시트
+```
+
+출력이 비어 있어야 사용자에게 넘긴다. `--shots`로 뽑은 이미지를 눈으로도 한 번 볼 것 —
+숫자 검증은 통과해도 카드 안 여백이 한쪽으로 쏠리는 등은 보이지 않는다.
 
 ## 완성 예시 (2장, 그대로 붙여넣기 가능)
 
