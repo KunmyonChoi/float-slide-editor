@@ -21,11 +21,25 @@ Genitor(float-editor)는 HTML을 받아 **편집 가능한 flat 요소(text·sha
 
 ## 핸드오프 (사용자가 Genitor로 가져가는 법)
 
-생성한 HTML을 사용자가 셋 중 하나로 가져간다:
+생성한 HTML을 사용자가 다음 중 하나로 가져간다:
 1. **붙여넣기** — HTML 소스 전체를 복사해 Genitor 캔버스에서 `Ctrl/Cmd+V`. (온전한
    `<!DOCTYPE html>` 문서일 때만 덱 가져오기로 인식한다.)
 2. **드래그&드롭** — `.html` 파일을 캔버스에 떨군다.
 3. **파일 열기** — File 메뉴 ▸ "HTML 열기".
+4. **URL 임포트 링크** (Claude Desktop처럼 파일 저장·드래그가 마땅치 않은 환경에 권장) —
+   생성한 HTML 문서 전체를 `encodeURIComponent`로 URL 인코딩해
+   `<Genitor 앱 주소>#import=<인코딩된 HTML>` 형태의 링크를 만들어 사용자에게
+   클릭 가능한 링크로 전달한다. Genitor는 페이지 로드 시 `#import=` 해시를 감지하면
+   그 자리에서 자동으로 디코드해 덱을 가져온다(서버 왕복 없음, 새로고침 방지를 위해
+   가져온 뒤 해시는 주소창에서 즉시 제거됨).
+   - Genitor 앱 주소를 모르면 사용자에게 먼저 물어본다(예: `https://your-genitor.app/`).
+     경로 뒤에 그대로 `#import=...`만 붙이면 되고, 이미 있는 쿼리스트링은 유지해도 된다.
+   - 인코딩은 정확해야 하므로(한글·특수문자 다수) **가능하면 코드 실행으로 처리** —
+     예: `python3 -c "import urllib.parse,sys; print(urllib.parse.quote(open('deck.html').read(), safe=''))"`.
+     코드 실행이 없는 환경에서 직접 손으로 퍼센트 인코딩하지 말 것(누락·오류 위험).
+   - 인코딩 후 URL이 매우 길어지면(이미지 base64 데이터 URL을 다량 인라인한 경우 등)
+     브라우저·클라이언트가 링크를 잘라먹을 수 있다. 그런 덱은 방법 1~3(붙여넣기/드래그/파일
+     열기)을 대신 권장한다.
 
 따라서 출력은 **항상 단일 자립형(self-contained) `.html` 문서**여야 한다(외부 JS 의존 금지,
 폰트만 CDN `<link>` 허용).

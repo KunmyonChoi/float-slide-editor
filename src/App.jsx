@@ -20,7 +20,7 @@ import { CameraCaptureHost } from './components/CameraCaptureModal'
 import { LetteringHost } from './components/LetteringModal'
 import { InfographicHost } from './components/InfographicModal'
 import { ImagenLayoutHost } from './components/ImagenLayoutModal'
-import { ConfirmHost } from './components/ConfirmDialog'
+import { ConfirmHost, confirmDialog } from './components/ConfirmDialog'
 import { ShareLinkHost } from './components/ShareLinkModal'
 import { fetchSharedProject } from './core/ShareLink'
 import { useFlatStore } from './store/flatStore'
@@ -32,6 +32,34 @@ function getShareIdFromUrl() {
   try {
     return new URLSearchParams(window.location.search).get('share')
   } catch { return null }
+}
+
+// Claude(특히 Desktop — 파일 저장/드래그&드롭이 마땅치 않은 환경)가 생성한 슬라이드 덱을
+// 곧바로 가져올 수 있도록 `#import=<encodeURIComponent(html)>` 해시로 진입하는 경로.
+// 해시는 서버로 전송되지 않으므로 별도 백엔드 없이(=공유 링크와 달리 네트워크 요청 없이)
+// 그 자리에서 동기적으로 디코드해 로드한다. 단, 링크 클릭만으로 외부 HTML(스크립트
+// 포함 가능)이 곧바로 실행되지 않도록 로드 전 사용자 확인을 받는다(아래 useEffect).
+const IMPORT_HASH_PREFIX = '#import='
+
+// 해시가 있는지만(디코드 시도 없이) 확인 — 디코드 성공 여부와 무관하게 항상 이걸로
+// 지워서 새로고침 시 재로딩되거나 잘못된 해시가 주소창/북마크에 남지 않게 한다.
+function hasImportHash() {
+  return window.location.hash.startsWith(IMPORT_HASH_PREFIX)
+}
+
+function getImportHtmlFromUrl() {
+  try {
+    const hash = window.location.hash
+    if (!hash.startsWith(IMPORT_HASH_PREFIX)) return null
+    const encoded = hash.slice(IMPORT_HASH_PREFIX.length)
+    return encoded ? decodeURIComponent(encoded) : null
+  } catch { return null }
+}
+
+// 여는 태그뿐 아니라 닫는 태그(</html>)까지 있는지 확인한다 — URL 길이 제한으로 뒤쪽이
+// 잘렸다면 여는 태그 검사만으로는 통과해버리므로, 닫는 태그까지 봐야 잘림을 잡아낸다.
+function looksLikeCompleteHtmlDoc(html) {
+  return /<!doctype\s+html|<html[\s>]/i.test(html) && /<\/html\s*>/i.test(html)
 }
 
 export default function App() {
@@ -65,6 +93,40 @@ export default function App() {
         }
       })()
       return
+    }
+
+    if (hasImportHash()) {
+      // 지우기 전에 먼저 읽어야 한다 — 순서가 바뀌면 지운 직후 빈 해시를 읽게 된다.
+      const importHtml = getImportHtmlFromUrl()
+      // 성공/실패와 무관하게 곧바로 지운다: 새로고침 시 재로딩 방지, 대용량/잘못된
+      // 콘텐츠가 주소창·북마크에 남지 않도록.
+      window.history.replaceState(null, '', window.location.pathname + window.location.search)
+
+      // 해시 자체가 URL 최대 길이를 넘겨 잘려 들어왔을 수 있으므로 최소 형태 검증 후 로드.
+      // (공유 링크와 달리 서버 호출이 없어 동기적으로 즉시 반영된다.)
+      if (importHtml && looksLikeCompleteHtmlDoc(importHtml)) {
+        (async () => {
+          // 링크 클릭 한 번만으로 외부 HTML(스크립트 포함 가능)이 확인 없이 곧바로
+          // iframe에서 실행되지 않도록, 다른 가져오기 경로(붙여넣기/드래그&드롭)와
+          // 동일하게 사용자 확인을 받는다.
+          const ok = await confirmDialog({
+            title: 'HTML 슬라이드 가져오기',
+            message: '링크로 전달된 HTML 슬라이드를 가져옵니다.\nClaude 등 신뢰할 수 있는 출처의 링크가 맞는지 확인한 뒤 계속하세요.',
+            confirmText: '가져오기', cancelText: '취소', danger: true,
+          })
+          if (ok) {
+            fs.clearPageCache()
+            fs.setProjectFile(null, null)
+            es.loadHtml(importHtml, { imported: true })
+          } else if (fs.flatPageCount === 0 && !es.slideHtml) {
+            fs.startScratchProject('title')
+          }
+        })()
+        return
+      }
+
+      console.warn('[import] URL 해시의 HTML이 불완전해 보여 가져오기를 건너뜁니다')
+      alert('가져올 슬라이드 HTML을 읽지 못했습니다. 링크가 잘렸을 수 있습니다.\n파일 저장 후 "HTML 열기" 또는 클립보드 붙여넣기를 이용해 주세요.')
     }
 
     if (fs.flatPageCount === 0 && !es.slideHtml) {
