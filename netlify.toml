@@ -44,8 +44,11 @@
     Cache-Control = "public, max-age=31536000, immutable"
 
 # 존재하지 않는 자산은 깔끔히 404 — SPA 폴백이 index.html(text/html)로 가로채 모듈 MIME 오류 내는 것 방지
+# (Netlify 리다이렉트 규칙은 "to"가 필수이므로 정적 404.html을 명시한다. 없으면 규칙이
+#  무효화되어 아래 SPA 캐치올로 흘러가 버린다.)
 [[redirects]]
   from = "/assets/*"
+  to = "/404.html"
   status = 404
 
 # SPA: 나머지 경로를 index.html로 (클라이언트 라우팅 대비)

@@ -30,6 +30,15 @@ export default async (req) => {
   }
   if (chunkIndex >= totalChunks) return json({ error: 'chunk_index_out_of_range' }, 400)
 
+  const shareStore = getStore('genitor-shares')
+
+  // id는 클라이언트가 공유를 새로 만들 때마다 새 난수로 생성한다(ShareLink.js:randomId) —
+  // 즉 이미 완료된 공유가 존재하는 id로 들어오는 업로드는 정상 흐름이 아니다. id는 읽기
+  // 권한과 함께 도는 캡슐이라 별도 소유자 검증 없이 재업로드를 허용하면 링크를 손에 넣은
+  // 누구든 기존 공유 내용을 조용히 다른 콘텐츠로 바꿔치기할 수 있으므로, 공유를 불변으로
+  // 만들어 막는다.
+  if (await shareStore.getMetadata(id)) return json({ error: 'id_already_used' }, 409)
+
   const body = await req.arrayBuffer()
   if (body.byteLength === 0) return json({ error: 'empty_chunk' }, 400)
   if (body.byteLength > MAX_CHUNK_BYTES) return json({ error: 'chunk_too_large', maxBytes: MAX_CHUNK_BYTES }, 413)
@@ -42,6 +51,10 @@ export default async (req) => {
   if (chunkIndex < totalChunks - 1) {
     return json({ done: false, received: chunkIndex + 1, totalChunks })
   }
+
+  // 마지막 청크 도착 전 다시 한 번 확인 — 청크 업로드가 진행되는 사이 같은 id로
+  // 먼저 끝난 다른 요청이 있었을 가능성(경합)에 대비한 재확인.
+  if (await shareStore.getMetadata(id)) return json({ error: 'id_already_used' }, 409)
 
   // 마지막 청크 도착 — 순서대로 이어붙여 최종 산출물로 저장
   const parts = []
@@ -57,7 +70,6 @@ export default async (req) => {
   for (const part of parts) { combined.set(part, offset); offset += part.byteLength }
 
   const expiresAt = Date.now() + EXPIRE_MS
-  const shareStore = getStore('genitor-shares')
   await shareStore.set(id, combined, {
     metadata: { expiresAt, size: totalSize, createdAt: Date.now() },
   })

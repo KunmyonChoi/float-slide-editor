@@ -6,9 +6,30 @@
  *     IndexedDB blob 참조(idb://)를 media/ 파일로 변환하여 포함
  */
 import JSZip from 'jszip'
+import DOMPurify from 'dompurify'
 import { BlobStore } from './BlobStore'
 
 const CURRENT_VERSION = 2
+
+/**
+ * 로드된 프로젝트의 raw HTML을 담을 수 있는 필드(리치 텍스트/도형 content, svg 요소)를 새니타이즈.
+ * 앱 내부 작성 경로는 항상 안전한 content만 만들어내지만(줄바꿈 <br> 또는
+ * markdown.js가 이미 DOMPurify로 살균한 결과), .flatproj 파일은 공유 링크·로컬 파일 열기 등
+ * 신뢰할 수 없는 경로로도 들어올 수 있어 로드 시점에 한 번 더 방어적으로 살균한다.
+ */
+function sanitizeLoadedPages(pages) {
+  for (const page of Object.values(pages || {})) {
+    for (const el of (page.elements || [])) {
+      if (typeof el.content !== 'string') continue
+      if (el.type === 'svg') {
+        el.content = DOMPurify.sanitize(el.content, { USE_PROFILES: { svg: true, svgFilters: true } })
+      } else if (el.isRich) {
+        el.content = DOMPurify.sanitize(el.content, { USE_PROFILES: { html: true } })
+      }
+    }
+  }
+  return pages
+}
 
 /**
  * 옛 프로젝트 호환 마이그레이션 — 배경 판정이 '크기 추론'에서 '명시 플래그(isBackground)'로
@@ -203,7 +224,7 @@ async function _loadZipProject(file) {
   }
 
   return {
-    pages: _usesBgFlagModel(data) ? data.pages : migrateLegacyBackgrounds(data.pages),
+    pages: sanitizeLoadedPages(_usesBgFlagModel(data) ? data.pages : migrateLegacyBackgrounds(data.pages)),
     currentPageKey: data.currentPageKey || Object.keys(data.pages)[0],
     themeId: data.themeId || null,
     customTheme: data.customTheme || null,
@@ -226,7 +247,7 @@ export function deserializeProject(jsonString) {
   }
 
   return {
-    pages: _usesBgFlagModel(data) ? data.pages : migrateLegacyBackgrounds(data.pages),
+    pages: sanitizeLoadedPages(_usesBgFlagModel(data) ? data.pages : migrateLegacyBackgrounds(data.pages)),
     currentPageKey: data.currentPageKey || Object.keys(data.pages)[0],
     themeId: data.themeId || null,
     customTheme: data.customTheme || null,
