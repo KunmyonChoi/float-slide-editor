@@ -42,3 +42,27 @@ export function setCachedTranscript(blobKey, transcript) {
 export function clearTranscriptCache() {
   try { localStorage.removeItem(STORAGE_KEY) } catch { /* 무시 */ }
 }
+
+// 진행 중인 전사 요청(blobKey → Promise). 발표 시작 시 선행 전사(prefetch)와 현재 슬라이드
+// 자막 로딩이 같은 오디오를 동시에 요청할 수 있어, 중복 STT 호출(과금 낭비)을 막기 위해 공유한다.
+const _inflight = new Map()
+
+/**
+ * 캐시 우선 조회 → 없으면 fetchFn()으로 실제 전사를 수행하고 캐시에 저장한다.
+ * 같은 blobKey를 여러 호출자가 동시에 요청해도(예: 백그라운드 프리페치 + 현재 슬라이드 표시)
+ * 진행 중인 요청을 재사용해 STT 호출은 한 번만 나간다.
+ * @param {string} blobKey
+ * @param {() => Promise<object>} fetchFn  캐시 미스일 때 전사를 수행하는 함수(예: () => transcribeSpeech(blob))
+ * @returns {Promise<object>} transcribeSpeech()와 같은 모양의 전사 결과
+ */
+export function getOrFetchTranscript(blobKey, fetchFn) {
+  const cached = getCachedTranscript(blobKey)
+  if (cached) return Promise.resolve(cached)
+  if (_inflight.has(blobKey)) return _inflight.get(blobKey)
+  const p = Promise.resolve()
+    .then(fetchFn)
+    .then(transcript => { setCachedTranscript(blobKey, transcript); return transcript })
+    .finally(() => { _inflight.delete(blobKey) })
+  _inflight.set(blobKey, p)
+  return p
+}

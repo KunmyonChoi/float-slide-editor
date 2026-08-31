@@ -8,6 +8,8 @@ import PptExportButton from './PptExportButton'
 import ShortcutsButton from './ShortcutsButton'
 import AvatarRecorderButton from './AvatarRecorderButton'
 import CameraCaptureButton from './CameraCaptureButton'
+import { hasApiKey } from '../core/OpenAIClient'
+import { openAiSettings } from './AiSettingsModal'
 
 const FALLBACK_SAMPLE = `<!DOCTYPE html>
 <html lang="ko">
@@ -106,7 +108,7 @@ const FALLBACK_SAMPLE = `<!DOCTYPE html>
  * 발표 모드에서는 완전히 숨겨진다.
  */
 export default function FloatingToolbar() {
-  const { slideHtml, mode, enterPresentation, autoAdvance, setAutoAdvance } = useEditorStore()
+  const { slideHtml, mode, enterPresentation, autoAdvance, setAutoAdvance, karaokeCaptions, setKaraokeCaptions } = useEditorStore()
   const { viewMode, setViewMode, extractFromIframe, debugMode, flatPageCount, flatCurrentPage } = useFlatStore()
   const [presentMenuOpen, setPresentMenuOpen] = useState(false)
   const iframeRef = useEditorStore(s => s.iframeRef)
@@ -175,6 +177,11 @@ export default function FloatingToolbar() {
         setOpen={setPresentMenuOpen}
         autoAdvance={autoAdvance}
         setAutoAdvance={setAutoAdvance}
+        captionsOn={karaokeCaptions}
+        onCaptionsChange={(on) => {
+          if (on && !hasApiKey()) { openAiSettings(); return } // 키 없이 켜봤자 발표 시작 시 전사가 실패함
+          setKaraokeCaptions(on)
+        }}
         onStart={() => enterPresentation()}
         onStartHere={() => enterPresentation({ startIndex: flatCurrentPage || 0 })}
       />
@@ -274,8 +281,8 @@ function ViewModeToggle({ viewMode, disabled, onChange }) {
   )
 }
 
-// 발표 분할 버튼: 메인=처음부터, ▾=옵션(현재부터 / 음성 후 자동 진행 토글)
-function PresentMenu({ disabled, open, setOpen, autoAdvance, setAutoAdvance, onStart, onStartHere }) {
+// 발표 분할 버튼: 메인=처음부터, ▾=옵션(현재부터 / 음성 후 자동 진행 토글 / 자막 선택)
+function PresentMenu({ disabled, open, setOpen, autoAdvance, setAutoAdvance, captionsOn, onCaptionsChange, onStart, onStartHere }) {
   useEffect(() => {
     if (!open) return
     const onDown = (e) => { if (!e.target.closest?.('[data-present-menu]')) setOpen(false) }
@@ -307,6 +314,24 @@ function PresentMenu({ disabled, open, setOpen, autoAdvance, setAutoAdvance, onS
           <label className="flex items-center gap-2 px-3 py-2 text-xs text-slate-200 cursor-pointer hover:bg-white/10">
             <input type="checkbox" checked={autoAdvance} onChange={e => setAutoAdvance(e.target.checked)} className="accent-indigo-500" />
             자동 진행
+          </label>
+          <div className="h-px bg-white/10" />
+          {/* 자막(STT) — 발표 시작 전에 미리 선택. 켜두면 시작 슬라이드 전사를 먼저 마치고
+              나머지는 진행 순서대로 백그라운드에서 준비해, 발표 중간에 자막이 늦게 뜨는 걸 막는다. */}
+          <label
+            className="flex items-center justify-between gap-2 px-3 py-2 text-xs text-slate-200"
+            title="STT로 노트 음성을 받아써 카라오케 자막으로 표시 — 발표 시작 전에 미리 준비합니다"
+          >
+            자막
+            <select
+              value={captionsOn ? 'karaoke' : 'off'}
+              onChange={e => onCaptionsChange(e.target.value === 'karaoke')}
+              onClick={e => e.stopPropagation()}
+              className="bg-white/10 border border-white/10 rounded px-1.5 py-0.5 text-[11px] text-slate-200 cursor-pointer"
+            >
+              <option value="off">끄기</option>
+              <option value="karaoke">카라오케(STT)</option>
+            </select>
           </label>
         </div>
       )}

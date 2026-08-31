@@ -85,6 +85,22 @@ export function cueIndexForTime(cues, t) {
   return ans
 }
 
+/**
+ * 발표 진행 순서대로 슬라이드 인덱스를 나열한다: 시작 슬라이드 → 끝까지 → 처음부터 시작 슬라이드
+ * 직전까지(순환). 자막 프리페치(STT 선행 생성)를 "실제로 보게 될 순서"대로 진행하기 위한 것 —
+ * 현재/다음 슬라이드부터 앞서 준비해야 발표 중간에 자막이 늦게 뜨는 문제를 피할 수 있다.
+ * @param {number} startIndex
+ * @param {number} count  전체 슬라이드 수
+ * @returns {number[]}
+ */
+export function presentationOrder(startIndex, count) {
+  if (!count || count <= 0) return []
+  const start = ((startIndex % count) + count) % count
+  const order = []
+  for (let i = 0; i < count; i++) order.push((start + i) % count)
+  return order
+}
+
 // ── STT 정확도 측정(WER/CER) ──
 // 발표자 노트 원문(정답)과 STT 결과(가설)를 비교해 오류율을 낸다. TTS로 노트를 음성화한 경우
 // 노트 원문이 곧 정답 텍스트이므로, "노트→TTS→STT" 왕복으로 이 함수들을 이용해 정확도를 잴 수 있다.
