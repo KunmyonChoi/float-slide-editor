@@ -141,6 +141,13 @@ export async function serializeProject(store) {
     if (page.notesAudio && refMap[page.notesAudio]) {
       page.notesAudio = refMap[page.notesAudio]
     }
+    // 자막(notesCaptions.forRef)은 "이 자막이 어떤 음성을 위한 것인지" 가리키는 idb:// 참조를
+    // 담고 있다 — notesAudio와 똑같이 media/ 경로로 바꿔줘야, 열었을 때 재발급되는 새 idb 키와
+    // 계속 짝이 맞아 스테일(무효) 판정되지 않는다. 못 바꾸면(오디오 자체가 media로 못 들어간
+    // 경우) 자막도 그 오디오와 함께 이미 깨진 것이므로 그대로 둔다.
+    if (page.notesCaptions?.forRef && refMap[page.notesCaptions.forRef]) {
+      page.notesCaptions = { ...page.notesCaptions, forRef: refMap[page.notesCaptions.forRef] }
+    }
   }
 
   const project = {
@@ -220,6 +227,10 @@ async function _loadZipProject(file) {
     }
     if (page.notesAudio && mediaMap[page.notesAudio]) {
       page.notesAudio = mediaMap[page.notesAudio]
+    }
+    // notesAudio와 짝을 맞춰 자막의 forRef도 새로 발급된 idb:// 키로 되돌린다(저장 시의 역과정).
+    if (page.notesCaptions?.forRef && mediaMap[page.notesCaptions.forRef]) {
+      page.notesCaptions = { ...page.notesCaptions, forRef: mediaMap[page.notesCaptions.forRef] }
     }
   }
 

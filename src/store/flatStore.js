@@ -346,6 +346,10 @@ export const useFlatStore = create((set, get) => ({
   /** 노트 음성 발표 재생 볼륨(0~1, 기본 1). 0이어도 재생은 유지돼 자동진행은 동작.
    *  립싱크 AI 휴먼처럼 영상이 소리를 낼 때 0으로 두면 에코 없이 영상-입 완벽 동기. */
   pageNotesAudioVolume: 1,
+  /** 현재 페이지 노트 음성의 STT 자막(가라오케 캡션) — 생성 당시의 음성 참조(forRef, "idb://key")를
+   *  함께 저장해, 음성이 교체되면(notesAudio ≠ forRef) 소비하는 쪽에서 스테일로 판단할 수 있게 한다.
+   *  null=없음. { words, text, language?, duration?, forRef } */
+  pageNotesCaptions: null,
   /** 페이지 삭제 실행취소 토스트 상태: null | { seq, index } */
   pageDeleteNotice: null,
   /** 디버그 모드 — 품질/변환검증/Phase 라벨/html·split 뷰 등 진단 UI 노출 */
@@ -385,13 +389,46 @@ export const useFlatStore = create((set, get) => ({
     set({ pageNotes: text })
   },
 
-  /** 현재 페이지 노트 음성(idb 참조 + 생성 시 노트 해시) 설정 */
+  /** 현재 페이지 노트 음성(idb 참조 + 생성 시 노트 해시) 설정.
+   *  음성이 바뀌면(새로 생성/업로드/녹음/삭제) 기존 자막은 더 이상 이 음성의 것이 아니므로 함께 지운다
+   *  — "자막은 음성이 교체되기 전까지만 유지"가 되도록. */
   setPageNotesAudio(ref, hash) {
     if (_currentPageKey && _pageCache[_currentPageKey]) {
       _pageCache[_currentPageKey].notesAudio = ref
       _pageCache[_currentPageKey].notesAudioHash = hash
+      _pageCache[_currentPageKey].notesCaptions = null
     }
-    set({ pageNotesAudio: ref, pageNotesAudioHash: hash })
+    set({ pageNotesAudio: ref, pageNotesAudioHash: hash, pageNotesCaptions: null })
+  },
+
+  /**
+   * 현재(또는 지정한) 페이지의 STT 자막 설정 — transcribeSpeech() 결과 + forRef(생성 당시 notesAudio)를
+   * 함께 저장한다. pageKey 미지정=현재 페이지.
+   *
+   * 발표 모드는 편집기에서 한 번도 방문(캐시)하지 않은 페이지에도 자막을 생성할 수 있다(백그라운드
+   * 프리페치가 전체 덱을 훑기 때문). 그런 페이지는 아직 _pageCache에 항목이 없어 자막을 저장할 곳이
+   * 없으므로, hydrateFrom(getAllPagesAsync가 만든 완전한 페이지 스냅샷)이 주어지면 그걸로 캐시
+   * 항목을 먼저 만든 뒤(기존 항목이 있으면 건드리지 않음) 자막을 저장한다 — 그래야 발표만 하고 편집기를
+   * 거치지 않은 페이지의 자막도 프로젝트 저장·공유 링크에 실제로 남는다.
+   */
+  setPageNotesCaptions(captions, pageKey, hydrateFrom) {
+    const key = pageKey || _currentPageKey
+    if (key && !_pageCache[key] && hydrateFrom) {
+      _pageCache[key] = {
+        elements: hydrateFrom.elements || [],
+        canvasSize: hydrateFrom.canvasSize,
+        fontImports: hydrateFrom.fontImports || [],
+        history: { stack: [], pointer: -1 },
+        htmlSlideIndex: hydrateFrom.htmlSlideIndex ?? null,
+        notes: hydrateFrom.notes || '',
+        notesAudio: hydrateFrom.notesAudio || null,
+        notesAudioHash: hydrateFrom.notesAudioHash || '',
+        notesAudioVolume: hydrateFrom.notesAudioVolume ?? 1,
+        transition: hydrateFrom.transition || null,
+      }
+    }
+    if (key && _pageCache[key]) _pageCache[key].notesCaptions = captions
+    if (!pageKey || pageKey === _currentPageKey) set({ pageNotesCaptions: captions })
   },
 
   /** 노트 음성 볼륨 설정(0~1). pageKey 미지정=현재 페이지. 다른 페이지면 캐시만 갱신
@@ -412,12 +449,14 @@ export const useFlatStore = create((set, get) => ({
       if (_pageCache[key]) {
         _pageCache[key].notesAudio = audioByKey[key].ref
         _pageCache[key].notesAudioHash = audioByKey[key].hash
+        _pageCache[key].notesCaptions = null // 음성이 일괄 교체됐으니 기존 자막(있었다면)은 무효
       }
     }
     if (_currentPageKey && _pageCache[_currentPageKey]) {
       set({
         pageNotesAudio: _pageCache[_currentPageKey].notesAudio || null,
         pageNotesAudioHash: _pageCache[_currentPageKey].notesAudioHash || '',
+        pageNotesCaptions: _pageCache[_currentPageKey].notesCaptions || null,
       })
     }
   },
@@ -529,6 +568,7 @@ export const useFlatStore = create((set, get) => ({
       _pageCache[_currentPageKey].notesAudio = get().pageNotesAudio
       _pageCache[_currentPageKey].notesAudioHash = get().pageNotesAudioHash
       _pageCache[_currentPageKey].notesAudioVolume = get().pageNotesAudioVolume
+      _pageCache[_currentPageKey].notesCaptions = get().pageNotesCaptions
       _pageCache[_currentPageKey].transition = get().pageTransition
     }
     if (get().flatElements.length === 0) return
@@ -547,6 +587,7 @@ export const useFlatStore = create((set, get) => ({
       notesAudio: get().pageNotesAudio,
       notesAudioHash: get().pageNotesAudioHash,
       notesAudioVolume: get().pageNotesAudioVolume,
+      notesCaptions: get().pageNotesCaptions,
       transition: get().pageTransition,
     }
     get()._syncPageInfo()
@@ -574,6 +615,7 @@ export const useFlatStore = create((set, get) => ({
       pageNotesAudio: cached.notesAudio || null,
       pageNotesAudioHash: cached.notesAudioHash || '',
       pageNotesAudioVolume: cached.notesAudioVolume ?? 1,
+      pageNotesCaptions: cached.notesCaptions || null,
       pageTransition: cached.transition || null,
     })
     get()._syncPageInfo()
@@ -1061,11 +1103,13 @@ export const useFlatStore = create((set, get) => ({
       fontImports: [...(src.fontImports || [])],
       history: { stack: [], pointer: -1 },
       htmlSlideIndex: null, // 복제본은 flat-only
-      // 노트/음성/볼륨/전환도 복제(누락 시 복제본의 나레이션·립싱크 짝 유실)
+      // 노트/음성/볼륨/전환도 복제(누락 시 복제본의 나레이션·립싱크 짝 유실).
+      // 자막도 함께 복제 — 음성 ref(notesAudio)를 그대로 공유하므로 forRef가 여전히 유효하다.
       notes: src.notes || '',
       notesAudio: src.notesAudio || null,
       notesAudioHash: src.notesAudioHash || '',
       notesAudioVolume: src.notesAudioVolume ?? 1,
+      notesCaptions: src.notesCaptions || null,
       transition: src.transition || null,
     }
 
@@ -2202,6 +2246,7 @@ export const useFlatStore = create((set, get) => ({
         notesAudio: cached.notesAudio || null,
         notesAudioHash: cached.notesAudioHash || '',
         notesAudioVolume: cached.notesAudioVolume ?? 1,
+        notesCaptions: cached.notesCaptions || null,
         transition: cached.transition || null,
       }
     }
@@ -2216,6 +2261,7 @@ export const useFlatStore = create((set, get) => ({
         notesAudio: get().pageNotesAudio || null,
         notesAudioHash: get().pageNotesAudioHash || '',
         notesAudioVolume: get().pageNotesAudioVolume ?? 1,
+        notesCaptions: get().pageNotesCaptions || null,
         transition: get().pageTransition || null,
       }
     }
@@ -2261,6 +2307,7 @@ export const useFlatStore = create((set, get) => ({
         notesAudio: _pageCache[key].notesAudio || null,
         notesAudioHash: _pageCache[key].notesAudioHash || '',
         notesAudioVolume: _pageCache[key].notesAudioVolume ?? 1,
+        notesCaptions: _pageCache[key].notesCaptions || null,
         transition: _pageCache[key].transition || null,
       }
     }
@@ -2302,6 +2349,7 @@ export const useFlatStore = create((set, get) => ({
         notesAudio: get().pageNotesAudio || null,
         notesAudioHash: get().pageNotesAudioHash || '',
         notesAudioVolume: get().pageNotesAudioVolume ?? 1,
+        notesCaptions: get().pageNotesCaptions || null,
         transition: get().pageTransition || null,
       }
     }
@@ -2343,6 +2391,8 @@ export const useFlatStore = create((set, get) => ({
         notesAudio: pagesData[key].notesAudio || null,
         notesAudioHash: pagesData[key].notesAudioHash || '',
         notesAudioVolume: pagesData[key].notesAudioVolume ?? 1,
+        // 구버전 프로젝트 파일(자막 기능 이전)에는 이 필드가 없다 — 없으면 null(정상, 재생성 필요).
+        notesCaptions: pagesData[key].notesCaptions || null,
         transition: pagesData[key].transition || null,
       }
     }
@@ -2365,6 +2415,7 @@ export const useFlatStore = create((set, get) => ({
         pageNotesAudio: page.notesAudio || null,
         pageNotesAudioHash: page.notesAudioHash || '',
         pageNotesAudioVolume: page.notesAudioVolume ?? 1,
+        pageNotesCaptions: page.notesCaptions || null,
         pageTransition: page.transition || null,
       })
     }
