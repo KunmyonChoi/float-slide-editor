@@ -242,6 +242,14 @@ export const useEditorStore = create((set, get) => ({
     set({ autoAdvance: on })
   },
 
+  /** 가라오케 자막(STT 단어별 하이라이트) — 노트 음성이 있는 덱에서만 노출. localStorage 기억. */
+  karaokeCaptions: (() => { try { return localStorage.getItem('present-karaoke-captions') === '1' } catch { return false } })(),
+  setKaraokeCaptions(v) {
+    const on = !!v
+    try { localStorage.setItem('present-karaoke-captions', on ? '1' : '0') } catch { /* 무시 */ }
+    set({ karaokeCaptions: on })
+  },
+
   /** 발표 모드 진입 — 브라우저 전체화면 + CSS 전체화면 + 에이전트 비활성 */
   enterPresentation(opts = {}) {
     const { iframeRef } = get()
