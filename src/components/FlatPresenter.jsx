@@ -8,7 +8,8 @@ import { resolveConnectors } from '../core/ConnectorRouting'
 import { BlobStore } from '../core/BlobStore'
 import { computeSteps, isHiddenAt, animationCss, directionVars, stepDurations } from '../core/slideAnimation'
 import { transcribeSpeech } from '../core/SttClient'
-import { getCachedTranscript, setCachedTranscript } from '../core/transcriptCache'
+import { getOrFetchTranscript } from '../core/transcriptCache'
+import { presentationOrder } from '../core/karaoke'
 import { hasApiKey } from '../core/OpenAIClient'
 import { openAiSettings } from './AiSettingsModal'
 
@@ -30,6 +31,50 @@ export function slideTransitionCss(t) {
 // 슬라이드 전환 방향 변수(slide 타입만) — 화살표 = 들어오는 슬라이드가 이동하는 방향.
 // (시작 오프셋은 이동 방향의 반대편; from=offset → to=0으로 애니메이션)
 const SLIDE_OFF = '30%'
+
+// 페이지 키(예: "3-1") → { pageIndex, variantIndex } 정렬 순서로 슬라이드 진행 순서를 만든다.
+function sortedPageKeys(pages) {
+  return Object.keys(pages).sort((a, b) => {
+    const [aP, aV] = a.split('-').map(Number)
+    const [bP, bV] = b.split('-').map(Number)
+    return aP - bP || (aV || 0) - (bV || 0)
+  })
+}
+
+// 발표 시작 전 자막(STT) 준비를 얼마나 기다릴지 — 첫 슬라이드 하나만 막고, 나머지는 백그라운드로.
+const CAPTION_PREFETCH_TIMEOUT_MS = 10000
+
+// 이 페이지의 자막이 이미 프로젝트에 저장돼 있고, 그 자막이 지금의 notesAudio를 위한 것인지
+// (forRef 일치) 확인한다 — 음성이 교체되면 forRef가 낡은 참조가 되어 false를 반환(재생성 필요).
+function hasFreshCaptions(page, audioSrcRef) {
+  return !!page?.notesCaptions && page.notesCaptions.forRef === audioSrcRef
+}
+
+// pageKey의 notesAudio(idb:// 참조) → 자막을 보장한다.
+// 1) 프로젝트에 이미 저장된(음성 교체 전) 자막이 있으면 그대로 재사용(STT 재호출 없음 — 이래야
+//    같은 덱을 다시 열거나 공유 링크로 받은 사람도 다시 돈을 쓰지 않는다).
+// 2) 없으면 STT로 새로 전사(같은 오디오를 여러 곳에서 동시에 요청해도 getOrFetchTranscript가
+//    중복 호출을 막는다) 하고, 결과를 forRef와 함께 flatStore(프로젝트 데이터)에 저장한다 —
+//    이렇게 저장된 자막은 "음성이 교체되기 전까지" 유지되고, 프로젝트 저장·공유 링크에도 실린다.
+async function ensureCaptionsForPage(pageKey, audioSrcRef, pageSnapshot) {
+  if (hasFreshCaptions(pageSnapshot, audioSrcRef)) return pageSnapshot.notesCaptions
+
+  const blobKey = BlobStore.parseRef(audioSrcRef)
+  const blob = await BlobStore.get(blobKey)
+  if (!blob) throw new Error('오디오를 찾을 수 없습니다.')
+  const transcript = await getOrFetchTranscript(blobKey, () => transcribeSpeech(blob))
+  const withRef = { ...transcript, forRef: audioSrcRef }
+  useFlatStore.getState().setPageNotesCaptions(withRef, pageKey, pageSnapshot)
+  return withRef
+}
+
+// 방금 저장된 자막을 이 컴포넌트의 로컬 allPages 스냅샷에도 반영(불변 업데이트) — 그래야 이후
+// 같은 슬라이드를 다시 확인할 때(뒤로 갔다 다시 오는 등) 이미 있는 걸 또 요청하지 않는다.
+// (flatStore/프로젝트 저장용 영속화는 ensureCaptionsForPage가 이미 처리했다 — 이건 화면 표시용.)
+function mergePageCaptions(setAllPages, key, notesCaptions) {
+  setAllPages(prev => (prev ? { ...prev, [key]: { ...prev[key], notesCaptions } } : prev))
+}
+
 export function slideTransitionVars(t) {
   if (!t || t.type !== 'slide') return null
   switch (t.dir) {
@@ -52,6 +97,7 @@ export default function FlatPresenter() {
   const [hintVisible, setHintVisible] = useState(true)
   const [allPages, setAllPages] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [loadingCaptions, setLoadingCaptions] = useState(false) // 첫 슬라이드 자막 준비 중(로딩 화면 문구용)
 
   // 미방문 페이지 포함 전체 페이지 비동기 추출 (프리로드 완료 대기)
   useEffect(() => {
@@ -63,22 +109,65 @@ export default function FlatPresenter() {
         if (cancelled) return
       }
       const { pages } = await useFlatStore.getState().getAllPagesAsync()
-      if (!cancelled) {
-        setAllPages(pages)
-        setLoading(false)
+      if (cancelled) return
+      setAllPages(pages)
+
+      // 가라오케 자막이 켜져 있으면(발표 옵션에서 미리 선택) 시작 슬라이드의 STT만 여기서
+      // 기다린다 — "발표 중간부터 자막이 뜨는" 문제를 첫 화면에서부터 막기 위함. 전체 덱을
+      // 다 기다리면 슬라이드가 많을 때 발표 시작이 오래 걸리므로, 나머지는 아래에서 발표가
+      // 시작된 뒤 백그라운드로 이어서 준비한다(진행 순서대로 — 실제로 보게 될 슬라이드부터).
+      const keys = sortedPageKeys(pages)
+      if (useEditorStore.getState().karaokeCaptions && keys.length) {
+        const startIdx = Math.max(0, Math.min(useEditorStore.getState().presentStartIndex || 0, keys.length - 1))
+        const startKey = keys[startIdx]
+        const startAudio = pages[startKey]?.notesAudio
+        if (BlobStore.isIdbRef(startAudio) && !hasFreshCaptions(pages[startKey], startAudio)) {
+          setLoadingCaptions(true)
+          await Promise.race([
+            ensureCaptionsForPage(startKey, startAudio, pages[startKey])
+              .then(withRef => mergePageCaptions(setAllPages, startKey, withRef))
+              .catch(() => { /* 실패해도 발표는 시작 — 슬라이드별 자막 로직이 재시도 */ }),
+            new Promise(r => setTimeout(r, CAPTION_PREFETCH_TIMEOUT_MS)),
+          ])
+          if (cancelled) return
+        }
       }
+      setLoadingCaptions(false)
+      setLoading(false)
     })()
     return () => { cancelled = true }
   }, [])
 
-  const sortedKeys = useMemo(() => {
-    if (!allPages) return []
-    return Object.keys(allPages).sort((a, b) => {
-      const [aP, aV] = a.split('-').map(Number)
-      const [bP, bV] = b.split('-').map(Number)
-      return aP - bP || aV - bV
-    })
-  }, [allPages])
+  const sortedKeys = useMemo(() => (allPages ? sortedPageKeys(allPages) : []), [allPages])
+
+  // 최신 allPages를 ref로도 들고 있는다 — 아래 백그라운드 프리페치 루프가 자기 자신의 자막
+  // 저장으로 인한 allPages 갱신 때문에 매번 처음부터 재시작하지 않고, 최신 값만 읽게 하기 위함.
+  const allPagesRef = useRef(allPages)
+  useEffect(() => { allPagesRef.current = allPages }, [allPages])
+
+  // 발표 시작 후: 나머지 슬라이드의 자막을 진행 순서대로 백그라운드에서 미리 준비(요청만, 대기 없음).
+  // 프로젝트에 이미 저장돼 있으면(이전에 발표해서 생성해둔 경우) 그대로 재사용 — STT 재호출 없음.
+  useEffect(() => {
+    if (loading || !allPages || !useEditorStore.getState().karaokeCaptions) return
+    let cancelled = false
+    ;(async () => {
+      const order = presentationOrder(currentSlide, sortedKeys.length)
+      for (const idx of order) {
+        if (cancelled) return
+        const key = sortedKeys[idx]
+        const page = allPagesRef.current?.[key]
+        const audioSrc = page?.notesAudio
+        if (!BlobStore.isIdbRef(audioSrc) || hasFreshCaptions(page, audioSrc)) continue
+        await ensureCaptionsForPage(key, audioSrc, page)
+          .then(withRef => mergePageCaptions(setAllPages, key, withRef))
+          .catch(() => { /* 이 슬라이드는 나중에 슬라이드별 로직이 재시도 */ })
+      }
+    })()
+    return () => { cancelled = true }
+    // currentSlide는 시작점일 뿐 — 슬라이드가 바뀔 때마다 다시 돌 필요 없음(진행 순서에 이미 전부 포함).
+    // allPages는 allPagesRef로 최신값을 읽으므로 deps에서 뺀다(자기 갱신으로 인한 재시작 방지).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, sortedKeys.length])
 
   // ── 발표 잉크(펜 주석) — 임시: 슬라이드별 보관, 종료(언마운트) 시 폐기 ──
   const [penActive, setPenActive] = useState(false)
@@ -296,30 +385,27 @@ export default function FlatPresenter() {
   const [captionBusy, setCaptionBusy] = useState(false)
   const [captionErr, setCaptionErr] = useState('')
 
-  // 자막 on + 현재 슬라이드에 음성 있음 → 캐시 확인 후 없으면 STT 호출(1회, 결과는 blobKey로 캐시).
+  // 자막 on + 현재 슬라이드에 음성 있음 → 프로젝트에 저장된(음성 교체 전) 자막이 있으면 그대로,
+  // 없으면 STT 호출. 대부분의 경우 위 선행/백그라운드 프리페치가 이미 채워둔 상태라 즉시 표시된다 —
+  // 이 effect는 그 결과를 화면에 반영하는 역할과, 프리페치가 아직 못 따라잡은 경우의 최종 폴백
+  // (getOrFetchTranscript가 중복 STT 호출은 막아준다) 역할을 함께 한다.
   useEffect(() => {
     setCaptionErr('')
     if (!captionsOn || !hasAudio) { setCaptionWords(null); return }
-    const blobKey = BlobStore.parseRef(audioSrc)
-    const cached = getCachedTranscript(blobKey)
-    if (cached) { setCaptionWords(cached.words); return }
+    if (hasFreshCaptions(page, audioSrc)) { setCaptionWords(page.notesCaptions.words); return }
     setCaptionWords(null)
     let cancelled = false
     setCaptionBusy(true)
-    BlobStore.get(blobKey)
-      .then(blob => {
-        if (!blob) throw new Error('음성 파일을 찾을 수 없습니다.')
-        return transcribeSpeech(blob)
-      })
+    ensureCaptionsForPage(sortedKeys[currentSlide], audioSrc, page)
       .then(transcript => {
         if (cancelled) return
-        setCachedTranscript(blobKey, transcript)
         setCaptionWords(transcript.words)
+        mergePageCaptions(setAllPages, sortedKeys[currentSlide], transcript)
       })
       .catch(e => { if (!cancelled) setCaptionErr(e.message || '자막 생성 실패') })
       .finally(() => { if (!cancelled) setCaptionBusy(false) })
     return () => { cancelled = true }
-  }, [captionsOn, hasAudio, audioSrc])
+  }, [captionsOn, hasAudio, audioSrc]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const toggleCaptions = useCallback(() => {
     if (!captionsOn && !hasApiKey()) { openAiSettings(); return }
@@ -342,7 +428,9 @@ export default function FlatPresenter() {
           position: 'absolute', inset: 0,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
         }}>
-          <span style={{ color: 'rgba(255,255,255,0.4)', fontSize: 14 }}>페이지 로딩 중...</span>
+          <span style={{ color: 'rgba(255,255,255,0.4)', fontSize: 14 }}>
+            {loadingCaptions ? '자막 준비 중...' : '페이지 로딩 중...'}
+          </span>
         </div>
       )}
 

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   activeWordIndex, groupWordsIntoCues, cueIndexForTime,
-  wordErrorRate, charErrorRate,
+  wordErrorRate, charErrorRate, presentationOrder,
 } from '../core/karaoke'
 
 const WORDS = [
@@ -172,5 +172,40 @@ describe('charErrorRate', () => {
   it('reference가 비어있으면 hypothesis 유무에 따라 0 또는 1', () => {
     expect(charErrorRate('', '').cer).toBe(0)
     expect(charErrorRate('', 'x').cer).toBe(1)
+  })
+})
+
+describe('presentationOrder', () => {
+  it('개수가 0 이하면 빈 배열', () => {
+    expect(presentationOrder(0, 0)).toEqual([])
+    expect(presentationOrder(2, -1)).toEqual([])
+  })
+
+  it('0에서 시작하면 그냥 순서대로', () => {
+    expect(presentationOrder(0, 5)).toEqual([0, 1, 2, 3, 4])
+  })
+
+  it('중간에서 시작하면 끝까지 간 뒤 처음부터 순환', () => {
+    expect(presentationOrder(2, 5)).toEqual([2, 3, 4, 0, 1])
+  })
+
+  it('마지막 슬라이드에서 시작해도 전체를 한 바퀴 돈다(Shift+F5로 마지막 페이지부터 발표하는 경우)', () => {
+    expect(presentationOrder(4, 5)).toEqual([4, 0, 1, 2, 3])
+  })
+
+  it('범위를 벗어난 시작 인덱스는 모듈로 처리(음수 포함)', () => {
+    expect(presentationOrder(5, 5)).toEqual([0, 1, 2, 3, 4]) // 5 % 5 = 0
+    expect(presentationOrder(-1, 5)).toEqual([4, 0, 1, 2, 3])
+  })
+
+  it('슬라이드 1개면 그 인덱스만', () => {
+    expect(presentationOrder(0, 1)).toEqual([0])
+  })
+
+  it('항상 0..count-1을 정확히 한 번씩 포함(중복/누락 없음)', () => {
+    for (let start = 0; start < 6; start++) {
+      const order = presentationOrder(start, 6)
+      expect([...order].sort((a, b) => a - b)).toEqual([0, 1, 2, 3, 4, 5])
+    }
   })
 })
