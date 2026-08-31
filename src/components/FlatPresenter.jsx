@@ -3,9 +3,14 @@ import { useFlatStore } from '../store/flatStore'
 import { useEditorStore } from '../store/editorStore'
 import FlatElementRenderer from './FlatElementRenderer'
 import PresenterInkOverlay from './PresenterInkOverlay'
+import KaraokeCaptions from './KaraokeCaptions'
 import { resolveConnectors } from '../core/ConnectorRouting'
 import { BlobStore } from '../core/BlobStore'
 import { computeSteps, isHiddenAt, animationCss, directionVars, stepDurations } from '../core/slideAnimation'
+import { transcribeSpeech } from '../core/SttClient'
+import { getCachedTranscript, setCachedTranscript } from '../core/transcriptCache'
+import { hasApiKey } from '../core/OpenAIClient'
+import { openAiSettings } from './AiSettingsModal'
 
 const INK_COLORS = ['#ef4444', '#f59e0b', '#3b82f6', '#ffffff', '#111827']
 // 펜 툴바 그룹(도구/팔레트/굵기) — nowrap로 묶어 그룹 내부는 줄바꿈되지 않게
@@ -284,6 +289,43 @@ export default function FlatPresenter() {
     return () => timers.forEach(clearTimeout)
   }, [currentSlide, narration, hasAudio, animInfo, elements])
 
+  // ── 가라오케 자막(STT 단어별 하이라이트) ──
+  const captionsOn = useEditorStore(s => s.karaokeCaptions)
+  const setCaptionsOn = useEditorStore(s => s.setKaraokeCaptions)
+  const [captionWords, setCaptionWords] = useState(null)   // 현재 슬라이드 자막 단어(없으면 null)
+  const [captionBusy, setCaptionBusy] = useState(false)
+  const [captionErr, setCaptionErr] = useState('')
+
+  // 자막 on + 현재 슬라이드에 음성 있음 → 캐시 확인 후 없으면 STT 호출(1회, 결과는 blobKey로 캐시).
+  useEffect(() => {
+    setCaptionErr('')
+    if (!captionsOn || !hasAudio) { setCaptionWords(null); return }
+    const blobKey = BlobStore.parseRef(audioSrc)
+    const cached = getCachedTranscript(blobKey)
+    if (cached) { setCaptionWords(cached.words); return }
+    setCaptionWords(null)
+    let cancelled = false
+    setCaptionBusy(true)
+    BlobStore.get(blobKey)
+      .then(blob => {
+        if (!blob) throw new Error('음성 파일을 찾을 수 없습니다.')
+        return transcribeSpeech(blob)
+      })
+      .then(transcript => {
+        if (cancelled) return
+        setCachedTranscript(blobKey, transcript)
+        setCaptionWords(transcript.words)
+      })
+      .catch(e => { if (!cancelled) setCaptionErr(e.message || '자막 생성 실패') })
+      .finally(() => { if (!cancelled) setCaptionBusy(false) })
+    return () => { cancelled = true }
+  }, [captionsOn, hasAudio, audioSrc])
+
+  const toggleCaptions = useCallback(() => {
+    if (!captionsOn && !hasApiKey()) { openAiSettings(); return }
+    setCaptionsOn(!captionsOn)
+  }, [captionsOn, setCaptionsOn])
+
   return (
     <div
       ref={stageRef}
@@ -385,6 +427,9 @@ export default function FlatPresenter() {
               onEraseStroke={eraseStroke}
             />
           </div>
+          {captionsOn && hasAudio && captionWords?.length > 0 && (
+            <KaraokeCaptions audioEl={audioElRef.current} words={captionWords} />
+          )}
         </div>
       )}
 
@@ -413,10 +458,15 @@ export default function FlatPresenter() {
               onClick={() => { const el = audioElRef.current; if (el && el.src) { el.currentTime = 0; el.volume = page?.notesAudioVolume ?? 1; el.play().catch(() => {}) } }}
               style={ctrlBtn(false)}>▶</button>
           )}
+          <button type="button"
+            title={captionsOn ? '가라오케 자막 끄기 (STT로 노트 음성을 텍스트로 표시)' : '가라오케 자막 켜기 (STT로 노트 음성을 텍스트로 표시)'}
+            onClick={toggleCaptions}
+            style={ctrlBtn(captionsOn)}>{captionBusy ? '⏳' : 'CC'}</button>
           <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', color: '#94a3b8' }}>
             <input type="checkbox" checked={autoAdvance} onChange={e => useEditorStore.getState().setAutoAdvance(e.target.checked)} />
             음성 후 자동 진행
           </label>
+          {captionErr && <span style={{ color: '#fca5a5', fontSize: 11 }}>{captionErr}</span>}
         </div>
       )}
 
