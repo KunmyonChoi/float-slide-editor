@@ -36,8 +36,13 @@ export default function KaraokeCaptions({ audioEl, words }) {
     <div
       data-testid="karaoke-captions"
       style={{
-        position: 'absolute', left: '50%', bottom: '6%', transform: 'translateX(-50%)',
-        maxWidth: '86%', padding: '10px 22px', borderRadius: 10,
+        // 중앙정렬을 left:50%+translateX(-50%)로 하면, 절대위치 박스의 가용폭(shrink-to-fit
+        // 계산에 쓰이는 공간)이 "캔버스 폭 − left"로 절반이 돼버려(right가 없어서) maxWidth를
+        // 아무리 키워도 실제로는 캔버스 절반에서 줄바꿈됐다(width:fit-content로 바꿔도 동일—
+        // 크로미움이 fit-content에도 같은 가용폭 계산을 적용). left/right를 0으로 맞추고
+        // margin:auto로 중앙정렬하면 가용폭이 캔버스 전체가 되어 maxWidth까지 온전히 쓴다.
+        position: 'absolute', left: 0, right: 0, bottom: '6%', margin: '0 auto',
+        width: 'fit-content', maxWidth: '94%', padding: '10px 22px', borderRadius: 10,
         background: 'rgba(15,23,42,0.72)', backdropFilter: 'blur(6px)',
         color: '#fff', fontSize: 30, lineHeight: 1.5,
         textAlign: 'center', zIndex: 1005, pointerEvents: 'none',

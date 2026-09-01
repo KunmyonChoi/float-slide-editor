@@ -343,13 +343,16 @@ export default function FlatPresenter() {
     () => sortedKeys.some(k => BlobStore.isIdbRef(allPages?.[k]?.notesAudio)),
     [allPages, sortedKeys])
 
-  // 슬라이드 진입 시 해당 노트 음성 자동 재생, 이동/종료 시 정지
+  // 슬라이드 진입 시 해당 노트 음성 자동 재생, 이동/종료 시 정지.
+  // loading이 꺼지기 전(= 로딩 화면 표시 중, 자막 준비 중 포함)에는 재생하지 않는다 —
+  // allPages는 자막 선행 대기보다 먼저 채워지므로 loading 없이는 화면이 로딩 문구를 보여주는
+  // 동안 나레이션이 먼저 흘러나오는 문제가 있었다.
   useEffect(() => {
     const el = audioElRef.current
     if (!el) return
     el.pause()
     el.removeAttribute('src')
-    if (!narration || !hasAudio) return
+    if (loading || !narration || !hasAudio) return
     let cancelled = false
     BlobStore.getUrl(BlobStore.parseRef(audioSrc)).then(url => {
       if (cancelled || !url || !audioElRef.current) return
@@ -359,15 +362,16 @@ export default function FlatPresenter() {
       audioElRef.current.play().catch(() => { /* 자동재생 차단/실패 무시 */ })
     })
     return () => { cancelled = true }
-  }, [currentSlide, narration, hasAudio, audioSrc, page?.notesAudioVolume])
+  }, [currentSlide, narration, hasAudio, audioSrc, page?.notesAudioVolume, loading])
 
   const onAudioEnded = useCallback(() => { if (autoAdvance) goNext() }, [autoAdvance, goNext])
 
   // 음성 있는 슬라이드: 클릭 트리거를 자동으로 — 단계마다 이전 종료 후 0.3초 텀 자동 진행.
-  // (슬라이드→슬라이드 자동 전환은 별도 '음성 후 자동 진행' 토글이 담당)
+  // (슬라이드→슬라이드 자동 전환은 별도 '음성 후 자동 진행' 토글이 담당). 위와 같은 이유로
+  // loading 중에는 진행하지 않는다(로딩 화면 뒤에서 미리 타이머가 돌기 시작하는 것 방지).
   const AUDIO_TERM = 300
   useEffect(() => {
-    if (!(narration && hasAudio) || animInfo.stepCount === 0) return
+    if (loading || !(narration && hasAudio) || animInfo.stepCount === 0) return
     const durs = stepDurations(animInfo, elements)
     const timers = []
     let t = AUDIO_TERM
@@ -376,7 +380,7 @@ export default function FlatPresenter() {
       t += durs[s] + AUDIO_TERM
     }
     return () => timers.forEach(clearTimeout)
-  }, [currentSlide, narration, hasAudio, animInfo, elements])
+  }, [currentSlide, narration, hasAudio, animInfo, elements, loading])
 
   // ── 가라오케 자막(STT 단어별 하이라이트) ──
   const captionsOn = useEditorStore(s => s.karaokeCaptions)
