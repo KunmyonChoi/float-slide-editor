@@ -43,9 +43,31 @@ describe('buildRegeneratedCache — route id 기반', () => {
     const fresh = { '0-0': { a: 1 }, '1-0': { a: 2 }, '1-1': { a: 3 } }
     const cache = buildRegeneratedCache(snapshot, fresh)
     expect(Object.keys(cache)).toEqual(['0-0', '1-0', '2-0', '3-0']) // 선형 재인덱스
-    expect(cache['0-0']).toEqual({ a: 1, htmlSlideIndex: '0-0' })
+    expect(cache['0-0']).toMatchObject({ a: 1, htmlSlideIndex: '0-0' })
     expect(cache['2-0']).toEqual({ elements: ['flatonly'] }) // flat-only 보존
-    expect(cache['3-0']).toEqual({ a: 3, htmlSlideIndex: '1-1' }) // 수직 출처 보존
+    expect(cache['3-0']).toMatchObject({ a: 3, htmlSlideIndex: '1-1' }) // 수직 출처 보존
+  })
+
+  it('재생성해도 페이지의 노트/노트음성/전환은 보존된다', () => {
+    const snapshot = [{
+      htmlSlideIndex: '0-0',
+      entry: { notes: '직접 쓴 원고', notesAudio: 'idb://a1', notesAudioHash: 'h1', notesAudioVolume: 0.5, transition: { type: 'fade', durationMs: 400 } },
+    }]
+    const cache = buildRegeneratedCache(snapshot, { '0-0': { elements: ['new'], notes: 'HTML에 실린 노트' } })
+    expect(cache['0-0'].elements).toEqual(['new'])       // 요소는 새로 추출한 것으로 교체
+    expect(cache['0-0'].notes).toBe('직접 쓴 원고')       // 사용자 노트가 우선
+    expect(cache['0-0'].notesAudio).toBe('idb://a1')
+    expect(cache['0-0'].notesAudioVolume).toBe(0.5)
+    expect(cache['0-0'].transition).toEqual({ type: 'fade', durationMs: 400 })
+  })
+
+  it('노트가 없던 페이지는 HTML에 선언된 노트를 받는다', () => {
+    const cache = buildRegeneratedCache(
+      [{ htmlSlideIndex: '0-0', entry: {} }],
+      { '0-0': { elements: [], notes: 'HTML에 실린 노트', transition: { type: 'zoom', durationMs: 300 } } },
+    )
+    expect(cache['0-0'].notes).toBe('HTML에 실린 노트')
+    expect(cache['0-0'].transition).toEqual({ type: 'zoom', durationMs: 300 })
   })
 
   it('스냅샷에 없던 새 경로는 (h,v) 순서로 뒤에 추가', () => {

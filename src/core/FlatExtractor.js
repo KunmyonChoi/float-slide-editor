@@ -9,11 +9,81 @@
  * 3. 빈 요소 제외 — 시각 속성(배경/테두리/그림자)도 없고 텍스트도 없는 요소 스킵
  */
 
+import { parseAnimAttrs, parseTransitionAttrs, readSlideNotes, resolveAnimSpecs } from './deckMotion.js'
+
 let _flatCounter = 0
 export function nextFlatId() { return `flat-${++_flatCounter}` }
 export function resetFlatCounter() { _flatCounter = 0 }
 // 프로젝트 로드 시 기존 최대 ID로 카운터를 올려, 새 요소 ID가 기존 ID와 충돌하지 않게 한다.
 export function bumpFlatCounterTo(n) { if (Number.isFinite(n) && n > _flatCounter) _flatCounter = n }
+
+/**
+ * 모션 컨텍스트 — 추출 1회 동안만 유효한 모듈 스코프 상태.
+ * `[data-anim]` 호스트(=애니메이션을 선언한 DOM 요소) 목록과 파싱된 스펙을 담아,
+ * 요소 생성 지점(buildFlatElement 등)에서 "이 요소가 어느 호스트에서 왔는지"만
+ * 기록해 두고(_animIdx), 마지막 후처리에서 seq·참조를 해소해 el.anim으로 굳힌다.
+ * (생성 지점이 여러 곳이라 인자 추가 대신 컨텍스트를 쓴다. 카운터와 동일한 패턴.)
+ */
+let _animCtx = null
+
+function setupAnimContext(slideRoot) {
+  const hosts = []
+  const specs = []
+  const byName = new Map()
+  const nodes = slideRoot?.querySelectorAll?.('[data-anim]') || []
+  for (const node of nodes) {
+    const spec = parseAnimAttrs(node)
+    if (!spec) continue          // 알 수 없는 효과/none → 무시
+    const idx = hosts.length
+    hosts.push(node)
+    specs.push(spec)
+    if (spec.name && !byName.has(spec.name)) byName.set(spec.name, idx)
+  }
+  _animCtx = hosts.length ? { hosts, specs, byName } : null
+}
+
+/** 이 DOM 요소를 덮는 가장 가까운 `[data-anim]` 호스트의 인덱스(없으면 -1). */
+function animIdxFor(el) {
+  if (!_animCtx || typeof el?.closest !== 'function') return -1
+  const host = el.closest('[data-anim]')
+  if (!host) return -1
+  return _animCtx.hosts.indexOf(host)
+}
+
+/** 요소 리터럴에 펼쳐 넣는 `_animIdx` 필드(해당 없으면 빈 객체). */
+function animField(el) {
+  const i = animIdxFor(el)
+  return i >= 0 ? { _animIdx: i } : {}
+}
+
+/**
+ * 렌더되는 텍스트만 모은다 — `el.textContent`와 달리 `<script>`(발표자 노트 포함)나
+ * `<style>`처럼 화면에 나오지 않는 자식은 뺀다.
+ * 노트가 도입되기 전에는 textContent로 충분했지만, 이제 슬라이드 안에
+ * `<script class="fe-notes">`가 있어 그대로 쓰면 원고가 텍스트 요소로 추출된다.
+ */
+function visibleTextContent(el) {
+  if (!el) return ''
+  let out = ''
+  for (const node of el.childNodes) {
+    if (node.nodeType === 3) { out += node.textContent; continue }   // TEXT_NODE
+    if (node.nodeType !== 1) continue                                 // ELEMENT_NODE만
+    const tag = node.tagName
+    if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'TEMPLATE') continue
+    if (node.classList?.contains('fe-notes')) continue
+    out += visibleTextContent(node)
+  }
+  return out
+}
+
+/** 후처리 — _animIdx가 붙은 flat 요소에 el.anim을 확정한다(해소 규칙은 deckMotion). */
+function applyAnimSpecs(elements) {
+  if (!_animCtx) {
+    for (const el of elements) delete el._animIdx
+    return
+  }
+  resolveAnimSpecs(elements, _animCtx.specs, _animCtx.byName)
+}
 
 /** 컨테이너가 시각적으로 의미 있는지 판별 (배경/테두리/그림자) */
 export function isVisuallyMeaningful(cs) {
@@ -1094,6 +1164,7 @@ function buildFlatElement(el, rect, cs, domOrder, forceType, transformScale = 1,
     elemY = cy - height / 2
   }
 
+  const animIdx = animIdxFor(el)
   const result = {
     id: nextFlatId(),
     sourceId: el.getAttribute('data-editor-id'),
@@ -1104,6 +1175,7 @@ function buildFlatElement(el, rect, cs, domOrder, forceType, transformScale = 1,
     height,
     rotation,
     zIndex: 0, // 후처리에서 재할당
+    ...(animIdx >= 0 ? { _animIdx: animIdx } : {}),
     _domOrder: domOrder,
     _originalZIndex: effectiveZIndex,
     content,
@@ -1285,7 +1357,7 @@ function tryMergeContainerText(containerEl, containerRect, containerCs, win) {
 
   if (childEditors.length === 0) {
     // 자식 에디터 없음 — 컨테이너 자체에 텍스트가 있으면 텍스트 요소로 병합
-    const text = (containerEl.textContent || '').trim()
+    const text = visibleTextContent(containerEl).trim()
     if (!text) return null
     return {
       sourceId: containerEl.getAttribute('data-editor-id'),
@@ -1601,6 +1673,7 @@ function extractFlexOwnTextNodes(el, cs, transformScale, originRect, pushFn) {
       id: nextFlatId(),
       sourceId: el.getAttribute('data-editor-id'),
       type: 'text',
+      ...animField(el),
       x: rangeRect.left,
       y: rangeRect.top,
       width: Math.ceil(rangeRect.width),
@@ -1674,9 +1747,10 @@ function buildPseudoFlatElements(el, rect, domOrder) {
   const out = []
   const sid = el.getAttribute('data-editor-id')
   const z = getEffectiveZIndex(el)
+  const anim = animField(el)   // 불릿/도트도 본체와 같은 등장 단계로
   for (const which of ['before', 'after']) {
     const pb = extractPseudoElement(el, rect, `::${which}`)
-    if (pb) out.push(pseudoToFlatElement(pb, sid, which, domOrder, z))
+    if (pb) out.push({ ...pseudoToFlatElement(pb, sid, which, domOrder, z), ...anim })
   }
   return out
 }
@@ -1692,7 +1766,7 @@ function buildPseudoFlatElements(el, rect, domOrder) {
  */
 export function extractFlatElementsFromIframe(iframeRef, existingMaxId = 0) {
   const iframe = iframeRef?.current
-  if (!iframe) return { elements: [], canvasSize: { w: 1280, h: 800 } }
+  if (!iframe) return { elements: [], canvasSize: { w: 1280, h: 800 }, notes: '', transition: null }
   // existingMaxId를 extractFlatElements에 전달해 내부 resetFlatCounter() 대신
   // 기존 최대 ID부터 카운터를 시작하게 한다.
   // (충돌 시 같은 id 두 요소가 함께 선택돼 그룹처럼 핸들이 표시되는 버그 방지)
@@ -1739,7 +1813,7 @@ export function settleAnimations(doc) {
  * @param {Document} doc @param {Window} win
  */
 export function extractFlatElements(doc, win, existingMaxId = 0) {
-  if (!doc || !win) return { elements: [], canvasSize: { w: 1280, h: 800 } }
+  if (!doc || !win) return { elements: [], canvasSize: { w: 1280, h: 800 }, notes: '', transition: null }
 
   // 좌표/가시성 측정 전에 진행 중인 등장 애니메이션을 최종 상태로 고정한다.
   settleAnimations(doc)
@@ -1793,6 +1867,18 @@ export function extractFlatElements(doc, win, existingMaxId = 0) {
       }
     }
   }
+
+  // 모션 호스트는 문서 전체에서 모아도 안전하다 — 각 요소가 closest()로 제 호스트를 찾으므로
+  // 다른 슬라이드의 선언이 섞이지 않는다.
+  setupAnimContext(revealPresent || doc.body)
+
+  // 반면 노트·전환은 "이 페이지의 값"이라 활성 슬라이드를 특정할 수 있을 때만 읽는다.
+  // 특정 못 한 채 첫 .slide로 폴백하면 모든 페이지가 1장의 원고를 물려받는다.
+  const slideEls = doc.querySelectorAll('.slide')
+  const noteRoot = revealPresent || doc.querySelector('.slide.active')
+    || (slideEls.length === 1 ? slideEls[0] : (slideEls.length === 0 ? doc.body : null))
+  const notes = noteRoot ? readSlideNotes(noteRoot) : ''
+  const transition = noteRoot ? parseTransitionAttrs(noteRoot) : null
 
   // 3. opacity:0 또는 visibility:hidden으로 숨겨진 슬라이드 감지를 위한 추가 필터
   // (revealPresent가 없어도 개별 요소 단위로 체크)
@@ -1976,7 +2062,7 @@ export function extractFlatElements(doc, win, existingMaxId = 0) {
         if (!plainText && !isVisuallyMeaningful(cs)) continue
       } else {
         // 자식도 없고, 텍스트도 비어있고, 시각 속성도 없으면 스킵
-        const text = (el.textContent || '').trim()
+        const text = visibleTextContent(el).trim()
         if (!text && !isVisuallyMeaningful(cs)) continue
       }
       result.push(buildFlatElement(el, rect, cs, zCounter++, undefined, transformScale, originRect))
@@ -2032,7 +2118,7 @@ export function extractFlatElements(doc, win, existingMaxId = 0) {
             const padH = pp.length === 4 ? pp[1] + pp[3] : pp.length >= 2 ? pp[1] * 2 : pp[0] * 2
             if (padH > 0) merged.width = Math.ceil(merged.width) + 2
           }
-          const mergedEl = { ...merged, id: nextFlatId(), zIndex: 0, _domOrder: zCounter++, _originalZIndex: getEffectiveZIndex(el) }
+          const mergedEl = { ...merged, ...animField(el), id: nextFlatId(), zIndex: 0, _domOrder: zCounter++, _originalZIndex: getEffectiveZIndex(el) }
           // 병합된 컨테이너에도 ::before / ::after 의사 요소 추출
           const pseudoBefore = extractPseudoElement(el, rect, '::before')
           if (pseudoBefore) mergedEl._pseudoBefore = pseudoBefore
@@ -2044,7 +2130,7 @@ export function extractFlatElements(doc, win, existingMaxId = 0) {
         }
       } else {
         // 비시각 컨테이너: 텍스트 내용이 있으면 text로 추출
-        const text = (el.textContent || '').trim()
+        const text = visibleTextContent(el).trim()
         if (!text) continue // eslint-disable-line no-continue
         const childEditorEls = el.querySelectorAll('[data-editor-id]')
         if (childEditorEls.length === 0) {
@@ -2121,6 +2207,7 @@ export function extractFlatElements(doc, win, existingMaxId = 0) {
       id: nextFlatId(),
       sourceId: null,
       type: 'svg',
+      ...animField(svg),
       x: svgRect.left,
       y: svgRect.top,
       width: svgRect.width,
@@ -2151,7 +2238,7 @@ export function extractFlatElements(doc, win, existingMaxId = 0) {
     const imgSrc = img && (img.currentSrc || img.getAttribute('src'))
     if (imgSrc && /^(https?:|data:|blob:)/i.test(imgSrc)) {
       result.push({
-        id: nextFlatId(), sourceId: null, type: 'image',
+        id: nextFlatId(), sourceId: null, type: 'image', ...animField(slot),
         x: slotRect.left, y: slotRect.top, width: slotRect.width, height: slotRect.height,
         zIndex: 0, _domOrder: zCounter++, _originalZIndex: baseZ,
         content: imgSrc, isRich: false,
@@ -2165,7 +2252,7 @@ export function extractFlatElements(doc, win, existingMaxId = 0) {
       const r = unscaleRect(phSvg.getBoundingClientRect(), transformScale, originRect)
       if (r.width >= 1 && r.height >= 1) {
         result.push({
-          id: nextFlatId(), sourceId: null, type: 'svg',
+          id: nextFlatId(), sourceId: null, type: 'svg', ...animField(slot),
           x: r.left, y: r.top, width: r.width, height: r.height,
           zIndex: 0, _domOrder: zCounter++, _originalZIndex: baseZ,
           content: phSvg.outerHTML, isRich: false, styles: {},
@@ -2184,7 +2271,7 @@ export function extractFlatElements(doc, win, existingMaxId = 0) {
       const capCs = capEl ? win.getComputedStyle(capEl) : slotCs
       if (tr.width >= 1 && tr.height >= 1) {
         result.push({
-          id: nextFlatId(), sourceId: null, type: 'text',
+          id: nextFlatId(), sourceId: null, type: 'text', ...animField(slot),
           x: tr.left, y: tr.top, width: tr.width, height: tr.height,
           zIndex: 0, _domOrder: zCounter++, _originalZIndex: baseZ,
           content: ph, isRich: false,
@@ -2240,6 +2327,7 @@ export function extractFlatElements(doc, win, existingMaxId = 0) {
       id: nextFlatId(),
       sourceId: null,
       type: 'text',
+      ...animField(ic),
       x: icRect.left,
       y: icRect.top,
       width: Math.ceil(icRect.width) + 2,
@@ -2272,10 +2360,14 @@ export function extractFlatElements(doc, win, existingMaxId = 0) {
   const pseudoElements = []
   for (const el of result) {
     if (el._pseudoBefore) {
-      pseudoElements.push(pseudoToFlatElement(el._pseudoBefore, el.sourceId, 'before', el._domOrder - 0.5, el._originalZIndex))
+      const pe = pseudoToFlatElement(el._pseudoBefore, el.sourceId, 'before', el._domOrder - 0.5, el._originalZIndex)
+      if (el._animIdx != null) pe._animIdx = el._animIdx   // 불릿/장식도 본체와 같은 단계로
+      pseudoElements.push(pe)
     }
     if (el._pseudoAfter) {
-      pseudoElements.push(pseudoToFlatElement(el._pseudoAfter, el.sourceId, 'after', el._domOrder + 0.5, el._originalZIndex))
+      const pe = pseudoToFlatElement(el._pseudoAfter, el.sourceId, 'after', el._domOrder + 0.5, el._originalZIndex)
+      if (el._animIdx != null) pe._animIdx = el._animIdx
+      pseudoElements.push(pe)
     }
     delete el._pseudoBefore
     delete el._pseudoAfter
@@ -2297,6 +2389,10 @@ export function extractFlatElements(doc, win, existingMaxId = 0) {
     delete el._domOrder
     delete el._originalZIndex
   })
+
+  // data-anim 선언을 el.anim으로 확정(seq·참조 해소) 후 컨텍스트 해제
+  applyAnimSpecs(result)
+  _animCtx = null
 
   const canvasSize = {
     w: canvasW || 1280,
@@ -2379,7 +2475,7 @@ export function extractFlatElements(doc, win, existingMaxId = 0) {
     }
   }
 
-  return { elements: result, canvasSize, fontImports }
+  return { elements: result, canvasSize, fontImports, notes, transition }
 }
 
 /**
