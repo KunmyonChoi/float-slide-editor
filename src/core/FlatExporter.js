@@ -2,6 +2,21 @@
  * FlatExporter
  * 원본 iframe과 Flat 변환 결과를 독립 HTML 파일로 내보낸다.
  */
+import { animToAttrs, transitionToAttrs, notesToScript, buildAnimNameMap } from './deckMotion.js'
+
+/**
+ * 렌더된 요소 HTML의 여는 태그에 data-anim* 속성을 끼워 넣는다.
+ * (요소 렌더 분기가 여러 갈래라 문자열 후처리로 한 곳에서 처리 — 다시 가져올 때
+ *  FlatExtractor가 같은 속성을 읽어 el.anim으로 복원한다.)
+ * @param {Object} el flat 요소
+ * @param {string} html renderElement 결과
+ * @param {Map<string,string>} nameMap flat id → 참조용 이름
+ */
+function withAnim(el, html, nameMap) {
+  const attrs = animToAttrs(el.anim, (id) => nameMap.get(id) || null, nameMap.get(el.id) || null)
+  if (!attrs || !html.startsWith('<div')) return html
+  return `<div${attrs}` + html.slice(4)
+}
 
 /**
  * iframe의 현재 렌더링 상태를 정적 HTML로 내보낸다.
@@ -40,48 +55,9 @@ export function exportOriginalHtml(iframeRef) {
 /**
  * Flat 요소 배열을 독립 HTML 파일로 내보낸다.
  */
-export function exportFlatHtml(flatElements, canvasSize, fontImports = []) {
-  const els = flatElements.map(el => {
-    if (el.type === 'image') {
-      const objPos = el.styles.objectPosition && el.styles.objectPosition !== 'center center' && el.styles.objectPosition !== '50% 50%'
-        ? `object-position:${el.styles.objectPosition};` : ''
-      const imgBorder = el.styles.border && !el.styles.border.startsWith('0px') ? `border:${el.styles.border};` : ''
-      const imgOpacity = el.styles.opacity && el.styles.opacity !== '1' ? `opacity:${el.styles.opacity};` : ''
-      return `<div style="${flatStyle(el)}"><img src="${escHtml(el.content)}" alt="" style="width:100%;height:100%;object-fit:${el.styles.objectFit || 'contain'};${objPos}display:block;border-radius:${el.styles.borderRadius || '0'};${imgBorder}${imgOpacity}" /></div>`
-    }
-    if (el.type === 'text') {
-      const textContent = el.isRich ? el.content : escHtml(el.content)
-      const hasBg = el.styles.backgroundColor && el.styles.backgroundColor !== 'rgba(0, 0, 0, 0)' && el.styles.backgroundColor !== 'transparent'
-      const isSelfFlex = el.styles.display === 'flex' || el.styles.display === 'inline-flex'
-      const needsFlex = el.merged || hasBg || isSelfFlex
-      const gapStyle = (el.styles.gap && el.styles.gap !== '0px' && el.styles.gap !== 'normal') ? `gap:${el.styles.gap};` : ''
-      const flexAlign = isSelfFlex ? (el.styles.alignItems || 'center') : el.styles.isFlex ? (el.styles.alignItems || 'center') : 'center'
-      const flexJustify = isSelfFlex ? (el.styles.justifyContent || 'center') : el.styles.isFlex ? (el.styles.justifyContent || 'center') : (el.styles.textAlign === 'center' ? 'center' : el.styles.textAlign === 'right' ? 'flex-end' : 'flex-start')
-      const mergedFlex = needsFlex ? `display:flex;align-items:${flexAlign};justify-content:${flexJustify};${gapStyle}` : ''
-      const isGradientText = el.styles.webkitBackgroundClip === 'text'
-      if (isGradientText) {
-        // 그래디언트 텍스트: 외부 div에 배경색 (textShadow 제외), 내부 span에 gradient+clip+drop-shadow
-        const dropShadow = el.styles.textShadow && el.styles.textShadow !== 'none'
-          ? `;filter:${textShadowToFilter(el.styles.textShadow)}` : ''
-        const gradSpan = `background-image:${el.styles.backgroundImage || 'none'};-webkit-background-clip:text;-webkit-text-fill-color:${el.styles.webkitTextFillColor || 'transparent'}${dropShadow}`
-        return `<div style="${flatStyle(el)};${mergedFlex}${textStyleNoGradient(el.styles, true)}"><span style="${gradSpan}">${textContent}</span></div>`
-      }
-      return `<div style="${flatStyle(el)};${mergedFlex}${textStyle(el.styles)}">${textContent}</div>`
-    }
-    if (el.type === 'video') {
-      const br = el.styles.borderRadius && el.styles.borderRadius !== '0px' ? `border-radius:${el.styles.borderRadius};overflow:hidden;` : ''
-      const vidOpacity = el.styles.opacity && el.styles.opacity !== '1' ? `opacity:${el.styles.opacity};` : ''
-      return `<div style="${flatStyle(el)};${br}${vidOpacity}"><iframe src="${escHtml(el.content)}" style="width:100%;height:100%;border:none;" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe></div>`
-    }
-    if (el.type === 'audio') {
-      return audioVizHtml(el)
-    }
-    if (el.type === 'svg') {
-      return `<div style="${flatStyle(el)}">${el.content}</div>`
-    }
-    // shape
-    return `<div style="${flatStyle(el)};${shapeStyle(el.styles)}"></div>`
-  })
+export function exportFlatHtml(flatElements, canvasSize, fontImports = [], pageMeta = {}) {
+  const nameMap = buildAnimNameMap(flatElements)
+  const els = flatElements.map(el => withAnim(el, renderElement(el), nameMap))
 
   // 폰트 임포트를 <link> 태그와 <style> 블록으로 분리
   // @import url(...) → <link rel="stylesheet"> (더 빠른 로딩)
@@ -114,8 +90,9 @@ export function exportFlatHtml(flatElements, canvasSize, fontImports = []) {
 <title>Flat Export</title>${preconnect}${fontLinks}
 <style>* { box-sizing: border-box; margin: 0; padding: 0; }</style>${fontStyleBlock}
 </head>
-<body style="width:${canvasSize.w}px;height:${canvasSize.h}px;overflow:hidden;position:relative;">
+<body${transitionToAttrs(pageMeta.transition)} style="width:${canvasSize.w}px;height:${canvasSize.h}px;overflow:hidden;position:relative;">
 ${els.join('\n')}
+${notesToScript(pageMeta.notes)}
 ${flatElements.some(e => e.type === 'audio') ? AUDIO_VIZ_SCRIPT : ''}
 </body>
 </html>`
@@ -162,8 +139,10 @@ export function exportFlatHtmlAllPages(pages) {
   const slideDivs = sortedKeys.map((key, i) => {
     const page = pages[key]
     const pcs = page.canvasSize
-    const elHtmls = page.elements.map(el => renderElement(el)).join('\n')
-    return `<div class="slide${i === 0 ? ' active' : ''}" style="width:${pcs.w}px;height:${pcs.h}px;">\n${elHtmls}\n</div>`
+    const nameMap = buildAnimNameMap(page.elements)
+    const elHtmls = page.elements.map(el => withAnim(el, renderElement(el), nameMap)).join('\n')
+    const notes = notesToScript(page.notes)
+    return `<div class="slide${i === 0 ? ' active' : ''}"${transitionToAttrs(page.transition)} style="width:${pcs.w}px;height:${pcs.h}px;">\n${elHtmls}\n${notes ? notes + '\n' : ''}</div>`
   }).join('\n\n')
 
   return `<!DOCTYPE html>

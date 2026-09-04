@@ -73,7 +73,19 @@ export function buildRegeneratedCache(orderedSnapshot, freshHtml) {
     if (snap.htmlSlideIndex != null) {
       const fresh = freshHtml[snap.htmlSlideIndex]
       if (!fresh) continue // HTML 슬라이드가 사라짐 → 스킵
-      cache[`${idx}-0`] = { ...fresh, htmlSlideIndex: snap.htmlSlideIndex }
+      // 요소만 새 추출로 교체 — 노트/노트음성/전환은 사용자가 편집했을 수 있으므로 보존하고,
+      // 비어 있을 때만 HTML에 선언된 값(deckMotion 규약)을 받는다.
+      const prev = snap.entry || {}
+      cache[`${idx}-0`] = {
+        ...fresh,
+        htmlSlideIndex: snap.htmlSlideIndex,
+        notes: prev.notes || fresh.notes || '',
+        notesAudio: prev.notesAudio || null,
+        notesAudioHash: prev.notesAudioHash || '',
+        notesAudioVolume: prev.notesAudioVolume ?? 1,
+        notesCaptions: prev.notesCaptions || null,
+        transition: prev.transition || fresh.transition || null,
+      }
       usedHtml.add(String(snap.htmlSlideIndex))
     } else {
       cache[`${idx}-0`] = snap.entry // flat-only 페이지 보존
@@ -634,7 +646,7 @@ export const useFlatStore = create((set, get) => ({
     }
 
     // 캐시 미스 → 새로 추출
-    const { elements, canvasSize, fontImports } = extractFlatElementsFromIframe(iframeRef, _globalMaxFlatId(get().flatElements))
+    const { elements, canvasSize, fontImports, notes, transition } = extractFlatElementsFromIframe(iframeRef, _globalMaxFlatId(get().flatElements))
     _history.clear()
     _currentPageKey = pageKey || null
     set({
@@ -647,7 +659,9 @@ export const useFlatStore = create((set, get) => ({
       canUndo: false,
       canRedo: false,
       currentPageHtmlBacked: true, // iframe에서 갓 추출 = HTML 백킹
-      pageNotes: '', pageNotesAudio: null, pageNotesAudioHash: '', pageNotesAudioVolume: 1, // 갓 추출 = 노트/음성 없음
+      // 노트/전환은 HTML에 선언돼 있으면 함께 들어온다(deckMotion). 음성은 항상 없음.
+      pageNotes: notes || '', pageTransition: transition || null,
+      pageNotesAudio: null, pageNotesAudioHash: '', pageNotesAudioVolume: 1,
     })
     get()._syncPageInfo()
 
@@ -689,7 +703,7 @@ export const useFlatStore = create((set, get) => ({
     await new Promise(r => setTimeout(r, 400))
 
     if (_currentPageKey) delete _pageCache[_currentPageKey]
-    const { elements, canvasSize, fontImports } = extractFlatElementsFromIframe(ref, _globalMaxFlatId(get().flatElements))
+    const { elements, canvasSize, fontImports, notes, transition } = extractFlatElementsFromIframe(ref, _globalMaxFlatId(get().flatElements))
     _history.clear()
     set({
       flatElements: elements,
@@ -699,7 +713,10 @@ export const useFlatStore = create((set, get) => ({
       editingFlatId: null,
       canUndo: false,
       canRedo: false,
-      pageNotes: '', pageNotesAudio: null, pageNotesAudioHash: '', pageNotesAudioVolume: 1,
+      // 이미 쓰던 노트/전환은 유지(재추출은 요소만 다시 뜨는 동작), 비어 있으면 HTML 선언값을 받는다.
+      // 노트가 그대로면 그 노트로 만든 음성·자막도 그대로 유효하므로 함께 보존한다.
+      pageNotes: get().pageNotes || notes || '',
+      pageTransition: get().pageTransition || transition || null,
     })
     get()._syncPageInfo()
   },
@@ -768,8 +785,8 @@ export const useFlatStore = create((set, get) => ({
         ref.current.contentWindow?.postMessage({ type: 'fe:navigate', page: route.h, v: route.v }, '*')
         await new Promise(r => setTimeout(r, 400))
         try {
-          const { elements, canvasSize, fontImports } = extractFlatElementsFromIframe(ref, _globalMaxFlatId(get().flatElements))
-          freshHtml[route.id] = { elements, canvasSize: canonicalCs || canvasSize, fontImports: fontImports || [], history: { stack: [], pointer: -1 } }
+          const { elements, canvasSize, fontImports, notes, transition } = extractFlatElementsFromIframe(ref, _globalMaxFlatId(get().flatElements))
+          freshHtml[route.id] = { elements, canvasSize: canonicalCs || canvasSize, fontImports: fontImports || [], history: { stack: [], pointer: -1 }, notes: notes || '', transition: transition || null }
         } catch (e) {
           console.warn(`Regen page ${route.id} failed:`, e.message)
         }
@@ -812,7 +829,7 @@ export const useFlatStore = create((set, get) => ({
 
     // 캐시 미스 → DOM 렌더 대기 후 추출
     setTimeout(() => {
-      const { elements, canvasSize, fontImports } = extractFlatElementsFromIframe(ref, _globalMaxFlatId(get().flatElements))
+      const { elements, canvasSize, fontImports, notes, transition } = extractFlatElementsFromIframe(ref, _globalMaxFlatId(get().flatElements))
       _history.clear()
       _currentPageKey = pageKey || null
       set({
@@ -823,7 +840,8 @@ export const useFlatStore = create((set, get) => ({
         editingFlatId: null,
         canUndo: false,
         canRedo: false,
-        pageNotes: '', pageNotesAudio: null, pageNotesAudioHash: '', pageNotesAudioVolume: 1,
+        pageNotes: notes || '', pageTransition: transition || null,
+        pageNotesAudio: null, pageNotesAudioHash: '', pageNotesAudioVolume: 1,
       })
     }, 150)
   },
@@ -962,6 +980,8 @@ export const useFlatStore = create((set, get) => ({
             fontImports: result.fontImports || [],
             history: { stack: [], pointer: -1 },
             htmlSlideIndex: route.id, // 출처 (h,v) 경로
+            notes: result.notes || '',          // HTML에 실린 발표자 노트(deckMotion 규약)
+            transition: result.transition || null,
           }
         } catch (e) {
           console.warn(`Preload page ${route.id} failed:`, e.message)
@@ -2328,6 +2348,8 @@ export const useFlatStore = create((set, get) => ({
           canvasSize: canonicalCs || result.canvasSize,
           fontImports: result.fontImports || [],
           htmlSlideIndex: route.id,
+          notes: result.notes || '',
+          transition: result.transition || null,
         }
       } catch (e) {
         console.warn(`Page ${route.id} extraction failed:`, e.message)

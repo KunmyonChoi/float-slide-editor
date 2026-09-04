@@ -17,7 +17,8 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:phase1": "vitest run src/test/phase1.test.js --reporter=verbose",
-    "test:slides": "vitest run src/test/slideConversion.test.js --reporter=verbose"
+    "test:slides": "vitest run src/test/slideConversion.test.js --reporter=verbose",
+    "check:motion": "node scripts/check-deck-motion.mjs"
   },
   "dependencies": {
     "@mediapipe/tasks-vision": "^0.10.35",

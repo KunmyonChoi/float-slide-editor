@@ -248,7 +248,9 @@ export default function FileMenu({ fallbackSample }) {
   // HTML 내보내기 (현재 페이지)
   const handleExportHtml = useCallback(() => {
     setOpen(false)
-    const html = exportFlatHtml(flatElements, canvasSize, fontImports)
+    const { pageNotes, pageTransition } = useFlatStore.getState()
+    const html = exportFlatHtml(flatElements, canvasSize, fontImports,
+      { notes: pageNotes, transition: pageTransition })
     downloadHtml(html, 'slide-export.html')
   }, [flatElements, canvasSize, fontImports])
 
