@@ -5,8 +5,10 @@ import { BlobStore } from '../core/BlobStore'
 import { copyElementToSystemClipboard } from '../core/SystemClipboard'
 import { computeAlignmentChanges, computeDistributionChanges, isBackgroundElement } from '../core/SnapEngine'
 import { promptUrl } from './UrlPrompt'
-import { openInfographic } from './InfographicModal'
-import { openImagenLayout } from './ImagenLayoutModal'
+import { hasApiKey } from '../core/OpenAIClient'
+import { startInfographicJob } from '../core/imageJobRunner'
+import { openAiSettings } from './AiSettingsModal'
+import { INFOGRAPHIC_STYLES } from '../core/aiImageStyles'
 import { confirmDialog } from './ConfirmDialog'
 import { useEditorStore } from '../store/editorStore'
 import { isBundlerHtml } from '../core/BundlerUnpacker'
@@ -71,9 +73,6 @@ export default function FlatContextMenu({ x, y, canvasX, canvasY, onClose }) {
   const selectedEls = flatElements.filter(e => selectedFlatIds.includes(e.id))
   const allLocked = selectedEls.length > 0 && selectedEls.every(e => e.locked)
   const singleTextEl = selectedEls.length === 1 && selectedEls[0].type === 'text' ? selectedEls[0] : null
-  const textEls = selectedEls.filter(e => e.type === 'text') // AI 레이아웃 이미지 입력
-  // 레이아웃 이미지(Ideogram)는 이미지 엔진이 로컬 ideogram일 때만 노출(메뉴는 열 때마다 새로 계산됨)
-  const imagenLocal = (() => { try { return localStorage.getItem('ai-image-backend') === 'local' } catch { return false } })()
   const singleImageEl = selectedEls.length === 1 && selectedEls[0].type === 'image' ? selectedEls[0] : null
   const singleVideoEl = selectedEls.length === 1 && selectedEls[0].type === 'video' ? selectedEls[0] : null
 
@@ -323,6 +322,19 @@ export default function FlatContextMenu({ x, y, canvasX, canvasY, onClose }) {
 
   // 액션 디스패치
   const handleAction = useCallback((action) => {
+    // 화풍 서브메뉴 — 'aiImage:<styleId>'. 화풍을 고르면 즉시 슬라이드 전체 생성을 작업 트레이로 시작.
+    if (typeof action === 'string' && action.startsWith('aiImage:')) {
+      onClose()
+      if (!hasApiKey()) { openAiSettings(); return }
+      try {
+        startInfographicJob({
+          mode: 'page',
+          styleId: action.slice('aiImage:'.length),
+          pageKey: useFlatStore.getState().getCurrentPageKey(),
+        })
+      } catch { /* 대상이 없으면 무시 */ }
+      return
+    }
     switch (action) {
       case 'cut': if (selectedEls.length === 1) copyElementToSystemClipboard(selectedEls[0]); cutElement(); break
       case 'copy': copyElement(); if (selectedEls.length === 1) copyElementToSystemClipboard(selectedEls[0]); break
@@ -369,10 +381,6 @@ export default function FlatContextMenu({ x, y, canvasX, canvasY, onClose }) {
         }
         break
       case 'downloadMedia': downloadSelectedMedia(); break
-      case 'aiInfographic': openInfographic(); break
-      case 'aiLayout':
-        openImagenLayout({ els: textEls, canvasSize, pageKey: useFlatStore.getState().getCurrentPageKey() })
-        break
       case 'convertToBg': {
         // 단일 이미지/영상만 배경으로 변환(타입 유지). 원래 위치/크기는 _restore에 보관.
         if (selectedEls.length !== 1) break
@@ -473,10 +481,6 @@ export default function FlatContextMenu({ x, y, canvasX, canvasY, onClose }) {
         ],
       }] : []),
     ],
-    // AI — 선택한 텍스트 박스로 레이아웃 이미지 생성
-    [
-      ...(textEls.length >= 1 && imagenLocal ? [{ id: 'aiLayout', label: '🖼️ AI 레이아웃 이미지 생성', action: 'aiLayout' }] : []),
-    ],
     // 배치
     [
       { id: 'zorder', label: '순서', submenu: 'zorder', disabled: !singleId,
@@ -552,7 +556,9 @@ export default function FlatContextMenu({ x, y, canvasX, canvasY, onClose }) {
           { id: 'ivideo', label: '영상', action: 'insertVideo' },
         ],
       },
-      { id: 'aiInfographic', label: 'AI 인포그래픽 변환', action: 'aiInfographic' },
+      { id: 'aiImage', label: '✨ 이미지 생성', submenu: 'aiImage',
+        children: INFOGRAPHIC_STYLES.map(st => ({ id: `ai-${st.id}`, label: st.label, action: `aiImage:${st.id}` })),
+      },
     ],
     // 선택
     [

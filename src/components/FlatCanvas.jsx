@@ -8,10 +8,7 @@ import { getRotatedAABB } from '../core/RotationUtils'
 import { computeSteps, isHiddenAt, animationCss, directionVars, stepDurations, DEFAULT_DUR } from '../core/slideAnimation'
 import FlatElementRenderer from './FlatElementRenderer'
 import FlatSelectionOverlay, { FlatGroupOverlay } from './FlatSelectionOverlay'
-import FlatAiBar from './FlatAiBar'
-import FlatImageAiBar from './FlatImageAiBar'
-import FlatVideoAiBar from './FlatVideoAiBar'
-import FlatSelectionAiBar from './FlatSelectionAiBar'
+import AiActionBar from './AiActionBar'
 import ConnectorInlineToolbar from './ConnectorInlineToolbar'
 import ConnectorLabelEditor from './ConnectorLabelEditor'
 import FlatInlineEditor from './FlatInlineEditor'
@@ -1444,17 +1441,10 @@ export default function FlatCanvas() {
               <FlatSelectionOverlay element={selectedEl} scale={scale}
                 otherRects={otherRects} canvasSize={canvasSize} onSnapGuides={setSnapGuides} />
             )}
-            {/* 텍스트 박스 단일 선택 시 전용 AI 플로팅바 (편집 중·발표 중에는 숨김) */}
-            {selectedEls.length === 1 && selectedEl && selectedEl.type === 'text' && !editingFlatId && mode !== 'present' && (
-              <FlatAiBar element={selectedEl} scale={scale} canvasRef={canvasRef} />
-            )}
-            {/* 이미지 단일 선택 시 전용 AI 디자인 향상 플로팅바 (편집 중·발표 중에는 숨김) */}
-            {selectedEls.length === 1 && selectedEl && selectedEl.type === 'image' && !editingFlatId && !croppingFlatId && mode !== 'present' && (
-              <FlatImageAiBar element={selectedEl} scale={scale} canvasRef={canvasRef} />
-            )}
-            {/* 비디오 단일 선택 시 전용 AI 립싱크 플로팅바 (편집·발표·크롭 중에는 숨김) */}
-            {selectedEls.length === 1 && selectedEl && selectedEl.type === 'video' && !editingFlatId && !croppingFlatId && mode !== 'present' && (
-              <FlatVideoAiBar element={selectedEl} scale={scale} canvasRef={canvasRef} />
+            {/* 선택 요소용 단일 AI 플로팅바 — 액션은 선택 상태에 따라 결정된다.
+                (편집 중·발표 중·크롭 중에는 숨김) */}
+            {selectedEls.length > 0 && !editingFlatId && !croppingFlatId && mode !== 'present' && (
+              <AiActionBar elements={selectedEls} scale={scale} canvasRef={canvasRef} />
             )}
             {/* 커넥터 단일 선택 시 빠른 편집 미니툴바 */}
             {selectedEls.length === 1 && selectedEl && selectedEl.shapeType === 'connector' && !editingFlatId && mode !== 'present' && (
@@ -1463,10 +1453,6 @@ export default function FlatCanvas() {
             {selectedEls.length > 1 && !editingFlatId && (
               <FlatGroupOverlay elements={selectedEls} scale={scale}
                 otherRects={otherRects} canvasSize={canvasSize} onSnapGuides={setSnapGuides} />
-            )}
-            {/* 다중 선택 시 전용 AI 플로팅바 (편집 중·발표 중에는 숨김) */}
-            {selectedEls.length > 1 && !editingFlatId && mode !== 'present' && (
-              <FlatSelectionAiBar elements={selectedEls} scale={scale} canvasRef={canvasRef} />
             )}
             {/* 스냅 가이드 */}
             {snapGuides.map((g, i) => {

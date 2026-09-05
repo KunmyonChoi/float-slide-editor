@@ -222,7 +222,7 @@ function Dialog() {
         </div>
 
         <div style={{ fontSize: 11, color: '#64748b', lineHeight: 1.5 }}>
-          녹화 영상은 <b style={{ color: '#94a3b8' }}>구동 영상</b>으로 쓸 수 있습니다 — 삽입 후 영상 선택 ▸ 🎬 AI 립싱크로
+          녹화 영상은 <b style={{ color: '#94a3b8' }}>구동 영상</b>으로 쓸 수 있습니다 — 삽입 후 영상 선택 ▸ ✨ AI ▸ 립싱크로
           노트 음성에 맞춰 입을 합성하고, 배경 제거로 투명 아바타를 만들 수 있습니다.
         </div>
       </div>

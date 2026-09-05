@@ -2888,7 +2888,7 @@ const BG_DEFAULT_STYLES = {
   boxShadow: 'none', opacity: '1', padding: '0px',
 }
 
-// AI 슬라이드 배경 생성 — 스타일 프리셋 + 주제 → generateImage(16:9) → 배경 적용
+// 슬라이드 배경 생성 — 스타일 프리셋 + 주제 → generateImage(16:9) → 배경 적용
 function AiBackgroundSection({ onApply }) {
   const [styleId, setStyleId] = useState(DEFAULT_BACKGROUND_STYLE_ID)
   const [prompt, setPrompt] = useState('')
@@ -2926,7 +2926,7 @@ function AiBackgroundSection({ onApply }) {
   const sel = getBackgroundStyle(styleId)
   return (
     <div className="border-t border-white/5 pt-3 space-y-2">
-      <SectionTitle>AI 배경 생성</SectionTitle>
+      <SectionTitle>✨ 배경 생성</SectionTitle>
       {/* 커스텀 드롭다운 — 섹션 구분 + 항목별 설명 + 기존 thin-scrollbar 적용 */}
       <div ref={pickRef} className="relative">
         <button
@@ -2982,7 +2982,7 @@ function AiBackgroundSection({ onApply }) {
           loading ? 'bg-white/5 text-slate-500 border-white/10'
             : 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30 hover:bg-indigo-500/30'
         }`}
-      >{loading ? '생성 중…' : '✨ AI 배경 생성'}</button>
+      >{loading ? '생성 중…' : '✨ 배경 생성'}</button>
       {error && <p className="text-[10px] text-red-400">{error}</p>}
       <p className="text-[9px] text-slate-600">한 장 생성(비용 발생). 텍스트 자리를 비운 16:9 배경입니다.</p>
     </div>

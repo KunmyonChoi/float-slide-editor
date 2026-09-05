@@ -3,15 +3,14 @@ import {
   getApiKey, setApiKey, hasApiKey, getModel, setModel,
   getImageModel, setImageModel, pickImageSize, flexSize, generationSize,
   generateImage, editImage,
-  chat, generateImagePrompt, analyzeImageForInfographic, editSlideText,
-  buildImageEnhancePrompt, generateSpeakerNotes,
+  chat, generateImagePrompt, analyzeImageForInfographic, generateSpeakerNotes,
   synthesizeSpeech, getTtsVoice, setTtsVoice, getTtsModel, setTtsModel,
   getTtsInstructions, setTtsInstructions, voicesForModel, TTS_VOICES,
   DEFAULT_MODEL, DEFAULT_IMAGE_MODEL,
 } from '../core/OpenAIClient'
 import {
   setLocalLlmEnabled, setLocalLlmModel, setLocalLlmUrl,
-  setLocalVisionEnabled, setLocalVisionModel, setLocalVisionUrl,
+  setLocalVisionEnabled, setLocalVisionModel, setLocalVisionUrl, setVisionSelection,
 } from '../core/LlmBackendClient'
 
 function okResponse(content) {
@@ -225,103 +224,6 @@ describe('analyzeImageForInfographic (vision)', () => {
   })
 })
 
-describe('editSlideText (AI 텍스트 편집)', () => {
-  beforeEach(() => { localStorage.clear(); setApiKey('sk-test') })
-  afterEach(() => { vi.unstubAllGlobals() })
-
-  it('맞춤법 동작: 시스템 프롬프트에 proofreader, 낮은 temperature', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(okResponse('교정된 문장'))
-    vi.stubGlobal('fetch', fetchMock)
-    const out = await editSlideText('교정할 문장', { action: 'spelling' })
-    expect(out).toBe('교정된 문장')
-    const body = JSON.parse(fetchMock.mock.calls[0][1].body)
-    expect(body.messages[0].content).toMatch(/proofreader/i)
-    expect(body.temperature).toBe(0.2)
-    expect(body.messages[1].content).toContain('교정할 문장')
-  })
-
-  it('프롬프트 동작: 지시문을 user 메시지에 포함', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(okResponse('요약본'))
-    vi.stubGlobal('fetch', fetchMock)
-    await editSlideText('긴 원문', { action: 'prompt', instruction: '3문장으로 요약' })
-    const user = JSON.parse(fetchMock.mock.calls[0][1].body).messages[1].content
-    expect(user).toContain('3문장으로 요약')
-    expect(user).toContain('긴 원문')
-  })
-
-  it('프롬프트 동작에 지시문 없으면 호출 전 에러', async () => {
-    const fetchMock = vi.fn()
-    vi.stubGlobal('fetch', fetchMock)
-    await expect(editSlideText('원문', { action: 'prompt' })).rejects.toThrow(/지시문/)
-    expect(fetchMock).not.toHaveBeenCalled()
-  })
-
-  it('번역: 대상 언어를 시스템 프롬프트에 넣어 호출', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(okResponse('Hello world'))
-    vi.stubGlobal('fetch', fetchMock)
-    const out = await editSlideText('안녕 세상', { action: 'translate', targetLang: 'English' })
-    expect(out).toBe('Hello world')
-    const body = JSON.parse(fetchMock.mock.calls[0][1].body)
-    expect(body.messages[0].content).toMatch(/translate the text into English/i)
-    expect(body.messages[1].content).toContain('안녕 세상')
-    expect(fetchMock.mock.calls[0][0]).toContain('api.openai.com') // OpenAI 고정
-  })
-
-  it('번역: 대상 언어 없으면 호출 전 에러', async () => {
-    const fetchMock = vi.fn()
-    vi.stubGlobal('fetch', fetchMock)
-    await expect(editSlideText('원문', { action: 'translate' })).rejects.toThrow(/대상 언어/)
-    expect(fetchMock).not.toHaveBeenCalled()
-  })
-
-  it('빈 텍스트/알 수 없는 동작은 호출 전 에러', async () => {
-    const fetchMock = vi.fn()
-    vi.stubGlobal('fetch', fetchMock)
-    await expect(editSlideText('   ', { action: 'spelling' })).rejects.toThrow(/편집할 텍스트/)
-    await expect(editSlideText('원문', { action: 'nope' })).rejects.toThrow(/알 수 없는/)
-    expect(fetchMock).not.toHaveBeenCalled()
-  })
-
-  it('로컬 LLM이 켜져 있어도 OpenAI 엔드포인트로 호출(품질 보장)', async () => {
-    setLocalLlmEnabled(true)
-    setApiKey('sk-test')
-    const fetchMock = vi.fn().mockResolvedValue(okResponse('결과'))
-    vi.stubGlobal('fetch', fetchMock)
-    await editSlideText('원문', { action: 'formal' })
-    expect(fetchMock.mock.calls[0][0]).toContain('api.openai.com')
-    setLocalLlmEnabled(false)
-  })
-
-  it('코드펜스/감싼 따옴표 제거(내부 내용 보존)', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(okResponse('```markdown\n# 제목\n- 항목\n```')))
-    expect(await editSlideText('x', { action: 'markdown' })).toBe('# 제목\n- 항목')
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(okResponse('"따옴표로 감싼 결과"')))
-    expect(await editSlideText('x', { action: 'formal' })).toBe('따옴표로 감싼 결과')
-    // 내부에 따옴표가 있으면 벗기지 않음
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(okResponse('"인용" 포함 문장')))
-    expect(await editSlideText('x', { action: 'formal' })).toBe('"인용" 포함 문장')
-  })
-})
-
-describe('buildImageEnhancePrompt (이미지 디자인 향상)', () => {
-  it('텍스트·요소 위치 보존 지시를 포함한다', () => {
-    const p = buildImageEnhancePrompt('')
-    expect(p).toMatch(/verbatim/i)        // 텍스트 원문 유지
-    expect(p).toMatch(/position/i)        // 위치 유지
-    expect(p).toMatch(/do not move|do not redraw/i)
-  })
-
-  it('directive가 있으면 Style 절을 덧붙인다', () => {
-    const p = buildImageEnhancePrompt('soft watercolor illustration')
-    expect(p).toContain('Style: soft watercolor illustration')
-  })
-
-  it('directive가 없으면 Style 절을 넣지 않는다', () => {
-    expect(buildImageEnhancePrompt('')).not.toContain('Style:')
-    expect(buildImageEnhancePrompt('   ')).not.toContain('Style:')
-    expect(buildImageEnhancePrompt()).not.toContain('Style:')
-  })
-})
 
 describe('OpenAIClient — chat 요청 구성', () => {
   beforeEach(() => { localStorage.clear(); setApiKey('sk-test') })
@@ -407,6 +309,16 @@ describe('OpenAIClient — chat 텍스트/비전 라우팅', () => {
   it('이미지 있음 + 로컬 비전 OFF + 키 없음 → 비전 모델 필요 에러', async () => {
     setApiKey('')
     await expect(chat({ user: 'd', images: ['data:image/png;base64,AAAA'] })).rejects.toThrow(/비전 모델/)
+  })
+
+  it('비전을 OpenAI 모델로 명시하면 그 모델로, 텍스트는 텍스트 모델 그대로', async () => {
+    setModel('gpt-4o-mini'); setVisionSelection('openai', 'gpt-4o')
+    const fetchMock = vi.fn().mockResolvedValue(okResponse('ok'))
+    vi.stubGlobal('fetch', fetchMock)
+    await chat({ user: 'd', images: ['data:image/png;base64,AAAA'] })
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).model).toBe('gpt-4o')
+    await chat({ user: 'd' })
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body).model).toBe('gpt-4o-mini')
   })
 })
 

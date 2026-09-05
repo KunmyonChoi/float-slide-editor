@@ -1,9 +1,13 @@
 import { useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { useElementScreenRect } from './useElementScreenRect'
+import { useCanvasAreaScreenRect } from './useElementScreenRect'
 
 /**
- * ImageComparePreview — 편집 결과를 선택 이미지 요소 '위'에 겹쳐 캔버스에서 전후 비교.
+ * ImageComparePreview — AI 편집 결과를 캔버스의 해당 영역 '위'에 겹쳐 전후 비교.
+ *
+ * 대상은 요소가 아니라 **캔버스 좌표 사각형(area)** 이다 — 요소 하나를 편집한 결과뿐 아니라
+ * 선택 영역·슬라이드 전체 생성 결과도 같은 방식으로 비교할 수 있고, 작업 트레이(캔버스 바깥)
+ * 에서도 scale/canvasRef를 넘겨받지 않고 띄울 수 있다.
  *
  * before(=편집에 실제 넣은 입력 이미지)와 after(=결과)를 둘 다 같은 objectFit으로 그려, 세로
  * 구분선(split%) 왼쪽=before, 오른쪽=after가 보이게 한다(after를 clip-path로 잘라 그 아래 before가
@@ -11,8 +15,8 @@ import { useElementScreenRect } from './useElementScreenRect'
  * 종횡비·프레이밍이라 AI 변경만 격리되고 쉬프트가 없다(원본은 fit/종횡비가 달라 움찔거림).
  * showOriginal(홀드) 시 after를 숨겨 before 전체를 보여준다. 적용 전 비파괴(요소 content는 그대로).
  */
-export default function ImageComparePreview({ element, scale, canvasRef, beforeUrl, resultUrl, objectFit = 'contain', split, onSplit, showOriginal }) {
-  const rect = useElementScreenRect(element, scale, canvasRef)
+export default function ImageComparePreview({ area, beforeUrl, resultUrl, objectFit = 'contain', split, onSplit, showOriginal, zIndex = 10043 }) {
+  const rect = useCanvasAreaScreenRect(area)
   const boxRef = useRef(null)
   const draggingRef = useRef(false)
 
@@ -32,7 +36,7 @@ export default function ImageComparePreview({ element, scale, canvasRef, beforeU
       ref={boxRef}
       data-edit-accessory="true"
       onMouseDown={e => e.stopPropagation()}
-      style={{ position: 'fixed', left: rect.left, top: rect.top, width: rect.width, height: rect.height, zIndex: 10043, overflow: 'hidden' }}
+      style={{ position: 'fixed', left: rect.left, top: rect.top, width: rect.width, height: rect.height, zIndex, overflow: 'hidden' }}
     >
       {/* 원본(before) — 전체 바탕 */}
       {beforeUrl && <img src={beforeUrl} alt="" draggable={false} style={imgStyle} />}

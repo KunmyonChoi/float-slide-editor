@@ -1,5 +1,5 @@
 /**
- * AI 이미지 화풍 목록 — 텍스트→이미지(FlatAiBar)와 인포그래픽 변환(InfographicModal)이 공유.
+ * 이미지 화풍 목록 — 텍스트→이미지와 선택 영역/슬라이드 인포그래픽이 공유(AiActionBar·imageJobRunner).
  * directive는 프롬프트/스펙에 주입되는 영어 화풍 지시문. 'auto'는 빈 문자열(모델/시스템 기본 사용).
  */
 export const IMAGE_STYLES = [

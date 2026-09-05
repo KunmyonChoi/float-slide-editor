@@ -12,7 +12,7 @@ import { useElementScreenRect } from './useElementScreenRect'
  *   불투명(보존) 바탕 + 칠한 경로를 destination-out으로 뚫어 투명(편집)으로 만든다.
  * contain이면 이미지 실제 표시 사각형(contentRect) 밖(레터박스 여백)은 클리핑해 편집 불가.
  *
- * 부모(FlatImageAiBar)는 ref로 buildMask/hasStrokes/clear를 호출한다. 도구/브러시 크기는 props.
+ * 부모(AiActionBar)는 ref로 buildMask/hasStrokes/clear를 호출한다. 도구/브러시 크기는 props.
  */
 const MaskBrushOverlay = forwardRef(function MaskBrushOverlay(
   { element, scale, canvasRef, tool = 'brush', brushSize = 40, objectFit = 'contain', onStrokesChange },

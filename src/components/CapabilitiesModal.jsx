@@ -88,8 +88,8 @@ function Dialog() {
               <Row icon={c.cutout ? '✅' : '⚠️'} title="피사체 분리 서버"
                 desc={c.cutout ? `연결됨${c.cutoutDevice ? ` (${c.cutoutDevice})` : ''}` : '연결 안 됨 — "피사체 뒤 텍스트"에 필요'}
                 action={{ label: '다시 확인', busy: busy === 'be', onClick: () => act('be', () => checkCutoutBackend(true)) }} />
-              <Row icon={c.imagen ? '✅' : '⚠️'} title="레이아웃 이미지 생성 서버"
-                desc={c.imagen ? `연결됨${c.imagenDevice ? ` (${c.imagenDevice})` : ''}` : '연결 안 됨 — "AI 레이아웃 이미지"에 필요 (NVIDIA 40GB+)'}
+              <Row icon={c.imagen ? '✅' : '⚠️'} title="로컬 이미지 생성 서버"
+                desc={c.imagen ? `연결됨${c.imagenDevice ? ` (${c.imagenDevice})` : ''}` : '연결 안 됨 — "이미지 생성"의 로컬 엔진에 필요 (NVIDIA 40GB+)'}
                 action={{ label: '다시 확인', busy: busy === 'img', onClick: () => act('img', () => checkImagenBackend(true)) }} />
             </div>
           </div>

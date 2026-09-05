@@ -1,7 +1,7 @@
 /**
  * captureCanvasRegion — 현재 슬라이드 캔버스를 이미지로 캡처하고 특정 영역만 잘라낸다.
  *
- * AI 인포그래픽 변환(InfographicModal)과 이미지 디자인 향상(FlatImageAiBar)이 공유한다.
+ * 이미지 생성·편집 러너(imageJobRunner)가 공유한다.
  * 요소 content는 data:/idb://(BlobStore)/원격·blob: 등 형식이 제각각이라 직접 읽기 어렵다.
  * 대신 렌더된 캔버스를 캡처하면 모든 형식을 안전하게, 화면에 보이는 픽셀(objectFit 반영) 그대로 얻는다.
  */

@@ -18,6 +18,7 @@ import { create } from 'zustand'
  *   result: { url?, blob?, ... } | null,
  *   error: string | null,
  *   abort: () => void | null,         // 진행 중 취소 훅(있으면)
+ *   applyOptions: [{ mode, label }],  // 트레이 '적용' 버튼 구성(첫 항목이 주버튼). 없으면 기본 교체/추가.
  *   createdAt: number,                // 호출부가 주입(테스트 결정성)
  * }
  */
@@ -30,13 +31,13 @@ export const useAiJobStore = create((set, get) => ({
 
   /** 작업 시작 → jobId 반환. createdAt은 호출부에서 Date.now() 주입(스토어는 결정적).
    * apply: 결과를 대상에 반영하는 콜백(러너가 주입). 트레이 '적용'이 호출. */
-  startJob({ kind, label, targetPageKey = null, targetElementId = null, abort = null, apply = null, createdAt = 0 }) {
+  startJob({ kind, label, targetPageKey = null, targetElementId = null, abort = null, apply = null, applyOptions = null, createdAt = 0 }) {
     const id = _nextJobId()
     const job = {
       id, kind, label: label || kind,
       targetPageKey, targetElementId,
       status: 'running', progress: 0, statusText: '',
-      result: null, error: null, abort, apply, createdAt,
+      result: null, error: null, abort, apply, applyOptions, createdAt,
     }
     set(s => ({ jobs: [...s.jobs, job] }))
     return id
