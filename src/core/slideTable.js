@@ -21,14 +21,14 @@ export const TABLE_HEADER_COLOR = '#0f172a'
 export const TABLE_BODY_COLOR = '#334155'
 export const TABLE_DEFAULT_FONT_SIZE = 14
 
-const MAX_ROWS = 30
-const MAX_COLS = 12
+export const MAX_ROWS = 30
+export const MAX_COLS = 12
 
 function emptyCell(text = '') {
   return { text }
 }
 
-function normFractions(arr) {
+export function normFractions(arr) {
   const sum = arr.reduce((a, b) => a + b, 0) || 1
   return arr.map(v => v / sum)
 }

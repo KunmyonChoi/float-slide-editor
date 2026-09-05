@@ -10,6 +10,7 @@
  */
 
 import { parseAnimAttrs, parseTransitionAttrs, readSlideNotes, resolveAnimSpecs } from './deckMotion.js'
+import { normFractions, MAX_ROWS, MAX_COLS, TABLE_BORDER_COLOR } from './slideTable.js'
 
 let _flatCounter = 0
 export function nextFlatId() { return `flat-${++_flatCounter}` }
@@ -1812,6 +1813,127 @@ export function settleAnimations(doc) {
  * iframe에서 쓰려면 extractFlatElementsFromIframe(ref)를 사용.
  * @param {Document} doc @param {Window} win
  */
+/**
+ * 렌더된 <table> → 편집 가능한 표 요소 데이터(slideTable 모델).
+ * 열 폭·행 높이는 computed geometry에서 읽으므로 브라우저가 내용에 맞게 잡은 비율이 그대로 온다.
+ * 지원 밖(중첩 표·미디어 포함·상한 초과)이면 null → 호출부가 기존 셀별 텍스트 추출로 폴백한다.
+ * @returns {{ table: object, font: object } | null}
+ */
+export function extractTableData(tableEl, win) {
+  if (!tableEl || !win) return null
+  // 중첩 표·미디어가 든 표는 모델이 표현하지 못한다 → 기존 동작 유지
+  if (tableEl.querySelector('table')) return null
+  if (tableEl.querySelector('img, svg, video, canvas, iframe')) return null
+
+  const trs = [...tableEl.querySelectorAll('tr')]
+  if (!trs.length) return null
+
+  // 1) colspan/rowspan을 반영한 그리드 배치 (가려지는 칸은 'covered')
+  const grid = []
+  let cols = 0
+  trs.forEach((tr, r) => {
+    grid[r] = grid[r] || []
+    let c = 0
+    for (const cellEl of tr.children) {
+      const tag = cellEl.tagName.toLowerCase()
+      if (tag !== 'td' && tag !== 'th') continue
+      while (grid[r][c] !== undefined) c++
+      const colSpan = Math.max(1, cellEl.colSpan || 1)
+      const rowSpan = Math.max(1, cellEl.rowSpan || 1)
+      grid[r][c] = { el: cellEl, colSpan, rowSpan }
+      for (let dr = 0; dr < rowSpan; dr++) {
+        for (let dc = 0; dc < colSpan; dc++) {
+          if (dr === 0 && dc === 0) continue
+          grid[r + dr] = grid[r + dr] || []
+          grid[r + dr][c + dc] = 'covered'
+        }
+      }
+      c += colSpan
+      if (c > cols) cols = c
+    }
+  })
+  const rows = grid.length
+  if (rows < 1 || cols < 1 || rows > MAX_ROWS || cols > MAX_COLS) return null
+
+  const tRect = tableEl.getBoundingClientRect()
+  if (!(tRect.width > 0) || !(tRect.height > 0)) return null
+
+  // 2) 열 폭 — colSpan=1 셀의 실제 폭에서 채우고, 못 채운 열은 평균으로 보정
+  const colW = new Array(cols).fill(0)
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const g = grid[r]?.[c]
+      if (!g || g === 'covered' || g.colSpan !== 1 || colW[c]) continue
+      colW[c] = g.el.getBoundingClientRect().width
+    }
+  }
+  const known = colW.filter(w => w > 0)
+  const avg = known.length ? known.reduce((a, b) => a + b, 0) / known.length : tRect.width / cols
+  for (let c = 0; c < cols; c++) if (!colW[c]) colW[c] = avg
+
+  // 3) 행 높이
+  const rowH = []
+  for (let r = 0; r < rows; r++) {
+    const h = trs[r]?.getBoundingClientRect?.().height
+    rowH.push(h > 0 ? h : tRect.height / rows)
+  }
+
+  // 4) 헤더 판정 — <thead> 또는 첫 행이 전부 <th>
+  const firstRowEls = (grid[0] || []).filter(g => g && g !== 'covered').map(g => g.el)
+  const headerRow = !!tableEl.querySelector('thead')
+    || (firstRowEls.length > 0 && firstRowEls.every(e => e.tagName.toLowerCase() === 'th'))
+
+  // 5) 셀 데이터 — 본문 첫 셀의 서식을 표 기본값으로 삼고, 다른 셀만 개별 저장
+  const bodyRef = (grid[headerRow && rows > 1 ? 1 : 0] || []).find(g => g && g !== 'covered')
+  const refCs = bodyRef ? win.getComputedStyle(bodyRef.el) : null
+  const font = {
+    fontSize: refCs?.fontSize || '',
+    fontFamily: refCs?.fontFamily || '',
+    color: refCs?.color || '',
+  }
+  let border = null
+  const cells = []
+  for (let r = 0; r < rows; r++) {
+    const row = []
+    for (let c = 0; c < cols; c++) {
+      const g = grid[r]?.[c]
+      if (g === 'covered') { row.push({ text: '', covered: true }); continue }
+      if (!g) { row.push({ text: '' }); continue }
+      const ccs = win.getComputedStyle(g.el)
+      if (!border) {
+        const bw = Math.round(parseFloat(ccs.borderTopWidth) || 0)
+        border = { width: bw, color: ccs.borderTopColor || TABLE_BORDER_COLOR }
+      }
+      const cell = { text: (g.el.textContent || '').trim() }
+      if (g.colSpan > 1) cell.colSpan = g.colSpan
+      if (g.rowSpan > 1) cell.rowSpan = g.rowSpan
+      const align = ccs.textAlign
+      if (align === 'center' || align === 'right' || align === 'end') cell.align = align === 'end' ? 'right' : align
+      const valign = ccs.verticalAlign
+      if (valign === 'top' || valign === 'bottom') cell.valign = valign
+      const bg = ccs.backgroundColor
+      if (bg && bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent') cell.bg = bg
+      if (ccs.color && ccs.color !== font.color) cell.color = ccs.color
+      const fw = parseInt(ccs.fontWeight, 10)
+      if (Number.isFinite(fw) && fw >= 600) cell.fontWeight = String(fw)
+      row.push(cell)
+    }
+    cells.push(row)
+  }
+
+  return {
+    table: {
+      rows, cols,
+      colFractions: normFractions(colW),
+      rowFractions: normFractions(rowH),
+      headerRow,
+      cells,
+      border: border || { width: 1, color: TABLE_BORDER_COLOR },
+    },
+    font,
+  }
+}
+
 export function extractFlatElements(doc, win, existingMaxId = 0) {
   if (!doc || !win) return { elements: [], canvasSize: { w: 1280, h: 800 }, notes: '', transition: null }
 
@@ -2001,6 +2123,24 @@ export function extractFlatElements(doc, win, existingMaxId = 0) {
     if (rect.right < -10 || rect.bottom < -10 || rect.left > canvasW + 10 || rect.top > canvasH + 10) continue
 
     const editorType = el.getAttribute('data-editor-type')
+
+    // <table> → 편집 가능한 표 요소 하나. 셀들은 mergedContainerIds로 스킵된다.
+    // (지원 밖이면 null → 아래 기존 경로가 셀별 텍스트로 추출)
+    if (el.tagName === 'TABLE') {
+      const td = extractTableData(el, win)
+      if (td) {
+        const tableEl = buildFlatElement(el, rect, cs, zCounter++, 'shape', transformScale, originRect)
+        tableEl.type = 'table'
+        tableEl.table = td.table
+        tableEl.content = ''
+        tableEl.isRich = false
+        tableEl.styles = { ...tableEl.styles, ...td.font }
+        result.push(tableEl)
+        const tid = el.getAttribute('data-editor-id')
+        if (tid) mergedContainerIds.add(tid)
+        continue
+      }
+    }
 
     if (editorType === 'text') {
       // 인라인 서식 요소이면서 부모 텍스트에 포함되는 경우 스킵

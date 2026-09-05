@@ -3,6 +3,7 @@
  * 원본 iframe과 Flat 변환 결과를 독립 HTML 파일로 내보낸다.
  */
 import { animToAttrs, transitionToAttrs, notesToScript, buildAnimNameMap } from './deckMotion.js'
+import { tableContainerStyle, cellStyle } from './slideTable.js'
 
 /**
  * 렌더된 요소 HTML의 여는 태그에 data-anim* 속성을 끼워 넣는다.
@@ -227,6 +228,9 @@ function renderElement(el) {
   if (el.type === 'svg') {
     return `<div style="${flatStyle(el)}">${el.content}</div>`
   }
+  if (el.type === 'table' && el.table) {
+    return `<div style="${flatStyle(el)}">${tableHtml(el)}</div>`
+  }
   return `<div style="${flatStyle(el)};${shapeStyle(el.styles)}"></div>`
 }
 
@@ -352,6 +356,47 @@ function textShadowToFilter(textShadow) {
   }
   if (current.trim()) parts.push(current.trim())
   return parts.map(p => `drop-shadow(${p})`).join(' ')
+}
+
+/** 스타일 객체(React식 camelCase) → CSS 문자열. undefined/null 값은 버린다. */
+function styleObjToCss(obj) {
+  return Object.entries(obj || {})
+    .filter(([, v]) => v != null && v !== '')
+    .map(([k, v]) => `${k.replace(/[A-Z]/g, m => '-' + m.toLowerCase())}:${v}`)
+    .join(';')
+}
+
+/**
+ * 표 요소 → <table> HTML. 화면 렌더(FlatElementRenderer)와 같은 구조·스타일을 쓴다
+ * (tableContainerStyle/cellStyle 재사용). 헤더 행은 <thead><th>로 내보내
+ * 다시 가져올 때 FlatExtractor가 headerRow를 그대로 복원할 수 있게 한다.
+ */
+function tableHtml(el) {
+  const t = el.table
+  const styles = el.styles || {}
+  if (!t || !Array.isArray(t.cells) || t.cells.length === 0) return ''
+  const cols = (t.colFractions || []).map(f => `<col style="width:${r(f * 100)}%" />`).join('')
+  const cellTag = (r0) => (t.headerRow && r0 === 0 ? 'th' : 'td')
+  const row = (cells, r0) => {
+    const tag = cellTag(r0)
+    const tds = cells.map((cell, c) => {
+      if (cell?.covered) return ''
+      const span = [
+        cell?.colSpan > 1 ? ` colspan="${cell.colSpan}"` : '',
+        cell?.rowSpan > 1 ? ` rowspan="${cell.rowSpan}"` : '',
+      ].join('')
+      return `<${tag} style="${styleObjToCss(cellStyle(t, r0, c, styles))}"${span}>${escHtml(cell?.text || '')}</${tag}>`
+    }).join('')
+    // 행 높이는 %가 아니라 px로 — %는 브라우저가 내용 기준으로 재분배해 왕복 시 비율이 밀린다.
+    const px = t.rowFractions?.[r0] != null && el.height ? r(t.rowFractions[r0] * el.height) : null
+    const h = px != null ? ` style="height:${px}px"` : ''
+    return `<tr${h}>${tds}</tr>`
+  }
+  const body = t.cells.map((cells, r0) => row(cells, r0))
+  const head = t.headerRow ? `<thead>${body[0]}</thead>` : ''
+  const rest = t.headerRow ? body.slice(1) : body
+  return `<table style="${styleObjToCss(tableContainerStyle(styles))}"><colgroup>${cols}</colgroup>`
+    + `${head}<tbody>${rest.join('')}</tbody></table>`
 }
 
 function escHtml(str) {

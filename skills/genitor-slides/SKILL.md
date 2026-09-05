@@ -179,6 +179,40 @@ body { width: 1920px; height: 1080px; overflow: hidden; position: relative; back
 > 블록 높이는 `줄 수 × font-size × line-height`로 계산해 넣는다. 텍스트가 많은 덱이라면
 > 이 좌표 누적을 손으로 하지 말고 작은 생성 스크립트(파이썬 등)로 뽑는 편이 훨씬 안전하다.
 
+**표** — `<table>`은 **편집 가능한 표 요소 하나**로 들어온다(셀별 텍스트로 흩어지지 않는다).
+열 폭·행 높이는 렌더된 비율 그대로, 헤더·테두리·병합(`colspan`/`rowspan`)도 보존된다.
+표를 감싸는 div에 위치·크기를 주고, 그 안에 `<table style="width:100%;height:100%">`를 둔다:
+```html
+<div style="position:absolute;left:120px;top:320px;width:1680px;height:520px;">
+  <table style="width:100%;height:100%;border-collapse:collapse;font-family:'Noto Sans KR',sans-serif;
+                font-size:26px;color:#334155;table-layout:fixed;">
+    <colgroup><col style="width:25%"><col style="width:15%"><col style="width:60%"></colgroup>
+    <thead>
+      <tr style="height:80px">
+        <th style="border:1px solid #cbd5e1;padding:12px 16px;background:#0f172a;color:#f8fafc;
+                   font-weight:700;text-align:left;">영역</th>
+        <th style="border:1px solid #cbd5e1;padding:12px 16px;background:#0f172a;color:#f8fafc;
+                   font-weight:700;text-align:left;">상태</th>
+        <th style="border:1px solid #cbd5e1;padding:12px 16px;background:#0f172a;color:#f8fafc;
+                   font-weight:700;text-align:left;">비고</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr style="height:88px">
+        <td style="border:1px solid #cbd5e1;padding:12px 16px;">편집 기반</td>
+        <td style="border:1px solid #cbd5e1;padding:12px 16px;">견고</td>
+        <td style="border:1px solid #cbd5e1;padding:12px 16px;">핵심은 PowerPoint급</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+```
+
+> 표 한 장은 **30행 · 12열**까지. 넘으면 셀별 텍스트로 흩어지니 슬라이드를 쪼갠다.
+> 행 높이는 `%`가 아니라 **px**로 준다(%는 브라우저가 내용 기준으로 재분배한다).
+> 표 안에 이미지·중첩 표를 넣으면 표 요소가 아니라 셀별 텍스트로 들어온다.
+> PPTX로 내보내면 **네이티브 표**가 된다(파워포인트에서 행·열 편집 가능).
+
 **리치 텍스트** — `<strong>` `<em>` `<span style>` `<br>`는 보존된다:
 ```html
 <div style="position:absolute;left:120px;top:645px;width:1680px;height:135px;
