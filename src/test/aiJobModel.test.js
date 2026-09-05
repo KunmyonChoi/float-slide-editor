@@ -118,6 +118,32 @@ describe('aiJobStore — 전역 AI 작업 모델', () => {
     expect(gotMode).toBe('add') // opts.mode가 apply 콜백에 전달됨
     expect(useAiJobStore.getState().jobs[0].status).toBe('applied')
   })
+
+  // 적용이 실패하면(대상 요소가 삭제된 경우 등) 결과를 버리지 않고 다시 적용할 수 있어야 한다.
+  // 러너의 apply는 반드시 throw/reject해야 이 경로를 탄다 — 조용히 성공 처리하면 결과가 유실된다.
+  it('applyJob: apply가 실패하면 ready를 유지하고 에러를 남긴다', async () => {
+    const id = useAiJobStore.getState().startJob({
+      kind: 'image-cutout',
+      apply: () => Promise.reject(new Error('원본 이미지를 찾을 수 없습니다')),
+      createdAt: 1,
+    })
+    useAiJobStore.getState().completeJob(id, { url: 'blob:x' })
+    expect(useAiJobStore.getState().applyJob(id, { mode: 'replace' })).toBe(true)
+    await Promise.resolve(); await Promise.resolve() // 마이크로태스크 소진
+    const job = useAiJobStore.getState().jobs[0]
+    expect(job.status).toBe('ready')                    // applied로 넘어가지 않는다
+    expect(job.error).toMatch(/적용 실패/)
+    expect(job.result.url).toBe('blob:x')               // 결과는 그대로 남아 재적용 가능
+  })
+
+  // 트레이의 '적용' 버튼 구성은 러너가 정한다 — startJob이 그대로 보관해야 한다.
+  it('startJob: applyOptions를 job에 보관한다(없으면 null)', () => {
+    const opts = [{ mode: 'add', label: '새 이미지로 추가' }, { mode: 'replace', label: '텍스트 박스 교체' }]
+    const id = useAiJobStore.getState().startJob({ kind: 'image-gen', applyOptions: opts, createdAt: 1 })
+    expect(useAiJobStore.getState().jobs.find(j => j.id === id).applyOptions).toEqual(opts)
+    const id2 = useAiJobStore.getState().startJob({ kind: 'lipsync', createdAt: 2 })
+    expect(useAiJobStore.getState().jobs.find(j => j.id === id2).applyOptions).toBe(null)
+  })
 })
 
 describe('flatStore goToFlatPageByKey (트레이 보기)', () => {

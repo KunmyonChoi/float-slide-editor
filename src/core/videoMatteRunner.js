@@ -6,7 +6,7 @@ import { matteVideo } from './VideoMatteBackendClient'
 
 /**
  * videoMatteRunner — 영상 전경 분리(B2, 고품질) 작업을 전역 aiJobStore로 시작한다.
- * (lipsyncRunner/imagenRunner 패턴 — HTTP로 float-matte 서버 호출.)
+ * (lipsyncRunner 패턴 — HTTP로 float-matte 서버 호출.)
  *
  * 결과는 사람만 남긴 **알파 WebM**(네이티브 투명). 적용 시 원본 영상 요소의 content를 결과로
  * 교체(또는 새 요소로 추가)하고 chroma를 해제한다(webm 자체가 투명이라 실시간 매트 불필요).

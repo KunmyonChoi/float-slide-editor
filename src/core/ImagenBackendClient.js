@@ -50,24 +50,35 @@ export function getImagenDevice() { return _device }
 export function getImagenPresets() { return _presets }
 export function isImagenReady() { return _ready }
 
-/** 헬스체크. 결과 캐시(force로 재검사). 빌드/디바이스/프리셋/ready도 기록. */
+/**
+ * 임의 베이스 URL 헬스체크(캐시 없음, 예외 없음). 설정 화면이 "입력 중인" URL을 바로 검사한다.
+ * @returns {Promise<{ ok: boolean, ready: boolean, device: string|null, build: string|null, presets: string[]|null }>}
+ */
+export async function probeImagenBackend(base = getImagenBase()) {
+  const b = String(base || '').trim().replace(/\/+$/, '') || `http://localhost:${IMAGEN_DEFAULT_PORT}`
+  const fail = { ok: false, ready: false, device: null, build: null, presets: null }
+  try {
+    const res = await fetch(`${b}/api/health`, { signal: AbortSignal.timeout(2000) })
+    if (!res.ok) return fail
+    try {
+      const j = await res.json()
+      return {
+        ok: true,
+        ready: j.ready === true,
+        device: j.device || null,
+        build: j.build || null,
+        presets: Array.isArray(j.presets) ? j.presets : null,
+      }
+    } catch { return { ...fail, ok: true } }
+  } catch { return fail }
+}
+
+/** 저장된 URL 기준 헬스체크. 결과 캐시(force로 재검사). 빌드/디바이스/프리셋/ready도 기록. */
 export async function checkImagenBackend(force = false) {
   if (!force && _available !== null) return _available
-  try {
-    const res = await fetch(`${getImagenBase()}/api/health`, { signal: AbortSignal.timeout(2000) })
-    _available = res.ok
-    if (res.ok) {
-      try {
-        const j = await res.json()
-        _build = j.build || null
-        _device = j.device || null
-        _presets = Array.isArray(j.presets) ? j.presets : null
-        _ready = j.ready === true
-      } catch { _build = null; _device = null; _presets = null; _ready = false }
-    }
-  } catch {
-    _available = false; _build = null; _device = null; _presets = null; _ready = false
-  }
+  const r = await probeImagenBackend(getImagenBase())
+  _available = r.ok
+  _build = r.build; _device = r.device; _presets = r.presets; _ready = r.ready
   return _available
 }
 

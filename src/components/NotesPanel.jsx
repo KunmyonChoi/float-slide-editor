@@ -324,7 +324,7 @@ export default function NotesPanel() {
                 </>
               )}
               {audioStale && <p style={{ fontSize: 10, color: '#fbbd23', margin: 0 }}>노트가 변경됨 — 재생성 권장</p>}
-              <div style={{ fontSize: 10.5, color: '#67738a' }}>AI 생성</div>
+              <div style={{ fontSize: 10.5, color: '#67738a' }}>✨ 음성 생성</div>
               <div style={{ display: 'flex', gap: 6 }}>
                 <button onClick={genAudioCurrent} style={{ flex: 1, ...sel, background: 'rgba(16,185,129,0.22)', color: '#6ee7b7', cursor: 'pointer', padding: '6px 0' }}>현재 페이지</button>
                 <button onClick={genAudioAll} style={{ flex: 1, ...sel, background: 'rgba(16,185,129,0.22)', color: '#6ee7b7', cursor: 'pointer', padding: '6px 0' }}>전체</button>
@@ -351,14 +351,14 @@ export default function NotesPanel() {
         <button
           onClick={() => { setOpen(o => !o); setAudioOpen(false) }}
           disabled={busy}
-          title="AI 발표 원고 초안"
+          title="발표 원고 초안"
           style={{
             display: 'flex', alignItems: 'center', gap: 4, height: 24, padding: '0 8px',
             background: busy ? 'rgba(99,102,241,0.15)' : 'rgba(99,102,241,0.22)',
             border: '1px solid rgba(99,102,241,0.4)', borderRadius: 6,
             color: '#c7d2fe', fontSize: 12, cursor: busy ? 'default' : 'pointer',
           }}
-        >✨ {busyKind === 'draft' ? '생성 중…' : 'AI 노트초안 ▾'}</button>
+        >✨ {busyKind === 'draft' ? '생성 중…' : '노트초안 ▾'}</button>
         {open && !busy && (
           <div style={{
             position: 'absolute', bottom: 30, right: 0, padding: 10, width: 220,
@@ -395,7 +395,7 @@ export default function NotesPanel() {
         value={notes}
         onChange={(e) => setNotes(e.target.value)}
         onKeyDown={(e) => { if (e.key === 'Escape') { e.preventDefault(); e.currentTarget.blur() } }}
-        placeholder="이 슬라이드의 발표자 노트를 입력하세요…  (✨ AI 초안으로 자동 작성 가능)"
+        placeholder="이 슬라이드의 발표자 노트를 입력하세요…  (✨ 초안으로 자동 작성 가능)"
         spellCheck={false}
         style={{
           display: 'block', width: '100%', height: 140, resize: 'vertical',

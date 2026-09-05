@@ -17,9 +17,6 @@ import AiJobTray from './components/AiJobTray'
 import { CapabilitiesHost } from './components/CapabilitiesModal'
 import { GenitorSkillHost } from './components/GenitorSkillModal'
 import { CameraCaptureHost } from './components/CameraCaptureModal'
-import { LetteringHost } from './components/LetteringModal'
-import { InfographicHost } from './components/InfographicModal'
-import { ImagenLayoutHost } from './components/ImagenLayoutModal'
 import { ConfirmHost, confirmDialog } from './components/ConfirmDialog'
 import { ShareLinkHost } from './components/ShareLinkModal'
 import { fetchSharedProject } from './core/ShareLink'
@@ -210,9 +207,6 @@ export default function App() {
       <CapabilitiesHost />
       <GenitorSkillHost />
       <CameraCaptureHost />
-      <LetteringHost />
-      <InfographicHost />
-      <ImagenLayoutHost />
       <ConfirmHost />
       <ShareLinkHost />
       {shareState === 'loading' && <ShareLoadingOverlay />}
