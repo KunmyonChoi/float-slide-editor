@@ -2975,7 +2975,8 @@ const SYSTEM_FONTS = new Set([
   'arial', 'helvetica', 'times new roman', 'times', 'georgia', 'courier', 'courier new',
   'verdana', 'tahoma', 'trebuchet ms', 'impact', 'comic sans ms', 'lucida console',
   'apple sd gothic neo', 'malgun gothic', 'segoe ui', 'sf pro', 'sf pro display',
-  'sfmono-regular', 'menlo', 'monaco', 'consolas', 'liberation mono',
+  'sf pro text', 'sf mono', 'sfmono-regular', 'menlo', 'monaco', 'consolas', 'liberation mono',
+  'blinkmacsystemfont', 'helvetica neue', 'apple gothic', 'pingfang sc', 'hiragino sans',
   'microsoft yahei', 'nanum gothic', 'gulim', 'dotum', 'batang',
   'apple color emoji', 'segoe ui emoji', 'segoe ui symbol', 'noto color emoji',
   'calibri', 'cambria', 'palatino linotype', 'book antiqua',
@@ -3008,7 +3009,8 @@ function addMissingFontImports(elements, fontImports) {
     const weight = el.styles.fontWeight || '400'
     for (const f of families) {
       const lower = f.toLowerCase()
-      if (SYSTEM_FONTS.has(lower)) continue
+      // -apple-system 등 벤더 키워드는 웹폰트가 아니다(요청하면 404)
+      if (lower.startsWith('-') || SYSTEM_FONTS.has(lower)) continue
       if (coveredFonts.has(lower)) continue
       if (!missingFonts.has(f)) missingFonts.set(f, new Set())
       missingFonts.get(f).add(weight)
