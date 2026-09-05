@@ -9,7 +9,8 @@ description: >-
   in Genitor", "export these slides as Genitor HTML", "add speaker notes and
   build animations". Output extracts cleanly into editable text/shape/image
   elements because the markup mirrors Genitor's own HTML export; notes ride in
-  a <script class="fe-notes"> per slide and motion in data-anim attributes.
+  a per-slide script block with class fe-notes, and motion in data-anim
+  attributes.
 ---
 
 # Genitor 슬라이드 HTML 작성 규약
