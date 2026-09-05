@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>Genitor 슬라이드 HTML 작성 규약</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { width: 1920px; height: 1080px; overflow: hidden; position: relative; background: #05070d; }
+.slide { position: absolute; inset: 0; display: none; overflow: hidden; background: #fff; font-family: 'Noto Sans KR', sans-serif; }
+.slide.active { display: block; }
+</style>
+</head>
+<body>
+
+<!-- ============ Slide 1 : Cover ============ -->
+<div class="slide active" style="width:1920px;height:1080px;background:linear-gradient(135deg,#0b1220 0%,#151f38 55%,#1a2444 100%);">
+  <div style="position:absolute;left:120px;top:220px;width:900px;height:40px;font-size:24px;font-weight:700;letter-spacing:6px;color:#22d3ee;">GENITOR-SLIDES SKILL</div>
+  <div style="position:absolute;left:120px;top:288px;width:96px;height:10px;background:#22d3ee;border-radius:6px;"></div>
+
+  <div style="position:absolute;left:120px;top:328px;width:1600px;height:300px;font-size:132px;font-weight:900;color:#f8fafc;line-height:1.1;">Genitor 슬라이드<br>HTML 작성 규약</div>
+
+  <div style="position:absolute;left:120px;top:660px;width:1500px;height:110px;font-size:36px;color:#94a3b8;line-height:1.5;">Claude가 만든 슬라이드를 Genitor(float-editor)가 텍스트·도형·이미지로<br>그대로 읽어들이도록 만드는 방법</div>
+
+  <div style="position:absolute;left:120px;top:900px;width:1200px;height:50px;font-size:24px;color:#64748b;letter-spacing:1px;">position:absolute · px 좌표 · .slide.active · 단일 자립형 HTML</div>
+</div>
+
+<!-- ============ Slide 2 : Why this format ============ -->
+<div class="slide" style="width:1920px;height:1080px;background:#f1f5f9;">
+  <div style="position:absolute;left:120px;top:120px;width:1000px;height:40px;font-size:24px;font-weight:700;letter-spacing:3px;color:#4f46e5;">WHY THIS FORMAT</div>
+  <div style="position:absolute;left:120px;top:170px;width:1400px;height:100px;font-size:64px;font-weight:900;color:#0f172a;line-height:1.1;">왜 이 형식 그대로 써야 하나</div>
+
+  <div style="position:absolute;left:120px;top:340px;width:880px;height:520px;font-size:32px;color:#334155;line-height:1.85;">
+    <ul style="padding-left:1.1em;">
+      <li>Genitor는 HTML을 iframe에 렌더한 뒤 각 요소의 <strong>computed geometry</strong>를 읽어 텍스트·도형·이미지로 변환합니다.</li>
+      <li>임의의 웹페이지 HTML도 열리지만, <strong>flexbox 수축·반응형 단위·JS 레이아웃</strong> 때문에 배치가 어긋날 수 있습니다.</li>
+      <li>가장 확실한 방법은 Genitor가 스스로 내보내는 포맷과 <strong>똑같이 쓰는 것</strong> — 고정 캔버스 위에 <code>position:absolute</code>로 배치한 인라인 스타일 div들입니다.</li>
+    </ul>
+  </div>
+
+  <div style="position:absolute;left:1080px;top:340px;width:720px;height:520px;background:#0f172a;border-radius:32px;box-shadow:0 30px 60px rgba(15,23,42,0.25);"></div>
+  <div style="position:absolute;left:1140px;top:396px;width:600px;height:36px;font-size:24px;font-weight:700;color:#22d3ee;letter-spacing:2px;">핵심 원칙</div>
+  <div style="position:absolute;left:1140px;top:452px;width:600px;height:290px;font-size:56px;font-weight:900;color:#f8fafc;line-height:1.32;">형식(form)은<br>고정, 스타일(style)은<br>매번 새로.</div>
+  <div style="position:absolute;left:1140px;top:750px;width:600px;height:70px;font-size:23px;color:#94a3b8;line-height:1.5;">색·폰트·레이아웃은 주제마다 새로 디자인한다</div>
+</div>
+
+<!-- ============ Slide 3 : Handoff (4 ways) ============ -->
+<div class="slide" style="width:1920px;height:1080px;background:#111827;">
+  <div style="position:absolute;left:120px;top:120px;width:1000px;height:40px;font-size:24px;font-weight:700;letter-spacing:3px;color:#f59e0b;">HANDOFF</div>
+  <div style="position:absolute;left:120px;top:170px;width:1680px;height:100px;font-size:60px;font-weight:900;color:#f8fafc;line-height:1.1;">슬라이드를 Genitor로 가져가는 4가지 방법</div>
+
+  <!-- Card 1 -->
+  <div style="position:absolute;left:120px;top:320px;width:828px;height:300px;background:#1e293b;border:1px solid rgba(255,255,255,0.1);border-radius:24px;"></div>
+  <div style="position:absolute;left:168px;top:356px;width:200px;height:56px;font-size:36px;font-weight:900;color:#f59e0b;">1</div>
+  <div style="position:absolute;left:168px;top:420px;width:740px;height:48px;font-size:34px;font-weight:700;color:#f8fafc;">붙여넣기</div>
+  <div style="position:absolute;left:168px;top:478px;width:740px;height:120px;font-size:22px;color:#cbd5e1;line-height:1.6;">HTML 소스 전체를 복사해 Genitor 캔버스에서 <strong style="color:#f8fafc;">Ctrl/Cmd+V</strong>. 온전한 &lt;!DOCTYPE html&gt; 문서일 때만 덱 가져오기로 인식합니다.</div>
+
+  <!-- Card 2 -->
+  <div style="position:absolute;left:972px;top:320px;width:828px;height:300px;background:#1e293b;border:1px solid rgba(255,255,255,0.1);border-radius:24px;"></div>
+  <div style="position:absolute;left:1020px;top:356px;width:200px;height:56px;font-size:36px;font-weight:900;color:#f59e0b;">2</div>
+  <div style="position:absolute;left:1020px;top:420px;width:740px;height:48px;font-size:34px;font-weight:700;color:#f8fafc;">드래그 &amp; 드롭</div>
+  <div style="position:absolute;left:1020px;top:478px;width:740px;height:120px;font-size:22px;color:#cbd5e1;line-height:1.6;"><strong style="color:#f8fafc;">.html 파일</strong>을 Genitor 캔버스 위에 그대로 떨어뜨립니다.</div>
+
+  <!-- Card 3 -->
+  <div style="position:absolute;left:120px;top:660px;width:828px;height:300px;background:#1e293b;border:1px solid rgba(255,255,255,0.1);border-radius:24px;"></div>
+  <div style="position:absolute;left:168px;top:696px;width:200px;height:56px;font-size:36px;font-weight:900;color:#f59e0b;">3</div>
+  <div style="position:absolute;left:168px;top:760px;width:740px;height:48px;font-size:34px;font-weight:700;color:#f8fafc;">파일 열기</div>
+  <div style="position:absolute;left:168px;top:818px;width:740px;height:120px;font-size:22px;color:#cbd5e1;line-height:1.6;"><strong style="color:#f8fafc;">File 메뉴 ▸ "HTML 열기"</strong>로 파일을 직접 불러옵니다.</div>
+
+  <!-- Card 4 -->
+  <div style="position:absolute;left:972px;top:660px;width:828px;height:300px;background:#1e293b;border:1px solid rgba(255,255,255,0.1);border-radius:24px;"></div>
+  <div style="position:absolute;left:1020px;top:696px;width:200px;height:56px;font-size:36px;font-weight:900;color:#f59e0b;">4</div>
+  <div style="position:absolute;left:1020px;top:760px;width:740px;height:48px;font-size:34px;font-weight:700;color:#f8fafc;">URL 임포트 링크</div>
+  <div style="position:absolute;left:1020px;top:818px;width:740px;height:130px;font-size:21px;color:#cbd5e1;line-height:1.55;">HTML을 <strong style="color:#f8fafc;">encodeURIComponent</strong>로 인코딩해 <code>앱주소#import=...</code> 링크로 전달. 파일 저장이 어려운 환경(Claude Desktop 등)에 유용하며, 로드 시 자동 디코드됩니다.</div>
+</div>
+
+<!-- ============ Slide 4 : Canonical scaffold ============ -->
+<div class="slide" style="width:1920px;height:1080px;background:#0a0e14;">
+  <div style="position:absolute;left:120px;top:100px;width:1200px;height:30px;font-size:24px;font-weight:700;letter-spacing:3px;color:#4ade80;">THE SCAFFOLD</div>
+  <div style="position:absolute;left:120px;top:140px;width:1400px;height:90px;font-size:56px;font-weight:900;color:#f8fafc;">정본 스캐폴드</div>
+  <div style="position:absolute;left:120px;top:235px;width:1400px;height:50px;font-size:28px;color:#94a3b8;">이 골격을 그대로 사용한다 — 형식은 항상 고정</div>
+
+  <!-- code card -->
+  <div style="position:absolute;left:120px;top:320px;width:1080px;height:660px;background:#0f172a;border:1px solid rgba(255,255,255,0.08);border-radius:20px;box-shadow:0 25px 60px rgba(0,0,0,0.4);"></div>
+  <div style="position:absolute;left:152px;top:352px;width:16px;height:16px;background:#ef4444;border-radius:50%;"></div>
+  <div style="position:absolute;left:180px;top:352px;width:16px;height:16px;background:#f59e0b;border-radius:50%;"></div>
+  <div style="position:absolute;left:208px;top:352px;width:16px;height:16px;background:#22c55e;border-radius:50%;"></div>
+
+  <div style="position:absolute;left:160px;top:400px;width:1000px;height:540px;font-family:'JetBrains Mono',monospace;font-size:21px;color:#e2e8f0;line-height:1.75;">
+    <span style="color:#818cf8;">body</span> { width:1920px; height:1080px; background:#0f172a; }<br>
+    <span style="color:#818cf8;">.slide</span> { position:absolute; inset:0; display:none; }<br>
+    <span style="color:#818cf8;">.slide.active</span> { display:block; }<br>
+    <br>
+    &lt;<span style="color:#f472b6;">div</span> <span style="color:#facc15;">class</span>="slide active"<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;<span style="color:#facc15;">style</span>="width:1920px;height:1080px;"&gt;<br>
+    &nbsp;&nbsp;&lt;!-- 요소들: position:absolute --&gt;<br>
+    &lt;/<span style="color:#f472b6;">div</span>&gt;<br>
+    <br>
+    <span style="color:#64748b;">// 다음 장은 .slide 를 그대로 이어 붙인다</span><br>
+    <span style="color:#64748b;">// (첫 장에만 active, 나머지는 없음)</span>
+  </div>
+
+  <!-- rules column -->
+  <div style="position:absolute;left:1280px;top:320px;width:520px;height:44px;font-size:28px;font-weight:700;color:#22d3ee;">핵심 규칙</div>
+  <div style="position:absolute;left:1280px;top:384px;width:520px;height:600px;font-size:25px;color:#cbd5e1;line-height:2.0;">
+    <ul style="padding-left:1.1em;">
+      <li>캔버스 기본값 <strong style="color:#f8fafc;">1920×1080</strong> (16:9)</li>
+      <li>슬라이드마다 <code>.slide</code>, <strong style="color:#f8fafc;">첫 장만</strong> <code>active</code></li>
+      <li>요소는 모두 <code>.slide</code> 안에서<br><code>position:absolute</code> + px 좌표</li>
+      <li><code>box-sizing:border-box</code> 전역 적용</li>
+      <li>내비/스크립트 없이도 Genitor가<br>장을 자동으로 페이지로 인식</li>
+    </ul>
+  </div>
+</div>
+
+<!-- ============ Slide 5 : Element recipes ============ -->
+<div class="slide" style="width:1920px;height:1080px;background:#f8fafc;">
+  <div style="position:absolute;left:120px;top:100px;width:1200px;height:30px;font-size:24px;font-weight:700;letter-spacing:3px;color:#4f46e5;">ELEMENT RECIPES</div>
+  <div style="position:absolute;left:120px;top:140px;width:1400px;height:90px;font-size:56px;font-weight:900;color:#0f172a;">요소 레시피 — 6가지 패턴</div>
+  <div style="position:absolute;left:120px;top:235px;width:1400px;height:50px;font-size:26px;color:#475569;">.slide 의 직계 자식 div 하나하나가 곧 하나의 편집 요소가 됩니다</div>
+
+  <!-- Row 1 -->
+  <div style="position:absolute;left:120px;top:320px;width:544px;height:300px;background:#fff;border:1px solid #e2e8f0;border-radius:20px;box-shadow:0 10px 26px rgba(15,23,42,0.06);"></div>
+  <div style="position:absolute;left:156px;top:352px;width:472px;height:26px;font-size:16px;font-weight:700;letter-spacing:2px;color:#4f46e5;">TEXT</div>
+  <div style="position:absolute;left:156px;top:388px;width:472px;height:44px;font-size:27px;font-weight:800;color:#0f172a;">제목 / 본문 텍스트</div>
+  <div style="position:absolute;left:156px;top:438px;width:472px;height:150px;font-size:19px;color:#64748b;line-height:1.6;">div에 텍스트를 직접 넣고 폰트·크기·색·정렬을 인라인 스타일로 지정합니다.</div>
+
+  <div style="position:absolute;left:688px;top:320px;width:544px;height:300px;background:#fff;border:1px solid #e2e8f0;border-radius:20px;box-shadow:0 10px 26px rgba(15,23,42,0.06);"></div>
+  <div style="position:absolute;left:724px;top:352px;width:472px;height:26px;font-size:16px;font-weight:700;letter-spacing:2px;color:#4f46e5;">SHAPE</div>
+  <div style="position:absolute;left:724px;top:388px;width:472px;height:44px;font-size:27px;font-weight:800;color:#0f172a;">색 박스 / 카드</div>
+  <div style="position:absolute;left:724px;top:438px;width:472px;height:150px;font-size:19px;color:#64748b;line-height:1.6;">텍스트가 없는 div는 배경·테두리·그림자를 가진 도형으로 추출됩니다.</div>
+
+  <div style="position:absolute;left:1256px;top:320px;width:544px;height:300px;background:#fff;border:1px solid #e2e8f0;border-radius:20px;box-shadow:0 10px 26px rgba(15,23,42,0.06);"></div>
+  <div style="position:absolute;left:1292px;top:352px;width:472px;height:26px;font-size:16px;font-weight:700;letter-spacing:2px;color:#4f46e5;">CARD · 1 LINE</div>
+  <div style="position:absolute;left:1292px;top:388px;width:472px;height:44px;font-size:27px;font-weight:800;color:#0f172a;">카드 + 텍스트(병합)</div>
+  <div style="position:absolute;left:1292px;top:438px;width:472px;height:150px;font-size:19px;color:#64748b;line-height:1.6;">배경 있는 div 안에 텍스트 <strong>한 줄만</strong> 있으면 하나의 편집 가능한 텍스트 요소로 합쳐집니다.</div>
+
+  <!-- Row 2 -->
+  <div style="position:absolute;left:120px;top:660px;width:544px;height:300px;background:#fff;border:1px solid #e2e8f0;border-radius:20px;box-shadow:0 10px 26px rgba(15,23,42,0.06);"></div>
+  <div style="position:absolute;left:156px;top:692px;width:472px;height:26px;font-size:16px;font-weight:700;letter-spacing:2px;color:#4f46e5;">CARD · MULTI-LINE</div>
+  <div style="position:absolute;left:156px;top:728px;width:472px;height:44px;font-size:27px;font-weight:800;color:#0f172a;">여러 줄 카드</div>
+  <div style="position:absolute;left:156px;top:778px;width:472px;height:160px;font-size:19px;color:#64748b;line-height:1.6;">카드는 텍스트 없는 도형으로 두고, 라벨·제목·수치·본문을 각각 독립된 절대 위치 텍스트로 쌓습니다.</div>
+
+  <div style="position:absolute;left:688px;top:660px;width:544px;height:300px;background:#fff;border:1px solid #e2e8f0;border-radius:20px;box-shadow:0 10px 26px rgba(15,23,42,0.06);"></div>
+  <div style="position:absolute;left:724px;top:692px;width:472px;height:26px;font-size:16px;font-weight:700;letter-spacing:2px;color:#4f46e5;">RICH TEXT / LIST</div>
+  <div style="position:absolute;left:724px;top:728px;width:472px;height:44px;font-size:27px;font-weight:800;color:#0f172a;">강조 &amp; 글머리 목록</div>
+  <div style="position:absolute;left:724px;top:778px;width:472px;height:160px;font-size:19px;color:#64748b;line-height:1.6;"><code>strong</code>·<code>em</code>·<code>span</code>·<code>br</code>과 <code>ul/li</code> 마커(•)가 그대로 보존됩니다.</div>
+
+  <div style="position:absolute;left:1256px;top:660px;width:544px;height:300px;background:#fff;border:1px solid #e2e8f0;border-radius:20px;box-shadow:0 10px 26px rgba(15,23,42,0.06);"></div>
+  <div style="position:absolute;left:1292px;top:692px;width:472px;height:26px;font-size:16px;font-weight:700;letter-spacing:2px;color:#4f46e5;">MEDIA</div>
+  <div style="position:absolute;left:1292px;top:728px;width:472px;height:44px;font-size:27px;font-weight:800;color:#0f172a;">이미지 / 영상</div>
+  <div style="position:absolute;left:1292px;top:778px;width:472px;height:160px;font-size:19px;color:#64748b;line-height:1.6;">래퍼 div로 감싸 img/video를 object-fit으로 채웁니다. 장식은 래퍼가 아닌 미디어 태그에 직접 줍니다.</div>
+</div>
+
+<!-- ============ Slide 6 : Media gotcha (bad vs good) ============ -->
+<div class="slide" style="width:1920px;height:1080px;background:#111827;">
+  <div style="position:absolute;left:120px;top:100px;width:1200px;height:30px;font-size:24px;font-weight:700;letter-spacing:3px;color:#f87171;">THE #1 GOTCHA</div>
+  <div style="position:absolute;left:120px;top:140px;width:1680px;height:90px;font-size:56px;font-weight:900;color:#f8fafc;">미디어를 도형이 덮지 않게 하라</div>
+  <div style="position:absolute;left:120px;top:235px;width:1680px;height:60px;font-size:26px;color:#94a3b8;">Genitor는 클릭 시 <strong style="color:#e2e8f0;">최상위 요소</strong>를 선택합니다 — 래퍼에 배경/테두리를 주면 그 도형이 미디어를 가로챕니다</div>
+
+  <!-- BAD column -->
+  <div style="position:absolute;left:120px;top:340px;width:200px;height:52px;background:#7f1d1d;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:700;color:#fecaca;">✕ 피할 것</div>
+  <div style="position:absolute;left:120px;top:412px;width:780px;height:250px;background:#1e293b;border:1px solid rgba(239,68,68,0.35);border-radius:16px;"></div>
+  <div style="position:absolute;left:152px;top:444px;width:716px;height:190px;font-family:'JetBrains Mono',monospace;font-size:18px;color:#fca5a5;line-height:1.75;">
+    &lt;div style="<span style="color:#f87171;">background:#000;<br>&nbsp;&nbsp;border-radius:16px</span>"&gt;<br>
+    &nbsp;&nbsp;&lt;img src="photo.jpg"&gt;<br>
+    &lt;/div&gt;<br>
+    <span style="color:#f87171;">// 래퍼가 도형으로 추출 → 이미지를 덮음</span>
+  </div>
+  <div style="position:absolute;left:120px;top:690px;width:780px;height:160px;font-size:22px;color:#cbd5e1;line-height:1.65;">래퍼 div에 배경·테두리·그림자를 주면 래퍼가 도형으로 추출되어 이미지를 덮습니다. 클릭해도 이미지 대신 도형이 선택되고, 이미지 AI 기능도 뜨지 않습니다.</div>
+
+  <!-- GOOD column -->
+  <div style="position:absolute;left:1020px;top:340px;width:200px;height:52px;background:#14532d;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:700;color:#bbf7d0;">✓ 이렇게</div>
+  <div style="position:absolute;left:1020px;top:412px;width:780px;height:250px;background:#1e293b;border:1px solid rgba(34,197,94,0.35);border-radius:16px;"></div>
+  <div style="position:absolute;left:1052px;top:444px;width:716px;height:190px;font-family:'JetBrains Mono',monospace;font-size:18px;color:#86efac;line-height:1.75;">
+    &lt;div style="<span style="color:#4ade80;">overflow:hidden;<br>&nbsp;&nbsp;border-radius:16px</span>"&gt;<br>
+    &nbsp;&nbsp;&lt;img style="<span style="color:#4ade80;">border-radius:16px</span>"<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;src="photo.jpg"&gt;<br>
+    &lt;/div&gt;
+  </div>
+  <div style="position:absolute;left:1020px;top:690px;width:780px;height:160px;font-size:22px;color:#cbd5e1;line-height:1.65;">래퍼는 <code>overflow</code>·<code>border-radius</code>만 갖게 하고, 배경·테두리·그림자는 <code>img</code>/<code>video</code>에 직접 줍니다. 오버레이도 전체가 아닌 하단 스트립 등 부분만 덮습니다.</div>
+</div>
+
+<!-- ============ Slide 7 : Patterns to avoid ============ -->
+<div class="slide" style="width:1920px;height:1080px;background:#0b0f19;">
+  <div style="position:absolute;left:120px;top:100px;width:1200px;height:30px;font-size:24px;font-weight:700;letter-spacing:3px;color:#fbbf24;">AVOID THESE</div>
+  <div style="position:absolute;left:120px;top:140px;width:1680px;height:90px;font-size:56px;font-weight:900;color:#f8fafc;">추출이 망가지는 패턴 8가지</div>
+  <div style="position:absolute;left:120px;top:235px;width:1680px;height:50px;font-size:26px;color:#94a3b8;">아래 패턴은 피하고, 앞선 절의 대안 레시피를 쓴다</div>
+
+  <div style="position:absolute;left:120px;top:340px;width:820px;height:12px;background:#1e293b;border-radius:6px;"></div>
+  <div style="position:absolute;left:120px;top:390px;width:820px;height:600px;font-size:29px;color:#e2e8f0;line-height:1.55;">
+    <ul style="padding-left:1.1em;">
+      <li style="margin-bottom:48px;"><strong style="color:#fca5a5;">flex 카드 안에 자식 여러 개</strong> — strong·span·br이 각각 flex item이 되어 가로로 늘어서고 줄바꿈이 깨집니다.</li>
+      <li style="margin-bottom:48px;"><strong style="color:#fca5a5;">JS 레이아웃 / canvas·WebGL</strong> — 그려진 내용은 추출되지 않습니다.</li>
+      <li style="margin-bottom:48px;"><strong style="color:#fca5a5;">반응형 단위(vw·vh·%·clamp)</strong> — 폭과 줄바꿈이 렌더링 환경마다 달라집니다.</li>
+      <li><strong style="color:#fca5a5;">opacity:0 으로 내용 숨기기</strong> — 숨김 처리되어 그대로 사라집니다.</li>
+    </ul>
+  </div>
+
+  <div style="position:absolute;left:1000px;top:340px;width:800px;height:12px;background:#1e293b;border-radius:6px;"></div>
+  <div style="position:absolute;left:1000px;top:390px;width:800px;height:600px;font-size:29px;color:#e2e8f0;line-height:1.55;">
+    <ul style="padding-left:1.1em;">
+      <li style="margin-bottom:48px;"><strong style="color:#fca5a5;">position:fixed / onclick 요소</strong> — 내비게이션으로 간주되어 슬라이드 콘텐츠에서 제외됩니다.</li>
+      <li style="margin-bottom:48px;"><strong style="color:#fca5a5;">skew·3D 등 복합 transform</strong> — scale만 반영되고 나머지는 사라집니다.</li>
+      <li style="margin-bottom:48px;"><strong style="color:#fca5a5;">::before content, input placeholder</strong> — 추출되지 않는 텍스트입니다.</li>
+      <li><strong style="color:#fca5a5;">이미지/영상 위 전면 오버레이</strong> — 최상위 도형이 선택되어 미디어를 고를 수 없습니다.</li>
+    </ul>
+  </div>
+</div>
+
+<!-- ============ Slide 8 : Verification + closing ============ -->
+<div class="slide" style="width:1920px;height:1080px;background:linear-gradient(160deg,#0b1220 0%,#0f2e22 100%);">
+  <div style="position:absolute;left:120px;top:100px;width:1200px;height:30px;font-size:24px;font-weight:700;letter-spacing:3px;color:#4ade80;">VERIFY BEFORE HANDOFF</div>
+  <div style="position:absolute;left:120px;top:140px;width:1680px;height:90px;font-size:56px;font-weight:900;color:#f8fafc;">내보내기 전, 반드시 검증한다</div>
+  <div style="position:absolute;left:120px;top:235px;width:1680px;height:50px;font-size:26px;color:#94a3b8;"><code>scripts/verify_deck.py</code>가 렌더링을 기반으로 4가지 문제를 잡아준다</div>
+
+  <!-- checks -->
+  <div style="position:absolute;left:120px;top:330px;width:48px;height:48px;background:#4ade80;border-radius:10px;"></div>
+  <div style="position:absolute;left:188px;top:330px;width:700px;height:40px;font-size:26px;font-weight:800;color:#f8fafc;">FLEX+children</div>
+  <div style="position:absolute;left:188px;top:374px;width:700px;height:60px;font-size:19px;color:#94a3b8;line-height:1.5;">자식 요소를 가진 flex 컨테이너 — 가로로 늘어서는 치명적 패턴을 감지</div>
+
+  <div style="position:absolute;left:120px;top:460px;width:48px;height:48px;background:#4ade80;border-radius:10px;"></div>
+  <div style="position:absolute;left:188px;top:460px;width:700px;height:40px;font-size:26px;font-weight:800;color:#f8fafc;">WRAP</div>
+  <div style="position:absolute;left:188px;top:504px;width:700px;height:60px;font-size:19px;color:#94a3b8;line-height:1.5;">선언한 &lt;br&gt; 수보다 실제 렌더된 줄 수가 많은 요소 — 의도치 않은 줄바꿈 감지</div>
+
+  <div style="position:absolute;left:120px;top:590px;width:48px;height:48px;background:#4ade80;border-radius:10px;"></div>
+  <div style="position:absolute;left:188px;top:590px;width:700px;height:40px;font-size:26px;font-weight:800;color:#f8fafc;">OVERFLOW</div>
+  <div style="position:absolute;left:188px;top:634px;width:700px;height:60px;font-size:19px;color:#94a3b8;line-height:1.5;">scrollHeight가 지정한 height를 넘는 요소 감지</div>
+
+  <div style="position:absolute;left:120px;top:720px;width:48px;height:48px;background:#4ade80;border-radius:10px;"></div>
+  <div style="position:absolute;left:188px;top:720px;width:700px;height:40px;font-size:26px;font-weight:800;color:#f8fafc;">OUTSIDE</div>
+  <div style="position:absolute;left:188px;top:764px;width:700px;height:60px;font-size:19px;color:#94a3b8;line-height:1.5;">캔버스(1920×1080) 밖으로 나간 요소 감지</div>
+
+  <!-- terminal card -->
+  <div style="position:absolute;left:1020px;top:320px;width:780px;height:480px;background:#0f172a;border:1px solid rgba(255,255,255,0.08);border-radius:20px;box-shadow:0 25px 60px rgba(0,0,0,0.4);"></div>
+  <div style="position:absolute;left:1056px;top:356px;width:712px;height:410px;font-family:'JetBrains Mono',monospace;font-size:19px;color:#e2e8f0;line-height:2.0;">
+    <span style="color:#4ade80;">$</span> pip install playwright --break-system-packages<br>
+    <span style="color:#4ade80;">$</span> playwright install chromium<br>
+    <br>
+    <span style="color:#4ade80;">$</span> python3 scripts/verify_deck.py deck.html<br>
+    <span style="color:#64748b;">→ 문제 없으면 "OK"</span><br>
+    <br>
+    <span style="color:#4ade80;">$</span> python3 scripts/verify_deck.py deck.html --shots out/<br>
+    <span style="color:#64748b;">→ 슬라이드별 PNG + 컨택트시트</span>
+  </div>
+
+  <div style="position:absolute;left:120px;top:870px;width:1680px;height:130px;font-size:32px;font-weight:700;color:#f8fafc;line-height:1.6;text-align:center;">형식(form)은 고정, 스타일(style)은 매번 새로 — 그 원칙 하나로<br>Claude의 슬라이드는 Genitor에서 그대로 편집됩니다.</div>
+</div>
+
+</body>
+</html>
