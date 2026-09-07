@@ -108,7 +108,8 @@ const FALLBACK_SAMPLE = `<!DOCTYPE html>
  * 발표 모드에서는 완전히 숨겨진다.
  */
 export default function FloatingToolbar() {
-  const { slideHtml, mode, enterPresentation, autoAdvance, setAutoAdvance, karaokeCaptions, setKaraokeCaptions } = useEditorStore()
+  const { slideHtml, mode, enterPresentation, autoAdvance, setAutoAdvance, karaokeCaptions, setKaraokeCaptions,
+          presenterView, setPresenterView } = useEditorStore()
   const { viewMode, setViewMode, extractFromIframe, debugMode, flatPageCount, flatCurrentPage } = useFlatStore()
   const [presentMenuOpen, setPresentMenuOpen] = useState(false)
   const iframeRef = useEditorStore(s => s.iframeRef)
@@ -175,6 +176,8 @@ export default function FloatingToolbar() {
         disabled={flatPageCount === 0 && !slideHtml}
         open={presentMenuOpen}
         setOpen={setPresentMenuOpen}
+        presenterView={presenterView}
+        setPresenterView={setPresenterView}
         autoAdvance={autoAdvance}
         setAutoAdvance={setAutoAdvance}
         captionsOn={karaokeCaptions}
@@ -282,7 +285,7 @@ function ViewModeToggle({ viewMode, disabled, onChange }) {
 }
 
 // 발표 분할 버튼: 메인=처음부터, ▾=옵션(현재부터 / 음성 후 자동 진행 토글 / 자막 선택)
-function PresentMenu({ disabled, open, setOpen, autoAdvance, setAutoAdvance, captionsOn, onCaptionsChange, onStart, onStartHere }) {
+function PresentMenu({ disabled, open, setOpen, presenterView, setPresenterView, autoAdvance, setAutoAdvance, captionsOn, onCaptionsChange, onStart, onStartHere }) {
   useEffect(() => {
     if (!open) return
     const onDown = (e) => { if (!e.target.closest?.('[data-present-menu]')) setOpen(false) }
@@ -310,6 +313,16 @@ function PresentMenu({ disabled, open, setOpen, autoAdvance, setAutoAdvance, cap
       {open && (
         <div className="absolute left-0 top-full mt-1 z-[200] w-40 rounded-lg border border-white/10 bg-slate-800 shadow-xl overflow-hidden">
           <button className={item} onClick={() => { setOpen(false); onStartHere() }}>현재 페이지</button>
+          <div className="h-px bg-white/10" />
+          {/* 발표자 보기 — 청중 창(슬라이드만)과 발표자 창(노트·타이머·다음 장)을 나눠 연다 */}
+          <label
+            className="flex items-center justify-between gap-2 px-3 py-2 text-xs text-slate-200 cursor-pointer hover:bg-white/10"
+            title="청중 화면에는 슬라이드만, 이 화면에는 노트·경과 시간·다음 슬라이드를 띄웁니다"
+          >
+            <span className="flex items-center gap-2"><PresenterIcon /> 발표자 보기</span>
+            <input type="checkbox" checked={presenterView} onChange={e => setPresenterView(e.target.checked)} className="accent-indigo-500" />
+          </label>
+          {presenterView && <ScreenHint />}
           <div className="h-px bg-white/10" />
           <label className="flex items-center gap-2 px-3 py-2 text-xs text-slate-200 cursor-pointer hover:bg-white/10">
             <input type="checkbox" checked={autoAdvance} onChange={e => setAutoAdvance(e.target.checked)} className="accent-indigo-500" />
@@ -392,6 +405,34 @@ export function RedoIcon() {
       <path d="M21 7v6h-6" /><path d="M21 13C19 7 13 4 7 6S-2 14 0 20" />
     </svg>
   )
+}
+
+// 발표자 보기 — 큰 화면(청중) + 작은 화면(발표자) 두 개를 겹쳐 그린 아이콘
+function PresenterIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+      strokeLinecap="round" strokeLinejoin="round">
+      <rect x="2" y="4" width="12" height="9" rx="1.5" />
+      <rect x="16" y="7" width="6" height="5" rx="1" />
+      <line x1="8" y1="17" x2="8" y2="20" /><line x1="5" y1="20" x2="11" y2="20" />
+    </svg>
+  )
+}
+
+/**
+ * 지금 환경에서 발표자 보기가 어떻게 열릴지 미리 알려준다.
+ * screen.isExtended는 권한 프롬프트 없이 읽을 수 있어(Chrome) 메뉴를 여는 것만으로
+ * 사용자를 귀찮게 하지 않는다. 실제 화면 선택은 발표 시작 시점에 한다.
+ */
+function ScreenHint() {
+  const extended = typeof window !== 'undefined' && window.screen?.isExtended
+  const supported = typeof window !== 'undefined' && typeof window.getScreenDetails === 'function'
+  const text = extended
+    ? (supported
+      ? '확장 디스플레이 감지 — 청중 창이 그쪽에 열립니다'
+      : '확장 디스플레이 감지 — 청중 창을 끌어다 놓고 F11')
+    : '화면이 하나 — 청중 창은 별도 창으로 열립니다'
+  return <div className="px-3 pb-2 text-[10px] leading-snug text-slate-500">{text}</div>
 }
 
 function PresentIcon() {

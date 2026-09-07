@@ -250,22 +250,80 @@ export const useEditorStore = create((set, get) => ({
     set({ karaokeCaptions: on })
   },
 
-  /** 발표 모드 진입 — 브라우저 전체화면 + CSS 전체화면 + 에이전트 비활성 */
-  enterPresentation(opts = {}) {
-    const { iframeRef } = get()
+  /** 발표자 보기(듀얼 모니터) 사용 여부 — 발표 전에 정할 수 있게 localStorage 기억. */
+  presenterView: (() => { try { return localStorage.getItem('present-presenter-view') === '1' } catch { return false } })(),
+  setPresenterView(v) {
+    const on = !!v
+    try { localStorage.setItem('present-presenter-view', on ? '1' : '0') } catch { /* 무시 */ }
+    set({ presenterView: on })
+  },
+
+  /** 진행 중인 발표 세션 — 청중 창과 같은 채널을 쓰기 위한 식별자(발표 중에만 값이 있다) */
+  presentSessionId: null,
+  /** 청중 창을 띄운 화면(자동 배치에 성공한 경우). 단일 화면이면 null. */
+  audienceScreen: null,
+  /** 청중 창이 팝업 차단으로 열리지 못했는지 — 발표자 창 상단 배지 문구가 달라진다. */
+  audiencePopupBlocked: false,
+  setAudiencePopupBlocked(v) { set({ audiencePopupBlocked: !!v }) },
+
+  /**
+   * 발표 모드 진입.
+   *
+   * 발표자 보기가 꺼져 있으면 기존과 같이 이 창 하나를 전체화면으로 만든다.
+   * 켜져 있으면 청중 창을 별도 창으로 열고(가능하면 확장 디스플레이에 전체화면),
+   * 이 창은 발표자 창이 된다 — 이때는 전체화면으로 만들지 않는다. 팝업을 여는 순간
+   * 전체화면이 풀리는 플랫폼이 있어 발표가 곧바로 종료돼버리기 때문이다.
+   */
+  async enterPresentation(opts = {}) {
+    // 같은 F5를 FloatingToolbar와 FlatCanvas 두 곳에서 듣고 있어 한 번의 키 입력에 두 번
+    // 불린다. 단일 화면에서는 같은 상태를 두 번 세팅할 뿐이라 티가 안 났지만, 듀얼 모니터에서는
+    // 두 번째 호출이 새 세션 id를 만들어 청중 창과 발표자 창이 서로 다른 채널을 보게 된다.
+    if (get().mode === 'present') return
+    const { iframeRef, presenterView } = get()
     set({ selectedId: null, mode: 'present', presentStartIndex: opts.startIndex || 0 })
     iframeRef?.current?.contentWindow?.postMessage({ type: 'fe:setMode', mode: 'present' }, '*')
-    iframeRef?.current?.contentWindow?.focus()
-    // 사용자 제스처(발표 버튼/F5) 컨텍스트에서 동기 호출 → 실제 브라우저 전체화면
-    try {
-      if (!document.fullscreenElement) document.documentElement.requestFullscreen?.().catch(() => {})
-    } catch { /* 미지원/거부 무시 */ }
+
+    if (!presenterView) {
+      iframeRef?.current?.contentWindow?.focus()
+      // 사용자 제스처(발표 버튼/F5) 컨텍스트에서 동기 호출 → 실제 브라우저 전체화면
+      try {
+        if (!document.fullscreenElement) document.documentElement.requestFullscreen?.().catch(() => {})
+      } catch { /* 미지원/거부 무시 */ }
+      return
+    }
+
+    // ── 듀얼 모니터 경로 ──
+    const { newSessionId } = await import('../core/presenterChannel.js')
+    const { listScreens, pickAudienceScreen, openAudienceWindow } = await import('../core/screenPlacement.js')
+
+    const sessionId = newSessionId()
+    set({ presentSessionId: sessionId, audienceScreen: null, audiencePopupBlocked: false })
+
+    // getScreenDetails()는 권한 프롬프트를 띄울 수 있다. await 뒤에도 잠시(수 초) 사용자
+    // 활성화가 유지되므로 이어지는 window.open이 대개 통과한다 — 막히면 발표자 창의
+    // "다시 열기"가 제스처 안에서 재시도한다.
+    const { screens, currentIndex } = await listScreens()
+    const screen = pickAudienceScreen(screens, currentIndex)
+    const win = openAudienceWindow({ sessionId, screen })
+    set({ audienceScreen: screen, audiencePopupBlocked: !win })
   },
 
   /** 편집 모드 복귀 */
   exitPresentation() {
-    const { iframeRef } = get()
+    const { iframeRef, presentSessionId } = get()
     set({ mode: 'edit' })
+
+    // 청중 창에 종료를 알린다(스스로 닫는다). 한 번만, 여기서만 보낸다 —
+    // 컴포넌트 정리에서 보내면 리마운트마다 청중 창이 닫혀버린다.
+    if (presentSessionId) {
+      import('../core/presenterChannel.js').then(({ openChannel }) => {
+        const ch = openChannel(presentSessionId)
+        ch.post('end')
+        // BroadcastChannel 전달은 비동기 — 곧바로 닫으면 메시지가 유실된다.
+        setTimeout(() => ch.close(), 200)
+      }).catch(() => { /* 무시 */ })
+      set({ presentSessionId: null, audienceScreen: null, audiencePopupBlocked: false })
+    }
     iframeRef?.current?.contentWindow?.postMessage({ type: 'fe:setMode', mode: 'edit' }, '*')
     try {
       if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {})

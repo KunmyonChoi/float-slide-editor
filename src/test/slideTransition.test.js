@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { slideTransitionCss, slideTransitionVars } from '../components/FlatPresenter'
+import { slideTransitionCss, slideTransitionVars } from '../core/slideTransition'
 
 describe('slideTransitionCss', () => {
   it('타입별 keyframe + 지속시간 매핑', () => {

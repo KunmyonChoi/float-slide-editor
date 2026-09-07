@@ -5,6 +5,7 @@ import PropertyPanel from './components/PropertyPanel'
 import SlideListPanel from './components/SlideListPanel'
 import FlatCanvas from './components/FlatCanvas'
 import FlatPresenter from './components/FlatPresenter'
+import SpeakerView from './components/SpeakerView'
 import ComparePanel from './components/ComparePanel'
 import DebugElementsPanel from './components/DebugElementsPanel'
 import PageBar from './components/PageBar'
@@ -63,6 +64,7 @@ export default function App() {
   const rawViewMode = useFlatStore(s => s.viewMode)
   const debugMode = useFlatStore(s => s.debugMode)
   const mode = useEditorStore(s => s.mode)
+  const presenterView = useEditorStore(s => s.presenterView)
 
   const [shareState, setShareState] = useState(() => (getShareIdFromUrl() ? 'loading' : 'none'))
   const [shareError, setShareError] = useState(null)
@@ -147,11 +149,13 @@ export default function App() {
     return () => window.removeEventListener('pointerup', onPointerUp)
   }, [])
 
-  // 전체화면이 해제됐는데 발표 중이면(ESC로 전체화면만 빠져나온 경우) 발표도 종료
+  // 전체화면이 해제됐는데 발표 중이면(ESC로 전체화면만 빠져나온 경우) 발표도 종료.
+  // 단, 발표자 보기는 애초에 전체화면으로 띄우지 않는 창 모드라 여기에 걸리면 안 된다.
   useEffect(() => {
     const onFsChange = () => {
-      if (!document.fullscreenElement && useEditorStore.getState().mode === 'present') {
-        useEditorStore.getState().exitPresentation()
+      const es = useEditorStore.getState()
+      if (!document.fullscreenElement && es.mode === 'present' && !es.presenterView) {
+        es.exitPresentation()
       }
     }
     document.addEventListener('fullscreenchange', onFsChange)
@@ -165,8 +169,10 @@ export default function App() {
   const showSlide = viewMode === 'html' || isSplit
   const showFlat  = viewMode === 'flat' || isSplit
 
-  // flat/split 모드에서 발표 → FlatPresenter 사용
-  const useFlatPresenter = mode === 'present' && (viewMode === 'flat' || viewMode === 'split')
+  // flat/split 모드에서 발표 → 단일 화면은 FlatPresenter, 듀얼 모니터는 SpeakerView
+  const presenting = mode === 'present' && (viewMode === 'flat' || viewMode === 'split')
+  const useFlatPresenter = presenting && !presenterView
+  const useSpeakerView = presenting && presenterView
 
   return (
     <div className="flex flex-col h-screen overflow-hidden">
@@ -226,6 +232,8 @@ export default function App() {
       {mode !== 'present' && <AiJobTray />}
       {/* flat 모드 발표 — fixed 전체화면 오버레이 */}
       {useFlatPresenter && <FlatPresenter />}
+      {/* 듀얼 모니터 발표 — 이 창은 발표자 창이 되고, 청중 창은 별도 창으로 열린다 */}
+      {useSpeakerView && <SpeakerView />}
     </div>
   )
 }
