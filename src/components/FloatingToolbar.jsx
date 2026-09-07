@@ -9,6 +9,7 @@ import ShortcutsButton from './ShortcutsButton'
 import AvatarRecorderButton from './AvatarRecorderButton'
 import CameraCaptureButton from './CameraCaptureButton'
 import { hasApiKey } from '../core/OpenAIClient'
+import { readRememberedPlacement, clearRememberedPlacement, describePlacement } from '../core/screenPlacement'
 import { openAiSettings } from './AiSettingsModal'
 
 const FALLBACK_SAMPLE = `<!DOCTYPE html>
@@ -420,18 +421,38 @@ function PresenterIcon() {
 }
 
 /**
- * 지금 환경에서 발표자 보기가 어떻게 열릴지 미리 알려준다.
- * screen.isExtended는 권한 프롬프트 없이 읽을 수 있어(Chrome) 메뉴를 여는 것만으로
- * 사용자를 귀찮게 하지 않는다. 실제 화면 선택은 발표 시작 시점에 한다.
+ * 발표자 보기가 어떻게 열릴지 알려준다.
+ *
+ * 한 번 고른 배치는 기억해 두고 다음 발표에서는 묻지 않으므로, 그 기억을 여기서 보여주고
+ * 지울 수 있게 한다(지우면 다음 발표에서 다시 묻는다). 아직 고른 적이 없으면 지금 환경만
+ * 귀띔한다 — screen.isExtended는 권한 프롬프트 없이 읽을 수 있어(Chrome) 메뉴를 여는
+ * 것만으로 사용자를 귀찮게 하지 않는다.
  */
 function ScreenHint() {
+  const [remembered, setRemembered] = useState(() => readRememberedPlacement())
+  const described = describePlacement(remembered)
+
+  if (described) {
+    return (
+      <div className="flex items-center gap-2 px-3 pb-2">
+        <span className="text-[10px] leading-snug text-slate-500 truncate">{described}</span>
+        <button
+          type="button"
+          title="기억을 지우고 다음 발표에서 다시 고르기"
+          onClick={(e) => { e.preventDefault(); clearRememberedPlacement(); setRemembered(null) }}
+          className="ml-auto shrink-0 rounded border border-white/10 px-1.5 py-0.5 text-[10px] text-slate-400 hover:bg-white/10 hover:text-slate-200"
+        >다시 고르기</button>
+      </div>
+    )
+  }
+
   const extended = typeof window !== 'undefined' && window.screen?.isExtended
   const supported = typeof window !== 'undefined' && typeof window.getScreenDetails === 'function'
   const text = extended
     ? (supported
-      ? '확장 디스플레이 감지 — 청중 창이 그쪽에 열립니다'
-      : '확장 디스플레이 감지 — 청중 창을 끌어다 놓고 F11')
-    : '화면이 하나 — 청중 창은 별도 창으로 열립니다'
+      ? '시작할 때 청중 화면을 고릅니다'
+      : '청중 창을 일반 창으로 열고 끌어다 놓습니다')
+    : '화면이 하나 — 시작할 때 리허설로 할지 묻습니다'
   return <div className="px-3 pb-2 text-[10px] leading-snug text-slate-500">{text}</div>
 }
 

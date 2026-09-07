@@ -1,6 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { openChannel, newSessionId, audienceSessionFromUrl } from '../core/presenterChannel'
-import { pickAudienceScreen, openAudienceWindow, screensSupported } from '../core/screenPlacement'
+import {
+  pickAudienceScreen, openAudienceWindow, screensSupported,
+  PLACEMENT, readRememberedPlacement, rememberPlacement, clearRememberedPlacement,
+  resolveRememberedPlacement, describePlacement,
+} from '../core/screenPlacement'
 
 // 화면 정의 헬퍼 — index는 listScreens()가 붙이는 순번
 const screen = (index, over = {}) => ({
@@ -211,5 +215,74 @@ describe('screensSupported', () => {
   it('있으면 true', () => {
     vi.stubGlobal('getScreenDetails', () => Promise.resolve({ screens: [], currentScreen: null }))
     expect(screensSupported()).toBe(true)
+  })
+})
+
+describe('기억해둔 배치', () => {
+  beforeEach(() => { localStorage.clear() })
+  afterEach(() => { localStorage.clear() })
+
+  const env = (screens, currentIndex) => ({ supported: true, denied: false, screens, currentIndex })
+
+  it('고른 적이 없으면 null — 다이얼로그를 띄운다', () => {
+    expect(readRememberedPlacement()).toBe(null)
+    expect(resolveRememberedPlacement(null, env([], -1))).toBe(null)
+  })
+
+  it('화면 선택은 라벨만 기억한다 — 좌표는 다음 연결에서 달라진다', () => {
+    rememberPlacement({ mode: PLACEMENT.screen, screen: screen(1, { label: 'DELL U2720Q', left: 1512 }) })
+    expect(readRememberedPlacement()).toEqual({ mode: 'screen', label: 'DELL U2720Q' })
+  })
+
+  it('기억한 모니터가 그대로 붙어 있으면 묻지 않고 그 화면을 쓴다', () => {
+    const projector = screen(1, { label: 'DELL U2720Q' })
+    rememberPlacement({ mode: PLACEMENT.screen, screen: projector })
+    const resolved = resolveRememberedPlacement(readRememberedPlacement(),
+      env([screen(0, { label: '내장', isCurrent: true }), projector], 0))
+    expect(resolved).toEqual({ mode: 'screen', screen: projector })
+  })
+
+  it('기억한 모니터가 없으면(다른 곳에서 발표) 다시 묻는다', () => {
+    rememberPlacement({ mode: PLACEMENT.screen, screen: screen(1, { label: 'DELL U2720Q' }) })
+    const resolved = resolveRememberedPlacement(readRememberedPlacement(),
+      env([screen(0, { label: '내장', isCurrent: true }), screen(1, { label: 'EPSON EB-000' })], 0))
+    expect(resolved).toBe(null)
+  })
+
+  it('기억한 모니터가 지금 발표자가 보는 화면이 되었으면 다시 묻는다', () => {
+    // 노트북만 들고 와서 어제의 외장 모니터 라벨이 현재 창의 화면과 겹치는 경우
+    rememberPlacement({ mode: PLACEMENT.screen, screen: screen(1, { label: 'DELL U2720Q' }) })
+    const resolved = resolveRememberedPlacement(readRememberedPlacement(),
+      env([screen(0, { label: 'DELL U2720Q', isCurrent: true })], 0))
+    expect(resolved).toBe(null)
+  })
+
+  it('화면과 무관한 선택(리허설·수동·슬라이드만)은 화면 목록 없이도 되살아난다', () => {
+    for (const mode of [PLACEMENT.rehearsal, PLACEMENT.manual, PLACEMENT.slidesOnly]) {
+      rememberPlacement({ mode })
+      expect(resolveRememberedPlacement(readRememberedPlacement(), env([], -1)))
+        .toEqual({ mode, screen: null })
+    }
+  })
+
+  it('"다시 고르기"로 지우면 다음 발표에서 다시 묻는다', () => {
+    rememberPlacement({ mode: PLACEMENT.rehearsal })
+    clearRememberedPlacement()
+    expect(readRememberedPlacement()).toBe(null)
+  })
+
+  it('저장된 값이 깨졌거나 모르는 형태면 무시한다', () => {
+    localStorage.setItem('present-audience-placement', '{깨진 JSON')
+    expect(readRememberedPlacement()).toBe(null)
+    localStorage.setItem('present-audience-placement', JSON.stringify({ mode: '알 수 없음' }))
+    expect(readRememberedPlacement()).toBe(null)
+  })
+
+  it('메뉴에 보여줄 설명을 만든다', () => {
+    expect(describePlacement({ mode: 'screen', label: 'DELL U2720Q' })).toContain('DELL U2720Q')
+    expect(describePlacement({ mode: 'rehearsal' })).toContain('리허설')
+    expect(describePlacement({ mode: 'manual' })).toContain('일반 창')
+    expect(describePlacement({ mode: 'slidesOnly' })).toContain('슬라이드만')
+    expect(describePlacement(null)).toBe(null)
   })
 })

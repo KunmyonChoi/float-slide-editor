@@ -6,6 +6,7 @@ import SlideListPanel from './components/SlideListPanel'
 import FlatCanvas from './components/FlatCanvas'
 import FlatPresenter from './components/FlatPresenter'
 import SpeakerView from './components/SpeakerView'
+import ScreenPickerModal from './components/ScreenPickerModal'
 import ComparePanel from './components/ComparePanel'
 import DebugElementsPanel from './components/DebugElementsPanel'
 import PageBar from './components/PageBar'
@@ -64,7 +65,7 @@ export default function App() {
   const rawViewMode = useFlatStore(s => s.viewMode)
   const debugMode = useFlatStore(s => s.debugMode)
   const mode = useEditorStore(s => s.mode)
-  const presenterView = useEditorStore(s => s.presenterView)
+  const presenterActive = useEditorStore(s => s.presenterActive)
 
   const [shareState, setShareState] = useState(() => (getShareIdFromUrl() ? 'loading' : 'none'))
   const [shareError, setShareError] = useState(null)
@@ -154,7 +155,7 @@ export default function App() {
   useEffect(() => {
     const onFsChange = () => {
       const es = useEditorStore.getState()
-      if (!document.fullscreenElement && es.mode === 'present' && !es.presenterView) {
+      if (!document.fullscreenElement && es.mode === 'present' && !es.presenterActive) {
         es.exitPresentation()
       }
     }
@@ -171,8 +172,8 @@ export default function App() {
 
   // flat/split 모드에서 발표 → 단일 화면은 FlatPresenter, 듀얼 모니터는 SpeakerView
   const presenting = mode === 'present' && (viewMode === 'flat' || viewMode === 'split')
-  const useFlatPresenter = presenting && !presenterView
-  const useSpeakerView = presenting && presenterView
+  const useFlatPresenter = presenting && !presenterActive
+  const useSpeakerView = presenting && presenterActive
 
   return (
     <div className="flex flex-col h-screen overflow-hidden">
@@ -234,6 +235,8 @@ export default function App() {
       {useFlatPresenter && <FlatPresenter />}
       {/* 듀얼 모니터 발표 — 이 창은 발표자 창이 되고, 청중 창은 별도 창으로 열린다 */}
       {useSpeakerView && <SpeakerView />}
+      {/* 발표 시작 전 청중 화면 선택 */}
+      <ScreenPickerModal />
     </div>
   )
 }

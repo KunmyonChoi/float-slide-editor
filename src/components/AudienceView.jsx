@@ -5,6 +5,7 @@ import { useWakeLock } from '../core/useWakeLock'
 import { resolveConnectors } from '../core/ConnectorRouting'
 import { computeSteps } from '../core/slideAnimation'
 import { openChannel, ALIVE_INTERVAL_MS } from '../core/presenterChannel'
+import { enterFullscreenOnScreen } from '../core/screenPlacement'
 import { sortedPageKeys } from '../core/usePresentationEngine'
 
 /**
@@ -112,10 +113,25 @@ export default function AudienceView({ sessionId }) {
     return () => clearTimeout(t)
   }, [])
 
-  // 화면 배치 권한이 없어 일반 창으로 열렸을 때의 수동 전체화면.
-  // (requestFullscreen은 사용자 제스처가 필요해 창 안에서 한 번 눌러야 한다.)
+  // 열리자마자 스스로 전체화면을 시도한다 — 창을 연 클릭의 사용자 활성화가 새 창에 잠시
+  // 상속되므로 마운트 직후라면 대개 통과한다. 실패하면(활성화 없음·권한 없음) 아래 안내가
+  // 남아 사용자가 클릭하거나 F11로 들어간다.
+  useEffect(() => {
+    let cancelled = false
+    const label = (() => {
+      try { return new URLSearchParams(window.location.search).get('screen') } catch { return null }
+    })()
+    ;(async () => {
+      if (document.fullscreenElement) return
+      const ok = await enterFullscreenOnScreen(label)
+      if (!cancelled && ok) setHintVisible(false)
+    })()
+    return () => { cancelled = true }
+  }, [])
+
+  // 자동 진입이 막혔을 때의 수동 전체화면(창 아무 곳이나 클릭).
   const goFullscreen = useCallback(() => {
-    document.documentElement.requestFullscreen?.().catch(() => { /* 거부 무시 */ })
+    enterFullscreenOnScreen(null)
   }, [])
 
   // 자막은 매 프레임 재생 위치를 묻는다 — 마지막으로 받은 값에 경과를 더해 추정한다.

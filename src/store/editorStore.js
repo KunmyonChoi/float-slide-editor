@@ -267,23 +267,74 @@ export const useEditorStore = create((set, get) => ({
   setAudiencePopupBlocked(v) { set({ audiencePopupBlocked: !!v }) },
 
   /**
-   * 발표 모드 진입.
+   * 이번 발표가 발표자 보기를 쓰는지 — presenterView는 사용자 설정(기억됨)이고,
+   * 이것은 "지금 진행 중인 발표"의 실제 형태다. 다이얼로그에서 "슬라이드만 전체화면"을
+   * 고르면 설정은 켜져 있어도 이번 발표는 단일 화면으로 간다.
+   */
+  presenterActive: false,
+
+  /** 화면 선택 다이얼로그 — 열려 있으면 { startIndex } */
+  screenPicker: null,
+  closeScreenPicker() { set({ screenPicker: null }) },
+
+  /**
+   * 발표 시작 요청. 어떤 형태로 시작할지 정해서 곧바로 시작하거나, 정할 수 없으면
+   * 화면 선택 다이얼로그를 띄운다.
    *
-   * 발표자 보기가 꺼져 있으면 기존과 같이 이 창 하나를 전체화면으로 만든다.
-   * 켜져 있으면 청중 창을 별도 창으로 열고(가능하면 확장 디스플레이에 전체화면),
-   * 이 창은 발표자 창이 된다 — 이때는 전체화면으로 만들지 않는다. 팝업을 여는 순간
-   * 전체화면이 풀리는 플랫폼이 있어 발표가 곧바로 종료돼버리기 때문이다.
+   * 다이얼로그를 거치는 편이 팝업 차단에도 유리하다 — "발표 시작" 클릭이 곧 사용자
+   * 제스처라, 화면 목록을 조회하느라 소모된 활성화를 새로 얻은 채로 창을 연다.
+   *
+   * @param {{startIndex?: number, forcePicker?: boolean}} opts
    */
   async enterPresentation(opts = {}) {
     // 같은 F5를 FloatingToolbar와 FlatCanvas 두 곳에서 듣고 있어 한 번의 키 입력에 두 번
     // 불린다. 단일 화면에서는 같은 상태를 두 번 세팅할 뿐이라 티가 안 났지만, 듀얼 모니터에서는
     // 두 번째 호출이 새 세션 id를 만들어 청중 창과 발표자 창이 서로 다른 채널을 보게 된다.
-    if (get().mode === 'present') return
-    const { iframeRef, presenterView } = get()
-    set({ selectedId: null, mode: 'present', presentStartIndex: opts.startIndex || 0 })
+    if (get().mode === 'present' || get().screenPicker) return
+
+    const startIndex = opts.startIndex || 0
+    if (!get().presenterView) {
+      get().beginPresentation({ startIndex, placement: { mode: 'slidesOnly' } })
+      return
+    }
+
+    const {
+      listScreens, readRememberedPlacement, resolveRememberedPlacement,
+    } = await import('../core/screenPlacement.js')
+
+    if (!opts.forcePicker) {
+      const remembered = readRememberedPlacement()
+      if (remembered) {
+        // 화면을 지정해 기억한 경우에만 목록 조회가 필요하다. 권한이 이미 있으면 프롬프트
+        // 없이 조용히 끝나고, 없으면 조회가 실패해 다이얼로그로 떨어진다.
+        const env = remembered.mode === 'screen'
+          ? await listScreens()
+          : { supported: false, denied: false, screens: [], currentIndex: -1 }
+        const resolved = resolveRememberedPlacement(remembered, env)
+        if (resolved) { get().beginPresentation({ startIndex, placement: resolved }); return }
+      }
+    }
+
+    set({ screenPicker: { startIndex } })
+  },
+
+  /**
+   * 실제 발표 진입. 다이얼로그의 "발표 시작" 클릭 안에서 불려야 팝업이 차단되지 않는다.
+   * @param {{startIndex: number, placement: {mode: string, screen?: object|null}}} args
+   */
+  async beginPresentation({ startIndex = 0, placement }) {
+    const { iframeRef } = get()
+    const solo = placement.mode === 'slidesOnly'
+
+    set({
+      selectedId: null, mode: 'present', presentStartIndex: startIndex,
+      screenPicker: null, presenterActive: !solo,
+      audienceScreen: placement.screen || null, audiencePopupBlocked: false,
+      presentSessionId: null,
+    })
     iframeRef?.current?.contentWindow?.postMessage({ type: 'fe:setMode', mode: 'present' }, '*')
 
-    if (!presenterView) {
+    if (solo) {
       iframeRef?.current?.contentWindow?.focus()
       // 사용자 제스처(발표 버튼/F5) 컨텍스트에서 동기 호출 → 실제 브라우저 전체화면
       try {
@@ -292,20 +343,17 @@ export const useEditorStore = create((set, get) => ({
       return
     }
 
-    // ── 듀얼 모니터 경로 ──
+    // ── 발표자 창 경로 ── (전체화면으로 만들지 않는다: 팝업을 여는 순간 전체화면이
+    // 풀리는 플랫폼이 있어 발표가 곧바로 종료돼버린다)
     const { newSessionId } = await import('../core/presenterChannel.js')
-    const { listScreens, pickAudienceScreen, openAudienceWindow } = await import('../core/screenPlacement.js')
-
     const sessionId = newSessionId()
-    set({ presentSessionId: sessionId, audienceScreen: null, audiencePopupBlocked: false })
+    set({ presentSessionId: sessionId })
 
-    // getScreenDetails()는 권한 프롬프트를 띄울 수 있다. await 뒤에도 잠시(수 초) 사용자
-    // 활성화가 유지되므로 이어지는 window.open이 대개 통과한다 — 막히면 발표자 창의
-    // "다시 열기"가 제스처 안에서 재시도한다.
-    const { screens, currentIndex } = await listScreens()
-    const screen = pickAudienceScreen(screens, currentIndex)
-    const win = openAudienceWindow({ sessionId, screen })
-    set({ audienceScreen: screen, audiencePopupBlocked: !win })
+    if (placement.mode === 'rehearsal') return // 청중 창 없이 발표자 창만
+
+    const { openAudienceWindow } = await import('../core/screenPlacement.js')
+    const win = openAudienceWindow({ sessionId, screen: placement.screen || null })
+    set({ audiencePopupBlocked: !win })
   },
 
   /** 편집 모드 복귀 */
@@ -324,6 +372,7 @@ export const useEditorStore = create((set, get) => ({
       }).catch(() => { /* 무시 */ })
       set({ presentSessionId: null, audienceScreen: null, audiencePopupBlocked: false })
     }
+    set({ presenterActive: false, screenPicker: null })
     iframeRef?.current?.contentWindow?.postMessage({ type: 'fe:setMode', mode: 'edit' }, '*')
     try {
       if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {})
