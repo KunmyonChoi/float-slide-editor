@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import PresentedSlide from './PresentedSlide'
 import { useWebFontImports } from '../core/useWebFontImports'
+import { useWakeLock } from '../core/useWakeLock'
 import { resolveConnectors } from '../core/ConnectorRouting'
 import { computeSteps } from '../core/slideAnimation'
 import { openChannel, ALIVE_INTERVAL_MS } from '../core/presenterChannel'
@@ -83,6 +84,7 @@ export default function AudienceView({ sessionId }) {
   const animInfo = useMemo(() => computeSteps(elements), [elements])
   const canvasSize = useMemo(() => page?.canvasSize || { w: 1280, h: 720 }, [page])
 
+  useWakeLock(!ended)
   useWebFontImports(deck, sortedKeys)
 
   // 뷰포트에 맞춘 배율 — 창 크기는 상태로 두고 배율은 파생값으로 계산한다.

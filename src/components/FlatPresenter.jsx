@@ -4,6 +4,7 @@ import PresentedSlide from './PresentedSlide'
 import PresenterToolbar from './PresenterToolbar'
 import { usePresentationEngine } from '../core/usePresentationEngine'
 import { useWebFontImports } from '../core/useWebFontImports'
+import { useWakeLock } from '../core/useWakeLock'
 
 /**
  * FlatPresenter — 단일 화면 발표(현재 창을 전체화면으로).
@@ -62,6 +63,9 @@ export default function FlatPresenter() {
     const t = setTimeout(() => setHintVisible(false), 2500)
     return () => clearTimeout(t)
   }, [])
+
+  // 발표 중에는 화면이 어두워지지 않게 붙든다(모바일 자동 밝기·절전)
+  useWakeLock(true)
 
   // 웹폰트 주입
   useWebFontImports(eng.allPages, eng.sortedKeys)

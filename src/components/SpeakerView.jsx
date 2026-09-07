@@ -4,6 +4,7 @@ import PresentedSlide from './PresentedSlide'
 import { SlideThumbnail } from './SlideListPanel'
 import { NarrationControls, InkControls } from './PresenterToolbar'
 import { useWebFontImports } from '../core/useWebFontImports'
+import { useWakeLock } from '../core/useWakeLock'
 import { usePresentationEngine } from '../core/usePresentationEngine'
 import { useAudienceLink } from '../core/useAudienceLink'
 
@@ -128,6 +129,7 @@ export default function SpeakerView() {
     return () => window.removeEventListener('keydown', onKey)
   }, [eng.handleKeyDown, gridOpen]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  useWakeLock(true)
   useWebFontImports(eng.allPages, eng.sortedKeys)
 
   const notes = eng.page?.notes || ''
