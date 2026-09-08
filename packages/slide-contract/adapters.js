@@ -42,6 +42,7 @@ export function internalElementToPublic(el) {
     out.fillDir = el.fillDir || 'left'
     if (el.fillColor) out.fillColor = el.fillColor
   }
+  if (el.anim) out.anim = el.anim // 등장 모션(PPT timing·발표 모드 공용)
   if (el.points != null) out.points = el.points
   if (el.link != null) out.link = el.link
   if (el.merged) out.merged = true
@@ -71,6 +72,7 @@ export function publicElementToInternal(pel) {
     out.content = pel.src || ''
     out.isRich = false
   }
+  if (pel.anim) out.anim = pel.anim
   if (pel.type === 'video' || pel.type === 'audio') {
     if (pel.autoplay) out.autoplay = true
     if (pel.loop) out.loop = true
@@ -116,6 +118,8 @@ export function pagesToDeck(pages, defaultCanvasSize, fonts = []) {
       const page = { elements: (p.elements || []).map(internalElementToPublic) }
       if (p.canvasSize) page.canvasSize = p.canvasSize
       if (p.notes) page.notes = p.notes // 발표자 노트(슬라이드 노트로 export)
+      if (p.transition) page.transition = p.transition // 슬라이드 전환
+      if (p.audio) page.audio = p.audio // 나레이션 { src(dataURL), volume }
       return page
     }),
   })
@@ -133,6 +137,8 @@ export function deckToInternalPages(deck) {
       canvasSize: p.canvasSize || deck.canvasSize,
       fontImports: [], // 공개 계약은 폰트를 deck.fonts(디스크립터)로 운반
       notes: p.notes || '',
+      ...(p.transition ? { transition: p.transition } : {}),
+      ...(p.audio ? { audio: p.audio } : {}),
     }
   })
   return { pages, defaultCanvasSize: deck.canvasSize, fonts: deck.fonts || [] }

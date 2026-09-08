@@ -238,13 +238,15 @@ function nextShapeId(slideXml) {
 }
 
 /**
- * 나레이션 오디오 도형을 슬라이드에 심는다(우하단 구석, 발표 중에는 숨김).
+ * 나레이션 오디오 도형을 슬라이드에 심는다.
+ * 화면 밖(오른쪽 가장자리 바로 바깥)에 두는 이유: 슬라이드 안에 두면 PDF로 저장하거나
+ * 뷰어에 따라 미디어 자리표시자가 그려진다. 밖에 둬도 재생에는 지장이 없다.
  * @returns {{xml:string, spid:number}}
  */
 function insertAudioPic(slideXml, { spid, audioRid, mediaRid, posterRid, name, slideW, slideH }) {
   const size = Math.round(0.3 * EMU_PER_INCH)
-  const x = Math.max(0, slideW - size - Math.round(0.1 * EMU_PER_INCH))
-  const y = Math.max(0, slideH - size - Math.round(0.1 * EMU_PER_INCH))
+  const x = slideW
+  const y = Math.max(0, Math.round(slideH / 2))
   const pic = '<p:pic><p:nvPicPr>' +
     `<p:cNvPr id="${spid}" name="${name}"><a:hlinkClick r:id="" action="ppaction://media"/></p:cNvPr>` +
     '<p:cNvPicPr><a:picLocks noChangeAspect="1"/></p:cNvPicPr>' +

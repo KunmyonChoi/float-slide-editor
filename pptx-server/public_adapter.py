@@ -38,6 +38,8 @@ def _public_el_to_internal(pel: dict) -> dict:
         out['fillDir'] = pel.get('fillDir') or 'left'
         if pel.get('fillColor'):
             out['fillColor'] = pel.get('fillColor')
+    if pel.get('anim'):  # 등장 모션 → PPT timing
+        out['anim'] = pel['anim']
     for k in ('points', 'link'):
         if pel.get(k) is not None:
             out[k] = pel[k]
@@ -62,6 +64,8 @@ def public_deck_to_internal(deck: dict):
             'canvasSize': p.get('canvasSize') or default_cs,
             'fontImports': [],
             'notes': p.get('notes') or '',
+            'transition': p.get('transition'),   # 슬라이드 전환
+            'audio': p.get('audio'),             # 나레이션 { src(dataURL), volume }
         }
     return pages, default_cs, deck.get('fonts') or []
 

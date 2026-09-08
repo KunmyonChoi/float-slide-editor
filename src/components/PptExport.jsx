@@ -96,7 +96,9 @@ export async function runPptExport(embed) {
         `%c[PPT Export] python-pptx 엔진 사용 — 폰트 임베딩 ${useEmbed ? 'ON' : 'OFF'}`,
         'color:#22c55e;font-weight:bold'
       )
-      await exportViaPython(pages, canvasSize, { embedFonts: useEmbed, editorVersion: APP_VERSION, filename })
+      await exportViaPython(pages, canvasSize, {
+        embedFonts: useEmbed, editorVersion: APP_VERSION, filename, embedNarration: loadNarrationPref(),
+      })
     } else {
       usePptStore.setState({ stage: '브라우저에서 생성 중… (pptxgenjs)' })
       console.log('%c[PPT Export] pptxgenjs 엔진 사용 (fallback)', 'color:#f59e0b;font-weight:bold')

@@ -38,8 +38,20 @@ PPTX 엔진의 **유일한 외부 API**. 소비 SW는 이 `SlideDeck` JSON만 �
           }
         },
         { "type": "image", "x": 0, "y": 0, "width": 1280, "height": 720,
-          "z": 0, "src": "data:image/png;base64,..." }
-      ]
+          "z": 0, "src": "data:image/png;base64,...",
+          "anim": {                             // 선택. 등장 모션 → PPT timing
+            "effect": "fadeIn",                 // fadeIn|slideIn|scaleIn|pop|…Out
+            "dir": "up",                        // slideIn/slideOut만
+            "durationMs": 500, "delayMs": 0,
+            "trigger": { "mode": "click", "ref": null },  // click|auto|with|after
+            "seq": 0
+          } }
+      ],
+      "notes": "발표자 원고",                     // 선택. 슬라이드 노트
+      "transition": { "type": "fade", "durationMs": 400 },  // 선택. fade|slide|zoom
+      "audio": {                                 // 선택. 나레이션(장 시작 시 자동 재생)
+        "src": "data:audio/mpeg;base64,...", "volume": 1
+      }
     }
   ]
 }

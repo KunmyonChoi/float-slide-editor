@@ -31,6 +31,26 @@ async function _resolveIdbMedia(pages) {
   return out
 }
 
+/**
+ * 페이지의 나레이션 음성(idb 참조)을 data URL로 풀어 audio 필드에 담는다.
+ * 서버는 idb를 못 읽으므로 바이트를 실어 보내야 한다.
+ */
+async function _resolveNarration(pages) {
+  const out = {}
+  for (const [k, p] of Object.entries(pages || {})) {
+    let audio = null
+    const ref = p?.notesAudio
+    if (ref && BlobStore.isIdbRef?.(ref)) {
+      try {
+        const blob = await BlobStore.get(BlobStore.parseRef(ref))
+        if (blob) audio = { src: await _blobToDataUrl(blob), volume: p.notesAudioVolume ?? 1 }
+      } catch { /* 실패하면 음성 없이 내보낸다 */ }
+    }
+    out[k] = audio ? { ...p, audio } : p
+  }
+  return out
+}
+
 // 로컬 컨테이너 배포 기본값 (Docker Hub 이미지 / 포트)
 export const PPTX_DOCKER_IMAGE = 'dilly97/float-pptx'
 export const PPTX_DEFAULT_PORT = 8321
@@ -138,9 +158,10 @@ function _cssProp(css, prop) {
   return m ? m[1].trim() : null
 }
 
-export async function exportViaPython(pages, defaultCanvasSize, { embedFonts = true, editorVersion = '', filename = 'slide-export.pptx' } = {}) {
+export async function exportViaPython(pages, defaultCanvasSize, { embedFonts = true, editorVersion = '', filename = 'slide-export.pptx', embedNarration = true } = {}) {
   // idb 미디어(영상 등)를 data URL로 해석 — 서버는 idb를 못 읽으므로 먼저 변환
   pages = await _resolveIdbMedia(pages)
+  if (embedNarration) pages = await _resolveNarration(pages)
   // 임베딩 OFF면 폰트를 수집/전송하지 않음 → 서버가 다운로드·임베딩을 건너뛰고
   // 원본 family명으로 출력(파일 가벼움, 시스템 설치 폰트 의존).
   const fonts = embedFonts ? collectFontData(pages) : []

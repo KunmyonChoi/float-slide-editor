@@ -12,6 +12,7 @@ from pptx.oxml.ns import qn
 from gradient import parse_gradient, css_color_to_rgb, css_color_to_rgba, css_color_to_hex
 from text_runs import html_to_text_runs, apply_text_transform
 from font_embedder import GENERIC_FONT_CLASS
+import motion
 
 PX_TO_INCH = 1 / 96
 PX_TO_EMU = 914400 / 96  # 9525
@@ -276,7 +277,7 @@ def build_pptx(pages: dict, default_canvas_size: dict, fonts: list = None,
     _clear_layout_background(blank_layout)
 
     # ── Phase 3: Create slides ──
-    for key in sorted_keys:
+    for page_index, key in enumerate(sorted_keys):
         info = page_bg_info[key]
         page_cs = info['page_cs']
         slide = prs.slides.add_slide(blank_layout)
@@ -303,8 +304,9 @@ def build_pptx(pages: dict, default_canvas_size: dict, fonts: list = None,
                     except Exception:
                         pass
 
-        # Add content elements (그룹별로 추가된 도형 추적)
+        # Add content elements (그룹별로 추가된 도형 추적 + anim 요소의 도형 id 수집)
         group_shapes = {}
+        anim_spids = {}   # 요소 id → 그 요소가 만든 도형 id들(모션 타이밍 대상)
         for el in info['content_elements']:
             before = len(slide.shapes)
             try:
@@ -312,10 +314,13 @@ def build_pptx(pages: dict, default_canvas_size: dict, fonts: list = None,
             except Exception as e:
                 print(f'PPT export: element {el.get("id")} skipped: {e}')
                 continue
+            added = list(slide.shapes)[before:]
             gid = el.get('groupId')
             if gid:
-                added = list(slide.shapes)[before:]
                 group_shapes.setdefault(gid, []).extend(added)
+            # 요소 하나가 도형 여럿을 낳으면(그라데이션 래스터 + 텍스트 등) 함께 움직인다.
+            if el.get('anim') and added:
+                anim_spids[el.get('id')] = [sh.shape_id for sh in added]
 
         # 같은 그룹의 도형들을 PowerPoint 그룹으로 묶기
         for gid, shapes in group_shapes.items():
@@ -326,12 +331,24 @@ def build_pptx(pages: dict, default_canvas_size: dict, fonts: list = None,
                     print(f'PPT export: group {gid} skipped: {e}')
 
         # 발표자 노트 → 슬라이드 노트
-        notes_text = (pages.get(key) or {}).get('notes')
+        page_data = pages.get(key) or {}
+        notes_text = page_data.get('notes')
         if notes_text:
             try:
                 slide.notes_slide.notes_text_frame.text = notes_text
             except Exception as e:
                 print(f'PPT export: notes for {key} skipped: {e}')
+
+        # 전환 · 요소 등장 · 나레이션 자동재생 (JS 경로 PptMotion.js와 같은 규칙)
+        try:
+            audio_target = motion.add_narration(slide, prs, page_index, page_data.get('audio'))
+            motion.apply_slide_motion(
+                slide,
+                {'elements': info['content_elements'], 'transition': page_data.get('transition')},
+                anim_spids, audio_target,
+            )
+        except Exception as e:
+            print(f'PPT export: motion for {key} skipped: {e}')
 
     # ── Embed fonts into PPTX package ──
     if font_records:
