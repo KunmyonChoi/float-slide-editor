@@ -2,6 +2,7 @@
  * PptExporter — PPTX 내보내기 (pptxgenjs, lazy import)
  */
 import { htmlToTextRuns, cssColorToHex, applyTextTransform } from './HtmlToTextRuns'
+import { animObjectName, applyMotionToPptx } from './PptMotion'
 import { parseGradient } from './GradientParser'
 import { cssColorToRgba } from './CssColor'
 import { BlobStore } from './BlobStore'
@@ -79,10 +80,51 @@ export async function exportToPptx(pages, defaultCanvasSize, { editorVersion = '
     if (page.notes) slide.addNotes(page.notes)
   }
 
-  await pptx.writeFile({ fileName: filename })
+  // pptxgenjs에는 애니메이션 API가 없다 — 모션이 있는 덱만 파일을 받아 전환·등장 XML을
+  // 끼워 넣고 내려준다. 모션이 없으면 예전 경로(writeFile) 그대로 — 후처리 비용 0.
+  const ordered = sortedKeys.map(k => pages[k])
+  const hasMotion = ordered.some(p =>
+    (p?.transition && p.transition.type && p.transition.type !== 'none') ||
+    (p?.elements || []).some(el => el?.anim?.effect && el.anim.effect !== 'none'))
+  if (!hasMotion) {
+    await pptx.writeFile({ fileName: filename })
+    return
+  }
+  const raw = await pptx.write({ outputType: 'blob' })
+  downloadBlob(await applyMotionToPptx(raw, ordered), filename)
 }
 
-async function addElementToSlide(slide, el, canvasSize) {
+/** 브라우저 다운로드 — pptx.writeFile 대신 우리가 가공한 blob을 내려준다. */
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
+
+/**
+ * anim이 붙은 요소가 만드는 모든 도형에 같은 이름표를 달아주는 얇은 래퍼.
+ * PptMotion이 이 이름으로 spid를 찾아 타이밍을 건다. 요소 하나가 도형 여럿을
+ * 낳아도(그라데이션 래스터 + 텍스트 상자) 전부 잡히도록 매 호출에 붙인다.
+ */
+function tagged(slide, name) {
+  const withName = (opts) => ({ ...(opts || {}), objectName: name })
+  return {
+    addText: (runs, opts) => slide.addText(runs, withName(opts)),
+    addShape: (shape, opts) => slide.addShape(shape, withName(opts)),
+    addImage: (opts) => slide.addImage(withName(opts)),
+    addTable: (rows, opts) => slide.addTable(rows, withName(opts)),
+    addMedia: (opts) => slide.addMedia(withName(opts)),
+    addNotes: (n) => slide.addNotes(n),
+  }
+}
+
+async function addElementToSlide(rawSlide, el, canvasSize) {
+  const slide = el.anim?.effect ? tagged(rawSlide, animObjectName(el.id)) : rawSlide
   const x = el.x * PX_TO_INCH
   const y = el.y * PX_TO_INCH
   let w = el.width * PX_TO_INCH
