@@ -15,6 +15,7 @@ import SlideDeleteToast from './components/SlideDeleteToast'
 import InstallAppBanner from './components/InstallAppBanner'
 import { UrlPromptHost } from './components/UrlPrompt'
 import { AiSettingsHost } from './components/AiSettingsModal'
+import { PptExportHost } from './components/PptExport'
 import AiJobTray from './components/AiJobTray'
 import { CapabilitiesHost } from './components/CapabilitiesModal'
 import { GenitorSkillHost } from './components/GenitorSkillModal'
@@ -211,6 +212,7 @@ export default function App() {
       <InstallAppBanner />
       <UrlPromptHost />
       <AiSettingsHost />
+      <PptExportHost />
       <CapabilitiesHost />
       <GenitorSkillHost />
       <CameraCaptureHost />

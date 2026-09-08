@@ -4,7 +4,6 @@ import { useFlatStore } from '../store/flatStore'
 import CanvasSizeSelector from './CanvasSizeSelector'
 import QualityDashboard from './QualityDashboard'
 import FileMenu from './ExportMenu'
-import PptExportButton from './PptExportButton'
 import ShortcutsButton from './ShortcutsButton'
 import AvatarRecorderButton from './AvatarRecorderButton'
 import CameraCaptureButton from './CameraCaptureButton'
@@ -166,9 +165,6 @@ export default function FloatingToolbar() {
 
       {/* 파일 메뉴 */}
       <FileMenu fallbackSample={FALLBACK_SAMPLE} />
-
-      {/* PPT 내보내기 — 자주 쓰는 액션이라 최상단 노출 */}
-      <PptExportButton />
 
       <Divider />
 

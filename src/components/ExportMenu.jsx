@@ -6,6 +6,7 @@ import { openAiSettings } from './AiSettingsModal'
 import { openCapabilities } from './CapabilitiesModal'
 import { openGenitorSkill } from './GenitorSkillModal'
 import { openShareLinkModal } from './ShareLinkModal'
+import { runPptExport, openPptSettings } from './PptExport'
 import { openFile } from '../core/FilePicker'
 import { confirmDialog } from './ConfirmDialog'
 import { isBundlerHtml } from '../core/BundlerUnpacker'
@@ -245,6 +246,10 @@ export default function FileMenu({ fallbackSample }) {
     if (ok) regenerateAllPages()
   }, [regenerateAllPages])
 
+  // PPT 내보내기 — 저장된 임베딩 설정으로 전체 페이지. 파일명은 PptExport가 묻는다.
+  const handleExportPpt = useCallback(() => { setOpen(false); runPptExport() }, [])
+  const handlePptSettings = useCallback(() => { setOpen(false); openPptSettings() }, [])
+
   // HTML 내보내기 (현재 페이지)
   const handleExportHtml = useCallback(() => {
     setOpen(false)
@@ -319,7 +324,7 @@ export default function FileMenu({ fallbackSample }) {
     }
   }, [])
 
-  // PPT 내보내기는 최상단 툴바의 PptExportButton으로 이동됨.
+  // PPT 내보내기 본체는 PptExport.jsx — 진행 오버레이·서버 설정을 함께 들고 있다.
 
   // JSON 내보내기 (현재 페이지)
   const handleExportJson = useCallback(() => {
@@ -369,6 +374,9 @@ export default function FileMenu({ fallbackSample }) {
     { id: 'sep1', type: 'separator' },
     { id: 'export', label: '내보내기', submenu: 'export', disabled: !hasContent,
       children: [
+        { id: 'exportPpt', label: 'PPT — 전체 페이지', shortcut: 'PPTX', action: handleExportPpt },
+        { id: 'pptSettings', label: 'PPT 변환 서버 설정…', action: handlePptSettings },
+        { id: 'sepPpt', type: 'separator' },
         { id: 'exportHtml', label: 'HTML — 현재 페이지', action: handleExportHtml },
         { id: 'exportHtmlAll', label: 'HTML — 전체 페이지', action: handleExportHtmlAll },
         { id: 'sepE1', type: 'separator' },
@@ -464,7 +472,7 @@ export default function FileMenu({ fallbackSample }) {
                       top: 0,
                       left: '100%',
                       marginLeft: 4,
-                      minWidth: 160,
+                      minWidth: 200,
                       background: 'rgba(15,23,42,0.97)',
                       backdropFilter: 'blur(16px)',
                       border: '1px solid rgba(255,255,255,0.1)',

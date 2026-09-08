@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { create } from 'zustand'
 import { useFlatStore } from '../store/flatStore'
-import { ToolBtn } from './FloatingToolbar'
 import {
   checkBackend, exportViaPython, dockerRunCommand,
   getBackendBase, setBackendBase, PPTX_DOCKER_IMAGE, getBackendBuild,
@@ -28,32 +28,101 @@ function loadEmbedPref() {
 }
 
 /**
- * PptExportButton — 최상단 툴바의 PPT 내보내기 버튼 + 폰트 임베딩 옵션(▾).
+ * PPT 내보내기 — 파일 ▸ 내보내기 메뉴에서 호출하는 명령형 API + 화면 조각.
+ *
+ * 앱 어딘가에 <PptExportHost />를 한 번 마운트하고, 어디서든
+ *   runPptExport()    — 저장된 임베딩 설정으로 전체 페이지를 내보낸다(진행 오버레이 포함)
+ *   openPptSettings() — 임베딩 옵션 + 변환 서버 설정 모달을 연다
+ * 를 부른다. (예전에는 툴바 상단의 버튼 + ▾ 드롭다운이었다. 내보내기는 파일 메뉴로
+ * 모으고, 입력창이 있는 서버 설정은 드롭다운보다 모달이 맞는 자리라 갈라놓았다.)
+ *
  * python-pptx 백엔드가 가용하면 그쪽으로, 아니면 pptxgenjs 폴백.
  * 임베딩 ON: 외부 전달 안전(파일 큼) / OFF: 가벼움(시스템 폰트 의존).
  * (pptxgenjs 폴백은 폰트 임베딩 자체를 안 하므로 이 옵션은 python 경로에만 의미)
- * 내보내는 동안 진행 오버레이(스피너·단계·경과 시간)를 표시.
  */
-export default function PptExportButton() {
-  const canvasSize = useFlatStore(s => s.canvasSize)
-  const hasContent = useFlatStore(s => s.flatElements.length > 0)
-  const [pythonAvailable, setPythonAvailable] = useState(null) // null=확인중
-  const [busy, setBusy] = useState(false)
-  const [menuOpen, setMenuOpen] = useState(false)
-  const [embedFonts, setEmbedFonts] = useState(loadEmbedPref)
-  const [stage, setStage] = useState('')
-  const [elapsed, setElapsed] = useState(0)
-  const wrapRef = useRef(null)
-  const timerRef = useRef(null)
 
+const usePptStore = create(() => ({
+  busy: false, stage: '', elapsed: 0, settingsOpen: false,
+}))
+
+export function openPptSettings() { usePptStore.setState({ settingsOpen: true }) }
+function closePptSettings() { usePptStore.setState({ settingsOpen: false }) }
+
+function savePref(val) {
+  try { localStorage.setItem(EMBED_PREF_KEY, String(val)) } catch { /* ignore */ }
+}
+
+let timer = null
+
+/**
+ * 전체 페이지를 PPTX로 내보낸다. embed 생략 시 저장된 임베딩 설정을 따른다.
+ * 이미 진행 중이면 무시. 파일명은 사용자에게 묻고, 취소하면 아무 일도 하지 않는다.
+ */
+export async function runPptExport(embed) {
+  if (usePptStore.getState().busy) return
+  const useEmbed = embed === undefined ? loadEmbedPref() : embed
+  if (embed !== undefined) savePref(embed)
+
+  // 파일명 입력 — 기본값은 저장/HTML/프로젝트 공통 base name(없으면 slide-export)
+  const base = useFlatStore.getState().getExportBaseName() || 'slide-export'
+  const picked = await promptUrl({ title: 'PPT 파일 이름', placeholder: '파일 이름', initialValue: base })
+  if (picked == null) return // 취소
+  const filename = normalizePptxName(picked)
+
+  usePptStore.setState({ busy: true, elapsed: 0, stage: '페이지 수집 중…' })
+  const start = Date.now()
+  clearInterval(timer)
+  timer = setInterval(() => usePptStore.setState({ elapsed: Math.floor((Date.now() - start) / 1000) }), 250)
+  try {
+    const canvasSize = useFlatStore.getState().canvasSize
+    const { pages } = await useFlatStore.getState().getAllPagesAsync()
+    if (await checkBackend(true)) {
+      usePptStore.setState({ stage: useEmbed ? '서버에서 생성 중… (폰트 임베딩 포함)' : '서버에서 생성 중…' })
+      console.log(
+        `%c[PPT Export] python-pptx 엔진 사용 — 폰트 임베딩 ${useEmbed ? 'ON' : 'OFF'}`,
+        'color:#22c55e;font-weight:bold'
+      )
+      await exportViaPython(pages, canvasSize, { embedFonts: useEmbed, editorVersion: APP_VERSION, filename })
+    } else {
+      usePptStore.setState({ stage: '브라우저에서 생성 중… (pptxgenjs)' })
+      console.log('%c[PPT Export] pptxgenjs 엔진 사용 (fallback)', 'color:#f59e0b;font-weight:bold')
+      const { exportToPptx } = await import('../core/PptExporter.js')
+      await exportToPptx(pages, canvasSize, { editorVersion: APP_VERSION, filename })
+    }
+  } catch (err) {
+    console.error('PPT 내보내기 실패:', err)
+    alert('PPT 내보내기 실패: ' + err.message)
+  } finally {
+    clearInterval(timer)
+    usePptStore.setState({ busy: false, stage: '' })
+  }
+}
+
+/** 진행 오버레이 + 설정 모달을 담는 호스트. 앱에 한 번만 마운트한다. */
+export function PptExportHost() {
+  const { busy, stage, elapsed, settingsOpen } = usePptStore()
+  return (
+    <>
+      {busy && <ExportOverlay stage={stage} elapsed={elapsed} />}
+      {settingsOpen && <PptSettingsModal onClose={closePptSettings} />}
+    </>
+  )
+}
+
+/** 임베딩 기본값 + 변환 서버(연결 상태·Docker 명령·백엔드 URL) 설정. */
+function PptSettingsModal({ onClose }) {
+  const [pythonAvailable, setPythonAvailable] = useState(null) // null=확인중
+  const [embedFonts, setEmbedFonts] = useState(loadEmbedPref)
   const [backendUrl, setBackendUrl] = useState(() => getBackendBase())
 
-  // 백엔드 가용성 1회 확인
-  useEffect(() => {
-    checkBackend().then(setPythonAvailable)
-  }, [])
+  useEffect(() => { checkBackend().then(setPythonAvailable) }, [])
 
-  // 백엔드 URL 적용 + 재확인
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape') onClose() }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [onClose])
+
   const applyBackendUrl = useCallback((url) => {
     setBackendBase(url)
     setBackendUrl(getBackendBase())
@@ -61,154 +130,68 @@ export default function PptExportButton() {
     checkBackend(true).then(setPythonAvailable)
   }, [])
 
-  // 언마운트 시 타이머 정리
-  useEffect(() => () => clearInterval(timerRef.current), [])
+  const pick = (val) => { setEmbedFonts(val); savePref(val) }
 
-  // 메뉴 외부 클릭/ESC 닫기
-  useEffect(() => {
-    if (!menuOpen) return
-    const onDown = (e) => {
-      if (wrapRef.current && !wrapRef.current.contains(e.target)) setMenuOpen(false)
-    }
-    const onKey = (e) => { if (e.key === 'Escape') setMenuOpen(false) }
-    document.addEventListener('mousedown', onDown)
-    document.addEventListener('keydown', onKey)
-    return () => {
-      document.removeEventListener('mousedown', onDown)
-      document.removeEventListener('keydown', onKey)
-    }
-  }, [menuOpen])
+  return createPortal(
+    <div
+      onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 20000,
+        background: 'rgba(0,0,0,0.45)', display: 'flex',
+        alignItems: 'center', justifyContent: 'center', padding: 16,
+      }}
+    >
+      <div style={{
+        width: 420, maxWidth: '100%', maxHeight: 'calc(100vh - 32px)', overflowY: 'auto',
+        background: 'rgba(15,23,42,0.97)', backdropFilter: 'blur(16px)',
+        border: '1px solid rgba(255,255,255,0.1)', borderRadius: 12,
+        boxShadow: '0 20px 60px rgba(0,0,0,0.6)', padding: 16,
+        display: 'flex', flexDirection: 'column', gap: 12, color: '#e2e8f0',
+      }}>
+        <div style={{ fontSize: 14, fontWeight: 700 }}>PPT 변환 서버 설정</div>
 
-  const setPref = useCallback((val) => {
-    setEmbedFonts(val)
-    try { localStorage.setItem(EMBED_PREF_KEY, String(val)) } catch { /* ignore */ }
-  }, [])
-
-  const runExport = useCallback(async (embed) => {
-    if (busy) return
-    // 파일명 입력 — 기본값은 저장/HTML/프로젝트 공통 base name(없으면 slide-export)
-    const base = useFlatStore.getState().getExportBaseName() || 'slide-export'
-    const picked = await promptUrl({ title: 'PPT 파일 이름', placeholder: '파일 이름', initialValue: base })
-    if (picked == null) return // 취소
-    const filename = normalizePptxName(picked)
-    setBusy(true)
-    setElapsed(0)
-    setStage('페이지 수집 중…')
-    const start = Date.now()
-    clearInterval(timerRef.current)
-    timerRef.current = setInterval(() => setElapsed(Math.floor((Date.now() - start) / 1000)), 250)
-    try {
-      const { pages } = await useFlatStore.getState().getAllPagesAsync()
-      if (await checkBackend(true)) {
-        setStage(embed ? '서버에서 생성 중… (폰트 임베딩 포함)' : '서버에서 생성 중…')
-        console.log(
-          `%c[PPT Export] python-pptx 엔진 사용 — 폰트 임베딩 ${embed ? 'ON' : 'OFF'}`,
-          'color:#22c55e;font-weight:bold'
-        )
-        await exportViaPython(pages, canvasSize, { embedFonts: embed, editorVersion: APP_VERSION, filename })
-      } else {
-        setStage('브라우저에서 생성 중… (pptxgenjs)')
-        console.log('%c[PPT Export] pptxgenjs 엔진 사용 (fallback)', 'color:#f59e0b;font-weight:bold')
-        const { exportToPptx } = await import('../core/PptExporter.js')
-        await exportToPptx(pages, canvasSize, { editorVersion: APP_VERSION, filename })
-      }
-    } catch (err) {
-      console.error('PPT 내보내기 실패:', err)
-      alert('PPT 내보내기 실패: ' + err.message)
-    } finally {
-      clearInterval(timerRef.current)
-      setBusy(false)
-      setStage('')
-    }
-  }, [busy, canvasSize])
-
-  // 메뉴 항목: 선택 시 기본값으로 기억 + 즉시 내보내기
-  const pickAndExport = useCallback((embed) => {
-    setMenuOpen(false)
-    setPref(embed)
-    runExport(embed)
-  }, [setPref, runExport])
-
-  const engine =
-    pythonAvailable === true ? 'python-pptx' :
-    pythonAvailable === false ? 'pptxgenjs (fallback)' :
-    '엔진 확인 중'
-
-  return (
-    <div ref={wrapRef} style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
-      <ToolBtn
-        onClick={() => runExport(embedFonts)}
-        disabled={!hasContent || busy}
-        title={`PPT (전체 페이지) 내보내기 — ${engine} · 폰트 임베딩 ${embedFonts ? 'ON' : 'OFF'}`}
-      >
-        <PptIcon />
-        <span className="text-xs ml-1 tb-label">{busy ? 'PPT…' : 'PPT'}</span>
-      </ToolBtn>
-
-      <button
-        onClick={() => setMenuOpen(v => !v)}
-        disabled={!hasContent || busy}
-        title="폰트 임베딩 옵션"
-        className={[
-          'flex items-center px-1 py-1.5 rounded-lg transition-colors',
-          'text-slate-300 hover:text-white hover:bg-white/10',
-          (!hasContent || busy) ? 'opacity-40 cursor-default' : '',
-        ].join(' ')}
-        style={{ marginLeft: -2 }}
-      >
-        <CaretIcon />
-      </button>
-
-      {menuOpen && (
-        <div style={{
-          position: 'absolute',
-          top: '100%',
-          left: 0, // 버튼이 툴바 왼쪽에 있으므로 오른쪽으로 펼침(화면 밖 방지)
-          marginTop: 4,
-          width: 320,
-          maxWidth: 'calc(100vw - 16px)',
-          maxHeight: 'calc(100vh - 80px)',
-          overflowY: 'auto',
-          boxSizing: 'border-box',
-          background: 'rgba(15,23,42,0.97)',
-          backdropFilter: 'blur(16px)',
-          border: '1px solid rgba(255,255,255,0.1)',
-          borderRadius: 10,
-          boxShadow: '0 12px 40px rgba(0,0,0,0.6)',
-          zIndex: 10000,
-          padding: 4,
-          userSelect: 'none',
-        }}>
+        <div>
+          <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)', padding: '0 12px 4px' }}>
+            폰트 임베딩 — 내보낼 때 기본값
+          </div>
           <MenuItem
             checked={embedFonts}
-            label="임베딩 포함하여 내보내기"
+            label="임베딩 포함"
             hint="외부 전달용 · 파일 큼"
-            onClick={() => pickAndExport(true)}
+            onClick={() => pick(true)}
           />
           <MenuItem
             checked={!embedFonts}
-            label="임베딩 없이 내보내기"
+            label="임베딩 없이"
             hint="가벼움 · 시스템 폰트 사용"
-            onClick={() => pickAndExport(false)}
+            onClick={() => pick(false)}
           />
-          <div style={{ height: 1, margin: '4px 8px', background: 'rgba(255,255,255,0.1)' }} />
-          <BackendSection
-            pythonAvailable={pythonAvailable}
-            backendUrl={backendUrl}
-            onApplyUrl={applyBackendUrl}
-            onRecheck={() => { setPythonAvailable(null); checkBackend(true).then(setPythonAvailable) }}
-          />
-          <style>{`.ppt-embed-item:hover { background: rgba(255,255,255,0.1) }`}</style>
         </div>
-      )}
 
-      {busy && createPortal(<ExportOverlay stage={stage} elapsed={elapsed} />, document.body)}
-    </div>
+        <div style={{ height: 1, background: 'rgba(255,255,255,0.1)' }} />
+
+        <BackendSection
+          pythonAvailable={pythonAvailable}
+          backendUrl={backendUrl}
+          onApplyUrl={applyBackendUrl}
+          onRecheck={() => { setPythonAvailable(null); checkBackend(true).then(setPythonAvailable) }}
+        />
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+          <button onClick={onClose} style={{
+            background: 'rgba(99,102,241,0.9)', color: '#fff', border: 'none',
+            borderRadius: 8, padding: '6px 14px', fontSize: 13, cursor: 'pointer',
+          }}>닫기</button>
+        </div>
+        <style>{`.ppt-embed-item:hover { background: rgba(255,255,255,0.1) }`}</style>
+      </div>
+    </div>,
+    document.body,
   )
 }
 
 function ExportOverlay({ stage, elapsed }) {
-  return (
+  return createPortal(
     <div style={{
       position: 'fixed', inset: 0, zIndex: 99999,
       background: 'rgba(2,6,23,0.55)', backdropFilter: 'blur(2px)',
@@ -251,7 +234,8 @@ function ExportOverlay({ stage, elapsed }) {
           @keyframes ppt-slide { 0% { left: -40% } 100% { left: 100% } }
         `}</style>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }
 
@@ -347,23 +331,5 @@ function MenuItem({ checked, label, hint, onClick }) {
         <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>{hint}</span>
       </span>
     </div>
-  )
-}
-
-function CaretIcon() {
-  return (
-    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
-      <polyline points="6 9 12 15 18 9" />
-    </svg>
-  )
-}
-
-function PptIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-      <polyline points="14 2 14 8 20 8" />
-      <path d="M9 13h3a2 2 0 1 1 0 4H9v-4zM9 17v2" />
-    </svg>
   )
 }
