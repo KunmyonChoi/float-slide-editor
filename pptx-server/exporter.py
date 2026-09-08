@@ -359,9 +359,27 @@ def build_pptx(pages: dict, default_canvas_size: dict, fonts: list = None,
         except Exception as e:
             print(f'Font embed: embedding failed: {e}')
 
+    _drop_stale_thumbnail(prs)
+
     buf = io.BytesIO()
     prs.save(buf)
     return buf.getvalue()
+
+
+def _drop_stale_thumbnail(prs):
+    """python-pptx 기본 템플릿이 딸려 보내는 빈 흰색 썸네일(docProps/thumbnail.jpeg) 제거.
+
+    macOS Finder·QuickLook은 내장 썸네일이 있으면 그걸 그대로 쓰기 때문에, 템플릿의
+    빈 이미지가 남아 있으면 '미리보기 없음'처럼 흰 종이만 보인다. 떼어내면 첫 장을
+    직접 렌더해 보여준다(브라우저 경로 결과와 같은 동작).
+    """
+    try:
+        pkg = prs.part.package
+        for rel in list(pkg._rels.values()):
+            if rel.reltype.endswith('/thumbnail'):
+                pkg.drop_rel(rel.rId)
+    except Exception as e:
+        print(f'PPT export: thumbnail drop skipped: {e}')
 
 
 def _page_sort_key(key: str):
