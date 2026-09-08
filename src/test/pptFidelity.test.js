@@ -91,4 +91,25 @@ describe('PPT 내보내기 — 뷰어에서만 드러나던 결함', () => {
     const items = await run([text({ styles: { fontSize: '30px', lineHeight: '1.5' } })])
     expect(items.find(i => i.type === 'text').opts.lineSpacing).toBe(34) // 1.5 * 30px * 0.75
   })
+  it('반투명 배경(rgba)의 알파가 fill transparency로 살아남는다', async () => {
+    // rgba(255,255,255,0.07) 카드가 불투명 흰 덩어리로 나가 그 위 흰 글씨가 사라졌다.
+    const items = await run([shape({ styles: { backgroundColor: 'rgba(255, 255, 255, 0.07)' } })])
+    const fill = items.find(i => i.type === 'shape').opts.fill
+    expect(fill.color.toUpperCase()).toBe('FFFFFF')
+    expect(fill.transparency).toBe(93)
+  })
+
+  it('요소 opacity와 색 알파가 함께 곱해진다', async () => {
+    const items = await run([shape({ styles: { backgroundColor: 'rgba(0, 0, 0, 0.5)', opacity: '0.5' } })])
+    expect(items.find(i => i.type === 'shape').opts.fill.transparency).toBe(75)
+  })
+
+  it('테두리는 border가 아니라 line 옵션으로 나간다 (pptxgenjs가 border를 무시한다)', async () => {
+    const items = await run([shape({ styles: { backgroundColor: '#111', border: '1px solid rgba(255, 255, 255, 0.15)' } })])
+    const opts = items.find(i => i.type === 'shape').opts
+    expect(opts.border).toBeUndefined()
+    expect(opts.line.color.toUpperCase()).toBe('FFFFFF')
+    expect(opts.line.transparency).toBe(85)
+    expect(opts.line.width).toBeGreaterThan(0)
+  })
 })

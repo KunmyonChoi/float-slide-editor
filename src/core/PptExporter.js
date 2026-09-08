@@ -304,7 +304,7 @@ async function addText(slide, el, pos) {
 
   // 테두리
   const border = parseBorder(s)
-  if (border) textOpts.border = border
+  if (border) textOpts.line = borderToLine(border)
 
   // 그림자
   const shadow = parseShadow(s.boxShadow)
@@ -481,14 +481,15 @@ async function addShape(slide, el, pos) {
     return
   }
 
+  const fillTransparency = mergeTransparency(transparency, solidFill?.transparency)
   const shapeOpts = {
     x: pos.x, y: pos.y, w: pos.w, h: pos.h,
     // 투명도는 fill 안에 넣어야 적용됨(pptxgenjs <a:alpha>는 fill 색상에서 생성)
-    fill: solidFill ? { ...solidFill, ...(transparency ? { transparency } : {}) } : { type: 'none' },
+    fill: solidFill ? { ...solidFill, ...(fillTransparency ? { transparency: fillTransparency } : {}) } : { type: 'none' },
   }
 
   if (pos.rotate) shapeOpts.rotate = pos.rotate
-  if (border) shapeOpts.border = border
+  if (border) shapeOpts.line = borderToLine(border)
   if (shadow) shapeOpts.shadow = shadow
 
   const isCircle = s.borderRadius && (s.borderRadius === '50%' || s.borderRadius === '9999px')
@@ -758,9 +759,20 @@ async function cssBgToPng(bg, wPx, hPx, baseColor) {
 function parseSolidFill(s) {
   if (s.backgroundColor && s.backgroundColor !== 'rgba(0, 0, 0, 0)' && s.backgroundColor !== 'transparent') {
     const hex = cssColorToHex(s.backgroundColor)
-    if (hex) return { color: hex }
+    if (!hex) return null
+    // rgba의 알파를 버리면 반투명 카드(rgba(255,255,255,0.07) 같은)가 불투명 흰 덩어리가 된다.
+    const rgba = cssColorToRgba(s.backgroundColor)
+    const a = rgba && rgba[3] != null ? rgba[3] : 1
+    return a < 1 ? { color: hex, transparency: Math.round((1 - a) * 100) } : { color: hex }
   }
   return null
+}
+
+/** 두 투명도(요소 opacity + 색 알파)를 하나로 합친다. 둘 다 0~100. */
+function mergeTransparency(a, b) {
+  if (!a) return b || undefined
+  if (!b) return a || undefined
+  return Math.round((1 - (1 - a / 100) * (1 - b / 100)) * 100)
 }
 
 function parseFill(s) {
@@ -782,7 +794,7 @@ function parseBorder(s) {
     .filter(v => v && !v.startsWith('0px'))
   if (sides.length > 0) {
     // 가장 두꺼운 border 사용 (pptxgenjs는 균일 border만 지원)
-    let maxPt = 0, maxColor = '000000'
+    let maxPt = 0, maxColor = '000000', maxAlpha
     for (const side of sides) {
       const m = side.match(/([\d.]+)px\s+\w+\s+(.+)/)
       if (m) {
@@ -790,10 +802,11 @@ function parseBorder(s) {
         if (pt > maxPt) {
           maxPt = pt
           maxColor = cssColorToHex(m[2].trim()) || '000000'
+          maxAlpha = borderAlphaOf(m[2].trim())
         }
       }
     }
-    if (maxPt > 0) return { pt: maxPt, color: maxColor }
+    if (maxPt > 0) return { pt: maxPt, color: maxColor, transparency: maxAlpha }
   }
   // 단축 속성 fallback
   const borderStr = s.border || ''
@@ -801,7 +814,28 @@ function parseBorder(s) {
   const m = borderStr.match(/([\d.]+)px\s+\w+\s+(.+)/)
   if (!m) return null
   const hex = cssColorToHex(m[2].trim())
-  return { pt: parseFloat(m[1]), color: hex || '000000' }
+  return { pt: parseFloat(m[1]), color: hex || '000000', transparency: borderAlphaOf(m[2].trim()) }
+}
+
+/** 테두리 색의 알파 → transparency(0~100). 불투명이면 undefined. */
+function borderAlphaOf(color) {
+  const rgba = cssColorToRgba(color)
+  const a = rgba && rgba[3] != null ? rgba[3] : 1
+  return a < 1 ? Math.round((1 - a) * 100) : undefined
+}
+
+/**
+ * parseBorder 결과 → pptxgenjs의 line 옵션.
+ * (v4의 도형·텍스트는 border를 읽지 않는다. border로 넘기면 <a:ln></a:ln>만 나가
+ *  테두리가 통째로 사라진다. width는 pt 단위.)
+ */
+function borderToLine(border) {
+  if (!border) return null
+  return {
+    width: Math.max(0.5, border.pt * 0.75),
+    color: border.color,
+    ...(border.transparency ? { transparency: border.transparency } : {}),
+  }
 }
 
 function parseShadow(boxShadow) {

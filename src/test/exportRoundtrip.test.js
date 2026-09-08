@@ -206,15 +206,17 @@ describe('PPT 개선 항목', () => {
     return instances[instances.length - 1]?.slides[0]
   }
 
-  it('individual border — 개별 border 속성이 PPT border로 매핑됨', async () => {
+  it('individual border — 개별 border 속성이 PPT line으로 매핑됨', async () => {
     const { individualBorders } = await import('./fixtures/export-fixtures')
     const pages = { '0-0': { elements: individualBorders.elements, canvasSize: individualBorders.canvasSize, fontImports: [] } }
     const slide = await getLastPptxSlide(pages, individualBorders.canvasSize)
     expect(slide._items.length).toBe(1)
     const opts = slide._items[0].opts
-    // border가 존재해야 함 (개별 borderBottom이 가장 두꺼움: 4px)
-    expect(opts.border).toBeDefined()
-    expect(opts.border.pt).toBe(4)
+    // pptxgenjs 도형·텍스트는 border를 읽지 않는다(line만 본다). 예전엔 border로 넘겨
+    // 테두리가 통째로 빠졌다. 가장 두꺼운 변(borderBottom 4px) → 3pt.
+    expect(opts.border).toBeUndefined()
+    expect(opts.line).toBeDefined()
+    expect(opts.line.width).toBe(3)
   })
 
   it('merged text — valign이 middle로 매핑됨', async () => {
