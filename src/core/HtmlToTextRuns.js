@@ -110,8 +110,12 @@ function walkNode(node, inherited, runs, baseStyles, listStack = []) {
 
 function buildOptions(ctx, baseStyles) {
   const opts = {}
-  if (ctx.bold) opts.bold = true
-  if (ctx.italic) opts.italic = true
+  // 굵기·기울임도 색·크기와 같이 baseStyles로 폴백한다. 요소 스타일이 font-weight:700이어도
+  // 본문에 <b>/<strong>이 없으면(예: <br>만 든 텍스트) 굵기가 통째로 빠지던 문제.
+  const baseWeight = String(baseStyles.fontWeight ?? '')
+  const baseBold = baseWeight === 'bold' || parseInt(baseWeight, 10) >= 700
+  if (ctx.bold || baseBold) opts.bold = true
+  if (ctx.italic || baseStyles.fontStyle === 'italic') opts.italic = true
   if (ctx.underline) opts.underline = { style: 'sng' }
   if (ctx.strike) opts.strike = 'sngStrike'
 

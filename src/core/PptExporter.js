@@ -190,9 +190,10 @@ function applyListStructure(textRuns) {
     })
   }
   const out = []
-  for (const lineRuns of lines) {
+  for (const [li, lineRuns] of lines.entries()) {
+    const isLastLine = li === lines.length - 1
     if (lineRuns.length === 0) {
-      out.push({ text: '', options: { breakLine: true } })
+      out.push({ text: '', options: { breakLine: !isLastLine } })
       continue
     }
     let listType = null
@@ -207,7 +208,7 @@ function applyListStructure(textRuns) {
         r.options.bullet = listType === 'ol' ? { type: 'number' } : true
         if (listLevel > 0) r.options.indentLevel = listLevel
       }
-      if (ri === lineRuns.length - 1) r.options.breakLine = true
+      if (ri === lineRuns.length - 1 && !isLastLine) r.options.breakLine = true
       out.push(r)
     })
   }
@@ -237,9 +238,10 @@ async function addText(slide, el, pos) {
   let textRuns
   if (el.isRich && el.content) {
     textRuns = htmlToTextRuns(el.content, { ...s, color: effectiveColor })
-    if (textRuns.some(r => r.options && r.options.listType)) {
-      textRuns = applyListStructure(textRuns)
-    }
+    // 목록이든 아니든 항상 줄 단위로 편다. 안 그러면 <br>에서 온 '\n'이 런 텍스트에
+    // 그대로 실려 <a:t>\r\n</a:t>로 나가는데, OOXML은 이걸 줄바꿈으로 치지 않아
+    // 뷰어에 따라 둘째 줄이 통째로 사라진다(LibreOffice에서 확인).
+    textRuns = applyListStructure(textRuns)
   } else {
     const opts = {}
     if (effectiveColor) opts.color = cssColorToHex(effectiveColor)
@@ -313,9 +315,13 @@ async function addText(slide, el, pos) {
     textOpts.transparency = Math.round((1 - parseFloat(s.opacity)) * 100)
   }
 
-  // borderRadius
+  // borderRadius — 도형 종류까지 roundRect로 바꿔야 반경이 적용된다(rect는 무시)
   if (s.borderRadius && s.borderRadius !== '0px') {
-    textOpts.rectRadius = Math.round(parseFloat(s.borderRadius) * PX_TO_INCH * 100) / 100
+    const isCircleBox = s.borderRadius === '50%' || s.borderRadius === '9999px'
+    textOpts.rectRadius = isCircleBox
+      ? Math.min(pos.w, pos.h) / 2
+      : Math.round(parseFloat(s.borderRadius) * PX_TO_INCH * 100) / 100
+    textOpts.shape = 'roundRect'
   }
 
   // padding (multi-value 지원: "16px", "8px 16px", "8px 16px 12px", "8px 16px 12px 24px")
@@ -332,13 +338,18 @@ async function addText(slide, el, pos) {
     }
   }
 
-  // 행간
+  // 행간 — pptxgenjs lineSpacing은 pt. CSS line-height는 px('43.5px')·배수('1.45')·%('145%')
+  // 어느 쪽으로도 들어오므로 먼저 px로 환산한 뒤 pt로 바꾼다. (px 값에 fontSize를 다시
+  // 곱하던 버그가 있었다 — 30px 글자에 행간 979pt가 나가 뷰어에서 줄이 통째로 밀려났다.)
   if (s.lineHeight) {
-    const lh = parseFloat(s.lineHeight)
+    const raw = String(s.lineHeight).trim()
+    const lh = parseFloat(raw)
     if (!isNaN(lh) && lh > 0) {
-      // pptxgenjs lineSpacing은 pt 단위 — lineHeight * fontSize
       const fontSize = parseFloat(s.fontSize) || 16
-      textOpts.lineSpacing = Math.round(lh * fontSize * 0.75)
+      const px = raw.endsWith('px') ? lh
+        : raw.endsWith('%') ? (lh / 100) * fontSize
+        : lh * fontSize // 단위 없는 배수(em 포함)
+      textOpts.lineSpacing = Math.round(px * 0.75)
     }
   }
 
@@ -487,7 +498,8 @@ async function addShape(slide, el, pos) {
     shapeOpts.rectRadius = Math.round(parseFloat(s.borderRadius) * PX_TO_INCH * 100) / 100
   }
 
-  slide.addShape('rect', shapeOpts)
+  // rectRadius는 roundRect에만 먹는다 — 'rect'로 보내면 adj가 붙어도 무시돼 각지게 나온다.
+  slide.addShape(shapeOpts.rectRadius ? 'roundRect' : 'rect', shapeOpts)
 
   // 부분 채우기(진행률/악센트) — 트랙 위에 N% 솔리드 사각형 (exporter.py _add_partial_fill 미러)
   if (el.fillRatio != null) addPartialFill(slide, el, pos)
@@ -518,7 +530,7 @@ function addPartialFill(slide, el, pos) {
     const isCircle = s.borderRadius === '50%' || s.borderRadius === '9999px'
     opts.rectRadius = isCircle ? Math.min(w, h) / 2 : Math.round(parseFloat(s.borderRadius) * PX_TO_INCH * 100) / 100
   }
-  slide.addShape('rect', opts)
+  slide.addShape(opts.rectRadius ? 'roundRect' : 'rect', opts)
 }
 
 async function addSvg(slide, el, pos) {
