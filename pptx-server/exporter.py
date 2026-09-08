@@ -360,10 +360,39 @@ def build_pptx(pages: dict, default_canvas_size: dict, fonts: list = None,
             print(f'Font embed: embedding failed: {e}')
 
     _drop_stale_thumbnail(prs)
+    _ensure_notes_master_id(prs)
 
     buf = io.BytesIO()
     prs.save(buf)
     return buf.getvalue()
+
+
+def _ensure_notes_master_id(prs):
+    """발표자 노트를 쓰면 presentation.xml에 <p:notesMasterIdLst>가 있어야 한다.
+
+    python-pptx는 notesMaster 파트와 관계는 만들면서 이 목록은 넣지 않는다. PowerPoint는
+    넘어가지만 엄격한 판독기(예: macOS QuickLook의 오피스 렌더러)는 파일을 못 읽어
+    파인더 미리보기가 통째로 비어 버린다. pptxgenjs 출력에는 들어 있다.
+
+    스키마 순서상 sldMasterIdLst 바로 뒤에 온다.
+    """
+    try:
+        rel = next((r for r in prs.part._rels.values() if r.reltype.endswith('/notesMaster')), None)
+        if rel is None:
+            return
+        pres = prs._element
+        if pres.find(qn('p:notesMasterIdLst')) is not None:
+            return
+        from lxml import etree
+        from pptx.oxml.ns import _nsmap
+        lst = etree.SubElement(pres, qn('p:notesMasterIdLst'))
+        node = etree.SubElement(lst, qn('p:notesMasterId'))
+        node.set('{%s}id' % _nsmap['r'], rel.rId)
+        master_lst = pres.find(qn('p:sldMasterIdLst'))
+        if master_lst is not None:
+            master_lst.addnext(lst)
+    except Exception as e:
+        print(f'PPT export: notesMasterIdLst skipped: {e}')
 
 
 def _drop_stale_thumbnail(prs):
