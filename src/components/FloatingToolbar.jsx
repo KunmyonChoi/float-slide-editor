@@ -9,6 +9,7 @@ import ShortcutsButton from './ShortcutsButton'
 import AvatarRecorderButton from './AvatarRecorderButton'
 import CameraCaptureButton from './CameraCaptureButton'
 import { hasApiKey } from '../core/OpenAIClient'
+import { readRememberedPlacement, clearRememberedPlacement, describePlacement } from '../core/screenPlacement'
 import { openAiSettings } from './AiSettingsModal'
 
 const FALLBACK_SAMPLE = `<!DOCTYPE html>
@@ -108,7 +109,8 @@ const FALLBACK_SAMPLE = `<!DOCTYPE html>
  * 발표 모드에서는 완전히 숨겨진다.
  */
 export default function FloatingToolbar() {
-  const { slideHtml, mode, enterPresentation, autoAdvance, setAutoAdvance, karaokeCaptions, setKaraokeCaptions } = useEditorStore()
+  const { slideHtml, mode, enterPresentation, autoAdvance, setAutoAdvance, karaokeCaptions, setKaraokeCaptions,
+          presenterView, setPresenterView } = useEditorStore()
   const { viewMode, setViewMode, extractFromIframe, debugMode, flatPageCount, flatCurrentPage } = useFlatStore()
   const [presentMenuOpen, setPresentMenuOpen] = useState(false)
   const iframeRef = useEditorStore(s => s.iframeRef)
@@ -175,6 +177,8 @@ export default function FloatingToolbar() {
         disabled={flatPageCount === 0 && !slideHtml}
         open={presentMenuOpen}
         setOpen={setPresentMenuOpen}
+        presenterView={presenterView}
+        setPresenterView={setPresenterView}
         autoAdvance={autoAdvance}
         setAutoAdvance={setAutoAdvance}
         captionsOn={karaokeCaptions}
@@ -282,7 +286,7 @@ function ViewModeToggle({ viewMode, disabled, onChange }) {
 }
 
 // 발표 분할 버튼: 메인=처음부터, ▾=옵션(현재부터 / 음성 후 자동 진행 토글 / 자막 선택)
-function PresentMenu({ disabled, open, setOpen, autoAdvance, setAutoAdvance, captionsOn, onCaptionsChange, onStart, onStartHere }) {
+function PresentMenu({ disabled, open, setOpen, presenterView, setPresenterView, autoAdvance, setAutoAdvance, captionsOn, onCaptionsChange, onStart, onStartHere }) {
   useEffect(() => {
     if (!open) return
     const onDown = (e) => { if (!e.target.closest?.('[data-present-menu]')) setOpen(false) }
@@ -290,7 +294,6 @@ function PresentMenu({ disabled, open, setOpen, autoAdvance, setAutoAdvance, cap
     return () => document.removeEventListener('pointerdown', onDown, true)
   }, [open, setOpen])
 
-  const item = 'flex items-center gap-2 w-full text-left px-3 py-2 text-xs text-slate-200 hover:bg-white/10 disabled:opacity-40'
   return (
     <div data-present-menu className="relative flex items-center">
       <button
@@ -308,33 +311,75 @@ function PresentMenu({ disabled, open, setOpen, autoAdvance, setAutoAdvance, cap
         className="px-1.5 py-1.5 rounded-r-lg text-xs text-indigo-300 hover:text-white hover:bg-indigo-600/50 disabled:opacity-30 disabled:cursor-not-allowed transition-colors border-l border-white/15"
       >▾</button>
       {open && (
-        <div className="absolute left-0 top-full mt-1 z-[200] w-40 rounded-lg border border-white/10 bg-slate-800 shadow-xl overflow-hidden">
-          <button className={item} onClick={() => { setOpen(false); onStartHere() }}>현재 페이지</button>
-          <div className="h-px bg-white/10" />
-          <label className="flex items-center gap-2 px-3 py-2 text-xs text-slate-200 cursor-pointer hover:bg-white/10">
-            <input type="checkbox" checked={autoAdvance} onChange={e => setAutoAdvance(e.target.checked)} className="accent-indigo-500" />
-            자동 진행
-          </label>
-          <div className="h-px bg-white/10" />
-          {/* 자막(STT) — 발표 시작 전에 미리 선택. 켜두면 시작 슬라이드 전사를 먼저 마치고
-              나머지는 진행 순서대로 백그라운드에서 준비해, 발표 중간에 자막이 늦게 뜨는 걸 막는다. */}
-          <label
-            className="flex items-center justify-between gap-2 px-3 py-2 text-xs text-slate-200"
-            title="STT로 노트 음성을 받아써 카라오케 자막으로 표시 — 발표 시작 전에 미리 준비합니다"
-          >
-            자막
-            <select
-              value={captionsOn ? 'karaoke' : 'off'}
-              onChange={e => onCaptionsChange(e.target.value === 'karaoke')}
-              onClick={e => e.stopPropagation()}
-              className="bg-white/10 border border-white/10 rounded px-1.5 py-0.5 text-[11px] text-slate-200 cursor-pointer"
-            >
-              <option value="off">끄기</option>
-              <option value="karaoke">카라오케(STT)</option>
-            </select>
-          </label>
+        <div className="absolute left-0 top-full mt-1 z-[200] w-64 rounded-lg border border-white/10 bg-slate-800 shadow-xl overflow-hidden py-1">
+          {/* 시작 지점 */}
+          <MenuAction icon={<StartHereIcon />} onClick={() => { setOpen(false); onStartHere() }}>
+            현재 페이지부터
+          </MenuAction>
+
+          <div className="my-1 h-px bg-white/10" />
+
+          {/* 발표 옵션 — 세 줄 모두 같은 틀: 아이콘 · 라벨 · 오른쪽 체크박스 · 아래 설명 */}
+          <MenuToggle
+            icon={<PresenterIcon />}
+            label="발표자 보기"
+            checked={presenterView}
+            onChange={setPresenterView}
+            note={presenterView
+              ? <ScreenHint />
+              : '슬라이드와 노트를 두 화면에 나눠 엽니다'}
+          />
+          <MenuToggle
+            icon={<AutoAdvanceIcon />}
+            label="음성 후 자동 진행"
+            checked={autoAdvance}
+            onChange={setAutoAdvance}
+            note="노트 음성이 끝나면 다음 장으로 넘어갑니다"
+          />
+          <MenuToggle
+            icon={<CaptionIcon />}
+            label="카라오케 자막"
+            checked={captionsOn}
+            onChange={onCaptionsChange}
+            note="노트 음성을 받아써 단어별로 표시합니다 (STT)"
+          />
         </div>
       )}
+    </div>
+  )
+}
+
+// ── 발표 옵션 메뉴의 줄 ────────────────────────────────
+// 세 옵션이 각기 다른 모양(왼쪽 체크박스 / 오른쪽 체크박스 / 셀렉트)이라 메뉴가 산만했다.
+// 아이콘·라벨·컨트롤 자리를 하나로 고정하고, 설명은 라벨 아래 같은 들여쓰기로 붙인다.
+
+const MENU_ROW = 'flex items-center gap-2 w-full px-3 py-1.5 text-xs text-slate-200 hover:bg-white/10'
+// 설명 줄을 라벨과 같은 x에 맞춘다 — px-3(12) + 아이콘(14) + gap-2(8)
+const MENU_NOTE = 'pr-3 pb-1.5 pl-[34px] text-[10px] leading-snug text-slate-500'
+
+function MenuAction({ icon, onClick, children }) {
+  return (
+    <button type="button" onClick={onClick} className={`${MENU_ROW} text-left disabled:opacity-40`}>
+      <span className="shrink-0 text-slate-400">{icon}</span>
+      <span className="flex-1">{children}</span>
+    </button>
+  )
+}
+
+function MenuToggle({ icon, label, checked, onChange, note }) {
+  return (
+    <div>
+      <label className={`${MENU_ROW} cursor-pointer`}>
+        <span className={`shrink-0 ${checked ? 'text-indigo-300' : 'text-slate-400'}`}>{icon}</span>
+        <span className="flex-1">{label}</span>
+        <input
+          type="checkbox"
+          checked={checked}
+          onChange={e => onChange(e.target.checked)}
+          className="shrink-0 accent-indigo-500"
+        />
+      </label>
+      {typeof note === 'string' ? <div className={MENU_NOTE}>{note}</div> : note}
     </div>
   )
 }
@@ -390,6 +435,87 @@ export function RedoIcon() {
   return (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
       <path d="M21 7v6h-6" /><path d="M21 13C19 7 13 4 7 6S-2 14 0 20" />
+    </svg>
+  )
+}
+
+// 발표자 보기 — 큰 화면(청중) + 작은 화면(발표자) 두 개를 겹쳐 그린 아이콘
+function PresenterIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+      strokeLinecap="round" strokeLinejoin="round">
+      <rect x="2" y="4" width="12" height="9" rx="1.5" />
+      <rect x="16" y="7" width="6" height="5" rx="1" />
+      <line x1="8" y1="17" x2="8" y2="20" /><line x1="5" y1="20" x2="11" y2="20" />
+    </svg>
+  )
+}
+
+/**
+ * 발표자 보기가 어떻게 열릴지 알려준다.
+ *
+ * 한 번 고른 배치는 기억해 두고 다음 발표에서는 묻지 않으므로, 그 기억을 여기서 보여주고
+ * 지울 수 있게 한다(지우면 다음 발표에서 다시 묻는다). 아직 고른 적이 없으면 지금 환경만
+ * 귀띔한다 — screen.isExtended는 권한 프롬프트 없이 읽을 수 있어(Chrome) 메뉴를 여는
+ * 것만으로 사용자를 귀찮게 하지 않는다.
+ */
+function ScreenHint() {
+  const [remembered, setRemembered] = useState(() => readRememberedPlacement())
+  const described = describePlacement(remembered)
+
+  if (described) {
+    return (
+      <div className={`${MENU_NOTE} flex items-center gap-2`}>
+        <span className="truncate">{described}</span>
+        <button
+          type="button"
+          title="기억을 지우고 다음 발표에서 다시 고르기"
+          onClick={() => { clearRememberedPlacement(); setRemembered(null) }}
+          className="ml-auto shrink-0 rounded border border-white/10 px-1.5 py-0.5 text-slate-400 hover:bg-white/10 hover:text-slate-200"
+        >다시 고르기</button>
+      </div>
+    )
+  }
+
+  const extended = typeof window !== 'undefined' && window.screen?.isExtended
+  const supported = typeof window !== 'undefined' && typeof window.getScreenDetails === 'function'
+  const text = extended
+    ? (supported
+      ? '시작할 때 청중 화면을 고릅니다'
+      : '청중 창을 일반 창으로 열고 끌어다 놓습니다')
+    : '화면이 하나 — 시작할 때 리허설로 할지 묻습니다'
+  return <div className={MENU_NOTE}>{text}</div>
+}
+
+// 현재 페이지부터 — 슬라이드 안에서 재생 시작
+function StartHereIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+      strokeLinecap="round" strokeLinejoin="round">
+      <rect x="2" y="4" width="20" height="14" rx="2" />
+      <path d="M10 9.5l4 2.5-4 2.5z" fill="currentColor" stroke="none" />
+    </svg>
+  )
+}
+
+// 음성 후 자동 진행 — 재생 후 다음으로
+function AutoAdvanceIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+      strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 5l10 7-10 7z" />
+      <line x1="19" y1="5" x2="19" y2="19" />
+    </svg>
+  )
+}
+
+// 카라오케 자막 — 자막 상자
+function CaptionIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+      strokeLinecap="round" strokeLinejoin="round">
+      <rect x="2" y="5" width="20" height="14" rx="2.5" />
+      <line x1="6.5" y1="13" x2="11" y2="13" /><line x1="14" y1="13" x2="17.5" y2="13" />
     </svg>
   )
 }
