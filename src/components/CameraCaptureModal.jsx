@@ -13,6 +13,9 @@ const useStore = create(() => ({ open: false }))
 export function openCameraCapture() { useStore.setState({ open: true }) }
 function close() { useStore.setState({ open: false }) }
 
+// 미리보기 최대 높이 — 세로 촬영이어도 대화상자가 창을 넘지 않게.
+const PREVIEW_MAX_H = 'min(60vh, 480px)'
+
 const MAX_SEC = 120 // 안전 상한(자동 정지)
 
 // MediaRecorder 지원 mime 우선순위(webm vp9 → vp8 → 기본 → mp4)
@@ -51,6 +54,9 @@ function Dialog() {
   const [devices, setDevices] = useState([])
   const [deviceId, setDeviceId] = useState('')
   const [mirror, setMirror] = useState(true)
+  // 카메라가 주는 실제 비율. 미리보기 틀을 여기에 맞춰야 "보이는 구도 = 저장되는 구도"가 된다.
+  // (16:9 고정 틀 + cover였을 때는 세로 촬영에서 상하가 잘려 보이는데 파일은 원본이라 어긋났다.)
+  const [aspect, setAspect] = useState(16 / 9)
   const [recordedUrl, setRecordedUrl] = useState('')
   const recordedUrlRef = useRef('')
   const recordedBlobRef = useRef(null)
@@ -173,10 +179,21 @@ function Dialog() {
           {phase === 'recording' && <div style={{ fontSize: 13, color: '#fca5a5', fontWeight: 700 }}>● REC {fmt(elapsed)} / {fmt(MAX_SEC)}</div>}
         </div>
 
-        <div style={{ position: 'relative', width: '100%', aspectRatio: '16 / 9', background: '#000', borderRadius: 12, overflow: 'hidden' }}>
+        {/* 미리보기 틀 = 카메라 실제 비율. 세로 영상이면 틀도 세로로 좁아진다(레터박스 없이 딱 맞게).
+            높이는 창을 넘지 않도록 제한하고, 그만큼 폭을 함께 줄여 비율을 유지한다. */}
+        <div style={{
+          position: 'relative', margin: '0 auto',
+          width: `min(100%, calc(${PREVIEW_MAX_H} * ${aspect}))`,
+          aspectRatio: aspect,
+          background: '#000', borderRadius: 12, overflow: 'hidden',
+        }}>
           {/* 라이브 프리뷰 (리뷰 단계에선 숨김) */}
           <video ref={videoRef} autoPlay playsInline muted
-            style={{ width: '100%', height: '100%', objectFit: 'cover', display: phase === 'review' ? 'none' : 'block', transform: mirror ? 'scaleX(-1)' : 'none' }} />
+            onLoadedMetadata={e => {
+              const v = e.currentTarget
+              if (v.videoWidth && v.videoHeight) setAspect(v.videoWidth / v.videoHeight)
+            }}
+            style={{ width: '100%', height: '100%', objectFit: 'contain', display: phase === 'review' ? 'none' : 'block', transform: mirror ? 'scaleX(-1)' : 'none' }} />
           {/* 녹화 리뷰 재생 */}
           {phase === 'review' && recordedUrl && (
             <video src={recordedUrl} controls playsInline
