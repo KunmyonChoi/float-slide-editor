@@ -5,7 +5,7 @@ import { useFlatStore } from '../store/flatStore'
 /**
  * PageBar
  * 화면 하단 고정 페이지 컨트롤.
- * Flat 모드: flatStore 기반 페이지 관리 (추가/삭제 포함)
+ * Flat 모드: flatStore 기반 페이지 표시·이동
  * HTML 모드: editorStore 기반 iframe 네비게이션
  */
 export default function PageBar() {
@@ -133,9 +133,19 @@ export default function PageBar() {
 
   const pageLabel = { color: '#94a3b8', fontSize: 13, fontVariantNumeric: 'tabular-nums', userSelect: 'none' }
 
+  // 하단 바의 페이지 이동 버튼 — 손가락으로 누르는 자리라 아이콘·타깃을 키운다.
+  const navBtnStyle = (enabled) => ({
+    ...btnStyle(enabled), width: 40, height: 30, fontSize: 22,
+    borderRadius: 6, touchAction: 'manipulation',
+  })
+
+  const canPrev = flatCurrentPage > 0 && !preloading
+  const canNext = flatCurrentPage < flatPageCount - 1 && !preloading
+
   // ── Flat 모드: flatStore 기반 ──
-  // 페이지 이동·순서변경은 슬라이드 목록 패널에서 직접 하므로 하단 바에는 두지 않음.
-  // 페이지 표시 + 추가/삭제만 유지.
+  // 페이지 표시 + 앞뒤 이동. 좁은 화면에서는 슬라이드 목록 패널이 가려져 페이지를
+  // 넘길 손잡이가 없으므로, 이 자리를 이동 버튼에 내준다(터치로 누를 수 있는 크기).
+  // 추가/삭제는 목록 패널의 컨텍스트 메뉴와 Ctrl+M / Ctrl+Shift+M 에 남아 있다.
   if (isFlatMode && flatPageCount > 0) {
     return (
       <div style={{ ...barStyle, position: 'relative' }}>
@@ -154,15 +164,21 @@ export default function PageBar() {
         >
           <NoteIcon /> 노트
         </button>
-        <span style={pageLabel}>{flatCurrentPage + 1} / {flatPageCount}</span>
-        <span style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.1)', margin: '0 4px' }} />
-        <button onClick={() => useFlatStore.getState().addPage('titleContent')} style={{ ...btnStyle(true), fontSize: 14, width: 24, height: 24 }} title="페이지 추가 (Ctrl+M)">+</button>
         <button
-          onClick={() => { if (flatPageCount > 1) useFlatStore.getState().deletePage() }}
-          disabled={flatPageCount <= 1}
-          style={{ ...btnStyle(flatPageCount > 1), fontSize: 14, width: 24, height: 24 }}
-          title="페이지 삭제 (Ctrl+Shift+M)"
-        >&minus;</button>
+          onClick={() => { if (!preloading) useFlatStore.getState().navigateFlatPage(-1) }}
+          disabled={!canPrev}
+          style={navBtnStyle(canPrev)}
+          title="이전 페이지 (PageUp)"
+          aria-label="이전 페이지"
+        >&#8249;</button>
+        <span style={pageLabel}>{flatCurrentPage + 1} / {flatPageCount}</span>
+        <button
+          onClick={() => { if (!preloading) useFlatStore.getState().navigateFlatPage(1) }}
+          disabled={!canNext}
+          style={navBtnStyle(canNext)}
+          title="다음 페이지 (PageDown)"
+          aria-label="다음 페이지"
+        >&#8250;</button>
       </div>
     )
   }
