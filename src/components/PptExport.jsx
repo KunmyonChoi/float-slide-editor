@@ -10,12 +10,26 @@ import { APP_VERSION } from '../appVersion'
 import { promptUrl } from './UrlPrompt'
 
 const EMBED_PREF_KEY = 'ppt-embed-fonts'
+const NARRATION_PREF_KEY = 'ppt-embed-narration'
 
 // 사용자 입력 파일명 → 안전한 .pptx 파일명 (경로문자 제거, 확장자 보정)
 function normalizePptxName(raw) {
   let n = (raw || '').trim().replace(/[\\/:*?"<>|]/g, '').replace(/\.pptx$/i, '').trim()
   if (!n) n = 'slide-export'
   return `${n}.pptx`
+}
+
+/** 나레이션 음성 포함 여부 — 기본 켬(파일은 커지지만 발표 그대로 넘어간다). */
+function loadNarrationPref() {
+  try {
+    return localStorage.getItem(NARRATION_PREF_KEY) !== 'false'
+  } catch {
+    return true
+  }
+}
+
+function saveNarrationPref(val) {
+  try { localStorage.setItem(NARRATION_PREF_KEY, String(val)) } catch { /* ignore */ }
 }
 
 function loadEmbedPref() {
@@ -87,7 +101,9 @@ export async function runPptExport(embed) {
       usePptStore.setState({ stage: '브라우저에서 생성 중… (pptxgenjs)' })
       console.log('%c[PPT Export] pptxgenjs 엔진 사용 (fallback)', 'color:#f59e0b;font-weight:bold')
       const { exportToPptx } = await import('../core/PptExporter.js')
-      await exportToPptx(pages, canvasSize, { editorVersion: APP_VERSION, filename })
+      await exportToPptx(pages, canvasSize, {
+        editorVersion: APP_VERSION, filename, embedNarration: loadNarrationPref(),
+      })
     }
   } catch (err) {
     console.error('PPT 내보내기 실패:', err)
@@ -113,6 +129,7 @@ export function PptExportHost() {
 function PptSettingsModal({ onClose }) {
   const [pythonAvailable, setPythonAvailable] = useState(null) // null=확인중
   const [embedFonts, setEmbedFonts] = useState(loadEmbedPref)
+  const [narration, setNarration] = useState(loadNarrationPref)
   const [backendUrl, setBackendUrl] = useState(() => getBackendBase())
 
   useEffect(() => { checkBackend().then(setPythonAvailable) }, [])
@@ -131,6 +148,7 @@ function PptSettingsModal({ onClose }) {
   }, [])
 
   const pick = (val) => { setEmbedFonts(val); savePref(val) }
+  const pickNarration = (val) => { setNarration(val); saveNarrationPref(val) }
 
   return createPortal(
     <div
@@ -165,6 +183,24 @@ function PptSettingsModal({ onClose }) {
             label="임베딩 없이"
             hint="가벼움 · 시스템 폰트 사용"
             onClick={() => pick(false)}
+          />
+        </div>
+
+        <div>
+          <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)', padding: '0 12px 4px' }}>
+            나레이션 음성
+          </div>
+          <MenuItem
+            checked={narration}
+            label="슬라이드에 넣기"
+            hint="장이 뜨면 자동 재생 · 파일이 커진다"
+            onClick={() => pickNarration(true)}
+          />
+          <MenuItem
+            checked={!narration}
+            label="넣지 않기"
+            hint="화면·노트만 · 파일이 가볍다"
+            onClick={() => pickNarration(false)}
           />
         </div>
 

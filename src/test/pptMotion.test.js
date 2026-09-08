@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
+import JSZip from 'jszip'
 import {
-  animObjectName, buildTransitionXml, buildTimingXml, readSpids, injectSlideMotion,
+  animObjectName, buildTransitionXml, buildTimingXml, readSpids, injectSlideMotion, applyMotionToPptx,
 } from '../core/PptMotion'
 
 const el = (id, anim) => ({ id, type: 'shape', x: 0, y: 0, width: 10, height: 10, zIndex: 1, styles: {}, anim })
@@ -128,5 +129,76 @@ describe('PptMotion — 슬라이드 주입', () => {
   it('모션이 없으면 원본 그대로 돌려준다', () => {
     const src = slide(cvNode(2, 'Shape 1'))
     expect(injectSlideMotion(src, { elements: [el('a', null)], transition: null })).toBe(src)
+  })
+})
+
+describe('PptMotion — 나레이션', () => {
+  it('애니메이션이 없어도 오디오만으로 timing을 만든다', () => {
+    const xml = buildTimingXml([], new Map(), { spid: 9, volume: 1 })
+    expect(xml).toContain('<p:audio>')
+    expect(xml).toContain('<p:cond delay="0"/>')      // 슬라이드 진입 즉시
+    expect(xml).toContain('showWhenStopped="0"')       // 발표 중 아이콘 숨김
+    expect(xml).toContain('<p:spTgt spid="9"/>')
+    expect(xml).not.toContain('<p:seq')                // 등장 효과가 없으니 시퀀스도 없다
+  })
+
+  it('볼륨을 PowerPoint 스케일로 옮긴다', () => {
+    expect(buildTimingXml([], new Map(), { spid: 9, volume: 0.5 })).toContain('vol="50000"')
+  })
+
+  it('등장 효과와 나레이션이 같이 있으면 둘 다 실린다', () => {
+    const xml = buildTimingXml([el('a', anim())], spids({ a: [2] }), { spid: 9 })
+    expect(xml).toContain('<p:seq')
+    expect(xml).toContain('<p:audio>')
+  })
+})
+
+describe('PptMotion — 패키징', () => {
+  const minimalPptx = async () => {
+    const zip = new JSZip()
+    zip.file('[Content_Types].xml',
+      '<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
+      '<Default Extension="xml" ContentType="application/xml"/></Types>')
+    zip.file('ppt/presentation.xml', '<p:presentation><p:sldSz cx="12192000" cy="6858000"/></p:presentation>')
+    zip.file('ppt/slides/slide1.xml', '<p:sld><p:cSld><p:spTree></p:spTree></p:cSld></p:sld>')
+    zip.file('ppt/slides/_rels/slide1.xml.rels',
+      '<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+      '<Relationship Id="rId1" Type="slideLayout" Target="../slideLayouts/slideLayout1.xml"/></Relationships>')
+    return zip.generateAsync({ type: 'uint8array' })
+  }
+
+  it('mp3·포스터·관계·오디오 도형·타이밍을 한 벌로 넣는다', async () => {
+    const src = await minimalPptx()
+    const out = await applyMotionToPptx(src, [{ elements: [], transition: null }], [
+      { bytes: new Uint8Array([1, 2, 3]), ext: 'mp3', volume: 0.8 },
+    ])
+    const zip = await JSZip.loadAsync(out)
+
+    expect(zip.file('ppt/media/narration1.mp3')).toBeTruthy()
+    expect(zip.file('ppt/media/narration-poster.png')).toBeTruthy()
+
+    const ct = await zip.file('[Content_Types].xml').async('string')
+    expect(ct).toContain('Extension="mp3"')
+    expect(ct).toContain('audio/mpeg')
+
+    const rels = await zip.file('ppt/slides/_rels/slide1.xml.rels').async('string')
+    expect(rels).toContain('relationships/audio')
+    expect(rels).toContain('2007/relationships/media')
+    expect(rels).toContain('../media/narration1.mp3')
+
+    const xml = await zip.file('ppt/slides/slide1.xml').async('string')
+    expect(xml).toContain('<a:audioFile')
+    expect(xml).toContain('ppaction://media')
+    expect(xml).toContain('<p:audio>')
+    expect(xml).toContain('vol="80000"')
+  })
+
+  it('나레이션이 없으면 미디어를 건드리지 않는다', async () => {
+    const out = await applyMotionToPptx(await minimalPptx(), [{ elements: [], transition: { type: 'fade' } }], [null])
+    const zip = await JSZip.loadAsync(out)
+    expect(Object.keys(zip.files).some(n => n.startsWith('ppt/media/'))).toBe(false)
+    const xml = await zip.file('ppt/slides/slide1.xml').async('string')
+    expect(xml).toContain('<p:transition')
+    expect(xml).not.toContain('<a:audioFile')
   })
 })

@@ -3,9 +3,9 @@
  */
 import { htmlToTextRuns, cssColorToHex, applyTextTransform } from './HtmlToTextRuns'
 import { animObjectName, applyMotionToPptx } from './PptMotion'
+import { BlobStore } from './BlobStore'
 import { parseGradient } from './GradientParser'
 import { cssColorToRgba } from './CssColor'
-import { BlobStore } from './BlobStore'
 import { DEFAULT_VIZ, barCount, staticFrame, drawViz } from './audioViz'
 
 // px → inches (96 DPI 기준)
@@ -38,7 +38,7 @@ async function contentToDataUrl(content) {
  * @param {Object} pages - { [pageKey]: { elements, canvasSize, fontImports } }
  * @param {Object} defaultCanvasSize - 기본 캔버스 크기
  */
-export async function exportToPptx(pages, defaultCanvasSize, { editorVersion = '', filename = 'slide-export.pptx' } = {}) {
+export async function exportToPptx(pages, defaultCanvasSize, { editorVersion = '', filename = 'slide-export.pptx', embedNarration = true } = {}) {
   const PptxGenJS = (await import('pptxgenjs')).default
   const pptx = new PptxGenJS()
 
@@ -86,12 +86,31 @@ export async function exportToPptx(pages, defaultCanvasSize, { editorVersion = '
   const hasMotion = ordered.some(p =>
     (p?.transition && p.transition.type && p.transition.type !== 'none') ||
     (p?.elements || []).some(el => el?.anim?.effect && el.anim.effect !== 'none'))
-  if (!hasMotion) {
+  const narration = embedNarration ? await collectNarration(ordered) : []
+  if (!hasMotion && !narration.some(Boolean)) {
     await pptx.writeFile({ fileName: filename })
     return
   }
   const raw = await pptx.write({ outputType: 'blob' })
-  downloadBlob(await applyMotionToPptx(raw, ordered), filename)
+  downloadBlob(await applyMotionToPptx(raw, ordered, narration), filename)
+}
+
+/** 페이지별 나레이션 음성을 바이트로 모은다. 없거나 못 읽으면 그 자리는 null. */
+async function collectNarration(pages) {
+  return Promise.all(pages.map(async (page) => {
+    const ref = page?.notesAudio
+    if (!ref) return null
+    try {
+      const blob = BlobStore.isIdbRef(ref) ? await BlobStore.get(BlobStore.parseRef(ref)) : null
+      if (!blob) return null
+      const type = blob.type || ''
+      const ext = type.includes('wav') ? 'wav' : type.includes('mp4') || type.includes('m4a') ? 'm4a' : 'mp3'
+      return { bytes: await blob.arrayBuffer(), ext, volume: page.notesAudioVolume ?? 1 }
+    } catch (e) {
+      console.warn('PPT export: 나레이션을 싣지 못했습니다', e)
+      return null
+    }
+  }))
 }
 
 /** 브라우저 다운로드 — pptx.writeFile 대신 우리가 가공한 blob을 내려준다. */

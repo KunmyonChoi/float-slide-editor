@@ -97,13 +97,14 @@ function stepPar(effects, { autoStart }, ids) {
 }
 
 /**
- * 요소들의 anim → `<p:timing>`. 애니메이션이 하나도 없으면 ''.
+ * 요소들의 anim(+나레이션) → `<p:timing>`. 실을 게 없으면 ''.
  * @param {Array} elements flat 요소 (anim 있는 것만 쓴다)
- * @param {Map<string, number>} spidOf 요소 id → 슬라이드 도형 id
+ * @param {Map<string, number[]>} spidOf 요소 id → 슬라이드 도형 id들
+ * @param {{spid:number, volume?:number}|null} [audio] 슬라이드 진입 시 자동 재생할 나레이션
  */
-export function buildTimingXml(elements, spidOf) {
+export function buildTimingXml(elements, spidOf, audio = null) {
   const usable = (elements || []).filter(e => e?.anim && EFFECT_MAP[e.anim.effect] && spidOf.get(e.id)?.length)
-  if (!usable.length) return ''
+  if (!usable.length && !audio) return ''
 
   const info = computeSteps(usable)
   const byId = new Map(usable.map(e => [e.id, e]))
@@ -134,22 +135,42 @@ export function buildTimingXml(elements, spidOf) {
       effects: stepIds.flatMap(id => expand(id, info.offsetOf[id] || 0)),
     })
   }
-  if (!steps.length) return ''
+  if (!steps.length && !audio) return ''
 
   const body = steps.map(st => stepPar(st.effects, { autoStart: st.autoStart }, ids)).join('')
+  const seq = steps.length
+    ? '<p:seq concurrent="1" nextAc="seek">' +
+      `<p:cTn id="2" dur="indefinite" nodeType="mainSeq"><p:childTnLst>${body}</p:childTnLst></p:cTn>` +
+      '<p:prevCondLst><p:cond evt="onPrev" delay="0"><p:tgtEl><p:sldTgt/></p:tgtEl></p:cond></p:prevCondLst>' +
+      '<p:nextCondLst><p:cond evt="onNext" delay="0"><p:tgtEl><p:sldTgt/></p:tgtEl></p:cond></p:nextCondLst>' +
+      '</p:seq>'
+    : ''
+  const audioNode = audio ? audioMediaNode(audio, ids) : ''
   const bld = [...new Set(usable.flatMap(e => spidOf.get(e.id)))]
     .map(spid => `<p:bldP spid="${spid}" grpId="0" animBg="1"/>`).join('')
 
   return '<p:timing><p:tnLst><p:par>' +
     '<p:cTn id="1" dur="indefinite" restart="never" nodeType="tmRoot"><p:childTnLst>' +
-    '<p:seq concurrent="1" nextAc="seek">' +
-    `<p:cTn id="2" dur="indefinite" nodeType="mainSeq"><p:childTnLst>${body}</p:childTnLst></p:cTn>` +
-    '<p:prevCondLst><p:cond evt="onPrev" delay="0"><p:tgtEl><p:sldTgt/></p:tgtEl></p:cond></p:prevCondLst>' +
-    '<p:nextCondLst><p:cond evt="onNext" delay="0"><p:tgtEl><p:sldTgt/></p:tgtEl></p:cond></p:nextCondLst>' +
-    '</p:seq>' +
+    seq + audioNode +
     '</p:childTnLst></p:cTn></p:par></p:tnLst>' +
-    `<p:bldLst>${bld}</p:bldLst>` +
+    (bld ? `<p:bldLst>${bld}</p:bldLst>` : '') +
     '</p:timing>'
+}
+
+/**
+ * 나레이션 → 슬라이드가 뜨는 즉시 재생되는 오디오 노드.
+ * showWhenStopped="0" 이라 발표 중에는 스피커 아이콘이 보이지 않는다.
+ */
+function audioMediaNode({ spid, volume = 1 }, ids) {
+  const vol = Math.round(Math.min(1, Math.max(0, volume)) * 100000)
+  return '<p:audio>' +
+    `<p:cMediaNode vol="${vol}" showWhenStopped="0">` +
+    `<p:cTn id="${ids.next()}" fill="hold" display="0">` +
+    '<p:stCondLst><p:cond delay="0"/></p:stCondLst>' +
+    '<p:endCondLst><p:cond evt="onStopAudio" delay="0"><p:tgtEl><p:sldTgt/></p:tgtEl></p:cond></p:endCondLst>' +
+    '</p:cTn>' +
+    `<p:tgtEl><p:spTgt spid="${spid}"/></p:tgtEl>` +
+    '</p:cMediaNode></p:audio>'
 }
 
 /**
@@ -166,28 +187,125 @@ export function readSpids(slideXml) {
 }
 
 /** 한 장 분량 주입 — 스키마상 transition·timing은 p:sld의 마지막 자식이다. */
-export function injectSlideMotion(slideXml, page) {
+export function injectSlideMotion(slideXml, page, audio = null) {
   const spidOf = readSpids(slideXml)
   const transition = buildTransitionXml(page?.transition)
-  const timing = buildTimingXml(page?.elements, spidOf)
+  const timing = buildTimingXml(page?.elements, spidOf, audio)
   if (!transition && !timing) return slideXml
   return slideXml.replace('</p:sld>', `${transition}${timing}</p:sld>`)
 }
 
+// 오디오 도형에 필요한 미리보기 이미지(1x1 투명 PNG) — PowerPoint가 blipFill을 요구한다.
+const POSTER_PNG_B64 =
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='
+const POSTER_PATH = 'ppt/media/narration-poster.png'
+const EMU_PER_INCH = 914400
+
+/** [Content_Types].xml에 확장자 기본값이 없으면 넣는다. */
+function ensureDefault(ctXml, ext, type) {
+  if (new RegExp(`Extension="${ext}"`, 'i').test(ctXml)) return ctXml
+  return ctXml.replace(/(<Types[^>]*>)/, `$1<Default Extension="${ext}" ContentType="${type}"/>`)
+}
+
+/** rels에 관계를 추가하고 부여한 Id를 돌려준다. */
+function addRel(relsXml, type, target) {
+  const used = [...relsXml.matchAll(/Id="rId(\d+)"/g)].map(m => Number(m[1]))
+  const id = `rId${(used.length ? Math.max(...used) : 0) + 1}`
+  const rel = `<Relationship Id="${id}" Type="${type}" Target="${target}"/>`
+  return { xml: relsXml.replace('</Relationships>', `${rel}</Relationships>`), id }
+}
+
+const REL_AUDIO = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/audio'
+const REL_MEDIA = 'http://schemas.microsoft.com/office/2007/relationships/media'
+const REL_IMAGE = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/image'
+
+/** 슬라이드 안에서 아직 안 쓴 도형 id. */
+function nextShapeId(slideXml) {
+  const used = [...slideXml.matchAll(/<p:cNvPr id="(\d+)"/g)].map(m => Number(m[1]))
+  return (used.length ? Math.max(...used) : 1) + 1
+}
+
 /**
- * pptxgenjs가 만든 파일에 모션을 싣는다.
+ * 나레이션 오디오 도형을 슬라이드에 심는다(우하단 구석, 발표 중에는 숨김).
+ * @returns {{xml:string, spid:number}}
+ */
+function insertAudioPic(slideXml, { spid, audioRid, mediaRid, posterRid, name, slideW, slideH }) {
+  const size = Math.round(0.3 * EMU_PER_INCH)
+  const x = Math.max(0, slideW - size - Math.round(0.1 * EMU_PER_INCH))
+  const y = Math.max(0, slideH - size - Math.round(0.1 * EMU_PER_INCH))
+  const pic = '<p:pic><p:nvPicPr>' +
+    `<p:cNvPr id="${spid}" name="${name}"><a:hlinkClick r:id="" action="ppaction://media"/></p:cNvPr>` +
+    '<p:cNvPicPr><a:picLocks noChangeAspect="1"/></p:cNvPicPr>' +
+    `<p:nvPr><a:audioFile r:link="${audioRid}"/><p:extLst>` +
+    '<p:ext uri="{DAA4B4D4-6D71-4841-9C94-3DE7FCFB9230}">' +
+    `<p14:media xmlns:p14="http://schemas.microsoft.com/office/powerpoint/2010/main" r:embed="${mediaRid}"/>` +
+    '</p:ext></p:extLst></p:nvPr>' +
+    '</p:nvPicPr>' +
+    `<p:blipFill><a:blip r:embed="${posterRid}"/><a:stretch><a:fillRect/></a:stretch></p:blipFill>` +
+    `<p:spPr><a:xfrm><a:off x="${x}" y="${y}"/><a:ext cx="${size}" cy="${size}"/></a:xfrm>` +
+    '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr>' +
+    '</p:pic>'
+  return { xml: slideXml.replace('</p:spTree>', `${pic}</p:spTree>`), spid }
+}
+
+/** presentation.xml에서 슬라이드 크기(EMU)를 읽는다. */
+function readSlideSize(presXml) {
+  const m = presXml?.match(/<p:sldSz[^>]*cx="(\d+)"[^>]*cy="(\d+)"/)
+  return m ? { w: Number(m[1]), h: Number(m[2]) } : { w: 9144000, h: 6858000 }
+}
+
+/**
+ * pptxgenjs가 만든 파일에 모션(전환·등장)과 나레이션을 싣는다.
  * @param {Blob|ArrayBuffer|Uint8Array} pptxData
  * @param {Array} pagesInOrder 슬라이드 순서와 같은 페이지 배열({elements, transition})
+ * @param {Array<{bytes:ArrayBuffer|Uint8Array, ext:string, volume?:number}|null>} [narration]
+ *        페이지별 나레이션. 없는 장은 null.
  * @returns {Promise<Blob>}
  */
-export async function applyMotionToPptx(pptxData, pagesInOrder) {
+export async function applyMotionToPptx(pptxData, pagesInOrder, narration = []) {
   const zip = await JSZip.loadAsync(pptxData)
+  const hasNarration = narration.some(Boolean)
+  let ct = await zip.file('[Content_Types].xml')?.async('string')
+  const size = readSlideSize(await zip.file('ppt/presentation.xml')?.async('string'))
+
+  if (hasNarration && ct) {
+    for (const ext of new Set(narration.filter(Boolean).map(n => n.ext))) {
+      ct = ensureDefault(ct, ext, ext === 'wav' ? 'audio/wav' : ext === 'm4a' ? 'audio/mp4' : 'audio/mpeg')
+    }
+    ct = ensureDefault(ct, 'png', 'image/png')
+    zip.file('[Content_Types].xml', ct)
+    zip.file(POSTER_PATH, POSTER_PNG_B64, { base64: true })
+  }
+
   for (let i = 0; i < pagesInOrder.length; i++) {
     const name = `ppt/slides/slide${i + 1}.xml`
     const file = zip.file(name)
     if (!file) continue
-    const xml = await file.async('string')
-    zip.file(name, injectSlideMotion(xml, pagesInOrder[i]))
+    let xml = await file.async('string')
+    let audio = null
+
+    const nar = narration[i]
+    if (nar?.bytes) {
+      const mediaPath = `ppt/media/narration${i + 1}.${nar.ext}`
+      zip.file(mediaPath, nar.bytes)
+      const relsName = `ppt/slides/_rels/slide${i + 1}.xml.rels`
+      let rels = await zip.file(relsName)?.async('string')
+      if (rels) {
+        const target = `../media/narration${i + 1}.${nar.ext}`
+        const a = addRel(rels, REL_AUDIO, target); rels = a.xml
+        const m = addRel(rels, REL_MEDIA, target); rels = m.xml
+        const p = addRel(rels, REL_IMAGE, '../media/narration-poster.png'); rels = p.xml
+        zip.file(relsName, rels)
+        const spid = nextShapeId(xml)
+        xml = insertAudioPic(xml, {
+          spid, audioRid: a.id, mediaRid: m.id, posterRid: p.id,
+          name: `narration${i + 1}.${nar.ext}`, slideW: size.w, slideH: size.h,
+        }).xml
+        audio = { spid, volume: nar.volume ?? 1 }
+      }
+    }
+
+    zip.file(name, injectSlideMotion(xml, pagesInOrder[i], audio))
   }
   return zip.generateAsync({
     type: 'blob',
