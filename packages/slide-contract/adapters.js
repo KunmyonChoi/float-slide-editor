@@ -21,6 +21,8 @@ export function internalElementToPublic(el) {
     type: el.type,
     x: el.x, y: el.y, width: el.width, height: el.height,
   }
+  // id는 모션이 요소를 가리키는 열쇠다(anim.trigger.ref, 타이밍 대상 매칭). 빠지면 모션이 어긋난다.
+  if (el.id != null) out.id = el.id
   if (el.rotation) out.rotation = el.rotation
   if (el.zIndex) out.z = el.zIndex
   if (el.type === 'text') {
@@ -55,6 +57,7 @@ export function internalElementToPublic(el) {
 /** 공개 SlideElement → 내부 FlatElement (엔진 입력) */
 export function publicElementToInternal(pel) {
   const out = {
+    ...(pel.id != null ? { id: pel.id } : {}),
     type: pel.type,
     x: pel.x, y: pel.y, width: pel.width, height: pel.height,
     rotation: pel.rotation || 0,

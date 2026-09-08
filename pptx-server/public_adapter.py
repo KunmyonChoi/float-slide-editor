@@ -7,6 +7,8 @@ JS packages/slide-contract/adapters.js 의 deckToInternalPages 미러.
 
 def _public_el_to_internal(pel: dict) -> dict:
     out = {
+        # id는 모션이 요소를 가리키는 열쇠(anim.trigger.ref, 타이밍 대상 매칭).
+        'id': pel.get('id'),
         'type': pel.get('type'),
         'x': pel.get('x'), 'y': pel.get('y'),
         'width': pel.get('width'), 'height': pel.get('height'),
