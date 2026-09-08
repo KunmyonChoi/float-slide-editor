@@ -202,3 +202,27 @@ describe('PptMotion — 패키징', () => {
     expect(xml).not.toContain('<a:audioFile')
   })
 })
+
+describe('PptMotion — 자동 진행(나레이션 있는 장)', () => {
+  it('나레이션이 있으면 클릭 대신 앞 단계에 이어서 자동 진행한다', () => {
+    const els = [el('a', anim({ seq: 0 })), el('b', anim({ seq: 1 }))]
+    const clickOnly = buildTimingXml(els, spids({ a: [2], b: [3] }))
+    const chained = buildTimingXml(els, spids({ a: [2], b: [3] }), { spid: 9 }, { autoChain: true })
+
+    expect((clickOnly.match(/delay="indefinite"/g) || []).length).toBe(2)
+    expect(chained).not.toContain('delay="indefinite"')
+    expect((chained.match(/nodeType="afterEffect"/g) || []).length).toBe(2)
+  })
+
+  it('단계 사이에 발표 모드와 같은 텀(AUDIO_TERM)을 둔다', () => {
+    const chained = buildTimingXml([el('a', anim())], spids({ a: [2] }), { spid: 9 }, { autoChain: true })
+    expect(chained).toContain('<p:cond delay="300"/>')
+  })
+
+  it('injectSlideMotion은 나레이션이 실린 장만 자동 진행으로 만든다', () => {
+    const slide = `<p:sld><p:cSld>${cvNode(2, animObjectName('a'))}</p:cSld></p:sld>`
+    const page = { elements: [el('a', anim())], transition: null }
+    expect(injectSlideMotion(slide, page, null)).toContain('delay="indefinite"')
+    expect(injectSlideMotion(slide, page, { spid: 9 })).not.toContain('delay="indefinite"')
+  })
+})

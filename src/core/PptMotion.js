@@ -12,6 +12,7 @@
  */
 import JSZip from 'jszip'
 import { computeSteps, DEFAULT_DUR } from './slideAnimation'
+import { AUDIO_TERM } from './usePresentationEngine'
 
 /** 애니메이션 대상 도형에 붙일 이름 — 내보내기와 후처리가 공유하는 약속. */
 export const animObjectName = (elId) => `anim:${elId}`
@@ -81,8 +82,12 @@ function effectPar({ spid, anim, delay, nodeType }, ids) {
     '</p:childTnLst></p:cTn></p:par>'
 }
 
-/** 한 단계(클릭 한 번 또는 자동 시작) → 2겹 par로 감싼다. */
-function stepPar(effects, { autoStart }, ids) {
+/**
+ * 한 단계 → 2겹 par로 감싼다.
+ * autoStart면 앞 단계가 끝나는 대로 이어서(=파워포인트 '이전 효과 다음에'),
+ * 아니면 클릭을 기다린다. groupDelay는 단계 시작 전 텀(ms).
+ */
+function stepPar(effects, { autoStart, groupDelay = 0 }, ids) {
   if (!effects.length) return ''
   const inner = effects.map((e, i) => effectPar({
     ...e, nodeType: i === 0 ? (autoStart ? 'afterEffect' : 'clickEffect') : 'withEffect',
@@ -91,18 +96,23 @@ function stepPar(effects, { autoStart }, ids) {
     `<p:cTn id="${ids.next()}" fill="hold">` +
     `<p:stCondLst><p:cond delay="${autoStart ? '0' : 'indefinite'}"/></p:stCondLst>` +
     '<p:childTnLst><p:par>' +
-    `<p:cTn id="${ids.next()}" fill="hold"><p:stCondLst><p:cond delay="0"/></p:stCondLst>` +
+    `<p:cTn id="${ids.next()}" fill="hold"><p:stCondLst><p:cond delay="${Math.max(0, Math.round(groupDelay))}"/></p:stCondLst>` +
     `<p:childTnLst>${inner}</p:childTnLst>` +
     '</p:cTn></p:par></p:childTnLst></p:cTn></p:par>'
 }
 
 /**
  * 요소들의 anim(+나레이션) → `<p:timing>`. 실을 게 없으면 ''.
+ *
+ * autoChain: 클릭 단계를 '이전 효과 다음에'로 바꿔 원고가 흐르는 동안 저절로 진행시킨다.
+ * 발표 모드가 음성 있는 슬라이드에서 하는 것과 같다(단계 사이 AUDIO_TERM 텀까지 동일).
+ *
  * @param {Array} elements flat 요소 (anim 있는 것만 쓴다)
  * @param {Map<string, number[]>} spidOf 요소 id → 슬라이드 도형 id들
  * @param {{spid:number, volume?:number}|null} [audio] 슬라이드 진입 시 자동 재생할 나레이션
+ * @param {{autoChain?:boolean}} [opts]
  */
-export function buildTimingXml(elements, spidOf, audio = null) {
+export function buildTimingXml(elements, spidOf, audio = null, { autoChain = false } = {}) {
   const usable = (elements || []).filter(e => e?.anim && EFFECT_MAP[e.anim.effect] && spidOf.get(e.id)?.length)
   if (!usable.length && !audio) return ''
 
@@ -126,18 +136,19 @@ export function buildTimingXml(elements, spidOf, audio = null) {
         .flatMap(id => expand(id, info.autoOffsets[id])),
     })
   }
-  // 클릭 단계
+  // 클릭 단계 — autoChain이면 클릭 대신 앞 단계에 이어서 자동 진행한다.
   for (let s = 0; s < info.stepCount; s++) {
     const stepIds = info.order.filter(id => info.stepOf[id] === s)
     if (!stepIds.length) continue
     steps.push({
-      autoStart: false,
+      autoStart: autoChain,
+      groupDelay: autoChain ? AUDIO_TERM : 0,
       effects: stepIds.flatMap(id => expand(id, info.offsetOf[id] || 0)),
     })
   }
   if (!steps.length && !audio) return ''
 
-  const body = steps.map(st => stepPar(st.effects, { autoStart: st.autoStart }, ids)).join('')
+  const body = steps.map(st => stepPar(st.effects, { autoStart: st.autoStart, groupDelay: st.groupDelay }, ids)).join('')
   const seq = steps.length
     ? '<p:seq concurrent="1" nextAc="seek">' +
       `<p:cTn id="2" dur="indefinite" nodeType="mainSeq"><p:childTnLst>${body}</p:childTnLst></p:cTn>` +
@@ -190,7 +201,8 @@ export function readSpids(slideXml) {
 export function injectSlideMotion(slideXml, page, audio = null) {
   const spidOf = readSpids(slideXml)
   const transition = buildTransitionXml(page?.transition)
-  const timing = buildTimingXml(page?.elements, spidOf, audio)
+  // 나레이션이 실린 장은 앱 발표 모드처럼 저절로 흐르게 한다(클릭 없이).
+  const timing = buildTimingXml(page?.elements, spidOf, audio, { autoChain: !!audio })
   if (!transition && !timing) return slideXml
   return slideXml.replace('</p:sld>', `${transition}${timing}</p:sld>`)
 }

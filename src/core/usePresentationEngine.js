@@ -25,7 +25,9 @@ const INK_COLORS = ['#ef4444', '#f59e0b', '#3b82f6', '#ffffff', '#111827']
 const CAPTION_PREFETCH_TIMEOUT_MS = 10000
 
 // 음성 있는 슬라이드의 빌드 자동 진행 텀
-const AUDIO_TERM = 300
+// 나레이션이 있는 슬라이드에서 단계와 단계 사이에 두는 텀(ms).
+// PPT 내보내기(PptMotion)도 같은 값을 써서 재생 리듬을 맞춘다.
+export const AUDIO_TERM = 300
 
 export { INK_COLORS }
 
