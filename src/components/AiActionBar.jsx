@@ -9,7 +9,7 @@ import { startVideoMatteJob } from '../core/videoMatteRunner'
 import { checkMatteHealth } from '../core/VideoMatteBackendClient'
 import { checkCutoutBackend } from '../core/CutoutBackendClient'
 import {
-  startTextToImageJob, startImageEditJob, startOutpaintJob,
+  startTextToImageJob, startImageEditJob, startImageRemixJob, startOutpaintJob,
   startCutoutJob, startInfographicJob,
 } from '../core/imageJobRunner'
 import { openAiSettings } from './AiSettingsModal'
@@ -29,7 +29,7 @@ import { useDraggableToolbar, GripHandle } from './useDraggableToolbar'
  * 따라서 생성 중에도 캔버스를 계속 편집할 수 있고, 결과 확인·적용은 트레이가 담당한다.
  */
 export default function AiActionBar({ elements, scale, canvasRef }) {
-  // 'idle' | 'edit'(설명으로 편집 입력) | 'lipsync'(음성 선택)
+  // 'idle' | 'edit'(설명으로 편집 입력) | 'remix'(리믹스 방향 입력) | 'lipsync'(음성 선택)
   const [phase, setPhase] = useState('idle')
   const [menuOpen, setMenuOpen] = useState(false)
   const [styleOpen, setStyleOpen] = useState(false)
@@ -126,6 +126,13 @@ export default function AiActionBar({ elements, scale, canvasRef }) {
     setPhase('idle'); setPrompt(''); setMaskOn(false); setMaskCount(0)
   }, [prompt, maskOn, single])
 
+  const runRemix = useCallback(() => {
+    if (!single) return
+    const started = startImageRemixJob({ element: single, direction: prompt.trim(), pageKey: pageKey() })
+    if (!started) { openAiSettings(); return }
+    setPhase('idle'); setPrompt('')
+  }, [prompt, single])
+
   const runOutpaint = useCallback(() => {
     closeMenus()
     if (!single) return
@@ -188,6 +195,10 @@ export default function AiActionBar({ elements, scale, canvasRef }) {
     items.push({
       id: 'outpaint', label: '여백까지 그림 채우기', onClick: runOutpaint,
       disabled: !isContainFit, reason: '이미지가 ‘맞추기’ 모드일 때만 — 지금은 채울 여백이 없어요',
+    })
+    items.push({
+      id: 'remix', label: '리믹스…',
+      onClick: () => { closeMenus(); setPrompt(''); setPhase('remix') },
     })
     items.push({ id: 'cutout', label: '피사체 뒤에 글자 넣기', onClick: runCutout, note: busy === 'cutout' ? '확인 중…' : '로컬 서버' })
   }
@@ -348,6 +359,32 @@ export default function AiActionBar({ elements, scale, canvasRef }) {
               style={{ ...primaryBtnStyle, opacity: prompt.trim() ? 1 : 0.5, cursor: prompt.trim() ? 'pointer' : 'default' }}>
               편집 시작
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* 리믹스 — 방향 입력 패널(비워도 실행: 스타일·구도만 이어받아 재창조) */}
+      {phase === 'remix' && single && (
+        <div data-edit-accessory="true" onMouseDown={e => e.stopPropagation()} style={panelStyle(panelLeft, panelTop, PANEL_W)}>
+          <div style={panelTitleStyle}><SparkleIcon /> 리믹스</div>
+          <div style={hintStyle}>
+            원본의 화풍·구도만 이어받아 <b style={{ color: '#cbd5e1' }}>새 이미지를 다시 그립니다</b>.
+            방향은 선택 — 비우면 그대로 재창조합니다.
+          </div>
+          <textarea
+            value={prompt}
+            onChange={e => setPrompt(e.target.value)}
+            rows={3}
+            autoFocus
+            spellCheck={false}
+            placeholder="예: 같은 화풍으로 바다 풍경 · 인물 대신 사물 · 좀 더 밝은 분위기"
+            onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); runRemix() } }}
+            style={textareaStyle}
+          />
+          <div style={hintStyle}>시작하면 작업 트레이에서 진행되고, 완료 후 트레이에서 적용합니다.</div>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+            <button type="button" onClick={() => setPhase('idle')} style={ghostBtnStyle}>취소</button>
+            <button type="button" onClick={runRemix} style={primaryBtnStyle}>리믹스 시작</button>
           </div>
         </div>
       )}

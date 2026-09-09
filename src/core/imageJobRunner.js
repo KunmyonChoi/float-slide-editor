@@ -4,7 +4,7 @@ import { BlobStore } from './BlobStore'
 import { nextFlatId } from './FlatExtractor'
 import {
   hasApiKey, generateImagePrompt, generateImage, generateIdeogramCaption,
-  analyzeImageForInfographic, editImage,
+  analyzeImageForInfographic, editImage, analyzeImageForRemix,
 } from './OpenAIClient'
 import { generateLayoutImage, checkImagenBackend } from './ImagenBackendClient'
 import { isLocalLlmEnabled } from './LlmBackendClient'
@@ -317,6 +317,62 @@ function startCaptureEditJob({ element, pageKey, now, kind, label, fit, prepare 
     j().updateJob(id, { statusText: '이미지 편집 중…', progress: 40 })
     const url = await editImage(input, p, { width: element.width, height: element.height, mask, signal: ctrl.signal })
     j().completeJob(id, { blob: await urlToBlob(url), prompt: p, beforeBlob: await urlToBlob(input), area: rect, fit })
+  })
+
+  return id
+}
+
+/**
+ * 리믹스 — 원본을 픽셀로 고치지 않고 "다시 그린다".
+ *
+ * 편집(img2img)은 원본 픽셀에 묶여 큰 변화를 못 준다. 그래서 비전으로 스타일·구도를
+ * 영문 프롬프트로 받아 적은 뒤(analyzeImageForRemix) 그 텍스트만으로 새 이미지를
+ * 생성한다(describe-then-generate). direction을 주면 소재·분위기를 그쪽으로 튼다.
+ */
+export function startImageRemixJob({ element, direction = '', pageKey, now = Date.now() }) {
+  if (!hasApiKey()) return null
+  const store = useAiJobStore.getState()
+  const ctrl = new AbortController()
+  const rect = { x: element.x, y: element.y, w: element.width, h: element.height }
+  const fit = element?.styles?.objectFit || 'contain'
+  const dir = (direction || '').trim()
+
+  const id = store.startJob({
+    kind: 'image-edit', // 트레이 미리보기·전후비교는 편집과 같은 취급
+    label: dir ? `리믹스 · ${dir.slice(0, 20)}` : '리믹스',
+    targetPageKey: pageKey || null,
+    targetElementId: element.id,
+    createdAt: now,
+    abort: () => ctrl.abort(),
+    applyOptions: [
+      { mode: 'replace', label: '원본 교체' },
+      { mode: 'add', label: '새로 추가' },
+    ],
+    apply: async (job, opts) => {
+      const st = useFlatStore.getState()
+      const { el: live, rect: at } = liveTarget(job, rect)
+      if (opts.mode !== 'add') {
+        const ok = st.applyToElementOnPage(job.targetPageKey, job.targetElementId, {
+          content: await resultRef(job), isRich: false, styles: { objectFit: fit },
+        })
+        if (ok) return
+      }
+      await addImageElement(job, at, { styles: { objectFit: fit }, offset: true, base: live })
+    },
+  })
+
+  runJob(id, async () => {
+    const j = () => useAiJobStore.getState()
+    j().updateJob(id, { statusText: '이미지 캡처 중…', progress: 10 })
+    const cap = await captureElementRegion(rect, { signal: ctrl.signal })
+    j().updateJob(id, { statusText: '원본 스타일·구도 분석 중…', progress: 30 })
+    const genPrompt = await analyzeImageForRemix(cap, { direction: dir, signal: ctrl.signal })
+    j().updateJob(id, { statusText: '새 이미지 그리는 중…', progress: 55 })
+    const url = await generateImage(genPrompt, { width: element.width, height: element.height, signal: ctrl.signal })
+    j().completeJob(id, {
+      blob: await urlToBlob(url), prompt: genPrompt,
+      beforeBlob: await urlToBlob(cap), area: rect, fit,
+    })
   })
 
   return id
