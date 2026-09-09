@@ -52,6 +52,7 @@ export default function AiActionBar({ elements, scale, canvasRef }) {
   const [rect, setRect] = useState(null)
   const [tick, setTick] = useState(0)
   const diagramMode = useFlatStore(s => s.diagramMode)
+  const debugMode = useFlatStore(s => s.debugMode)
   const flatElements = useFlatStore(s => s.flatElements)
   const pageNotesAudio = useFlatStore(s => s.pageNotesAudio)
 
@@ -196,10 +197,13 @@ export default function AiActionBar({ elements, scale, canvasRef }) {
       disabled: !videoUsable, reason: '임베드·외부 URL 영상은 쓸 수 없어요 (로컬·업로드 영상만)',
       note: busy === 'matte' ? '확인 중…' : '로컬 서버',
     })
-    items.push({
-      id: 'lipsync', label: '립싱크…', onClick: () => { closeMenus(); setPhase('lipsync') },
-      disabled: !videoUsable, reason: '임베드·외부 URL 영상은 쓸 수 없어요 (로컬·업로드 영상만)',
-    })
+    // 립싱크는 아직 다듬는 중 — 디버그 모드에서만 노출한다(파일 ▸ 디버그 모드).
+    if (debugMode) {
+      items.push({
+        id: 'lipsync', label: '립싱크…', onClick: () => { closeMenus(); setPhase('lipsync') },
+        disabled: !videoUsable, reason: '임베드·외부 URL 영상은 쓸 수 없어요 (로컬·업로드 영상만)',
+      })
+    }
   }
 
   // 드래그 이동 — 그립 핸들로 바를 자유 위치로(선택이 바뀌면 자동 복귀)

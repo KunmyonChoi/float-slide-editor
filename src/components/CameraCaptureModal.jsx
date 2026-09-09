@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { insertVideoBlob } from '../core/insertVideoBlob'
+import { useFlatStore } from '../store/flatStore'
 
 /**
  * 웹캠 녹화 모달 (셀프 아바타 Phase 1) — openCameraCapture()로 연다.
@@ -57,6 +58,7 @@ function Dialog() {
   // 카메라가 주는 실제 비율. 미리보기 틀을 여기에 맞춰야 "보이는 구도 = 저장되는 구도"가 된다.
   // (16:9 고정 틀 + cover였을 때는 세로 촬영에서 상하가 잘려 보이는데 파일은 원본이라 어긋났다.)
   const [aspect, setAspect] = useState(16 / 9)
+  const debugMode = useFlatStore(s => s.debugMode)
   const [recordedUrl, setRecordedUrl] = useState('')
   const recordedUrlRef = useRef('')
   const recordedBlobRef = useRef(null)
@@ -238,9 +240,12 @@ function Dialog() {
           <button type="button" style={ghostBtn} onClick={onClose} disabled={busy}>닫기</button>
         </div>
 
+        {/* 립싱크는 디버그 모드에서만 노출되므로, 안내도 그때만 보여준다. */}
         <div style={{ fontSize: 11, color: '#64748b', lineHeight: 1.5 }}>
-          녹화 영상은 <b style={{ color: '#94a3b8' }}>구동 영상</b>으로 쓸 수 있습니다 — 삽입 후 영상 선택 ▸ ✨ AI ▸ 립싱크로
-          노트 음성에 맞춰 입을 합성하고, 배경 제거로 투명 아바타를 만들 수 있습니다.
+          {debugMode
+            ? <>녹화 영상은 <b style={{ color: '#94a3b8' }}>구동 영상</b>으로 쓸 수 있습니다 — 삽입 후 영상 선택 ▸ ✨ AI ▸ 립싱크로
+              노트 음성에 맞춰 입을 합성하고, 배경 제거로 투명 아바타를 만들 수 있습니다.</>
+            : <>삽입 후 영상을 선택하고 <b style={{ color: '#94a3b8' }}>✨ AI ▸ 배경 지우기</b>로 투명 아바타를 만들 수 있습니다.</>}
         </div>
       </div>
     </div>,
