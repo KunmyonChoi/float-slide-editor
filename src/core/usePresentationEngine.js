@@ -122,6 +122,11 @@ export function usePresentationEngine({ onExit } = {}) {
   const [revealed, setRevealed] = useState(0)        // 진행한 빌드 단계 수(0..stepCount)
   const [playingStep, setPlayingStep] = useState(-1) // 지금 재생 중인 단계(-1=없음)
 
+  // 자동 진행 타이머가 "지금 몇 단계까지 나왔는지"를 읽기 위한 거울 — 발표자가 손으로 앞질러
+  // 갔는데 뒤늦게 깨어난 타이머가 화면을 되감는 일을 막는다.
+  const revealedRef = useRef(0)
+  useEffect(() => { revealedRef.current = revealed }, [revealed])
+
   // allPages 로드 후 범위 클램프(시작 인덱스가 총 슬라이드 수 초과 방지)
   useEffect(() => {
     if (allPages && sortedKeys.length > 0) {
@@ -207,6 +212,8 @@ export function usePresentationEngine({ onExit } = {}) {
   const [narration, setNarration] = useState(true)
   // '음성 후 자동 진행'은 발표 전에도 설정 가능하도록 editorStore에 보관(localStorage 기억)
   const autoAdvance = useEditorStore(s => s.autoAdvance)
+  // '애니메이션 자동 재생' — 음성 유무와 무관하게 빌드 단계를 클릭 없이 순서대로 흘려보낸다.
+  const autoBuild = useEditorStore(s => s.autoBuild)
   const audioSrc = page?.notesAudio
   const hasAudio = !!audioSrc && BlobStore.isIdbRef(audioSrc)
   // 덱에 음성이 하나라도 있으면 나레이션 컨트롤 노출
@@ -245,19 +252,28 @@ export function usePresentationEngine({ onExit } = {}) {
     el.play().catch(() => { /* 무시 */ })
   }, [page?.notesAudioVolume])
 
-  // 음성 있는 슬라이드: 클릭 트리거를 자동으로 — 단계마다 이전 종료 후 0.3초 텀 자동 진행.
+  // 클릭 없이 빌드 단계를 순서대로 자동 재생 — 단계마다 이전 종료 후 0.3초 텀.
+  // 켜지는 경우는 두 가지다.
+  //  1) 음성 있는 슬라이드: 나레이션에 맞춰 클릭 트리거를 자동으로 흘려보낸다.
+  //  2) '애니메이션 자동 재생' 옵션: 음성이 없어도 같은 리듬으로 흘려보낸다 — 클릭해 가며
+  //     나레이션을 읽기 힘든 상황용. 마지막 단계까지 나오면 그대로 멈춘다.
   // (슬라이드→슬라이드 자동 전환은 별도 '음성 후 자동 진행' 토글이 담당.)
+  const autoPlaySteps = autoBuild || (narration && hasAudio)
   useEffect(() => {
-    if (loading || !(narration && hasAudio) || animInfo.stepCount === 0) return
+    if (loading || !autoPlaySteps || animInfo.stepCount === 0) return
     const durs = stepDurations(animInfo, elements)
     const timers = []
     let t = AUDIO_TERM
     for (let s = 0; s < animInfo.stepCount; s++) {
-      timers.push(setTimeout(() => { setPlayingStep(s); setRevealed(s + 1) }, t))
+      timers.push(setTimeout(() => {
+        if (revealedRef.current > s) return // 발표자가 이미 앞질러 감 — 되감지 않는다
+        setPlayingStep(s)
+        setRevealed(s + 1)
+      }, t))
       t += durs[s] + AUDIO_TERM
     }
     return () => timers.forEach(clearTimeout)
-  }, [currentSlide, narration, hasAudio, animInfo, elements, loading])
+  }, [currentSlide, autoPlaySteps, animInfo, elements, loading])
 
   // ── 가라오케 자막(STT 단어별 하이라이트) ──
   const captionsOn = useEditorStore(s => s.karaokeCaptions)
@@ -349,7 +365,7 @@ export function usePresentationEngine({ onExit } = {}) {
     blackout, setBlackout, slideStrokes, inkBySlide, commitStroke, eraseStroke, clearSlideInk,
     // 나레이션
     setAudioEl, getAudioTime, getAudioStatus,
-    narration, setNarration, hasAudio, deckHasAudio, autoAdvance,
+    narration, setNarration, hasAudio, deckHasAudio, autoAdvance, autoBuild,
     onAudioEnded, replayAudio,
     // 자막
     captionsOn, toggleCaptions, captionWords, captionBusy, captionErr,

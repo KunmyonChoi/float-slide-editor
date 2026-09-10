@@ -108,8 +108,8 @@ const FALLBACK_SAMPLE = `<!DOCTYPE html>
  * 발표 모드에서는 완전히 숨겨진다.
  */
 export default function FloatingToolbar() {
-  const { slideHtml, mode, enterPresentation, autoAdvance, setAutoAdvance, karaokeCaptions, setKaraokeCaptions,
-          presenterView, setPresenterView } = useEditorStore()
+  const { slideHtml, mode, enterPresentation, autoAdvance, setAutoAdvance, autoBuild, setAutoBuild,
+          karaokeCaptions, setKaraokeCaptions, presenterView, setPresenterView } = useEditorStore()
   const { viewMode, setViewMode, extractFromIframe, debugMode, flatPageCount, flatCurrentPage } = useFlatStore()
   const [presentMenuOpen, setPresentMenuOpen] = useState(false)
   const iframeRef = useEditorStore(s => s.iframeRef)
@@ -168,7 +168,7 @@ export default function FloatingToolbar() {
 
       <Divider />
 
-      {/* 발표 — 메인 버튼(처음부터) + ▾ 옵션(현재부터 / 음성 후 자동 진행). flat 페이지나 HTML 덱이 있으면 활성 */}
+      {/* 발표 — 메인 버튼(처음부터) + ▾ 옵션(현재부터 / 자동 재생·자동 진행 / 자막). flat 페이지나 HTML 덱이 있으면 활성 */}
       <PresentMenu
         disabled={flatPageCount === 0 && !slideHtml}
         open={presentMenuOpen}
@@ -177,6 +177,8 @@ export default function FloatingToolbar() {
         setPresenterView={setPresenterView}
         autoAdvance={autoAdvance}
         setAutoAdvance={setAutoAdvance}
+        autoBuild={autoBuild}
+        setAutoBuild={setAutoBuild}
         captionsOn={karaokeCaptions}
         onCaptionsChange={(on) => {
           if (on && !hasApiKey()) { openAiSettings(); return } // 키 없이 켜봤자 발표 시작 시 전사가 실패함
@@ -281,8 +283,8 @@ function ViewModeToggle({ viewMode, disabled, onChange }) {
   )
 }
 
-// 발표 분할 버튼: 메인=처음부터, ▾=옵션(현재부터 / 음성 후 자동 진행 토글 / 자막 선택)
-function PresentMenu({ disabled, open, setOpen, presenterView, setPresenterView, autoAdvance, setAutoAdvance, captionsOn, onCaptionsChange, onStart, onStartHere }) {
+// 발표 분할 버튼: 메인=처음부터, ▾=옵션(현재부터 / 애니메이션 자동 재생 / 음성 후 자동 진행 / 자막)
+function PresentMenu({ disabled, open, setOpen, presenterView, setPresenterView, autoAdvance, setAutoAdvance, autoBuild, setAutoBuild, captionsOn, onCaptionsChange, onStart, onStartHere }) {
   useEffect(() => {
     if (!open) return
     const onDown = (e) => { if (!e.target.closest?.('[data-present-menu]')) setOpen(false) }
@@ -315,7 +317,7 @@ function PresentMenu({ disabled, open, setOpen, presenterView, setPresenterView,
 
           <div className="my-1 h-px bg-white/10" />
 
-          {/* 발표 옵션 — 세 줄 모두 같은 틀: 아이콘 · 라벨 · 오른쪽 체크박스 · 아래 설명 */}
+          {/* 발표 옵션 — 네 줄 모두 같은 틀: 아이콘 · 라벨 · 오른쪽 체크박스 · 아래 설명 */}
           <MenuToggle
             icon={<PresenterIcon />}
             label="발표자 보기"
@@ -324,6 +326,13 @@ function PresentMenu({ disabled, open, setOpen, presenterView, setPresenterView,
             note={presenterView
               ? <ScreenHint />
               : '슬라이드와 노트를 두 화면에 나눠 엽니다'}
+          />
+          <MenuToggle
+            icon={<AutoBuildIcon />}
+            label="애니메이션 자동 재생"
+            checked={autoBuild}
+            onChange={setAutoBuild}
+            note="클릭 없이 페이지의 애니메이션을 순서대로 재생하고 멈춥니다"
           />
           <MenuToggle
             icon={<AutoAdvanceIcon />}
@@ -346,7 +355,7 @@ function PresentMenu({ disabled, open, setOpen, presenterView, setPresenterView,
 }
 
 // ── 발표 옵션 메뉴의 줄 ────────────────────────────────
-// 세 옵션이 각기 다른 모양(왼쪽 체크박스 / 오른쪽 체크박스 / 셀렉트)이라 메뉴가 산만했다.
+// 옵션마다 모양(왼쪽 체크박스 / 오른쪽 체크박스 / 셀렉트)이 달라 메뉴가 산만했다.
 // 아이콘·라벨·컨트롤 자리를 하나로 고정하고, 설명은 라벨 아래 같은 들여쓰기로 붙인다.
 
 const MENU_ROW = 'flex items-center gap-2 w-full px-3 py-1.5 text-xs text-slate-200 hover:bg-white/10'
@@ -495,6 +504,19 @@ function StartHereIcon() {
 }
 
 // 음성 후 자동 진행 — 재생 후 다음으로
+// 애니메이션 자동 재생 — 단계가 차례로 나오는 모습(길이가 늘어나는 줄) + 재생 표시
+function AutoBuildIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+      strokeLinecap="round" strokeLinejoin="round">
+      <line x1="4" y1="6" x2="12" y2="6" />
+      <line x1="4" y1="12" x2="16" y2="12" />
+      <line x1="4" y1="18" x2="9" y2="18" />
+      <path d="M14 15.5l6 3.5-6 3.5z" fill="currentColor" stroke="none" />
+    </svg>
+  )
+}
+
 function AutoAdvanceIcon() {
   return (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"

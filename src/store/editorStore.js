@@ -242,6 +242,18 @@ export const useEditorStore = create((set, get) => ({
     set({ autoAdvance: on })
   },
 
+  /**
+   * '애니메이션 자동 재생' — 클릭 트리거로 만든 빌드 단계를 페이지 진입과 함께 순서대로
+   * 자동 재생하고, 마지막 단계까지 나오면 그대로 멈춘다(다음 장으로 넘기지 않음).
+   * 클릭해 가며 나레이션을 읽기 어려울 때 쓰는 모드. localStorage 기억.
+   */
+  autoBuild: (() => { try { return localStorage.getItem('present-auto-build') === '1' } catch { return false } })(),
+  setAutoBuild(v) {
+    const on = !!v
+    try { localStorage.setItem('present-auto-build', on ? '1' : '0') } catch { /* 무시 */ }
+    set({ autoBuild: on })
+  },
+
   /** 가라오케 자막(STT 단어별 하이라이트) — 노트 음성이 있는 덱에서만 노출. localStorage 기억. */
   karaokeCaptions: (() => { try { return localStorage.getItem('present-karaoke-captions') === '1' } catch { return false } })(),
   setKaraokeCaptions(v) {
