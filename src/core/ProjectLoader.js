@@ -15,4 +15,8 @@ export function applyLoadedProject(data) {
   useFlatStore.getState().setHtmlSourceName(null) // 프로젝트명이 기본 파일명 기준이 됨
   useEditorStore.getState().setHtmlImported(false)
   if (useFlatStore.getState().viewMode === 'html') useFlatStore.getState().setViewMode('flat')
+
+  // 새 덱이 자리를 잡은 뒤, 앞서 열려 있던 덱의 미디어를 회수한다(참조가 모두 끊긴 상태).
+  // 실패해도 프로젝트 열기 자체에는 영향이 없어야 하므로 기다리지 않는다.
+  useFlatStore.getState().gcUnusedMedia().catch(() => { /* 정리 실패는 무시 */ })
 }

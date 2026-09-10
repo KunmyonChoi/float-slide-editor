@@ -1612,6 +1612,22 @@ export const useFlatStore = create((set, get) => ({
   },
 
   /**
+   * 아무도 참조하지 않는 IndexedDB 미디어(+그 음성의 STT 자막 캐시)를 회수한다.
+   * 살아 있는 참조는 페이지 캐시(실행취소 히스토리 포함)·삭제 취소 스태시·현재 스토어 상태
+   * (클립보드 등)·진행 중인 AI 작업 결과 네 곳에 흩어져 있어, 넷을 모두 훑은 뒤 판정한다.
+   * 프로젝트 저장 직후와 프로젝트 열기 직후처럼 덱이 확정된 시점에만 부른다.
+   * @param {{ dryRun?: boolean }} [opts]
+   */
+  async gcUnusedMedia(opts) {
+    get()._saveCurrentPage()
+    const [{ runBlobGc }, { useAiJobStore }] = await Promise.all([
+      import('../core/BlobGc.js'),
+      import('./aiJobStore.js'),
+    ])
+    return runBlobGc([get(), _pageCache, _deletedPageStash, useAiJobStore.getState().jobs], opts)
+  },
+
+  /**
    * 프로젝트 저장. 기억된 파일 핸들이 있으면 같은 파일에 덮어쓰고(=Ctrl+S),
    * 없거나 saveAs=true면 저장 팝업으로 새 파일을 만든 뒤 그 파일을 기억한다.
    * @param {{ saveAs?: boolean }} [opts]
@@ -1635,6 +1651,8 @@ export const useFlatStore = create((set, get) => ({
         const { addRecent } = await import('../core/RecentProjects.js')
         await addRecent(used, used.name || st.projectFileName)
       } catch { /* 최근목록 실패는 무시 */ }
+      // 저장이 끝난 지금이 회수하기 가장 안전한 시점 — 덱의 모든 미디어가 방금 파일로 나갔다.
+      try { await get().gcUnusedMedia() } catch { /* 정리 실패는 저장 결과에 영향 없음 */ }
     }
     return !!used
   },

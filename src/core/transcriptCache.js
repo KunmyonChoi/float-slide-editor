@@ -39,6 +39,23 @@ export function setCachedTranscript(blobKey, transcript) {
   writeAll(map)
 }
 
+/**
+ * 살아 있지 않은 음성의 자막 캐시를 지운다(BlobGc가 blob을 회수할 때 같이 부른다).
+ * 자막 정본은 프로젝트(page.notesCaptions)에 있으므로, 이 캐시는 지워도 잃는 게 없다 —
+ * 오히려 안 지우면 상한(MAX_ENTRIES)에 먼저 닿아 살아 있는 자막이 밀려난다.
+ * @param {(blobKey:string) => boolean} isLive
+ * @param {{ dryRun?: boolean }} [opts]
+ * @returns {number} 지운(또는 dryRun이면 지웠을) 항목 수
+ */
+export function pruneTranscriptCache(isLive, { dryRun = false } = {}) {
+  const map = readAll()
+  const dead = Object.keys(map).filter(k => !isLive(k))
+  if (!dead.length || dryRun) return dead.length
+  for (const k of dead) delete map[k]
+  writeAll(map)
+  return dead.length
+}
+
 export function clearTranscriptCache() {
   try { localStorage.removeItem(STORAGE_KEY) } catch { /* 무시 */ }
 }
