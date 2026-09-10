@@ -29,6 +29,16 @@ const CAPTION_PREFETCH_TIMEOUT_MS = 10000
 // PPT 내보내기(PptMotion)도 같은 값을 써서 재생 리듬을 맞춘다.
 export const AUDIO_TERM = 300
 
+// 루프 발표에서 '음성이 흐르지 않는' 슬라이드에 머무는 시간(ms) — 애니메이션이 다 나온 뒤부터 잰다.
+// 무인 전시에서 관람객이 읽을 틈은 줘야 하고, 너무 길면 덱이 멈춰 보인다.
+export const LOOP_DWELL_MS = 5000
+
+/** 빌드 단계를 자동 재생할 때 마지막 단계까지 걸리는 총 시간(ms). 루프의 머무는 시간 기준점. */
+export function autoBuildTotalMs(animInfo, elements) {
+  if (!animInfo?.stepCount) return 0
+  return stepDurations(animInfo, elements).reduce((sum, d) => sum + d + AUDIO_TERM, 0)
+}
+
 export { INK_COLORS }
 
 // 페이지 키(예: "3-1") → { pageIndex, variantIndex } 정렬 순서로 슬라이드 진행 순서를 만든다.
@@ -144,17 +154,36 @@ export function usePresentationEngine({ onExit } = {}) {
   // 다음 슬라이드(발표자 창의 "다음" 썸네일용) — 없으면 null
   const nextPage = allPages?.[sortedKeys[currentSlide + 1]] || null
 
+  // 루프 발표(전시회처럼 무인으로 계속 틀어두기) — 마지막 장 다음은 처음으로 돌아간다.
+  const loopPresentation = useEditorStore(s => s.loopPresentation)
+  // 루프 회차. 한 장짜리 덱은 되감아도 currentSlide가 그대로라 이펙트가 다시 돌지 않는다 —
+  // 회차를 의존성에 넣어 '같은 장으로 되감기'도 새 진입으로 취급한다.
+  const [loopCycle, setLoopCycle] = useState(0)
+
+  /** 남은 빌드 단계와 무관하게 다음 장으로(자동 진행·루프 전용). 마지막 장이면 루프일 때만 처음으로. */
+  const advanceSlide = useCallback(() => {
+    if (currentSlide < totalSlides - 1) {
+      setPlayingStep(-1)
+      setRevealed(0)
+      setCurrentSlide(currentSlide + 1)
+    } else if (loopPresentation) {
+      setPlayingStep(-1)
+      setRevealed(0)
+      setCurrentSlide(0)
+      setLoopCycle(c => c + 1)
+    }
+    // 루프가 꺼져 있으면 마지막 장에 그대로 머문다(기존 동작)
+  }, [currentSlide, totalSlides, loopPresentation])
+
   // ── 네비게이션 — 빌드 단계 먼저 진행, 다 끝나면 슬라이드 이동 ──
   const goNext = useCallback(() => {
     if (revealed < animInfo.stepCount) {
       setPlayingStep(revealed)   // 막 진입하는 단계 재생
       setRevealed(revealed + 1)
-    } else if (currentSlide < totalSlides - 1) {
-      setPlayingStep(-1)
-      setRevealed(0)
-      setCurrentSlide(currentSlide + 1)
+    } else if (currentSlide < totalSlides - 1 || loopPresentation) {
+      advanceSlide()             // 마지막 장에서의 되감기는 advanceSlide가 판단
     }
-  }, [revealed, animInfo.stepCount, currentSlide, totalSlides])
+  }, [revealed, animInfo.stepCount, currentSlide, totalSlides, loopPresentation, advanceSlide])
 
   const goPrev = useCallback(() => {
     if (revealed > 0) {
@@ -221,6 +250,11 @@ export function usePresentationEngine({ onExit } = {}) {
     () => sortedKeys.some(k => BlobStore.isIdbRef(allPages?.[k]?.notesAudio)),
     [allPages, sortedKeys])
 
+  // 음성이 실제로 흐르지 못한 슬라이드(자동재생 차단·블롭 유실·디코드 실패)를 표시한다.
+  // 루프에서 중요하다 — '음성이 끝나면 다음 장'만 믿고 있으면 여기서 덱이 영영 멈춘다.
+  const [audioBlocked, setAudioBlocked] = useState(false)
+  const onAudioError = useCallback(() => setAudioBlocked(true), [])
+
   // 슬라이드 진입 시 해당 노트 음성 자동 재생, 이동/종료 시 정지.
   // loading이 꺼지기 전(= 로딩 화면 표시 중, 자막 준비 중 포함)에는 재생하지 않는다 —
   // allPages는 자막 선행 대기보다 먼저 채워지므로, loading 없이는 화면이 로딩 문구를
@@ -230,19 +264,28 @@ export function usePresentationEngine({ onExit } = {}) {
     if (!el) return
     el.pause()
     el.removeAttribute('src')
+    setAudioBlocked(false)
     if (loading || !narration || !hasAudio) return
     let cancelled = false
     BlobStore.getUrl(BlobStore.parseRef(audioSrc)).then(url => {
-      if (cancelled || !url || !audioElRef.current) return
+      if (cancelled || !audioElRef.current) return
+      if (!url) { setAudioBlocked(true); return }
       audioElRef.current.src = url
       // 노트 음성 볼륨(0~1). 0이어도 재생은 유지돼 자동진행은 동작(립싱크 영상이 소리 담당 시 0).
       audioElRef.current.volume = page?.notesAudioVolume ?? 1
-      audioElRef.current.play().catch(() => { /* 자동재생 차단/실패 무시 */ })
+      audioElRef.current.play().catch(() => {
+        if (!cancelled) setAudioBlocked(true) // 자동재생 차단/실패 — 발표는 그대로 진행
+      })
     })
     return () => { cancelled = true }
-  }, [currentSlide, narration, hasAudio, audioSrc, page?.notesAudioVolume, loading])
+  }, [currentSlide, loopCycle, narration, hasAudio, audioSrc, page?.notesAudioVolume, loading])
 
-  const onAudioEnded = useCallback(() => { if (autoAdvance) goNext() }, [autoAdvance, goNext])
+  // 이 슬라이드에서 음성이 실제로 흐르는가 — 자동 진행의 신호원을 고르는 기준.
+  const audioWillPlay = narration && hasAudio && !audioBlocked
+
+  const onAudioEnded = useCallback(() => {
+    if (autoAdvance || loopPresentation) advanceSlide()
+  }, [autoAdvance, loopPresentation, advanceSlide])
 
   const replayAudio = useCallback(() => {
     const el = audioElRef.current
@@ -253,12 +296,13 @@ export function usePresentationEngine({ onExit } = {}) {
   }, [page?.notesAudioVolume])
 
   // 클릭 없이 빌드 단계를 순서대로 자동 재생 — 단계마다 이전 종료 후 0.3초 텀.
-  // 켜지는 경우는 두 가지다.
+  // 켜지는 경우는 세 가지다.
   //  1) 음성 있는 슬라이드: 나레이션에 맞춰 클릭 트리거를 자동으로 흘려보낸다.
   //  2) '애니메이션 자동 재생' 옵션: 음성이 없어도 같은 리듬으로 흘려보낸다 — 클릭해 가며
   //     나레이션을 읽기 힘든 상황용. 마지막 단계까지 나오면 그대로 멈춘다.
-  // (슬라이드→슬라이드 자동 전환은 별도 '음성 후 자동 진행' 토글이 담당.)
-  const autoPlaySteps = autoBuild || (narration && hasAudio)
+  //  3) 루프 발표: 눌러 줄 사람이 없으니 당연히 자동이어야 한다.
+  // (슬라이드→슬라이드 자동 전환은 '음성 후 자동 진행'과 루프가 담당.)
+  const autoPlaySteps = autoBuild || loopPresentation || (narration && hasAudio)
   useEffect(() => {
     if (loading || !autoPlaySteps || animInfo.stepCount === 0) return
     const durs = stepDurations(animInfo, elements)
@@ -273,7 +317,20 @@ export function usePresentationEngine({ onExit } = {}) {
       t += durs[s] + AUDIO_TERM
     }
     return () => timers.forEach(clearTimeout)
-  }, [currentSlide, autoPlaySteps, animInfo, elements, loading])
+  }, [currentSlide, loopCycle, autoPlaySteps, animInfo, elements, loading])
+
+  // 루프 발표에서 음성이 흐르지 않는 슬라이드(음성 없음·나레이션 끔·자동재생 차단)를 넘기는 타이머.
+  // 음성이 흐르는 슬라이드는 onAudioEnded가 넘기므로 여기서 손대지 않는다 — 두 곳이 같이 넘기면
+  // 한 장을 건너뛴다.
+  // 의존성에 animInfo/elements 객체가 아니라 계산된 시간(숫자)을 두는 이유: 백그라운드 자막
+  // 저장이 allPages를 새로 만들면 두 객체의 신원이 바뀐다. 그때마다 타이머를 다시 걸면
+  // 슬라이드가 필요 이상으로 오래 머문다.
+  const buildTotalMs = autoBuildTotalMs(animInfo, elements)
+  useEffect(() => {
+    if (loading || !loopPresentation || audioWillPlay) return
+    const t = setTimeout(advanceSlide, buildTotalMs + LOOP_DWELL_MS)
+    return () => clearTimeout(t)
+  }, [loading, loopPresentation, audioWillPlay, buildTotalMs, advanceSlide, currentSlide, loopCycle])
 
   // ── 가라오케 자막(STT 단어별 하이라이트) ──
   const captionsOn = useEditorStore(s => s.karaokeCaptions)
@@ -359,14 +416,14 @@ export function usePresentationEngine({ onExit } = {}) {
     allPages, sortedKeys, loading, loadingCaptions,
     page, nextPage, elements, canvasSize, animInfo,
     // 진행
-    currentSlide, totalSlides, revealed, playingStep, goNext, goPrev, goToSlide,
+    currentSlide, totalSlides, revealed, playingStep, goNext, goPrev, goToSlide, advanceSlide,
     // 잉크
     penActive, setPenActive, penTool, setPenTool, penColor, setPenColor, penWidth, setPenWidth,
     blackout, setBlackout, slideStrokes, inkBySlide, commitStroke, eraseStroke, clearSlideInk,
     // 나레이션
     setAudioEl, getAudioTime, getAudioStatus,
-    narration, setNarration, hasAudio, deckHasAudio, autoAdvance, autoBuild,
-    onAudioEnded, replayAudio,
+    narration, setNarration, hasAudio, deckHasAudio, autoAdvance, autoBuild, loopPresentation,
+    onAudioEnded, onAudioError, replayAudio,
     // 자막
     captionsOn, toggleCaptions, captionWords, captionBusy, captionErr,
     // 키보드

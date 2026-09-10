@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { renderHook, waitFor, act } from '@testing-library/react'
+import { renderHook, act } from '@testing-library/react'
 
 // 발표 엔진은 flatStore에서 덱을 비동기로 꺼낸다 — 테스트에서는 두 장짜리 가짜 덱으로 대체.
 // 첫 장에 클릭 트리거 애니메이션 두 단계가 있고, 노트 음성은 없다.
@@ -29,21 +29,37 @@ const { usePresentationEngine } = await import('../core/usePresentationEngine')
 const { useEditorStore } = await import('../store/editorStore')
 
 // 두 단계가 다 나오기까지: 300(텀) + 400(1단계) + 300(텀) + 400(2단계)
-const ALL_STEPS_MS = 1600
+const ALL_STEPS_MS = 1400
+
+// 가짜 타이머 아래에서는 waitFor가 스스로 시간을 못 밀어 주므로, 로딩이 풀릴 때까지 직접 민다.
+async function startEngine() {
+  const rendered = renderHook(() => usePresentationEngine())
+  for (let i = 0; i < 20 && rendered.result.current.loading; i++) {
+    await act(async () => { await vi.advanceTimersByTimeAsync(10) })
+  }
+  expect(rendered.result.current.loading).toBe(false)
+  return rendered
+}
+
+const tick = (ms) => act(async () => { await vi.advanceTimersByTimeAsync(ms) })
 
 describe('애니메이션 자동 재생(autoBuild)', () => {
   beforeEach(() => {
+    vi.useFakeTimers()
     useEditorStore.getState().setAutoBuild(false)
+    useEditorStore.getState().setLoopPresentation(false)
     useEditorStore.setState({ presentStartIndex: 0 })
   })
-  afterEach(() => useEditorStore.getState().setAutoBuild(false))
+  afterEach(() => {
+    vi.useRealTimers()
+    useEditorStore.getState().setAutoBuild(false)
+  })
 
   it('꺼져 있으면 클릭(goNext) 전까지 단계가 진행되지 않는다', async () => {
-    const { result } = renderHook(() => usePresentationEngine())
-    await waitFor(() => expect(result.current.loading).toBe(false))
+    const { result } = await startEngine()
     expect(result.current.animInfo.stepCount).toBe(2)
 
-    await new Promise(r => setTimeout(r, ALL_STEPS_MS))
+    await tick(ALL_STEPS_MS + 1000)
     expect(result.current.revealed).toBe(0)
 
     act(() => result.current.goNext())
@@ -52,20 +68,20 @@ describe('애니메이션 자동 재생(autoBuild)', () => {
 
   it('켜면 음성이 없어도 단계가 순서대로 자동 재생된다', async () => {
     useEditorStore.getState().setAutoBuild(true)
-    const { result } = renderHook(() => usePresentationEngine())
-    await waitFor(() => expect(result.current.loading).toBe(false))
+    const { result } = await startEngine()
 
-    await waitFor(() => expect(result.current.revealed).toBe(1), { timeout: 1500 })
-    await waitFor(() => expect(result.current.revealed).toBe(2), { timeout: 1500 })
+    await tick(300 + 400)   // 1단계 재생 구간
+    expect(result.current.revealed).toBe(1)
+
+    await tick(300 + 400)   // 2단계까지
+    expect(result.current.revealed).toBe(2)
   })
 
   it('마지막 단계까지 나오면 멈춘다 — 다음 장으로 넘어가지 않는다', async () => {
     useEditorStore.getState().setAutoBuild(true)
-    const { result } = renderHook(() => usePresentationEngine())
-    await waitFor(() => expect(result.current.loading).toBe(false))
-    await waitFor(() => expect(result.current.revealed).toBe(2), { timeout: 2000 })
+    const { result } = await startEngine()
 
-    await new Promise(r => setTimeout(r, 800))
+    await tick(ALL_STEPS_MS + 3000)
     expect(result.current.revealed).toBe(2)
     expect(result.current.currentSlide).toBe(0)
 
@@ -76,14 +92,13 @@ describe('애니메이션 자동 재생(autoBuild)', () => {
 
   it('발표자가 앞질러 클릭하면 뒤늦은 타이머가 되감지 않는다', async () => {
     useEditorStore.getState().setAutoBuild(true)
-    const { result } = renderHook(() => usePresentationEngine())
-    await waitFor(() => expect(result.current.loading).toBe(false))
+    const { result } = await startEngine()
 
     act(() => result.current.goNext())
     act(() => result.current.goNext())
     expect(result.current.revealed).toBe(2)
 
-    await new Promise(r => setTimeout(r, ALL_STEPS_MS))
+    await tick(ALL_STEPS_MS + 1000)
     expect(result.current.revealed).toBe(2)
     expect(result.current.currentSlide).toBe(0)
   })

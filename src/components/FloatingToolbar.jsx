@@ -109,6 +109,7 @@ const FALLBACK_SAMPLE = `<!DOCTYPE html>
  */
 export default function FloatingToolbar() {
   const { slideHtml, mode, enterPresentation, autoAdvance, setAutoAdvance, autoBuild, setAutoBuild,
+          loopPresentation, setLoopPresentation,
           karaokeCaptions, setKaraokeCaptions, presenterView, setPresenterView } = useEditorStore()
   const { viewMode, setViewMode, extractFromIframe, debugMode, flatPageCount, flatCurrentPage } = useFlatStore()
   const [presentMenuOpen, setPresentMenuOpen] = useState(false)
@@ -179,6 +180,8 @@ export default function FloatingToolbar() {
         setAutoAdvance={setAutoAdvance}
         autoBuild={autoBuild}
         setAutoBuild={setAutoBuild}
+        loopPresentation={loopPresentation}
+        setLoopPresentation={setLoopPresentation}
         captionsOn={karaokeCaptions}
         onCaptionsChange={(on) => {
           if (on && !hasApiKey()) { openAiSettings(); return } // 키 없이 켜봤자 발표 시작 시 전사가 실패함
@@ -283,8 +286,8 @@ function ViewModeToggle({ viewMode, disabled, onChange }) {
   )
 }
 
-// 발표 분할 버튼: 메인=처음부터, ▾=옵션(현재부터 / 애니메이션 자동 재생 / 음성 후 자동 진행 / 자막)
-function PresentMenu({ disabled, open, setOpen, presenterView, setPresenterView, autoAdvance, setAutoAdvance, autoBuild, setAutoBuild, captionsOn, onCaptionsChange, onStart, onStartHere }) {
+// 발표 분할 버튼: 메인=처음부터, ▾=옵션(현재부터 / 자동 재생 / 자동 진행 / 반복 재생 / 자막)
+function PresentMenu({ disabled, open, setOpen, presenterView, setPresenterView, autoAdvance, setAutoAdvance, autoBuild, setAutoBuild, loopPresentation, setLoopPresentation, captionsOn, onCaptionsChange, onStart, onStartHere }) {
   useEffect(() => {
     if (!open) return
     const onDown = (e) => { if (!e.target.closest?.('[data-present-menu]')) setOpen(false) }
@@ -317,7 +320,8 @@ function PresentMenu({ disabled, open, setOpen, presenterView, setPresenterView,
 
           <div className="my-1 h-px bg-white/10" />
 
-          {/* 발표 옵션 — 네 줄 모두 같은 틀: 아이콘 · 라벨 · 오른쪽 체크박스 · 아래 설명 */}
+          {/* 발표 옵션 — 모두 같은 틀: 아이콘 · 라벨 · 오른쪽 체크박스 · 아래 설명.
+              반복 재생은 자동 재생·자동 진행을 포함하므로, 켜져 있으면 두 줄을 켜진 것으로 보인다. */}
           <MenuToggle
             icon={<PresenterIcon />}
             label="발표자 보기"
@@ -330,16 +334,27 @@ function PresentMenu({ disabled, open, setOpen, presenterView, setPresenterView,
           <MenuToggle
             icon={<AutoBuildIcon />}
             label="애니메이션 자동 재생"
-            checked={autoBuild}
+            checked={autoBuild || loopPresentation}
             onChange={setAutoBuild}
-            note="클릭 없이 페이지의 애니메이션을 순서대로 재생하고 멈춥니다"
+            note={loopPresentation
+              ? '반복 재생 중에는 항상 자동으로 재생됩니다'
+              : '클릭 없이 페이지의 애니메이션을 순서대로 재생하고 멈춥니다'}
           />
           <MenuToggle
             icon={<AutoAdvanceIcon />}
             label="음성 후 자동 진행"
-            checked={autoAdvance}
+            checked={autoAdvance || loopPresentation}
             onChange={setAutoAdvance}
-            note="노트 음성이 끝나면 다음 장으로 넘어갑니다"
+            note={loopPresentation
+              ? '반복 재생 중에는 항상 자동으로 넘어갑니다'
+              : '노트 음성이 끝나면 다음 장으로 넘어갑니다'}
+          />
+          <MenuToggle
+            icon={<LoopIcon />}
+            label="반복 재생 (전시회)"
+            checked={loopPresentation}
+            onChange={setLoopPresentation}
+            note="사람이 넘기지 않아도 끝까지 재생한 뒤 처음부터 다시 시작합니다"
           />
           <MenuToggle
             icon={<CaptionIcon />}
@@ -504,6 +519,19 @@ function StartHereIcon() {
 }
 
 // 음성 후 자동 진행 — 재생 후 다음으로
+// 반복 재생 — 순환 화살표
+function LoopIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+      strokeLinecap="round" strokeLinejoin="round">
+      <path d="M17 2l4 4-4 4" />
+      <path d="M3 11v-1a4 4 0 014-4h14" />
+      <path d="M7 22l-4-4 4-4" />
+      <path d="M21 13v1a4 4 0 01-4 4H3" />
+    </svg>
+  )
+}
+
 // 애니메이션 자동 재생 — 단계가 차례로 나오는 모습(길이가 늘어나는 줄) + 재생 표시
 function AutoBuildIcon() {
   return (

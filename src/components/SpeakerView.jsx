@@ -389,7 +389,7 @@ export default function SpeakerView() {
       </div>
 
       {/* 노트 음성 재생기(숨김) — 발표자 창에서만 재생한다(두 창이 겹쳐 울리지 않도록) */}
-      <audio ref={setAudioEl} onEnded={eng.onAudioEnded} />
+      <audio ref={setAudioEl} onEnded={eng.onAudioEnded} onError={eng.onAudioError} />
 
       {gridOpen && (
         <SlideGrid

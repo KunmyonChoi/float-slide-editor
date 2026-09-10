@@ -116,7 +116,7 @@ export default function FlatPresenter() {
       )}
 
       {/* 노트 음성 재생기(숨김) */}
-      <audio ref={setAudioEl} onEnded={eng.onAudioEnded} />
+      <audio ref={setAudioEl} onEnded={eng.onAudioEnded} onError={eng.onAudioError} />
 
       {!loading && <PresenterToolbar eng={eng} />}
 

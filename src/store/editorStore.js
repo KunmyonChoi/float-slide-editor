@@ -254,6 +254,19 @@ export const useEditorStore = create((set, get) => ({
     set({ autoBuild: on })
   },
 
+  /**
+   * '반복 재생(루프)' — 전시회처럼 무인으로 계속 틀어두는 모드.
+   * 마지막 장이 끝나면 처음으로 돌아가고, 사람이 클릭하지 않아도 장이 넘어간다
+   * (음성이 있으면 음성이 끝날 때, 없으면 애니메이션이 다 나온 뒤 LOOP_DWELL_MS 후).
+   * 빌드 단계도 자동 재생되므로 autoBuild가 꺼져 있어도 요소가 다 나온다. localStorage 기억.
+   */
+  loopPresentation: (() => { try { return localStorage.getItem('present-loop') === '1' } catch { return false } })(),
+  setLoopPresentation(v) {
+    const on = !!v
+    try { localStorage.setItem('present-loop', on ? '1' : '0') } catch { /* 무시 */ }
+    set({ loopPresentation: on })
+  },
+
   /** 가라오케 자막(STT 단어별 하이라이트) — 노트 음성이 있는 덱에서만 노출. localStorage 기억. */
   karaokeCaptions: (() => { try { return localStorage.getItem('present-karaoke-captions') === '1' } catch { return false } })(),
   setKaraokeCaptions(v) {
