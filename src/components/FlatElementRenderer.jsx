@@ -295,10 +295,17 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
       }
     }
 
+    // 테두리·모서리 둥글기는 이미지와 같은 방식(styles.border/borderRadius)으로 받는다.
+    // 테두리는 래퍼가 그리고, 안쪽 콘텐츠에는 두께만큼 줄인 반경을 넘긴다.
+    const vidBorders = resolveBorders(styles)
+    const vidInnerRadius = insetRadius(styles.borderRadius, maxBorderWidth(vidBorders))
+
     return (
       <div style={baseStyle} onMouseDown={handleMouseDown} onClick={handleClick}>
         <div style={{
           width: '100%', height: '100%', position: 'relative',
+          boxSizing: 'border-box',
+          ...vidBorders,
           borderRadius: styles.borderRadius,
           overflow: 'hidden',
           opacity: styles.opacity,
@@ -316,7 +323,7 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
                     objectFit={vidFit}
                     objectPosition={vidPos}
                     transform={cropT}
-                    radius={styles.borderRadius}
+                    radius={vidInnerRadius}
                   />
                 : <ChromaVideoPlayer
                     content={content}
@@ -329,7 +336,7 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
                     objectPosition={vidPos}
                     transform={cropT}
                     chroma={element.chroma}
-                    radius={styles.borderRadius}
+                    radius={vidInnerRadius}
                   />)
                 : <VideoPlayer
                     content={content}
@@ -341,7 +348,7 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
                     objectFit={vidFit}
                     objectPosition={vidPos}
                     transform={cropT}
-                    radius={styles.borderRadius}
+                    radius={vidInnerRadius}
                   />)
             : <>
                 <iframe
@@ -671,6 +678,25 @@ function resolveBorders(s) {
   }
   // 테두리 없음을 명시적으로 선언 — dom-to-image 렌더링 아티팩트 방지
   return { border: 'none' }
+}
+
+/** border 단축/개별 값들 중 가장 두꺼운 선 두께(px). 안쪽 곡률 보정에 쓴다. */
+function maxBorderWidth(borderProps) {
+  return Object.values(borderProps || {}).reduce((max, v) => {
+    const w = parseFloat(v)
+    return Number.isFinite(w) ? Math.max(max, w) : max
+  }, 0)
+}
+
+/**
+ * 테두리 안쪽 곡률 — 바깥 반경 그대로를 콘텐츠에 주면 테두리 두께만큼 어긋나 모서리에 틈이 보인다.
+ * (영상은 자체 컴포지팅 레이어라 상위 overflow:hidden으로 못 자르고 직접 반경을 줘야 한다.)
+ */
+function insetRadius(radius, borderWidth) {
+  const r = parseFloat(radius)
+  if (!Number.isFinite(r) || !r) return radius
+  if (String(radius).trim().endsWith('%')) return radius // 50% 같은 비율은 그대로
+  return `${Math.max(0, r - (borderWidth || 0))}px`
 }
 
 /**

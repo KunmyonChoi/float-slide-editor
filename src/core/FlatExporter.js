@@ -219,8 +219,11 @@ function renderElement(el) {
   }
   if (el.type === 'video') {
     const br = el.styles.borderRadius && el.styles.borderRadius !== '0px' ? `border-radius:${el.styles.borderRadius};overflow:hidden;` : ''
+    // 테두리는 이미지와 같은 방식(styles.border) — 래퍼가 그린다.
+    const vidBorder = el.styles.border && !el.styles.border.startsWith('0px') && el.styles.border !== 'none'
+      ? `border:${el.styles.border};box-sizing:border-box;` : ''
     const vidOpacity = el.styles.opacity && el.styles.opacity !== '1' ? `opacity:${el.styles.opacity};` : ''
-    return `<div style="${flatStyle(el)};${br}${vidOpacity}"><iframe src="${escHtml(el.content)}" style="width:100%;height:100%;border:none;" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe></div>`
+    return `<div style="${flatStyle(el)};${br}${vidBorder}${vidOpacity}"><iframe src="${escHtml(el.content)}" style="width:100%;height:100%;border:none;" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe></div>`
   }
   if (el.type === 'audio') {
     return audioVizHtml(el)

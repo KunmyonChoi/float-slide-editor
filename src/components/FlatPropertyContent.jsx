@@ -241,8 +241,9 @@ function SingleElementPanel({ el, animTab, setAnimTab, updateFlatElement, previe
           </div>
         )}
 
-        {/* 테두리 — text, normal shape, image만 (poly shape는 stroke로 처리) */}
-        {!el.shapeType && (el.type === 'text' || el.type === 'shape' || el.type === 'image') && (
+        {/* 테두리·모서리 둥글기 — text, normal shape, image, video (poly shape는 stroke로 처리).
+            영상도 이미지와 같은 방식으로 테두리를 두르고 모서리를 굴린다. */}
+        {!el.shapeType && (el.type === 'text' || el.type === 'shape' || el.type === 'image' || el.type === 'video') && (
           <div className="pt-1 border-t border-white/5">
             <LineSection styles={el.styles} updateStyle={updateStyle} updateStyles={updateStyles} previewStyle={previewStyle} />
           </div>
