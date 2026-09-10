@@ -5,7 +5,7 @@ import {
   generateImage, editImage,
   chat, generateImagePrompt, analyzeImageForInfographic, generateSpeakerNotes,
   synthesizeSpeech, getTtsVoice, setTtsVoice, getTtsModel, setTtsModel,
-  getTtsInstructions, setTtsInstructions, voicesForModel, TTS_VOICES,
+  voicesForModel, TTS_VOICES,
   DEFAULT_MODEL, DEFAULT_IMAGE_MODEL,
 } from '../core/OpenAIClient'
 import {
@@ -430,25 +430,17 @@ describe('TTS — 설정/합성', () => {
     expect(voicesForModel('tts-1-hd').map(v => v.id)).not.toContain('cedar')
   })
 
-  it('instructions: 기본값·저장', () => {
-    expect(getTtsInstructions()).toBe('')
-    setTtsInstructions('  밝게 ')
-    expect(getTtsInstructions()).toBe('밝게') // trim 저장
-    setTtsInstructions('')
-    expect(getTtsInstructions()).toBe('')
-  })
-
-  it('synthesizeSpeech: instructions는 gpt-4o-mini-tts에만 포함, tts-1엔 제외', async () => {
+  // 톤 지시는 결과가 불안정해 제거됐다. 옛 사용자의 localStorage에 값이 남아 있어도
+  // 요청에 실려 나가면 안 된다 — 조용히 되살아나는 경로를 여기서 막는다.
+  it('synthesizeSpeech: 옛 톤 지시 설정이 남아 있어도 요청에 실리지 않는다', async () => {
+    localStorage.setItem('openai-tts-instructions', '밝고 빠르게')
     setApiKey('sk-test')
     const blob = new Blob(['a'], { type: 'audio/mpeg' })
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, blob: async () => blob })
     vi.stubGlobal('fetch', fetchMock)
 
-    await synthesizeSpeech('안녕', { model: 'gpt-4o-mini-tts', instructions: '밝고 빠르게' })
-    expect(JSON.parse(fetchMock.mock.calls[0][1].body).instructions).toBe('밝고 빠르게')
-
-    await synthesizeSpeech('안녕', { model: 'tts-1', instructions: '밝고 빠르게' })
-    expect(JSON.parse(fetchMock.mock.calls[1][1].body).instructions).toBeUndefined()
+    await synthesizeSpeech('안녕', { model: 'gpt-4o-mini-tts' })
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).instructions).toBeUndefined()
   })
 
   it('빈 텍스트는 호출 전 에러', async () => {
