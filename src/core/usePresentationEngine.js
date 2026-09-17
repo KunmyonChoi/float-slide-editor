@@ -6,6 +6,7 @@ import { BlobStore } from './BlobStore'
 import { computeSteps, stepDurations } from './slideAnimation'
 import { transcribeSpeech } from './SttClient'
 import { getOrFetchTranscript } from './transcriptCache'
+import { correctTranscriptWithNotes } from './captionAlign'
 import { presentationOrder } from './karaoke'
 import { hasApiKey } from './OpenAIClient'
 import { openAiSettings } from '../components/AiSettingsModal'
@@ -56,19 +57,37 @@ export function hasFreshCaptions(page, audioSrcRef) {
   return !!page?.notesCaptions && page.notesCaptions.forRef === audioSrcRef
 }
 
+// 저장된 자막이 지금 음성의 것이면서 '노트 원문 교정'까지 거쳤는지. 교정 단계가 생기기 전에
+// 만들어진 자막은 다시 써 주기만 하면 되므로(STT 재호출 없음) 손볼 대상으로 본다.
+export function captionsUpToDate(page, audioSrcRef) {
+  if (!hasFreshCaptions(page, audioSrcRef)) return false
+  return page.notesCaptions.notesAligned != null || !page.notes
+}
+
 // pageKey의 notesAudio(idb:// 참조) → 자막을 보장한다.
 // 1) 프로젝트에 이미 저장된(음성 교체 전) 자막이 있으면 그대로 재사용(STT 재호출 없음 — 이래야
 //    같은 덱을 다시 열거나 공유 링크로 받은 사람도 다시 돈을 쓰지 않는다).
+//    단, 노트 원문 교정을 아직 거치지 않은 옛 자막이면 그 단계만 태워 저장을 갱신한다(무료·즉시).
 // 2) 없으면 STT로 새로 전사(같은 오디오를 여러 곳에서 동시에 요청해도 getOrFetchTranscript가
-//    중복 호출을 막는다) 하고, 결과를 forRef와 함께 flatStore(프로젝트 데이터)에 저장한다.
+//    중복 호출을 막는다) → 노트 원문에 맞춰 교정 → forRef와 함께 flatStore에 저장한다.
+//
+// 전사 캐시(transcriptCache)에는 교정 전 원본이 들어간다 — 캐시의 단위는 '오디오'이고 교정은
+// '페이지의 노트'에 달렸으므로, 같은 음성을 다른 노트의 페이지가 써도 각자 맞게 교정된다.
 async function ensureCaptionsForPage(pageKey, audioSrcRef, pageSnapshot) {
-  if (hasFreshCaptions(pageSnapshot, audioSrcRef)) return pageSnapshot.notesCaptions
+  if (hasFreshCaptions(pageSnapshot, audioSrcRef)) {
+    const saved = pageSnapshot.notesCaptions
+    if (saved.notesAligned != null || !pageSnapshot.notes) return saved
+    const fixed = { ...correctTranscriptWithNotes(saved, pageSnapshot.notes), forRef: audioSrcRef }
+    useFlatStore.getState().setPageNotesCaptions(fixed, pageKey, pageSnapshot)
+    return fixed
+  }
 
   const blobKey = BlobStore.parseRef(audioSrcRef)
   const blob = await BlobStore.get(blobKey)
   if (!blob) throw new Error('오디오를 찾을 수 없습니다.')
   const transcript = await getOrFetchTranscript(blobKey, () => transcribeSpeech(blob))
-  const withRef = { ...transcript, forRef: audioSrcRef }
+  const corrected = correctTranscriptWithNotes(transcript, pageSnapshot?.notes)
+  const withRef = { ...corrected, forRef: audioSrcRef }
   useFlatStore.getState().setPageNotesCaptions(withRef, pageKey, pageSnapshot)
   return withRef
 }
@@ -103,7 +122,7 @@ export function usePresentationEngine({ onExit } = {}) {
         const startIdx = Math.max(0, Math.min(useEditorStore.getState().presentStartIndex || 0, keys.length - 1))
         const startKey = keys[startIdx]
         const startAudio = pages[startKey]?.notesAudio
-        if (BlobStore.isIdbRef(startAudio) && !hasFreshCaptions(pages[startKey], startAudio)) {
+        if (BlobStore.isIdbRef(startAudio) && !captionsUpToDate(pages[startKey], startAudio)) {
           setLoadingCaptions(true)
           await Promise.race([
             ensureCaptionsForPage(startKey, startAudio, pages[startKey])
@@ -350,7 +369,7 @@ export function usePresentationEngine({ onExit } = {}) {
         const key = sortedKeys[idx]
         const p = allPagesRef.current?.[key]
         const src = p?.notesAudio
-        if (!BlobStore.isIdbRef(src) || hasFreshCaptions(p, src)) continue
+        if (!BlobStore.isIdbRef(src) || captionsUpToDate(p, src)) continue
         await ensureCaptionsForPage(key, src, p)
           .then(withRef => mergePageCaptions(setAllPages, key, withRef))
           .catch(() => { /* 이 슬라이드는 나중에 슬라이드별 로직이 재시도 */ })
@@ -365,7 +384,7 @@ export function usePresentationEngine({ onExit } = {}) {
   useEffect(() => {
     setCaptionErr('')
     if (!captionsOn || !hasAudio) { setCaptionWords(null); return }
-    if (hasFreshCaptions(page, audioSrc)) { setCaptionWords(page.notesCaptions.words); return }
+    if (captionsUpToDate(page, audioSrc)) { setCaptionWords(page.notesCaptions.words); return }
     setCaptionWords(null)
     let cancelled = false
     setCaptionBusy(true)
