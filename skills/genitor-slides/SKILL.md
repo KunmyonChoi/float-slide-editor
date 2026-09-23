@@ -367,6 +367,45 @@ body { width: 1920px; height: 1080px; overflow: hidden; position: relative; back
 - 행 앵커끼리는 **첫 행을 참조**하고 `delay`만 늘린다. 그래야 총 길이가 `(행 수 × 간격)`으로 예측된다.
 - 간격은 60~120ms. 행이 많으면(10행 초과) 간격을 줄이거나 한 화면에 덜 담는다.
 
+**관계선(연결선·화살표)은 양끝이 나온 뒤에**
+
+선은 두 노드 사이의 *사실*이다. 노드보다 먼저 뜨면 허공에 선이 그려진다. 그리고 선은 보조
+정보이므로 노드보다 **짧게** 재생한다.
+
+| 대상 | 효과 | 재생시간 | 트리거 |
+|---|---|---|---|
+| 관계선 | `fadeIn` (긴 곡선) / `slideIn`+흐름 방향 (짧은 연결선 ≤400px) | 200~300 | `with` 도착 노드 + `delay` 80~150 |
+| 선 위 라벨 | `fadeIn` | 250 | `with` **그 선** + `delay` 120 |
+| 선이 여러 개 | 위와 같음 | 위와 같음 | 첫 선을 참조해 흐름 순서대로 80~120ms씩 |
+
+노트에 그 관계를 설명하는 문단이 따로 있으면 첫 선을 `click`으로 두고 나머지를 거기 매단다
+(문단 ↔ 단계를 맞추는 원칙이 우선).
+
+**선은 관계마다 SVG를 따로 만든다.** 풀캔버스 SVG 한 장에 선을 다 그리면 ① 관계를 하나씩
+짚을 수 없고 ② 방향 효과를 걸면 화면 전체가 미끄러지고 ③ 1920×1080 투명 판이 캔버스를 덮어
+Genitor에서 아래 요소를 고르기 어렵다. `viewBox`로 캔버스 좌표계를 유지하면 경로 좌표는
+그대로 두고 상자만 잘라낼 수 있다.
+
+```html
+<!-- 곡선 하나 = SVG 하나. viewBox가 캔버스 좌표를 그대로 쓰므로 d는 손대지 않는다 -->
+<svg data-anim="fadeIn" data-anim-duration="240" data-anim-name="arc1"
+     width="1367" height="118" viewBox="237 438 1367 118" fill="none"
+     style="position:absolute;left:237px;top:438px;width:1367px;height:118px;">
+  <path d="M 240 552 Q 920 330 1600 552" stroke="#00A87A" stroke-width="2.5" fill="none"/>
+</svg>
+<!-- 둘째 선부터는 첫 선에 매달아 100ms씩 -->
+<svg data-anim="fadeIn" data-anim-duration="240" data-anim-trigger="with" data-anim-ref="arc1"
+     data-anim-delay="100" data-anim-name="arc2" … ></svg>
+<!-- 라벨은 자기 선에 -->
+<div data-anim="fadeIn" data-anim-duration="250" data-anim-trigger="with" data-anim-ref="arc1"
+     data-anim-delay="120" style="position:absolute;left:690px;top:374px;…">이후 단계가 다시 읽는다</div>
+```
+
+- `slideIn`의 이동량은 요소 크기의 34%다. 1000px가 넘는 곡선에 걸면 과하게 움직이니 `fadeIn`을 쓴다.
+- **"선이 그려지는" 효과는 만들 수 없다.** `stroke-dasharray`/`dashoffset` 애니메이션은 CSS
+  `@keyframes`라 금지 대상이고(추출 시 최종 상태로 고정), Genitor에도 draw 계열 효과가 없다.
+  꼭 필요한 핵심 관계 하나가 있다면 긴 곡선을 2~3토막 SVG로 쪼개 80ms씩 어긋내 흉내 낸다.
+
 **노트의 문단과 클릭 단계를 맞춘다 (핵심)**
 
 이 스킬의 기본값은 "발표 흐름 연동"이다. 노트 원고의 문단(beat) 수와 그 장의 **click 단계 수를
