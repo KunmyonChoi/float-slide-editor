@@ -41,6 +41,56 @@ describe('computeSteps — 트리거 그룹핑', () => {
     expect(info.stepOf.x).toBe(0)
   })
 
+  // 아래 네 가지는 실제 덱(23장·456요소)에서 조용히 어긋나던 지점이다.
+  // 표 한 장이 클릭 4번 대신 44번을 요구하고, 표지 부제가 자동으로 흐르지 않았다.
+  it('뒤에 선언된 앵커도 참조한다 — 전방 참조가 클릭 단계로 흩어지지 않는다', () => {
+    const els = []
+    for (let i = 0; i < 10; i++) {
+      els.push(mk('r' + i, { effect: 'fadeIn', seq: i, trigger: { mode: 'with', ref: 'anchor' } }))
+    }
+    els.push(mk('anchor', { effect: 'fadeIn', seq: 10, trigger: { mode: 'click' } }))
+
+    const info = computeSteps(els)
+    expect(info.stepCount).toBe(1)
+    expect(info.stepOf.r0).toBe(0)
+    expect(info.stepOf.r9).toBe(0)
+  })
+
+  it('auto를 참조하면 체인 전체가 auto — 클릭을 요구하지 않는다', () => {
+    const els = [
+      mk('title', { effect: 'fadeIn', seq: 0, durationMs: 500, trigger: { mode: 'auto' } }),
+      mk('sub', { effect: 'slideIn', seq: 1, durationMs: 500, delayMs: 150, trigger: { mode: 'after', ref: 'title' } }),
+      mk('badge', { effect: 'fadeIn', seq: 2, delayMs: 80, trigger: { mode: 'with', ref: 'title' } }),
+    ]
+    const info = computeSteps(els)
+
+    expect(info.stepCount).toBe(0)                 // 클릭 없이 장이 살아난다
+    expect(info.autoOffsets).toEqual({ title: 0, sub: 650, badge: 80 })
+    expect(info.stepOf.sub).toBeUndefined()
+  })
+
+  it('with도 delay를 인정한다 — 한 단계 안에서 계단식 등장', () => {
+    const els = [
+      mk('a', { effect: 'fadeIn', seq: 0, durationMs: 300, trigger: { mode: 'click' } }),
+      mk('b', { effect: 'fadeIn', seq: 1, durationMs: 300, delayMs: 90, trigger: { mode: 'with', ref: 'a' } }),
+      mk('c', { effect: 'fadeIn', seq: 2, durationMs: 300, delayMs: 180, trigger: { mode: 'with', ref: 'a' } }),
+    ]
+    const info = computeSteps(els)
+
+    expect(info.stepCount).toBe(1)                 // 클릭은 한 번
+    expect(info.offsetOf).toEqual({ a: 0, b: 90, c: 180 })
+  })
+
+  it('순환 참조는 끊고 단계로 떨어뜨린다(무한 재귀 없음)', () => {
+    const els = [
+      mk('x', { effect: 'fadeIn', seq: 0, trigger: { mode: 'with', ref: 'y' } }),
+      mk('y', { effect: 'fadeIn', seq: 1, trigger: { mode: 'with', ref: 'x' } }),
+    ]
+    const info = computeSteps(els)
+    expect(info.stepCount).toBeGreaterThanOrEqual(1)
+    expect(Object.keys(info.stepOf).sort()).toEqual(['x', 'y'])
+  })
+
   it('애니 없는 요소는 무시', () => {
     const info = computeSteps([mk('a', null), mk('b', { effect: 'none' }), mk('c', { effect: 'fadeIn', seq: 0, trigger: { mode: 'click' } })])
     expect(info.stepCount).toBe(1)

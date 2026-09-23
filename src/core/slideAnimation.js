@@ -43,29 +43,54 @@ export function computeSteps(elements) {
   const byId = {}
   for (const e of animated) byId[e.id] = e
 
+  // ── 1) 참조 해소: 각 요소가 어느 '뿌리'에 매달렸는지 ──
+  // 선언 순서와 무관하게 해소한다. 예전에는 앞에서 이미 처리된 참조만 인정해서, 뒤에 선언된
+  // 앵커를 가리키면(표 10행이 아래쪽 구분선을 참조하는 식) 조용히 전부 각자의 클릭 단계로
+  // 흩어졌다 — 클릭 4번이면 될 장이 44번이 됐다. 이름이 같은 슬라이드에 있으면 위치는 따지지 않는다.
+  // 순환하거나 못 찾는 참조만 자기 자신이 뿌리(= 독립 클릭 단계)가 된다.
+  const rootOf = {}
+  const findRoot = (e, seen) => {
+    if (rootOf[e.id]) return rootOf[e.id]
+    const tr = e.anim.trigger || { mode: 'click' }
+    const chained = tr.mode === 'with' || tr.mode === 'after'
+    const ref = chained && tr.ref ? byId[tr.ref] : null
+    if (!ref || ref.id === e.id || seen.has(ref.id)) return (rootOf[e.id] = e.id)
+    seen.add(e.id)
+    return (rootOf[e.id] = findRoot(ref, seen))
+  }
+  for (const e of animated) findRoot(e, new Set([e.id]))
+
+  // ── 2) 뿌리에 단계 번호를 매긴다(번호는 선언 순서를 따른다) ──
   const stepOf = {}, offsetOf = {}, autoOffsets = {}
   let stepCount = 0
   for (const e of animated) {
-    const tr = e.anim.trigger || { mode: 'click' }
+    if (rootOf[e.id] !== e.id) continue
     // 자동: 클릭 단계에 포함하지 않음 — CSS animation-delay로 delayMs 그대로 사용
-    if (tr.mode === 'auto') {
-      autoOffsets[e.id] = e.anim.delayMs || 0
-      continue
-    }
-    const ref = tr.ref && byId[tr.ref] && stepOf[tr.ref] != null ? tr.ref : null
-    if (tr.mode === 'with' && ref) {
-      stepOf[e.id] = stepOf[ref]
-      offsetOf[e.id] = offsetOf[ref]
-    } else if (tr.mode === 'after' && ref) {
-      stepOf[e.id] = stepOf[ref]
-      offsetOf[e.id] = offsetOf[ref] + (byId[ref].anim.durationMs || DEFAULT_DUR) + (e.anim.delayMs || 0)
-    } else {
-      // click(또는 ref 해소 실패 폴백) → 새 단계
-      stepOf[e.id] = stepCount
-      offsetOf[e.id] = e.anim.delayMs || 0
-      stepCount++
-    }
+    if ((e.anim.trigger?.mode || 'click') === 'auto') autoOffsets[e.id] = e.anim.delayMs || 0
+    else { stepOf[e.id] = stepCount++; offsetOf[e.id] = e.anim.delayMs || 0 }
   }
+
+  // ── 3) 체인을 따라 시작 시각을 채운다 ──
+  // 참조 대상이 먼저 계산되도록 재귀로 올라간다(뿌리는 2)에서 이미 값이 있다).
+  // 뿌리가 auto면 체인 전체가 auto다 — "제목 뜨고 이어서 부제"가 클릭을 요구하지 않는다.
+  const startOf = (e) => {
+    const known = offsetOf[e.id] ?? autoOffsets[e.id]
+    if (known != null) return known
+    const tr = e.anim.trigger
+    const ref = byId[tr.ref]
+    const base = startOf(ref)
+    const delay = e.anim.delayMs || 0
+    // with = 같은 시작점 + 자기 지연(0이면 완전 동시). 지연을 주면 한 단계 안에서 계단식 등장이 된다.
+    // after = 대상이 끝난 뒤 + 자기 지연.
+    const off = tr.mode === 'after'
+      ? base + (ref.anim.durationMs || DEFAULT_DUR) + delay
+      : base + delay
+    if (autoOffsets[ref.id] != null) autoOffsets[e.id] = off
+    else { stepOf[e.id] = stepOf[ref.id]; offsetOf[e.id] = off }
+    return off
+  }
+  for (const e of animated) startOf(e)
+
   return { stepCount, stepOf, offsetOf, autoOffsets, order: animated.map(e => e.id) }
 }
 

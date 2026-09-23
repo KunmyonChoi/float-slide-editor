@@ -307,18 +307,65 @@ body { width: 1920px; height: 1080px; overflow: hidden; position: relative; back
 |---|---|---|
 | `data-anim` | `fadeIn` `slideIn` `scaleIn` `pop` `fadeOut` `slideOut` `scaleOut` | (없으면 모션 없음) |
 | `data-anim-dir` | `left` `right` `up` `down` — **`slideIn`/`slideOut`만** (화살표 = 요소가 움직이는 방향) | `up` |
-| `data-anim-duration` | ms (50~10000) | `500` |
-| `data-anim-delay` | ms | `0` |
+| `data-anim-duration` | ms (50~10000) — 역할에 따라 달리 줄 것(아래 표) | `500` |
+| `data-anim-delay` | ms — `click`/`auto`는 시작 지연, `with`는 같은 단계 안의 시차, `after`는 간격 | `0` |
 | `data-anim-trigger` | `click` `auto` `with` `after` | `click` |
 | `data-anim-name` | 이 요소의 이름(다른 요소가 참조용으로 씀) | — |
 | `data-anim-ref` | `with`/`after`가 가리킬 상대의 `data-anim-name` | — |
 
 **트리거 4종**
-- `click` — **새 단계**. 발표자가 클릭할 때 등장. 단계 수 = click 요소 수.
-- `auto` — 장에 들어서는 즉시 자동 재생(단계에 포함되지 않음). 표지·배경·제목처럼
-  "이미 떠 있어야 하는" 것에 쓴다.
-- `with` — `data-anim-ref` 대상과 **같은 단계에서 동시에**.
-- `after` — 대상이 끝난 뒤 `data-anim-delay`만큼 두고 **자동으로 이어서**. 같은 단계 안의 연쇄.
+- `click` — **새 단계**. 발표자가 클릭할 때 등장. 단계 수 = click으로 시작하는 묶음 수.
+- `auto` — 장에 들어서는 즉시 자동 재생(클릭 단계에 포함되지 않음). 표지·배경·제목처럼
+  "이미 떠 있어야 하는" 것에 쓴다. **`auto`를 참조한 `with`/`after`도 자동**이 된다 —
+  제목이 뜨고 부제가 이어 흐르는 도입부를 클릭 없이 만들 수 있다.
+- `with` — `data-anim-ref` 대상과 **같은 단계에서**. `data-anim-delay`를 주면 같은 단계 안에서
+  그만큼 늦게 시작한다(= 계단식 등장). 0이면 완전 동시.
+- `after` — 대상이 **끝난 뒤** `data-anim-delay`만큼 두고 이어서. 같은 단계 안의 연쇄.
+
+`with`와 `after`의 차이는 시간 누적이다. `after`는 앞 요소의 재생시간이 통째로 더해지므로
+열 개를 이으면 5초가 넘는다. **여러 개를 차례로 흘릴 때는 `after` 체인이 아니라
+`with` + 늘어나는 `delay`**를 쓴다 — 서로 겹치며 흘러 훨씬 자연스럽고 빠르다.
+
+```html
+<!-- 나쁨: after 체인 — 10행이면 5초 이상, 발표자가 기다린다 -->
+<div data-anim="fadeIn" data-anim-trigger="after" data-anim-ref="row1" …>
+
+<!-- 좋음: 같은 단계에서 90ms씩 어긋나며 겹쳐 흐른다 — 10행이 1.1초 -->
+<div data-anim="fadeIn" data-anim-duration="260" data-anim-trigger="with"
+     data-anim-ref="row1" data-anim-delay="90" …>
+```
+
+**재생시간은 역할에 따라 다르게** (기본값 500ms만 쓰면 덱 전체가 한 박자로 밋밋해진다)
+
+| 역할 | `data-anim-duration` | 비고 |
+|---|---|---|
+| 장 제목·표지 문구 | 500~600 | 천천히 자리잡는 느낌 |
+| 본문 카드·블록 | 350~450 | 기본 리듬 |
+| 표의 행·목록 항목 | 120~180 | 여러 개가 연달아 흐르므로 짧게 |
+| 숫자·강조(`pop`) | 250~300 | 짧고 탄력 있게 |
+| 퇴장(`fadeOut` 등) | 200~300 | 등장보다 빠르게 |
+
+**반복 구조(표·목록·그리드)는 '행 단위'로 묶는다**
+
+행 하나가 여러 조각(배경바·번호·제목·설명)으로 나뉘어 있으면, 조각들은 **행 앵커에 `with`(지연 0)**
+으로 붙이고 **행끼리만 `delay`로 어긋낸다.** 조각 하나하나를 각각 등장시키면 화면이 지저분해지고,
+반대로 40조각을 전부 지연 0으로 묶으면 한 순간에 번쩍인다.
+
+```html
+<!-- 표 10행 — 클릭 한 번에 위에서 아래로 훑듯 흐른다 (총 ≈1.1초) -->
+<div data-anim="fadeIn" data-anim-duration="160" data-anim-name="row1" …>행1 배경</div>
+<div data-anim="fadeIn" data-anim-duration="160" data-anim-trigger="with" data-anim-ref="row1" …>1</div>
+<div data-anim="fadeIn" data-anim-duration="160" data-anim-trigger="with" data-anim-ref="row1" …>행1 제목</div>
+
+<div data-anim="fadeIn" data-anim-duration="160" data-anim-trigger="with" data-anim-ref="row1"
+     data-anim-delay="90" data-anim-name="row2" …>행2 배경</div>
+<div data-anim="fadeIn" data-anim-duration="160" data-anim-trigger="with" data-anim-ref="row2" …>2</div>
+…  <!-- row3은 delay="180", row4는 "270" … 행 번호 × 90ms -->
+```
+
+- 행 조각은 **자기 행 앵커**를 참조한다(`row2`의 조각은 `row2`를 참조) — 그래야 행이 통째로 함께 움직인다.
+- 행 앵커끼리는 **첫 행을 참조**하고 `delay`만 늘린다. 그래야 총 길이가 `(행 수 × 간격)`으로 예측된다.
+- 간격은 60~120ms. 행이 많으면(10행 초과) 간격을 줄이거나 한 화면에 덜 담는다.
 
 **노트의 문단과 클릭 단계를 맞춘다 (핵심)**
 
@@ -338,10 +385,12 @@ body { width: 1920px; height: 1080px; overflow: hidden; position: relative; back
 
 **절제**
 - 한 장의 click 단계는 **1~4개**. 그보다 많으면 슬라이드를 쪼갠다.
+- **한 순간에 같이 뜨는 요소는 12개까지.** 그보다 많으면 행·열 단위로 묶어 `delay`로 어긋낸다.
+- **한 단계가 4초를 넘기지 않게.** `after` 체인이 길어지면 발표자가 말을 멈추고 기다리게 된다.
 - 덱 전체에서 효과는 **1~2종으로 통일**한다(예: 등장은 `fadeIn`, 강조는 `slideIn` up).
-  장마다 다른 효과를 쓰면 산만하다.
+  장마다 다른 효과를 쓰면 산만하다. 리듬은 효과가 아니라 **재생시간과 지연**으로 만든다.
 - `fadeOut`/`slideOut`/`scaleOut`(퇴장)은 "앞에 있던 걸 치우고 다음을 보여줄 때"만.
-- 지속시간은 400~700ms가 자연스럽다. 1초를 넘기지 않는다.
+- 한 요소의 재생시간이 1초를 넘지 않게 한다.
 - 정보 전달이 목적인 덱(문서형)은 모션 없이 노트만 써도 된다.
 
 **슬라이드 전환** — `.slide`에 선언한다(선택).
@@ -361,7 +410,11 @@ body { width: 1920px; height: 1080px; overflow: hidden; position: relative; back
   각각 추출되면 **모두 한 단계로 함께** 움직인다. 항목별로 따로 등장시키려면 항목마다 요소를
   분리해 각각 `data-anim`을 단다.
 - `data-anim-ref`가 가리키는 이름이 **같은 슬라이드 안**에 없으면 그 요소는 독립 클릭 단계로
-  떨어진다(조용히 어긋나므로 검증 스크립트로 확인할 것).
+  떨어진다(조용히 어긋나므로 검증 스크립트로 확인할 것). 철자·대소문자를 맞출 것.
+- **앵커를 먼저 선언한다.** 참조는 선언 순서와 무관하게 해소되지만, 앵커가 뒤에 있으면 읽는 사람이
+  흐름을 거꾸로 따라가야 한다(옛 Genitor에서는 이 모양이 통째로 클릭 단계로 흩어졌다).
+- 검증 스크립트가 보고하는 **click 단계 수는 속성 개수가 아니라 실제로 재생될 단계 수**다.
+  의도한 문단 수와 다르면 참조가 어긋난 것이다.
 - 배경(풀캔버스 도형)에는 모션을 걸지 않는다.
 
 ## 좌표·배치 규칙
@@ -461,8 +514,8 @@ body { width: 1920px; height: 1080px; overflow: hidden; position: relative; back
 <body>
 
   <div class="slide active" data-transition="fade" style="width:1920px;height:1080px;background:linear-gradient(135deg,#0f172a,#1e293b);font-family:'Noto Sans KR',sans-serif;">
-    <div data-anim="fadeIn" data-anim-trigger="auto" data-anim-name="title" style="position:absolute;left:120px;top:360px;width:1500px;height:210px;font-size:108px;font-weight:900;color:#f8fafc;line-height:1.05;">2026 1분기 리뷰</div>
-    <div data-anim="slideIn" data-anim-dir="up" data-anim-trigger="after" data-anim-ref="title" data-anim-delay="150" style="position:absolute;left:120px;top:600px;width:1350px;height:90px;font-size:42px;color:#94a3b8;">성장 지표와 다음 분기 방향</div>
+    <div data-anim="fadeIn" data-anim-duration="600" data-anim-trigger="auto" data-anim-name="title" style="position:absolute;left:120px;top:360px;width:1500px;height:210px;font-size:108px;font-weight:900;color:#f8fafc;line-height:1.05;">2026 1분기 리뷰</div>
+    <div data-anim="slideIn" data-anim-dir="up" data-anim-duration="450" data-anim-trigger="after" data-anim-ref="title" data-anim-delay="150" style="position:absolute;left:120px;top:600px;width:1350px;height:90px;font-size:42px;color:#94a3b8;">성장 지표와 다음 분기 방향</div>
     <div style="position:absolute;left:120px;top:180px;width:96px;height:12px;background:#818cf8;border-radius:6px;"></div>
     <script type="text/plain" class="fe-notes">
       안녕하세요. 2026년 1분기 리뷰를 시작하겠습니다.
@@ -472,13 +525,13 @@ body { width: 1920px; height: 1080px; overflow: hidden; position: relative; back
   </div>
 
   <div class="slide" style="width:1920px;height:1080px;background:#0f172a;font-family:'Noto Sans KR',sans-serif;">
-    <div data-anim="fadeIn" data-anim-trigger="auto" style="position:absolute;left:120px;top:120px;width:1680px;height:105px;font-size:72px;font-weight:900;color:#f8fafc;">핵심 지표</div>
-    <div data-anim="slideIn" data-anim-dir="up" data-anim-name="m1" style="position:absolute;left:120px;top:300px;width:540px;height:360px;background:#1e293b;border:1px solid rgba(255,255,255,0.1);border-radius:30px;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#818cf8;font-size:84px;font-weight:900;">+38%</div>
-    <div data-anim="fadeIn" data-anim-trigger="with" data-anim-ref="m1" style="position:absolute;left:120px;top:690px;width:540px;height:75px;font-size:33px;color:#cbd5e1;text-align:center;">매출 성장</div>
-    <div data-anim="slideIn" data-anim-dir="up" data-anim-name="m2" style="position:absolute;left:690px;top:300px;width:540px;height:360px;background:#1e293b;border:1px solid rgba(255,255,255,0.1);border-radius:30px;display:flex;align-items:center;justify-content:center;color:#34d399;font-size:84px;font-weight:900;">12.4k</div>
-    <div data-anim="fadeIn" data-anim-trigger="with" data-anim-ref="m2" style="position:absolute;left:690px;top:690px;width:540px;height:75px;font-size:33px;color:#cbd5e1;text-align:center;">신규 사용자</div>
-    <div data-anim="slideIn" data-anim-dir="up" data-anim-name="m3" style="position:absolute;left:1260px;top:300px;width:540px;height:360px;background:#1e293b;border:1px solid rgba(255,255,255,0.1);border-radius:30px;display:flex;align-items:center;justify-content:center;color:#f472b6;font-size:84px;font-weight:900;">96%</div>
-    <div data-anim="fadeIn" data-anim-trigger="with" data-anim-ref="m3" style="position:absolute;left:1260px;top:690px;width:540px;height:75px;font-size:33px;color:#cbd5e1;text-align:center;">유지율</div>
+    <div data-anim="fadeIn" data-anim-duration="550" data-anim-trigger="auto" style="position:absolute;left:120px;top:120px;width:1680px;height:105px;font-size:72px;font-weight:900;color:#f8fafc;">핵심 지표</div>
+    <div data-anim="slideIn" data-anim-dir="up" data-anim-duration="400" data-anim-name="m1" style="position:absolute;left:120px;top:300px;width:540px;height:360px;background:#1e293b;border:1px solid rgba(255,255,255,0.1);border-radius:30px;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#818cf8;font-size:84px;font-weight:900;">+38%</div>
+    <div data-anim="fadeIn" data-anim-duration="300" data-anim-trigger="with" data-anim-ref="m1" data-anim-delay="120" style="position:absolute;left:120px;top:690px;width:540px;height:75px;font-size:33px;color:#cbd5e1;text-align:center;">매출 성장</div>
+    <div data-anim="slideIn" data-anim-dir="up" data-anim-duration="400" data-anim-name="m2" style="position:absolute;left:690px;top:300px;width:540px;height:360px;background:#1e293b;border:1px solid rgba(255,255,255,0.1);border-radius:30px;display:flex;align-items:center;justify-content:center;color:#34d399;font-size:84px;font-weight:900;">12.4k</div>
+    <div data-anim="fadeIn" data-anim-duration="300" data-anim-trigger="with" data-anim-ref="m2" data-anim-delay="120" style="position:absolute;left:690px;top:690px;width:540px;height:75px;font-size:33px;color:#cbd5e1;text-align:center;">신규 사용자</div>
+    <div data-anim="slideIn" data-anim-dir="up" data-anim-duration="400" data-anim-name="m3" style="position:absolute;left:1260px;top:300px;width:540px;height:360px;background:#1e293b;border:1px solid rgba(255,255,255,0.1);border-radius:30px;display:flex;align-items:center;justify-content:center;color:#f472b6;font-size:84px;font-weight:900;">96%</div>
+    <div data-anim="fadeIn" data-anim-duration="300" data-anim-trigger="with" data-anim-ref="m3" data-anim-delay="120" style="position:absolute;left:1260px;top:690px;width:540px;height:75px;font-size:33px;color:#cbd5e1;text-align:center;">유지율</div>
     <script type="text/plain" class="fe-notes">
       매출은 38% 늘었습니다. 목표는 45%였으니 조금 못 미쳤습니다.
 
