@@ -35,6 +35,11 @@ body { width: 1920px; height: 1080px; overflow: hidden; position: relative; back
   <div data-anim="fadeIn" style="position:absolute;left:760px;top:300px;width:1040px;height:300px;font-size:40px;color:#e2e8f0;line-height:1.8;">
     <ul style="padding-left:1.2em;"><li>첫 번째 항목</li><li>두 번째 항목</li></ul>
   </div>
+  <!-- 관계선: 자기 자리(left/top)를 들고 있는 svg — 상자와 이중으로 적용되면 안 된다 -->
+  <svg data-anim="fadeIn" data-anim-duration="240" data-anim-name="arc1" width="400" height="120" viewBox="0 0 400 120" fill="none"
+       style="position:absolute;left:760px;top:700px;width:400px;height:120px;">
+    <path d="M 10 110 Q 200 10 390 110" stroke="#34d399" stroke-width="3" fill="none"/>
+  </svg>
   <script type="text/plain" class="fe-notes">
     첫 장 원고입니다.
 
@@ -59,6 +64,8 @@ const EXTRACT = `async () => {
       id: e.id, type: e.type,
       text: (e.content || '').replace(/\\s+/g, ' ').trim().slice(0, 24),
       anim: e.anim || null,
+      box: [Math.round(e.x), Math.round(e.y), Math.round(e.width), Math.round(e.height)],
+      content: e.type === 'svg' ? e.content : null,
     })),
   }
 }`
@@ -114,7 +121,7 @@ async function main() {
     const s1 = await read(0)
     check(s1.notes === '첫 장 원고입니다.\n\n둘째 문단.', '1장 노트를 그대로 읽는다', s1.notes)
     check(s1.transition?.type === 'fade', '1장 전환은 fade', s1.transition)
-    check(s1.els.length === 5, '1장 요소 5개(제목·카드·캡션·li 둘)', s1.els.map(e => e.text))
+    check(s1.els.length === 6, '1장 요소 6개(제목·카드·캡션·li 둘·관계선)', s1.els.map(e => e.text))
 
     const title = s1.els.find(e => e.text === '핵심 지표')
     check(title?.anim?.trigger.mode === 'auto', '제목은 auto', title?.anim)
@@ -135,6 +142,15 @@ async function main() {
       && lis[1].anim?.trigger.mode === 'with' && lis[1].anim?.trigger.ref === lis[0].id,
       '목록 두 항목이 한 단계로 묶인다', lis.map(e => e.anim))
 
+    // 관계선 svg: 상자는 제자리에, 마크업 안에는 자기 위치가 남지 않아야 한다.
+    // (남으면 렌더 시 상자 위치에 한 번 더 더해져 두 배로 밀린다 — 실제 덱에서 겪은 회귀)
+    const arc = s1.els.find(e => e.type === 'svg')
+    check(arc?.box?.[0] === 760 && arc?.box?.[1] === 700, '관계선 svg 상자가 제자리', arc?.box)
+    check(arc && !/position\s*:|(^|;)\s*(left|top)\s*:/.test((arc.content.match(/style="([^"]*)"/) || [, ''])[1]),
+      '관계선 svg 마크업에 자기 위치가 남지 않는다(이중 적용 방지)', arc?.content?.slice(0, 200))
+    check(arc?.anim?.effect === 'fadeIn' && arc?.anim?.durationMs === 240,
+      '관계선 svg가 모션을 갖는다', arc?.anim)
+
     // ── 2장: 배경 + 원고만 ──
     const s2 = await read(1)
     check(s2.notes === '잠깐 쉬어 가는 장. 원고만 있습니다.', '2장 노트를 읽는다', s2.notes)
@@ -150,7 +166,7 @@ async function main() {
     for (const p of problems) console.error('  ✗ ' + p)
     process.exit(1)
   }
-  console.log('OK — 덱 모션 규약(노트·병합 카드·참조 해소·목록 묶음) 정상.')
+  console.log('OK — 덱 모션 규약(노트·병합 카드·참조 해소·목록 묶음·관계선 svg) 정상.')
 }
 
 main().catch((e) => { console.error(e); process.exit(1) })

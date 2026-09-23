@@ -10,6 +10,7 @@
  */
 
 import { parseAnimAttrs, parseTransitionAttrs, readSlideNotes, resolveAnimSpecs } from './deckMotion.js'
+import { stripSvgSelfPositioning } from './svgContent.js'
 import { normFractions, MAX_ROWS, MAX_COLS, TABLE_BORDER_COLOR } from './slideTable.js'
 
 let _flatCounter = 0
@@ -2341,8 +2342,11 @@ export function extractFlatElements(doc, win, existingMaxId = 0) {
       ancestor = ancestor.parentElement
     }
     if (insideMerged) continue
-    // SVG outerHTML 보존
-    const svgHtml = svg.outerHTML
+    // SVG outerHTML 보존 — 단, 자기 자신을 배치하던 절대 위치는 떼어낸다.
+    // 추출된 요소는 상자(x/y/width/height)를 따로 들고 가고, 렌더는 그 상자 안에 이 마크업을
+    // 그대로 넣는다. 안쪽에 left/top이 남아 있으면 상자 위치에 한 번 더 더해져 두 배로 밀린다
+    // (전면 캔버스 svg는 left:0;top:0이라 우연히 멀쩡했고, 잘라 쓴 svg에서 드러났다).
+    const svgHtml = stripSvgSelfPositioning(svg.outerHTML)
     result.push({
       id: nextFlatId(),
       sourceId: null,

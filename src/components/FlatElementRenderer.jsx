@@ -1,10 +1,11 @@
-import { useCallback, useState, useEffect, useRef } from 'react'
+import { useCallback, useState, useEffect, useRef, useMemo } from 'react'
 import { useFlatStore, isBackgroundLayer } from '../store/flatStore'
 import { useEditorStore } from '../store/editorStore'
 import { BlobStore } from '../core/BlobStore'
 import { pointsToSvgPath, connectorCurvePath, connectorLabelMid } from '../core/PolyShapeUtils'
 import { tableContainerStyle, cellStyle } from '../core/slideTable'
 import { isCoarsePointer } from '../core/pointerEnv'
+import { stripSvgSelfPositioning } from '../core/svgContent'
 import AudioVisualizer from './AudioVisualizer'
 import ChromaVideoPlayer from './ChromaVideoPlayer'
 import MatteVideoPlayer from './MatteVideoPlayer'
@@ -96,6 +97,11 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
   }, [element.id, element.type, element.shapeType, setEditingFlat])
 
   const { zIndex, isRich, merged, styles } = element
+
+  // 이미 가져와 저장된 프로젝트에는 자기 위치를 품은 svg 마크업이 남아 있을 수 있다.
+  // 추출 단계에서도 떼지만(svgContent), 그 전에 만들어진 덱을 위해 그릴 때도 한 번 더 막는다.
+  const svgHtml = useMemo(
+    () => (type === 'svg' ? stripSvgSelfPositioning(content) : null), [type, content])
 
   const baseStyle = {
     position: 'absolute',
@@ -371,7 +377,7 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
         style={baseStyle}
         onMouseDown={handleMouseDown}
         onClick={handleClick}
-        dangerouslySetInnerHTML={{ __html: content }}
+        dangerouslySetInnerHTML={{ __html: svgHtml }}
       />
     )
   }
