@@ -11,6 +11,9 @@
   WRAP           선언한 <br> 수보다 실제 렌더된 줄이 많은 요소(의도치 않은 줄바꿈).
   OVERFLOW       내용 높이가 지정 height를 넘는 요소.
   OUTSIDE        캔버스 밖으로 나간 요소.
+  PAD            상자(배경·테두리) 위에 얹힌 글자가 상자를 넘거나 여백이 좁은 것.
+                 카드와 글자는 절대 위치 형제라 서로를 모른다 — 위 검사들은 전부 통과하면서
+                 글자가 상자를 뚫고 나갈 수 있다(선언 산수가 어긋난 채 나온 실제 사례).
 
 발표자 노트(.fe-notes)와 모션(data-anim) 규약도 함께 본다. 이쪽은 렌더에 드러나지 않고
 Genitor로 가져가야 어긋난 게 보이므로 특히 중요하다.
@@ -99,6 +102,54 @@ CHECK_JS = """
           `${at} OUTSIDE ${Math.round(box.width)}x${Math.round(box.height)} ` +
           `(캔버스 ${CW}x${CH}) :: ${label}`
         );
+      }
+    }
+
+    // ── 상자 안 텍스트의 여백 (PAD) ──
+    // 이 배치 모델에서 카드와 그 위의 글자는 부모-자식이 아니라 절대 위치 형제다. 서로를 모르므로
+    // 위의 네 검사(FLEX/WRAP/OVERFLOW/OUTSIDE)는 전부 통과하면서 글자가 상자를 뚫고 나갈 수 있다.
+    // 실제 덱에서 카드 본문이 선언 산수만으로 상자 바닥을 4~14px 넘긴 채 나왔다.
+    {
+      const kids = [...slide.children].filter(el => el.tagName !== 'SCRIPT' && !el.classList.contains('fe-notes'));
+      const boxed = [];
+      for (const el of kids) {
+        const cs = getComputedStyle(el);
+        if (cs.display === 'none' || cs.visibility === 'hidden') continue;
+        const r = el.getBoundingClientRect();
+        if (r.width < 2 || r.height < 2) continue;
+        const bg = cs.backgroundColor;
+        const hasBg = bg && bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent';
+        const hasBorder = cs.borderWidth && !cs.borderWidth.split(' ').every(v => v === '0px');
+        const text = (el.textContent || '').replace(/\\s+/g, ' ').trim();
+        // 배경/테두리가 있고 자기 글자는 없는 것 = 담는 상자. 전면 배경은 제외(모든 글자의 부모가 된다).
+        const isBox = (hasBg || hasBorder) && !text && !(r.width >= CW * 0.9 && r.height >= CH * 0.9);
+        boxed.push({ el, r, isBox, text });
+      }
+      const boxes = boxed.filter(b => b.isBox);
+      for (const t of boxed) {
+        if (t.isBox || !t.text) continue;
+        // 가장 작은(가장 가까운) 상자 하나에만 책임을 묻는다 — 겹친 상자마다 중복 보고하지 않도록.
+        const holder = boxes
+          .filter(b => t.r.left >= b.r.left - 2 && t.r.right <= b.r.right + 2
+            && t.r.bottom > b.r.top && t.r.top < b.r.bottom)
+          .sort((p, q) => p.r.width * p.r.height - q.r.width * q.r.height)[0];
+        if (!holder) continue;
+        const gap = {
+          위: Math.round(t.r.top - holder.r.top), 아래: Math.round(holder.r.bottom - t.r.bottom),
+          왼: Math.round(t.r.left - holder.r.left), 오른: Math.round(holder.r.right - t.r.right),
+        };
+        const worst = Math.min(...Object.values(gap));
+        // 여백 기준은 상자 높이에 비례 — 56px짜리 행과 160px 카드를 같은 잣대로 잴 수 없다.
+        const need = Math.max(10, Math.min(20, Math.round(holder.r.height * 0.10)));
+        if (worst >= need) continue;
+        const where = `${S} @${Math.round(t.r.left)},${Math.round(t.r.top)}`;
+        const desc = t.text.slice(0, 26);
+        const sides = Object.entries(gap).filter(([, v]) => v < need).map(([k, v]) => `${k} ${v}px`).join(' · ');
+        if (worst < 0) {
+          problems.push(`${where} PAD 글자가 상자를 넘어간다 (${sides}) :: ${desc}`);
+        } else {
+          warnings.push(`${where} PAD 상자 안쪽 여백이 좁다 (${sides} · ${need}px 이상 권장) :: ${desc}`);
+        }
       }
     }
 
@@ -361,6 +412,7 @@ def main():
     for line in problems:
         print("  " + line)
     print("\n※ FLEX+children이 보이면 그 카드를 '도형 + 절대 위치 텍스트 블록'으로 분리할 것.")
+    print("※ PAD는 좌표 산수 문제다 — 글자 블록의 top+height가 상자 바닥에서 여백만큼 남는지 확인할 것.")
     print("※ ANIM-REF는 조용히 어긋난다 — data-anim-name과 data-anim-ref 철자를 맞출 것.")
     return 1
 
