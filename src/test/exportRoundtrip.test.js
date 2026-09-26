@@ -14,27 +14,34 @@ import {
 
 // ── pptxgenjs mock (Enhanced: slide._items에 opts 보존) ──
 
-vi.mock('pptxgenjs', () => ({
-  default: class MockPptxGenJS {
-    constructor() {
-      this.slides = []
-      this.layout = null
-      this._layouts = {}
-    }
-    defineLayout(layout) { this._layouts[layout.name] = layout }
-    addSlide() {
-      const slide = {
-        _items: [],
-        addText(runs, opts) { this._items.push({ type: 'text', runs, opts }) },
-        addImage(opts) { this._items.push({ type: 'image', opts }) },
-        addShape(shape, opts) { this._items.push({ type: 'shape', shape, opts }) },
+// ── pptxgenjs mock — 한 파일에 두 번 선언하면 둘 다 호이스팅되어 승자가 run마다 바뀐다.
+// (실제로 '_instances'를 쓰는 아래 블록이 간헐적으로 무너졌다.) 상위집합 하나로 둔다.
+vi.mock('pptxgenjs', () => {
+  const instances = []
+  return {
+    default: class MockPptxGenJS {
+      constructor() {
+        this.slides = []
+        this.layout = null
+        this._layouts = {}
+        instances.push(this)
       }
-      this.slides.push(slide)
-      return slide
-    }
-    async writeFile() { /* no-op */ }
-  },
-}))
+      static _instances = instances
+      defineLayout(layout) { this._layouts[layout.name] = layout }
+      addSlide() {
+        const slide = {
+          _items: [],
+          addText(runs, opts) { this._items.push({ type: 'text', runs, opts }) },
+          addImage(opts) { this._items.push({ type: 'image', opts }) },
+          addShape(shape, opts) { this._items.push({ type: 'shape', shape, opts }) },
+        }
+        this.slides.push(slide)
+        return slide
+      }
+      async writeFile() { /* no-op */ }
+    },
+  }
+})
 
 const { exportToPptx } = await import('../core/PptExporter')
 
@@ -136,32 +143,6 @@ describe('PPT 매핑 상세 검증', () => {
   let lastInstance
 
   // mock에서 마지막 인스턴스를 캡처하기 위해 재-mock
-  vi.mock('pptxgenjs', () => {
-    const instances = []
-    return {
-      default: class MockPptxGenJS {
-        constructor() {
-          this.slides = []
-          this.layout = null
-          this._layouts = {}
-          instances.push(this)
-        }
-        static _instances = instances
-        defineLayout(layout) { this._layouts[layout.name] = layout }
-        addSlide() {
-          const slide = {
-            _items: [],
-            addText(runs, opts) { this._items.push({ type: 'text', runs, opts }) },
-            addImage(opts) { this._items.push({ type: 'image', opts }) },
-            addShape(shape, opts) { this._items.push({ type: 'shape', shape, opts }) },
-          }
-          this.slides.push(slide)
-          return slide
-        }
-        async writeFile() { /* no-op */ }
-      },
-    }
-  })
 
   it.each(singlePageFixtures.map(f => ({ ...f, toString: () => f.name })))('$name — PPT 좌표/타입 매핑', async (fixture) => {
     if (fixture.name === 'svgElement') return // jsdom: SVG→PNG 래스터화 불가(브라우저 전용)
