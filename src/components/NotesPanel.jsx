@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { useFlatStore } from '../store/flatStore'
 import { useEditorStore } from '../store/editorStore'
+import { useKeepAwake } from '../core/keepAwake'
 import { hasApiKey, generateSpeakerNotes, NOTES_TONES, NOTES_LENGTHS, synthesizeSpeech, voicesForModel, getTtsModel, getTtsVoice, setTtsVoice } from '../core/OpenAIClient'
 import { openAiSettings } from './AiSettingsModal'
 import { slidePageDigest } from '../core/slideTextDigest'
@@ -35,6 +36,8 @@ export default function NotesPanel() {
   // 진행 중 작업 종류: 'draft'(AI 초안) | 'audio'(음성) | null. 각 버튼에 정확히 '생성 중' 표시.
   const [busyKind, setBusyKind] = useState(null)
   const busy = busyKind !== null
+  // 노트 음성은 장 수만큼 TTS를 돌린다 — 전체 생성은 몇 분씩 걸리므로 그동안 화면을 붙든다.
+  useKeepAwake(busy)
   const [err, setErr] = useState('')
   const [audioOpen, setAudioOpen] = useState(false)
   const [voice, setVoice] = useState(() => getTtsVoice())

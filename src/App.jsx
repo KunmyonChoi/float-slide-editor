@@ -25,6 +25,9 @@ import { ShareLinkHost } from './components/ShareLinkModal'
 import { fetchSharedProject } from './core/ShareLink'
 import { useFlatStore } from './store/flatStore'
 import { useEditorStore } from './store/editorStore'
+import { useAiJobStore } from './store/aiJobStore'
+import { useWakeLock } from './core/useWakeLock'
+import { useKeepAwake, useKeepAwakeActive } from './core/keepAwake'
 import { useEffect, useState } from 'react'
 
 // 공유 링크(File > 공유 링크 만들기)로 들어온 경우 `?share=<id>` 쿼리로 진입한다.
@@ -70,6 +73,13 @@ export default function App() {
 
   const [shareState, setShareState] = useState(() => (getShareIdFromUrl() ? 'loading' : 'none'))
   const [shareError, setShareError] = useState(null)
+
+  // 오래 걸리는 작업 중에는 화면을 붙든다 — 영상·립싱크는 몇 분씩 걸리고, 그동안 모바일은
+  // 화면을 꺼 버린다. 작업 자체는 계속 돌지만 진행 상황도, 결과가 도착하는 순간도 놓친다.
+  // (발표 화면은 자기 잠금을 따로 쥔다 — FlatPresenter/SpeakerView/AudienceView.)
+  // (PPT 변환·노트 음성은 각자의 컴포넌트가 등록부에 올린다.)
+  useKeepAwake(useAiJobStore(s => s.jobs.some(j => j.status === 'running')))
+  useWakeLock(useKeepAwakeActive())
 
   // 최초 실행: 공유 링크로 들어왔으면 원격 프로젝트를 불러오고, 아니면 빈 프로젝트를 제목 슬라이드로 시작
   // (PowerPoint 식, 바로 편집 가능). 콘텐츠 있으면 유지.

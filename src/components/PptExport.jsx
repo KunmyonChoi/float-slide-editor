@@ -8,6 +8,7 @@ import {
 } from '../core/PptxBackendClient'
 import { APP_VERSION } from '../appVersion'
 import { promptUrl } from './UrlPrompt'
+import { useKeepAwake } from '../core/keepAwake'
 
 const EMBED_PREF_KEY = 'ppt-embed-fonts'
 const NARRATION_PREF_KEY = 'ppt-embed-narration'
@@ -119,6 +120,8 @@ export async function runPptExport(embed) {
 /** 진행 오버레이 + 설정 모달을 담는 호스트. 앱에 한 번만 마운트한다. */
 export function PptExportHost() {
   const { busy, stage, elapsed, settingsOpen } = usePptStore()
+  // 서버 변환은 수십 초가 걸린다 — 그동안 화면이 꺼지면 진행 오버레이도 결과도 놓친다.
+  useKeepAwake(busy)
   return (
     <>
       {busy && <ExportOverlay stage={stage} elapsed={elapsed} />}
