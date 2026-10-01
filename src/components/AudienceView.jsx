@@ -7,6 +7,7 @@ import { computeSteps } from '../core/slideAnimation'
 import { openChannel, ALIVE_INTERVAL_MS } from '../core/presenterChannel'
 import { enterFullscreenOnScreen } from '../core/screenPlacement'
 import { sortedPageKeys } from '../core/usePresentationEngine'
+import { captionSpaceBelow as captionSpaceBelowOf } from '../core/captionPlacement'
 
 /**
  * AudienceView — 청중 창(`?audience=<sessionId>`로 열리는 별도 창).
@@ -100,6 +101,10 @@ export default function AudienceView({ sessionId }) {
     return () => ro.disconnect()
   }, [])
   const scale = Math.min(viewport.w / canvasSize.w, viewport.h / canvasSize.h)
+  // 슬라이드 비율과 화면 비율이 달라 아래에 남는 여백 — 넓으면 자막이 그리 내려간다.
+  const captionSpaceBelow = useMemo(
+    () => captionSpaceBelowOf(viewport, canvasSize, scale),
+    [viewport, canvasSize, scale])
 
   useEffect(() => {
     const onFs = () => setIsFullscreen(!!document.fullscreenElement)
@@ -189,6 +194,7 @@ export default function AudienceView({ sessionId }) {
           playingStep={state.playingStep}
           scale={scale}
           canvasSize={canvasSize}
+          captionSpaceBelow={captionSpaceBelow}
           penActive={false}
           blackout={!!state.blackout}
           strokes={state.strokes || []}
