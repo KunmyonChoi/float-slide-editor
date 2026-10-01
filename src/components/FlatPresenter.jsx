@@ -1,10 +1,11 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useEditorStore } from '../store/editorStore'
 import PresentedSlide from './PresentedSlide'
 import PresenterToolbar from './PresenterToolbar'
 import { usePresentationEngine } from '../core/usePresentationEngine'
 import { useWebFontImports } from '../core/useWebFontImports'
 import { useWakeLock } from '../core/useWakeLock'
+import { captionSpaceBelow as captionSpaceBelowOf } from '../core/captionPlacement'
 
 /**
  * FlatPresenter — 단일 화면 발표(현재 창을 전체화면으로).
@@ -30,6 +31,10 @@ export default function FlatPresenter() {
     return () => window.removeEventListener('resize', onResize)
   }, [])
   const scale = Math.min(viewport.w / canvasSize.w, viewport.h / canvasSize.h)
+  // 슬라이드 비율과 화면 비율이 달라 아래에 남는 여백 — 넓으면 자막이 그리 내려간다.
+  const captionSpaceBelow = useMemo(
+    () => captionSpaceBelowOf(viewport, canvasSize, scale),
+    [viewport, canvasSize, scale])
 
   // 키보드 — 창 + iframe 양쪽에 리스닝(발표 진입 시 포커스가 iframe에 남아있을 수 있다)
   useEffect(() => {
@@ -101,6 +106,7 @@ export default function FlatPresenter() {
           playingStep={eng.playingStep}
           scale={scale}
           canvasSize={canvasSize}
+          captionSpaceBelow={captionSpaceBelow}
           penActive={penActive}
           penTool={eng.penTool}
           penColor={eng.penColor}

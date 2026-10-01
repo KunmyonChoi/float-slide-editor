@@ -16,13 +16,15 @@ import { slideTransitionCss, slideTransitionVars } from '../core/slideTransition
  * @param {() => number} getAudioTime 나레이션 재생 위치(초)를 돌려주는 함수. 발표자 창에서는
  *                            실제 <audio>를, 청중 창에서는 발표자가 보내온 값에 경과를 더한
  *                            추정값을 돌려준다. 자막이 매 프레임 호출한다.
+ * @param {number} captionSpaceBelow 슬라이드 아래 레터박스 여백(캔버스 단위). 자막이 들어갈
+ *                            만큼 넓으면 슬라이드를 덮는 대신 그 아래에 그린다.
  */
 export default function PresentedSlide({
   slideKey, page, elements, animInfo, revealed, playingStep,
   scale, canvasSize,
   penActive = false, penTool, penColor, penWidth,
   blackout = false, strokes = [], onCommitStroke, onEraseStroke,
-  captionWords, getAudioTime,
+  captionWords, getAudioTime, captionSpaceBelow = 0,
 }) {
   // KaraokeCaptions는 `audioEl.currentTime`을 매 프레임 읽는다 — 엘리먼트 대신
   // 같은 모양의 얇은 어댑터를 넘겨 컴포넌트를 그대로 재사용한다.
@@ -118,7 +120,7 @@ export default function PresentedSlide({
       </div>
 
       {captionWords?.length > 0 && audioClock && (
-        <KaraokeCaptions audioEl={audioClock} words={captionWords} />
+        <KaraokeCaptions audioEl={audioClock} words={captionWords} spaceBelow={captionSpaceBelow} />
       )}
     </div>
   )
