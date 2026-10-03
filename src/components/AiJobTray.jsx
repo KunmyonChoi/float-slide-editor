@@ -4,6 +4,7 @@ import { useAiJobStore } from '../store/aiJobStore'
 import { useFlatStore } from '../store/flatStore'
 import { useDraggableToolbar, GripHandle } from './useDraggableToolbar'
 import { recoverPendingLipsyncJobs, countRecoverable } from '../core/lipsyncRunner'
+import { recoverPendingMusicJobs } from '../core/musicJobRunner'
 import ImageComparePreview from './ImageComparePreview'
 
 /**
@@ -24,6 +25,8 @@ export default function AiJobTray() {
   const visible = jobs.filter(j => j.status !== 'applied') // 적용 끝난 건 숨김
 
   const [expanded, setExpanded] = useState(false)
+  // 새로고침·탭 종료 전에 보낸 음악 생성 작업을 이어 받는다(서버가 결과를 들고 있다).
+  useEffect(() => { recoverPendingMusicJobs() }, [])
   // 캔버스 비교 오버레이를 켠 작업(한 번에 하나). 켜져 있으면 트레이를 오버레이 위로 올려
   // 슬라이더·버튼이 가려지지 않게 한다(오버레이 zIndex 10043).
   const [compareId, setCompareId] = useState(null)
@@ -183,6 +186,7 @@ function JobCard({ job, comparing, onCompare }) {
         : [{ mode: 'add', label: '적용' }])
 
   const isImg = IMAGE_KINDS.includes(job.kind)
+  const isAudio = job.kind === 'music-gen'
   const running = job.status === 'running'
   const ready = job.status === 'ready'
   const failed = job.status === 'failed'
@@ -224,7 +228,21 @@ function JobCard({ job, comparing, onCompare }) {
       {ready && (
         <>
           <div style={{ fontSize: 12, color: '#34d399', margin: '6px 0 8px' }}>✅ 완료</div>
-          {resultUrl && (
+          {resultUrl && isAudio && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <audio src={resultUrl} controls preload="metadata" style={{ width: '100%', height: 36 }} />
+              <div style={{ fontSize: 11, color: '#94a3b8', lineHeight: 1.5 }}>
+                {job.result.seconds ? `${Math.round(job.result.seconds)}초` : ''}
+                {job.result.truncated && <span style={{ color: '#fbbf24' }}> · 길이 제한에 걸려 끝이 잘렸을 수 있어요</span>}
+                {job.result.style && (
+                  <div title={job.result.style} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#64748b' }}>
+                    {job.result.style}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+          {resultUrl && !isAudio && (
             <div onClick={() => setLightbox(true)} title="클릭하여 크게 보기"
               style={{ position: 'relative', borderRadius: 8, overflow: 'hidden', cursor: 'zoom-in', background: '#000' }}>
               {isImg
@@ -253,7 +271,10 @@ function JobCard({ job, comparing, onCompare }) {
                 {comparing ? '비교 끄기' : '캔버스에서 비교'}
               </button>
             )}
-            <button onClick={() => setLightbox(true)} style={ghostBtn}>미리보기</button>
+            {isAudio
+              ? <a href={resultUrl} download={`genitor-music-${job.result.serverId || job.id}.mp3`}
+                  style={{ ...ghostBtn, textDecoration: 'none' }}>mp3 받기</a>
+              : <button onClick={() => setLightbox(true)} style={ghostBtn}>미리보기</button>}
             {/* 적용 방식이 여럿이면 주버튼 + ▾ 분할, 하나면 단일 버튼 */}
             {applyOptions.length > 1 ? (
               <div style={{ display: 'flex' }}>
@@ -300,7 +321,7 @@ function JobCard({ job, comparing, onCompare }) {
         />
       )}
 
-      {lightbox && resultUrl && createPortal(
+      {lightbox && resultUrl && !isAudio && createPortal(
         <div onClick={() => setLightbox(false)}
           style={{ position: 'fixed', inset: 0, zIndex: 10060, background: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'zoom-out' }}>
           {isImg

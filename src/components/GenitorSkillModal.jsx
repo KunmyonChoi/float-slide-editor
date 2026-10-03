@@ -4,7 +4,7 @@ import { createPortal } from 'react-dom'
 
 /**
  * Claude 슬라이드 스킬 설치 안내 모달 — 파일 메뉴에서 openGenitorSkill()로 연다.
- * Claude Code용 스킬 2종(genitor-slides, genitor-higgsfield)을 zip으로 내려받아
+ * Claude Code용 스킬 3종(genitor-slides, genitor-higgsfield, genitor-music)을 zip으로 내려받아
  * ~/.claude/skills/ 에 설치하는 방법을 안내한다. 스킬 원본은 /public/skills/ 에서 서빙된다.
  */
 const useStore = create(() => ({ open: false }))
@@ -24,6 +24,11 @@ const SKILLS = [
     title: 'genitor-higgsfield',
     desc: 'Higgsfield AI 이미지·영상을 덱에 임베드하는 브리지. 생성은 공식 Higgsfield(Claude Code=CLI / Desktop=MCP 커넥터)에 위임하고, 임베딩 규약만 담당. genitor-slides에 의존하므로 함께 설치.',
   },
+  {
+    name: 'genitor-music',
+    title: 'genitor-music',
+    desc: '덱·모션그래픽용 배경음악과 노래를 오픈 모델 YuE2로 내 Mac의 GPU에서 생성. 템포·구간·드롭을 악보로 설계해 애니메이션과 맞출 수 있음. Claude Code + Apple Silicon Mac에서 실행(그 외 환경은 프롬프트·악보만 만들고 생성은 앱의 음악 생성으로).',
+  },
 ]
 
 const base = import.meta.env.BASE_URL || '/'
@@ -33,6 +38,11 @@ const skillUrl = (name, path) => `${base}skills/${name}/${path}`
 // scripts/verify_deck.py를 참조하므로 같이 내려받아야 검증 스크립트를 실제로 쓸 수 있다.
 const EXTRA_FILES = {
   'genitor-slides': ['scripts/verify_deck.py'],
+  // 설치 스크립트·MPS 래퍼·모션그래픽용 예시 악보(SKILL.md가 모두 경로로 참조한다)
+  'genitor-music': [
+    'scripts/install_mac.sh', 'scripts/yue2_mac.py',
+    'assets/make_motion_bgm_events.py', 'assets/motion-bgm-events.json', 'assets/motion-bgm-style.txt',
+  ],
 }
 
 async function fetchSkill(name) {
@@ -61,7 +71,7 @@ function triggerDownload(blob, filename) {
   URL.revokeObjectURL(url)
 }
 
-// Claude Code용: 두 스킬을 폴더 2개 담은 하나의 zip으로 (unzip → ~/.claude/skills/).
+// Claude Code용: 모든 스킬을 스킬별 폴더로 담은 하나의 zip으로 (unzip → ~/.claude/skills/).
 async function downloadZip(setBusy) {
   setBusy('all')
   try {
@@ -141,7 +151,7 @@ function Dialog() {
         <div style={{ fontSize: 11.5, color: '#94a3b8', lineHeight: 1.6 }}>
           <b style={{ color: '#cbd5e1' }}>Claude Code</b>(터미널) 또는 <b style={{ color: '#cbd5e1' }}>Claude Desktop·웹(claude.ai)</b>에
           설치하는 스킬입니다. Claude에게 “Genitor에서 편집할 슬라이드 만들어줘”라고 하면 이 규약대로 덱 HTML을 작성하고,
-          필요하면 Higgsfield AI로 이미지·영상을 생성해 넣어 줍니다. 결과 HTML을 이 앱의
+          필요하면 Higgsfield AI로 이미지·영상을 생성해 넣어 줍니다. 배경음악·노래는 genitor-music이 YuE2로 내 Mac에서 만들어 줍니다. 결과 HTML을 이 앱의
           <b style={{ color: '#cbd5e1' }}> 파일 ▸ 가져오기</b> 또는 캔버스에 붙여넣기(Ctrl/Cmd+V)로 가져오면 됩니다.
           Claude Desktop처럼 파일 저장이 번거로운 환경에서는 Claude가 이 주소 뒤에
           <b style={{ color: '#cbd5e1' }}> #import=&lt;URL 인코딩된 HTML&gt;</b>을 붙인 링크를 만들어 줄 수도 있습니다
@@ -161,10 +171,10 @@ function Dialog() {
             ))}
             <button type="button" disabled={!!busy} onClick={() => downloadZip(setBusy)}
               style={{ ...primaryBtn, alignSelf: 'flex-start', marginTop: 2, opacity: busy ? 0.6 : 1, cursor: busy ? 'default' : 'pointer' }}>
-              {busy === 'all' ? '준비 중…' : '⬇ 두 스킬 함께 (Claude Code용 zip)'}
+              {busy === 'all' ? '준비 중…' : `⬇ ${SKILLS.length}개 스킬 함께 (Claude Code용 zip)`}
             </button>
             <div style={{ fontSize: 11, color: '#64748b', lineHeight: 1.5 }}>
-              Claude Code는 <b style={{ color: '#94a3b8' }}>함께 zip</b>(폴더 2개)을, Claude Desktop·웹은
+              Claude Code는 <b style={{ color: '#94a3b8' }}>함께 zip</b>(스킬별 폴더)을, Claude Desktop·웹은
               <b style={{ color: '#94a3b8' }}> 스킬별 zip</b>을 받아 각각 업로드합니다(아래 참고).
             </div>
           </div>
@@ -172,8 +182,8 @@ function Dialog() {
 
         <Section title="2. Claude Code에 설치">
           <ol style={{ margin: '2px 0 0', paddingLeft: 18, fontSize: 12.5, color: '#cbd5e1', lineHeight: 1.75 }}>
-            <li><b>genitor-claude-skills.zip</b> 압축 해제 (폴더 2개가 나옵니다).</li>
-            <li>두 폴더를 아래 위치에 복사:
+            <li><b>genitor-claude-skills.zip</b> 압축 해제 (스킬마다 폴더가 하나씩 나옵니다).</li>
+            <li>폴더들을 아래 위치에 복사:
               <div style={{ fontSize: 11.5, color: '#94a3b8', marginTop: 2 }}>
                 전역 사용 → <b>~/.claude/skills/</b> · 특정 프로젝트만 → 그 프로젝트의 <b>.claude/skills/</b>
               </div>
@@ -185,7 +195,7 @@ function Dialog() {
 
         <Section title="3. Claude Desktop·웹(claude.ai)에 설치">
           <ol style={{ margin: '2px 0 0', paddingLeft: 18, fontSize: 12.5, color: '#cbd5e1', lineHeight: 1.75 }}>
-            <li>위에서 <b>스킬별 zip</b>(genitor-slides.zip, genitor-higgsfield.zip)을 각각 내려받습니다.</li>
+            <li>위에서 <b>스킬별 zip</b>(genitor-slides.zip 등)을 각각 내려받습니다.</li>
             <li><b>Settings ▸ Features</b>에서 커스텀 스킬로 <b>각 zip을 하나씩 업로드</b>합니다.
               <div style={{ fontSize: 11.5, color: '#94a3b8', marginTop: 2 }}>
                 Pro·Max·Team·Enterprise 플랜 + 코드 실행(code execution) 활성화 필요. 스킬은 사용자별로 저장됩니다.
@@ -211,6 +221,19 @@ function Dialog() {
             <b>Settings ▸ Connectors ▸ Add custom connector</b>에 아래 URL을 넣고 Connect → Higgsfield 계정 로그인(OAuth).
           </div>
           <CopyRow text="https://mcp.higgsfield.ai/mcp" />
+        </Section>
+
+        <Section title="5. 음악 생성(YuE2) 사전 준비" badge="genitor-music을 쓸 때만">
+          <div style={{ fontSize: 12, color: '#94a3b8', lineHeight: 1.6 }}>
+            YuE2는 <b style={{ color: '#cbd5e1' }}>Apple Silicon(M1 이상) Mac</b>의 GPU에서 돌아갑니다(메모리 16 GB 이상 권장).
+            설치는 한 번만 — Python·torch·YuE2와 모델 약 7.8 GB를 받습니다. 스킬을 설치한 뒤 터미널에서:
+          </div>
+          <CopyRow text="sh ~/.claude/skills/genitor-music/scripts/install_mac.sh" />
+          <div style={{ fontSize: 11, color: '#64748b', marginTop: 6, lineHeight: 1.6 }}>
+            Claude Code에게 시켜도 됩니다(다운로드 전에 확인을 받습니다). 이 앱에서 텍스트 박스 ▸ <b style={{ color: '#94a3b8' }}>✨ AI ▸ 음악 생성</b>을
+            쓰려면 음악 서버(<b style={{ color: '#94a3b8' }}>genitor-music-mac.zip</b>의 launch.command)를 실행하세요 — 같은 설치를 공유합니다.
+            생성한 mp3는 캔버스에 끌어다 놓으면 오디오 요소가 됩니다.
+          </div>
         </Section>
 
         <div style={{ fontSize: 11, color: '#64748b', lineHeight: 1.5 }}>

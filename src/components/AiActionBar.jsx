@@ -15,6 +15,10 @@ import {
 import { openAiSettings } from './AiSettingsModal'
 import MatteInstallModal from './MatteInstallModal'
 import CutoutInstallModal from './CutoutInstallModal'
+import MusicInstallModal from './MusicInstallModal'
+import { checkMusicHealth } from '../core/MusicBackendClient'
+import { startMusicJob, canRefineStyle, MUSIC_LENGTHS } from '../core/musicJobRunner'
+import { htmlToPlain } from '../core/slideTextDigest'
 import MaskBrushOverlay from './MaskBrushOverlay'
 import { useDraggableToolbar, GripHandle } from './useDraggableToolbar'
 
@@ -29,7 +33,7 @@ import { useDraggableToolbar, GripHandle } from './useDraggableToolbar'
  * 따라서 생성 중에도 캔버스를 계속 편집할 수 있고, 결과 확인·적용은 트레이가 담당한다.
  */
 export default function AiActionBar({ elements, scale, canvasRef }) {
-  // 'idle' | 'edit'(설명으로 편집 입력) | 'remix'(리믹스 방향 입력) | 'lipsync'(음성 선택)
+  // 'idle' | 'edit'(설명으로 편집 입력) | 'remix'(리믹스 방향 입력) | 'lipsync'(음성 선택) | 'music'(음악 생성 입력)
   const [phase, setPhase] = useState('idle')
   const [menuOpen, setMenuOpen] = useState(false)
   const [styleOpen, setStyleOpen] = useState(false)
@@ -37,6 +41,13 @@ export default function AiActionBar({ elements, scale, canvasRef }) {
   const [error, setError] = useState('')        // 시작 전 오류(생성 중 오류는 트레이가 보여준다)
   const [showCutoutInstall, setShowCutoutInstall] = useState(false)
   const [showMatteInstall, setShowMatteInstall] = useState(false)
+  const [musicInstall, setMusicInstall] = useState(null) // null | { status, detail }
+
+  // 음악 생성 입력 상태 — 텍스트 박스 내용이 지시문(연주곡) 또는 가사(노래)
+  const [musicMode, setMusicMode] = useState('instrumental') // 'instrumental' | 'song'
+  const [musicLength, setMusicLength] = useState('medium')
+  const [musicStyle, setMusicStyle] = useState('')
+  const [musicRefine, setMusicRefine] = useState(true)
 
   // 설명으로 편집 입력 상태
   const [prompt, setPrompt] = useState('')
@@ -166,6 +177,33 @@ export default function AiActionBar({ elements, scale, canvasRef }) {
     () => (type === 'video' ? listAudioSources(flatElements, pageNotesAudio) : []),
     [type, flatElements, pageNotesAudio],
   )
+  const textOf = useCallback(() => (single && type === 'text' ? htmlToPlain(single.content || '').trim() : ''), [single, type])
+
+  const openMusic = useCallback(() => {
+    closeMenus()
+    setMusicMode('instrumental'); setMusicStyle(textOf()); setMusicRefine(canRefineStyle())
+    setPhase('music')
+  }, [textOf])
+
+  // 음악 생성 — 서버가 없거나 준비 전이면 설치 안내부터(잡을 만들지 않음)
+  const runMusic = useCallback(async () => {
+    if (!single || busy) return
+    setBusy('music'); setError('')
+    try {
+      const h = await checkMusicHealth()
+      if (!h.ok || !h.ready) { setMusicInstall({ status: h.ok ? 'preparing' : 'missing', detail: h.detail }); return }
+      const isSong = musicMode === 'song'
+      startMusicJob({
+        element: single, mode: musicMode, pageKey: pageKey(),
+        description: musicStyle, lyrics: isSong ? textOf() : '',
+        length: musicLength, refine: musicRefine,
+      })
+      setPhase('idle')
+    } catch (e) {
+      setError(e?.message || '음악 생성을 시작하지 못했습니다.')
+    } finally { setBusy('') }
+  }, [single, busy, musicMode, musicStyle, musicLength, musicRefine, textOf])
+
   const runLipsync = useCallback(() => {
     const src = audioSources[pickIdx]
     if (!src || !single) return
@@ -190,6 +228,9 @@ export default function AiActionBar({ elements, scale, canvasRef }) {
 
   const items = []
   if (canGenerate) items.push({ id: 'gen', label: '이미지 생성', styles: true })
+  if (single && type === 'text') {
+    items.push({ id: 'music', label: '음악 생성…', onClick: openMusic, note: busy === 'music' ? '확인 중…' : '로컬 서버' })
+  }
   if (type === 'image') {
     items.push({ id: 'edit', label: '설명으로 편집…', onClick: () => { closeMenus(); setPrompt(''); setPhase('edit') } })
     items.push({
@@ -433,7 +474,65 @@ export default function AiActionBar({ elements, scale, canvasRef }) {
         </div>
       )}
 
+      {/* 음악 생성 — 텍스트 박스 내용을 지시문/가사로 */}
+      {phase === 'music' && single && (
+        <div data-edit-accessory="true" onMouseDown={e => e.stopPropagation()} style={panelStyle(panelLeft, panelTop, PANEL_W)}>
+          <div style={panelTitleStyle}><SparkleIcon /> 음악 생성</div>
+          <div style={{ display: 'flex', gap: 4 }}>
+            {[['instrumental', '배경음악 (연주곡)'], ['song', '노래 (텍스트 = 가사)']].map(([m, label]) => (
+              <button key={m} type="button"
+                onClick={() => { setMusicMode(m); setMusicStyle(m === 'song' ? '' : textOf()) }}
+                style={{ ...toolBtnStyle, ...(musicMode === m ? toolBtnActive : {}) }}>{label}</button>
+            ))}
+          </div>
+          {musicMode === 'song' && (
+            <div style={{ ...hintStyle, maxHeight: 64, overflow: 'hidden', whiteSpace: 'pre-wrap', color: '#94a3b8' }}>
+              가사: {textOf() || '(텍스트 박스가 비어 있습니다)'}
+            </div>
+          )}
+          <div style={hintStyle}>{musicMode === 'song' ? '어떤 노래로 부를까요? (장르·분위기·보컬·언어)' : '어떤 음악일까요? 텍스트 박스 내용이 지시문으로 들어갑니다.'}</div>
+          <textarea
+            value={musicStyle}
+            onChange={e => setMusicStyle(e.target.value)}
+            rows={3}
+            autoFocus
+            spellCheck={false}
+            placeholder={musicMode === 'song'
+              ? '예: 따뜻한 여성 보컬의 한국어 어쿠스틱 팝, 88 BPM'
+              : '예: 밝고 경쾌한 기업 홍보 영상 배경음악, 신스와 드럼, 120 BPM'}
+            onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); runMusic() } }}
+            style={textareaStyle}
+          />
+          {musicMode === 'instrumental' && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#cbd5e1' }}>
+              길이
+              {MUSIC_LENGTHS.map(l => (
+                <button key={l.id} type="button" title={l.hint} onClick={() => setMusicLength(l.id)}
+                  style={{ ...toolBtnStyle, ...(musicLength === l.id ? toolBtnActive : {}) }}>{l.label}</button>
+              ))}
+              <span style={{ color: '#64748b', fontSize: 11 }}>{MUSIC_LENGTHS.find(l => l.id === musicLength)?.hint} · 넘으면 앞부분+엔딩으로 줄임</span>
+            </div>
+          )}
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: canRefineStyle() ? '#cbd5e1' : '#64748b', cursor: canRefineStyle() ? 'pointer' : 'default' }}
+            title={canRefineStyle() ? '' : 'AI 설정에서 OpenAI 키나 로컬 LLM을 켜면 쓸 수 있어요'}>
+            <input type="checkbox" checked={musicRefine && canRefineStyle()} disabled={!canRefineStyle()}
+              onChange={e => setMusicRefine(e.target.checked)} />
+            AI로 영어 스타일 태그로 다듬기 (YuE2는 영어 태그에 맞춰 학습됨)
+          </label>
+          <div style={hintStyle}>로컬 GPU로 생성해 수 분 걸립니다(M1 기준 1분 분량에 10~13분). 작업 트레이에서 듣고 오디오 요소로 추가합니다.</div>
+          {error && <div style={{ fontSize: 11.5, color: '#fca5a5' }}>{error}</div>}
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+            <button type="button" onClick={() => setPhase('idle')} style={ghostBtnStyle}>취소</button>
+            <button type="button" onClick={runMusic} disabled={!musicStyle.trim() || !!busy}
+              style={{ ...primaryBtnStyle, opacity: musicStyle.trim() && !busy ? 1 : 0.5, cursor: musicStyle.trim() && !busy ? 'pointer' : 'default' }}>
+              {busy === 'music' ? '서버 확인 중…' : '생성 시작'}
+            </button>
+          </div>
+        </div>
+      )}
+
       {showCutoutInstall && <CutoutInstallModal onClose={() => setShowCutoutInstall(false)} />}
+      {musicInstall && <MusicInstallModal status={musicInstall.status} detail={musicInstall.detail} onClose={() => setMusicInstall(null)} />}
       {showMatteInstall && <MatteInstallModal onClose={() => setShowMatteInstall(false)} />}
     </>,
     document.body,
