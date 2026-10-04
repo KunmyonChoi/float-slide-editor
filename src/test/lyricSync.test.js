@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { activeLyricIndex, centerTranslate, hasLyricSync, DEFAULT_LYRIC_OFFSET, LYRIC_LEAD_SEC } from '../core/lyricSync'
+import { activeLyricIndex, centerTranslate, hasLyricSync, pickLyricsText, textLabel, DEFAULT_LYRIC_OFFSET, LYRIC_LEAD_SEC } from '../core/lyricSync'
 
 const lines = [
   { start: 16.75, end: 24.25, text: '눈을 감으면 바람이 불어와' },
@@ -39,5 +39,25 @@ describe('가사 싱크 — 연결 유효성', () => {
     expect(hasLyricSync(text, [text, { id: 'a', type: 'audio' }])).toBe(true)
     expect(hasLyricSync(text, [text])).toBe(false)
     expect(hasLyricSync({ ...text, lyricSync: { audioId: 'a', lines: [] } })).toBe(false)
+  })
+})
+
+describe('가사 싱크 — 오디오에 붙일 텍스트 박스 고르기', () => {
+  const title = { id: 'title', type: 'text', content: '하늘을 나는 꿈' }
+  const lyrics = { id: 'lyr', type: 'text', content: '[Verse]\n눈을 감으면 바람이 불어와\n두 발은 어느새 땅을 떠나' }
+  const notes = { id: 'notes', type: 'text', content: '첫째\n둘째\n셋째\n넷째' }
+
+  it('구간 태그가 있는 박스를 먼저, 이미 이 오디오에 연결된 박스가 있으면 그것을', () => {
+    expect(pickLyricsText([title, notes, lyrics], 'a').id).toBe('lyr')
+    expect(pickLyricsText([title, notes], 'a').id).toBe('notes') // 태그가 없으면 줄이 많은 쪽
+    const linked = { ...title, lyricSync: { audioId: 'a', lines: [] } }
+    expect(pickLyricsText([linked, lyrics], 'a').id).toBe('title')
+    expect(pickLyricsText([], 'a')).toBeNull()
+  })
+
+  it('목록 이름은 태그가 아닌 첫 줄, 리치 HTML도 평문으로', () => {
+    expect(textLabel(lyrics)).toBe('눈을 감으면 바람이 불어와')
+    expect(textLabel({ type: 'text', isRich: true, content: '<p>[Chorus]</p><p>나는 <b>날아</b></p>' })).toBe('나는 날아')
+    expect(textLabel({ type: 'text', content: '' })).toBe('(빈 텍스트)')
   })
 })

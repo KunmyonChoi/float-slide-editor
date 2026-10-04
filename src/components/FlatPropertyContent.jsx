@@ -986,7 +986,7 @@ function CodeSection({ el }) {
 }
 
 // 마크다운 — 텍스트 박스를 마크다운으로(편집=원본, 표시=렌더, 커밋 시 재렌더). 코드 모드와 상호배타.
-/** 가사 싱크(텍스트 박스 ↔ 노래 오디오) — 싱크 보정·강조 색·해제. 연결은 ✨ AI ▸ 가사 싱크 연결. */
+/** 가사 싱크(텍스트 박스 ↔ 노래 오디오) — 싱크 보정·강조 색·해제. 연결은 오디오 요소의 ✨ AI ▸ 가사 싱크 연결. */
 function LyricSyncSection({ el }) {
   const ls = el.lyricSync
   const update = (patch) => useFlatStore.getState().updateFlatElement(el.id, { lyricSync: { ...ls, ...patch } })
@@ -1003,7 +1003,7 @@ function LyricSyncSection({ el }) {
       </div>
       <p className="text-[10px] text-slate-500">
         발표 중 노래가 재생되면 가사 {ls.lines?.length || 0}줄이 이 박스 안에서 흐르고 현재 줄이 가운데에서 강조됩니다.
-        타이밍: {ls.source === 'vocal' ? '노래 소리에 맞춤(보컬 정렬)' : '악보 기반 — ✨ AI ▸ 가사 싱크를 해제 후 다시 연결하면 소리에 맞춥니다'}.
+        타이밍: {ls.source === 'vocal' ? '노래 소리에 맞춤(보컬 정렬)' : '악보 기반 — 오디오 요소의 ✨ AI ▸ 가사 싱크를 해제 후 다시 연결하면 소리에 맞춥니다'}.
         {!audioOnPage && <span className="text-amber-400"> 연결된 오디오가 이 슬라이드에 없습니다.</span>}
       </p>
       <label className="flex items-center gap-2 text-xs text-slate-400">

@@ -18,6 +18,7 @@ import CutoutInstallModal from './CutoutInstallModal'
 import MusicInstallModal from './MusicInstallModal'
 import { checkMusicHealth, listMusicJobs, fetchLyricsTiming } from '../core/MusicBackendClient'
 import { startMusicJob, canRefineStyle, MUSIC_LENGTHS, linkLyrics } from '../core/musicJobRunner'
+import { pickLyricsText, textLabel } from '../core/lyricSync'
 import { htmlToPlain } from '../core/slideTextDigest'
 import MaskBrushOverlay from './MaskBrushOverlay'
 import { useDraggableToolbar, GripHandle } from './useDraggableToolbar'
@@ -34,7 +35,7 @@ import { useDraggableToolbar, GripHandle } from './useDraggableToolbar'
  */
 export default function AiActionBar({ elements, scale, canvasRef }) {
   // 'idle' | 'edit'(설명으로 편집 입력) | 'remix'(리믹스 방향 입력) | 'lipsync'(음성 선택) | 'music'(음악 생성 입력)
-  // | 'lyrics'(가사 싱크 연결)
+  // | 'lyrics'(오디오에 가사 싱크 연결)
   const [phase, setPhase] = useState('idle')
   const [menuOpen, setMenuOpen] = useState(false)
   const [styleOpen, setStyleOpen] = useState(false)
@@ -50,8 +51,8 @@ export default function AiActionBar({ elements, scale, canvasRef }) {
   const [musicStyle, setMusicStyle] = useState('')
   const [musicRefine, setMusicRefine] = useState(true)
 
-  // 가사 싱크 연결 — 이 슬라이드의 오디오 요소 + 음악 서버의 노래 작업(타이밍 출처)
-  const [syncAudioId, setSyncAudioId] = useState('')
+  // 가사 싱크 연결 — 선택한 오디오에, 이 슬라이드의 가사 텍스트 박스 + 음악 서버의 노래 작업(타이밍 출처)
+  const [syncTextId, setSyncTextId] = useState('')
   const [syncJobs, setSyncJobs] = useState(null) // null=불러오는 중, []=없음
   const [syncJobId, setSyncJobId] = useState('')
 
@@ -210,28 +211,30 @@ export default function AiActionBar({ elements, scale, canvasRef }) {
     } finally { setBusy('') }
   }, [single, busy, musicMode, musicStyle, musicLength, musicRefine, textOf])
 
-  const pageAudios = useMemo(() => flatElements.filter(e => e.type === 'audio'), [flatElements])
+  // 가사 싱크는 '이 음악에 가사를 붙인다' — 오디오 요소에서 연결·해제한다.
+  const pageTexts = useMemo(() => flatElements.filter(e => e.type === 'text'), [flatElements])
+  const linkedText = type === 'audio' ? pageTexts.find(t => t.lyricSync?.audioId === single.id) : null
 
   const openLyrics = useCallback(async () => {
     closeMenus()
-    const first = pageAudios.find(a => a.musicJobId) || pageAudios[0]
-    setSyncAudioId(first?.id || ''); setSyncJobs(null); setSyncJobId(''); setPhase('lyrics')
+    if (!single) return
+    setSyncTextId(pickLyricsText(pageTexts, single.id)?.id || ''); setSyncJobs(null); setSyncJobId(''); setPhase('lyrics')
     const h = await checkMusicHealth()
     if (!h.ok) { setSyncJobs([]); setError('음악 서버에 연결할 수 없습니다 — 서버를 켜고 다시 여세요.'); return }
     try {
       const jobs = (await listMusicJobs({ mode: 'song' })).filter(j => j.status === 'done')
       setSyncJobs(jobs)
-      setSyncJobId((jobs.find(j => j.id === first?.musicJobId) || jobs[0])?.id || '')
+      setSyncJobId((jobs.find(j => j.id === single.musicJobId) || jobs[0])?.id || '')
     } catch (e) { setSyncJobs([]); setError(e?.message || '노래 목록을 받지 못했습니다.') }
-  }, [pageAudios])
+  }, [single, pageTexts])
 
   const runLinkLyrics = useCallback(async () => {
-    if (!single || !syncAudioId || !syncJobId || busy) return
+    if (!single || !syncTextId || !syncJobId || busy) return
     setBusy('lyrics'); setError('')
     try {
       const { lines, offset, source, busy: serverBusy } = await fetchLyricsTiming(syncJobId)
       if (!lines.length) throw new Error('가사 타이밍이 비어 있습니다.')
-      linkLyrics(pageKey(), single.id, { audioId: syncAudioId, jobId: syncJobId, lines, offset, source })
+      linkLyrics(pageKey(), syncTextId, { audioId: single.id, jobId: syncJobId, lines, offset, source })
       if (serverBusy) {
         // 생성 중이라 소리 정렬을 못 했다 — 악보 기반으로 연결하고, 끝난 뒤 다시 연결하면 정확해진다고 알린다.
         setError('음악 생성 중이라 악보 기반 타이밍으로 연결했습니다. 생성이 끝난 뒤 다시 연결하면 소리에 맞춥니다.')
@@ -241,12 +244,12 @@ export default function AiActionBar({ elements, scale, canvasRef }) {
     } catch (e) {
       setError(e?.message || '가사 싱크를 연결하지 못했습니다.')
     } finally { setBusy('') }
-  }, [single, syncAudioId, syncJobId, busy])
+  }, [single, syncTextId, syncJobId, busy])
 
   const unlinkLyrics = useCallback(() => {
     closeMenus()
-    if (single) useFlatStore.getState().updateFlatElement(single.id, { lyricSync: undefined })
-  }, [single])
+    if (linkedText) useFlatStore.getState().updateFlatElement(linkedText.id, { lyricSync: undefined })
+  }, [linkedText])
 
   const runLipsync = useCallback(() => {
     const src = audioSources[pickIdx]
@@ -274,8 +277,13 @@ export default function AiActionBar({ elements, scale, canvasRef }) {
   if (canGenerate) items.push({ id: 'gen', label: '이미지 생성', styles: true })
   if (single && type === 'text') {
     items.push({ id: 'music', label: '음악 생성…', onClick: openMusic, note: busy === 'music' ? '확인 중…' : '로컬 서버' })
-    if (single.lyricSync) items.push({ id: 'unlyrics', label: '가사 싱크 해제', onClick: unlinkLyrics })
-    else if (pageAudios.length) items.push({ id: 'lyrics', label: '가사 싱크 연결…', onClick: openLyrics, note: '노래 오디오' })
+  }
+  if (type === 'audio') {
+    if (linkedText) items.push({ id: 'unlyrics', label: '가사 싱크 해제', onClick: unlinkLyrics, note: textLabel(linkedText, 12) })
+    else items.push({
+      id: 'lyrics', label: '가사 싱크 연결…', onClick: openLyrics,
+      disabled: pageTexts.length === 0, reason: '이 슬라이드에 가사를 담은 텍스트 박스를 먼저 넣으세요',
+    })
   }
   if (type === 'image') {
     items.push({ id: 'edit', label: '설명으로 편집…', onClick: () => { closeMenus(); setPrompt(''); setPhase('edit') } })
@@ -577,19 +585,19 @@ export default function AiActionBar({ elements, scale, canvasRef }) {
         </div>
       )}
 
-      {/* 가사 싱크 연결 — 발표 중 오디오에 맞춰 이 텍스트 박스의 가사가 흐른다 */}
+      {/* 가사 싱크 연결 — 발표 중 이 오디오에 맞춰 고른 텍스트 박스의 가사가 흐른다 */}
       {phase === 'lyrics' && single && (
         <div data-edit-accessory="true" onMouseDown={e => e.stopPropagation()} style={panelStyle(panelLeft, panelTop, PANEL_W)}>
           <div style={panelTitleStyle}><SparkleIcon /> 가사 싱크 연결</div>
           <div style={hintStyle}>
-            발표 중 노래가 재생되면 이 텍스트 박스 안에서 가사가 위로 흐르고, 지금 부르는 줄이 가운데에서 강조됩니다.
+            발표 중 이 노래가 재생되면 고른 텍스트 박스 안에서 가사가 위로 흐르고, 지금 부르는 줄이 가운데에서 강조됩니다.
             줄 타이밍은 노래에서 보컬을 분리해 가사를 소리에 맞춰 정합니다(처음 연결할 때 수십 초).
           </div>
           <label style={{ fontSize: 12, color: '#cbd5e1', display: 'flex', flexDirection: 'column', gap: 4 }}>
-            오디오 요소
-            <select value={syncAudioId} onChange={e => setSyncAudioId(e.target.value)} style={selectStyle}>
-              {pageAudios.map((a, i) => (
-                <option key={a.id} value={a.id}>{`오디오 ${i + 1}${a.musicJobId ? ' · 생성한 음악' : ''}`}</option>
+            가사 텍스트 박스
+            <select value={syncTextId} onChange={e => setSyncTextId(e.target.value)} style={selectStyle}>
+              {pageTexts.map(t => (
+                <option key={t.id} value={t.id}>{textLabel(t)}{t.lyricSync ? ' · 다른 오디오에 연결됨' : ''}</option>
               ))}
             </select>
           </label>
@@ -609,8 +617,8 @@ export default function AiActionBar({ elements, scale, canvasRef }) {
           <div style={hintStyle}>연결 후 속성 패널에서 싱크를 앞뒤로 조정할 수 있습니다.</div>
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
             <button type="button" onClick={() => setPhase('idle')} style={ghostBtnStyle}>취소</button>
-            <button type="button" onClick={runLinkLyrics} disabled={!syncAudioId || !syncJobId || !!busy}
-              style={{ ...primaryBtnStyle, opacity: syncAudioId && syncJobId && !busy ? 1 : 0.5 }}>
+            <button type="button" onClick={runLinkLyrics} disabled={!syncTextId || !syncJobId || !!busy}
+              style={{ ...primaryBtnStyle, opacity: syncTextId && syncJobId && !busy ? 1 : 0.5 }}>
               {busy === 'lyrics' ? '가사 타이밍 맞추는 중… (최대 1분)' : '연결'}
             </button>
           </div>

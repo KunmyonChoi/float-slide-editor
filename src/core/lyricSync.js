@@ -47,3 +47,32 @@ export function hasLyricSync(element, elements) {
   if (!ls || !Array.isArray(ls.lines) || !ls.lines.length || !ls.audioId) return false
   return !elements || elements.some(e => e.id === ls.audioId && e.type === 'audio')
 }
+
+/** 텍스트 요소의 평문(리치 HTML이면 태그 제거, <br>·블록은 줄바꿈). */
+function plainText(el) {
+  const c = String(el?.content || '')
+  if (!el?.isRich) return c
+  return c.replace(/<br\s*\/?>/gi, '\n').replace(/<\/(p|div|li|h\d)>/gi, '\n').replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ')
+}
+
+/**
+ * 오디오에 가사를 붙일 때 기본으로 고를 텍스트 박스 — 이미 이 오디오에 연결된 박스, 다음은
+ * 구간 태그([Verse] 등)가 있는 박스, 그다음은 줄이 가장 많은 박스. 없으면 null.
+ */
+export function pickLyricsText(texts, audioId) {
+  if (!texts?.length) return null
+  const linked = texts.find(t => t.lyricSync?.audioId === audioId)
+  if (linked) return linked
+  const rank = (t) => {
+    const s = plainText(t)
+    const tagged = /^\s*\[[^\]]+\]\s*$/m.test(s) ? 1000 : 0
+    return tagged + s.split('\n').filter(l => l.trim()).length
+  }
+  return [...texts].sort((a, b) => rank(b) - rank(a))[0]
+}
+
+/** 선택 목록에 보일 텍스트 박스 이름 — 태그가 아닌 첫 줄 앞부분. */
+export function textLabel(el, max = 24) {
+  const first = plainText(el).split('\n').map(l => l.trim()).find(l => l && !/^\[[^\]]+\]$/.test(l)) || '(빈 텍스트)'
+  return first.length > max ? first.slice(0, max) + '…' : first
+}
