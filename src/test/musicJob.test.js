@@ -3,6 +3,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 // 음악 서버(YuE2)·LLM 네트워크를 끊고 러너의 배선만 본다.
 const calls = { create: [], chat: [], cancel: [] }
 let llm = true
+let timing = null
 vi.mock('../core/OpenAIClient', () => ({
   hasApiKey: () => llm,
   chat: vi.fn(async (opts) => { calls.chat.push(opts); return 'Instrumental, bright electro-pop, 120 BPM\n' }),
@@ -15,7 +16,7 @@ vi.mock('../core/MusicBackendClient', () => ({
   createMusicJob: vi.fn(async (params) => { calls.create.push(params); return { id: 'srv-1' } }),
   waitMusicJob: vi.fn(async (id, { onUpdate }) => {
     onUpdate({ status: 'running', stage: '음악 생성 중…', progress: 40 })
-    return { status: 'done', result: { seconds: 47.1, style: 'STYLE', truncated: false } }
+    return { status: 'done', result: { seconds: 47.1, style: 'STYLE', truncated: false, lyrics_timing: timing } }
   }),
   fetchMusicAudio: vi.fn(async () => new Blob(['mp3'], { type: 'audio/mpeg' })),
   cancelMusicJob: vi.fn(async (id) => { calls.cancel.push(id) }),
@@ -101,5 +102,34 @@ describe('음악 작업 복구 기록', () => {
     const job = useAiJobStore.getState().jobs[0]
     expect(job.label).toContain('(복구)')
     await vi.waitFor(() => expect(useAiJobStore.getState().jobs[0].status).toBe('ready'))
+  })
+})
+
+describe('노래 → 가사 싱크 자동 연결', () => {
+  beforeEach(() => { localStorage.clear(); useAiJobStore.setState({ jobs: [] }); timing = null })
+
+  it('오디오 요소로 추가하면 가사 텍스트 박스가 그 오디오에 연결된다', async () => {
+    const { useFlatStore } = await import('../store/flatStore')
+    const el = text({ content: '[Verse]\n가사' })
+    useFlatStore.setState({ flatElements: [el], canvasSize: { w: 1920, h: 1080 } })
+    timing = [{ start: 1, end: 3, text: '가사', section: 'verse' }]
+    const id = startMusicJob({ element: el, mode: 'song', description: 'pop', lyrics: '[Verse]\n가사', refine: false })
+    await vi.waitFor(() => expect(jobOf(id).status).toBe('ready'))
+    await useAiJobStore.getState().jobs.find(j => j.id === id).apply(jobOf(id), { mode: 'add' })
+    const els = useFlatStore.getState().flatElements
+    const audio = els.find(e => e.type === 'audio')
+    const linked = els.find(e => e.id === 'txt-1')
+    expect(audio.musicJobId).toBe('srv-1')
+    expect(linked.lyricSync).toMatchObject({ audioId: audio.id, jobId: 'srv-1', lines: timing })
+  })
+
+  it('연주곡(타이밍 없음)은 연결하지 않는다', async () => {
+    const { useFlatStore } = await import('../store/flatStore')
+    const el = text()
+    useFlatStore.setState({ flatElements: [el], canvasSize: { w: 1920, h: 1080 } })
+    const id = startMusicJob({ element: el, description: '음악', refine: false })
+    await vi.waitFor(() => expect(jobOf(id).status).toBe('ready'))
+    await jobOf(id).apply(jobOf(id), { mode: 'add' })
+    expect(useFlatStore.getState().flatElements.find(e => e.id === 'txt-1').lyricSync).toBeUndefined()
   })
 })

@@ -8,6 +8,8 @@
   GET  /api/jobs/{id}            진행 상태 {status, stage, progress, error, result}
   GET  /api/jobs/{id}/audio      결과 오디오 (?format=mp3|flac, 기본 mp3)
   GET  /api/jobs/{id}/score      생성에 쓴 ABC 악보(text/plain)
+  GET  /api/jobs/{id}/lyrics     노래 가사 줄 타이밍 {lines: [{start, end, text, section}]}
+  GET  /api/jobs?mode=song       최근 작업 목록
   POST /api/jobs/{id}/cancel     취소
 """
 import os
@@ -63,6 +65,28 @@ async def create_job(request: Request):
 def _job_or_404(job_id):
     job = ENGINE.get(job_id)
     return job, (None if job else JSONResponse({"error": "작업을 찾을 수 없습니다."}, status_code=404))
+
+
+@app.get("/api/jobs")
+def list_jobs(mode: str | None = None):
+    """최근 작업 목록(새 것부터). 노래는 가사 첫 줄을 미리보기로 준다."""
+    out = []
+    for job in ENGINE.recent(mode):
+        first = next((l for l in (job.params.get("lyrics") or "").splitlines() if l.strip() and not l.strip().startswith(("[", "**", "#"))), "")
+        out.append({**job.public(), "created": job.created, "preview": first[:40]})
+    return {"jobs": out}
+
+
+@app.get("/api/jobs/{job_id}/lyrics")
+def job_lyrics(job_id: str):
+    """노래의 가사 줄 타이밍 [{start, end, text, section}] (초, 악보 기준)."""
+    job, missing = _job_or_404(job_id)
+    if missing:
+        return missing
+    lines = ENGINE.lyrics_timing(job_id)
+    if not lines:
+        return JSONResponse({"error": "가사 타이밍을 만들 수 없습니다(노래가 아니거나 악보가 없음)."}, status_code=404)
+    return {"lines": lines}
 
 
 @app.get("/api/jobs/{job_id}")

@@ -5,6 +5,7 @@ import { nextFlatId } from './FlatExtractor'
 import { chat, hasApiKey } from './OpenAIClient'
 import { isLocalLlmEnabled } from './LlmBackendClient'
 import { DEFAULT_VIZ } from './audioViz'
+import { DEFAULT_LYRIC_OFFSET } from './lyricSync'
 import { createMusicJob, waitMusicJob, fetchMusicAudio, cancelMusicJob } from './MusicBackendClient'
 
 /**
@@ -109,9 +110,22 @@ async function addAudioElement(job, anchor) {
       borderRadius: '8px', border: '0px none', boxShadow: 'none', opacity: '1', padding: '0px',
     },
   }
+  if (job.result.serverId) el.musicJobId = job.result.serverId
   const ok = st.addElementToPage(job.targetPageKey, el)
+  // 노래면 가사를 담은 텍스트 박스를 이 오디오에 연결 — 발표 중 재생되면 가사가 흐르며 현재 줄이 강조된다.
+  const lines = job.result.lyricsTiming
+  if (ok && live && Array.isArray(lines) && lines.length) {
+    linkLyrics(job.targetPageKey, live.id, { audioId: el.id, jobId: job.result.serverId, lines })
+  }
   if (ok && onCurrent) st.setSelectedFlat(el.id)
   return ok
+}
+
+/** 텍스트 박스 ↔ 오디오 요소 가사 싱크 연결(offset 기본값 포함). */
+export function linkLyrics(pageKey, textId, { audioId, jobId = null, lines, offset = DEFAULT_LYRIC_OFFSET }) {
+  return useFlatStore.getState().applyToElementOnPage(pageKey, textId, {
+    lyricSync: { audioId, jobId, lines, offset },
+  })
 }
 
 /**
@@ -200,6 +214,7 @@ async function followServerJob(id, serverId, ctrl, style = '') {
       blob, kind: 'audio',
       seconds: done.result?.seconds, style: done.result?.style || style,
       truncated: !!done.result?.truncated, serverId,
+      lyricsTiming: done.result?.lyrics_timing || null,
     })
   } catch (e) {
     // 취소가 아닌 오류(서버 재시작으로 작업이 사라짐 등)도 더 회수할 수 없으니 기록을 지운다.

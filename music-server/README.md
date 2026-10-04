@@ -15,7 +15,17 @@
 - `GET  /api/jobs/{id}` → `{ status: queued|running|done|failed|cancelled, stage, progress, error, result }`
 - `GET  /api/jobs/{id}/audio?format=mp3|flac` → 결과 오디오(48 kHz 스테레오)
 - `GET  /api/jobs/{id}/score` → 생성에 쓴 ABC 악보(연주곡은 Vocal→Ins 변환본)
+- `GET  /api/jobs/{id}/lyrics` → 노래 가사 줄 타이밍 `{ lines: [{ start, end, text, section }] }`(초, 악보 기준)
+- `GET  /api/jobs?mode=song` → 최근 작업 목록(가사 싱크를 다시 연결할 때)
 - `POST /api/jobs/{id}/cancel`
+
+### 가사 싱크
+YuE2는 음절과 음표의 정렬을 주지 않는다. 대신 노래는 자기가 쓴 악보를 따라 렌더링되므로, `lyrics.py`가 악보의 보컬 프레이즈로 줄마다 시각을 낸다. 순서는 다음과 같다.
+1. 악보 구간과 가사 구간을 짝짓는다.
+2. 구간 끝의 못갖춘마디를 다음 구간으로 옮긴다.
+3. 쉼 길이와 줄별 음절 비율로 각 구간을 줄 수만큼 나눈다(DP).
+
+노래를 만들 때 가사의 제목 줄, 마크다운 기호, 태그 번호(`[Verse 1]`)도 정리한다. 앱은 이 타이밍으로 발표 중 텍스트 박스의 가사를 스크롤·강조하고, 오디오와 작게 어긋나는 부분은 속성 패널의 '싱크 보정'으로 맞춘다.
 
 ## 설치·실행 (macOS, Apple Silicon)
 1. `genitor-music-mac.zip`을 받아 압축을 푼다.

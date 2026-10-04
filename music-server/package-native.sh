@@ -8,7 +8,7 @@ mkdir -p "$OUT"
 chmod +x "$DIR/mac/launch.command" "$DIR/../skills/genitor-music/scripts/install_mac.sh"
 
 rm -f "$OUT/genitor-music-mac.zip"
-( cd "$DIR" && zip -j "$OUT/genitor-music-mac.zip" server.py engine.py requirements.txt \
+( cd "$DIR" && zip -j "$OUT/genitor-music-mac.zip" server.py engine.py lyrics.py requirements.txt \
     mac/launch.command ../skills/genitor-music/scripts/install_mac.sh >/dev/null )
 echo "생성: dist/genitor-music-mac.zip"
 echo "==> GitHub Releases(태그 latest)에 업로드:"

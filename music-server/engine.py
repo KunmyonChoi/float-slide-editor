@@ -142,8 +142,9 @@ def instrumental_style(style: str) -> str:
 
 
 def song_lyrics(text: str) -> str:
-    """구간 태그가 없으면 한 덩어리 [Verse]로 감싼다."""
-    t = (text or "").strip()
+    """제목·마크다운·태그 번호를 정리하고(lyrics.clean_lyrics), 구간 태그가 없으면 한 덩어리 [Verse]로 감싼다."""
+    from lyrics import clean_lyrics
+    t = clean_lyrics(text)
     if not t:
         raise ValueError("가사가 비어 있습니다.")
     return t if re.search(r"^\[[A-Za-z -]+\]\s*$", t, re.M) else f"[Verse]\n{t}"
@@ -253,6 +254,24 @@ class Engine:
 
     def get(self, job_id: str) -> Job | None:
         return self.jobs.get(job_id)
+
+    def recent(self, mode=None, limit=20):
+        """최근 작업(새 것부터) — 앱이 기존 오디오와 가사를 다시 연결할 때 고른다."""
+        jobs = [j for j in self.jobs.values() if mode is None or j.params.get("mode") == mode]
+        return sorted(jobs, key=lambda j: j.created, reverse=True)[:limit]
+
+    def lyrics_timing(self, job_id: str):
+        """노래 작업의 가사 줄 타이밍. 결과에 없으면(이전 버전 작업) 저장된 악보와 가사로 계산한다."""
+        job = self.jobs.get(job_id)
+        if not job or job.status != "done" or job.params.get("mode") != "song":
+            return None
+        if job.result and job.result.get("lyrics_timing"):
+            return job.result["lyrics_timing"]
+        score = job.dir / "score.abc"
+        if not score.is_file():
+            return None
+        from lyrics import lyric_timing
+        return lyric_timing(score.read_text(encoding="utf-8"), song_lyrics(job.params.get("lyrics", "")))
 
     def cancel(self, job_id: str) -> bool:
         job = self.jobs.get(job_id)
@@ -384,9 +403,16 @@ class Engine:
             if plan.abc and not (job.dir / "score.abc").is_file():
                 (job.dir / "score.abc").write_text(plan.abc, encoding="utf-8")
             truncated = bool(plan.truncated or semantic.truncated)
+            timing = None
+            if p.get("mode") == "song" and plan.abc:
+                try:
+                    from lyrics import lyric_timing
+                    timing = lyric_timing(plan.abc, request["lyrics"])
+                except Exception:
+                    traceback.print_exc()
             job.result = {"seconds": round(len(audio) / 48000, 2), "style": style, "seed": seed,
                           "score": (job.dir / "score.abc").is_file(), "truncated": truncated,
-                          "fit": getattr(job, "fit", None)}
+                          "fit": getattr(job, "fit", None), "lyrics_timing": timing}
         except InterruptedError as e:
             raise Cancelled() from e
         finally:

@@ -22,6 +22,7 @@ import { embedPngMetadata } from '../core/pngMeta'
 import { detectBgColor, applyChromaKey, chromaEntries } from '../core/chromaKey'
 import { highlightCode, CODE_FONT } from '../core/codeHighlight'
 import { renderMarkdown } from '../core/markdown'
+import { DEFAULT_LYRIC_OFFSET } from '../core/lyricSync'
 import { EFFECTS, effectHasDir } from '../core/slideAnimation'
 import DiagramIconPanel from './DiagramIconPanel'
 
@@ -189,6 +190,12 @@ function SingleElementPanel({ el, animTab, setAnimTab, updateFlatElement, previe
         )}
 
         {el.type === 'image' && (
+        {el.type === 'text' && el.lyricSync && (
+          <div className="pt-1 border-t border-white/5">
+            <LyricSyncSection el={el} />
+          </div>
+        )}
+
           <div className="pt-1 border-t border-white/5">
             <ImageSection el={el} updateStyle={updateStyle} previewStyle={previewStyle} />
           </div>
@@ -979,6 +986,44 @@ function MarkdownSection({ el }) {
       try { return new DOMParser().parseFromString(`<body>${el.content}</body>`, 'text/html').body.textContent || '' }
       catch { return '' }
     }
+/** 가사 싱크(텍스트 박스 ↔ 노래 오디오) — 싱크 보정·강조 색·해제. 연결은 ✨ AI ▸ 가사 싱크 연결. */
+function LyricSyncSection({ el }) {
+  const ls = el.lyricSync
+  const update = (patch) => useFlatStore.getState().updateFlatElement(el.id, { lyricSync: { ...ls, ...patch } })
+  const offset = Number.isFinite(ls.offset) ? ls.offset : DEFAULT_LYRIC_OFFSET
+  const audioOnPage = useFlatStore(s => s.flatElements.some(e => e.id === ls.audioId && e.type === 'audio'))
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <SectionTitle>가사 싱크</SectionTitle>
+        <button
+          onClick={() => useFlatStore.getState().updateFlatElement(el.id, { lyricSync: undefined })}
+          className="text-xs px-2 py-0.5 rounded border bg-white/5 text-slate-400 border-white/10 hover:bg-white/10"
+        >해제</button>
+      </div>
+      <p className="text-[10px] text-slate-500">
+        발표 중 노래가 재생되면 가사 {ls.lines?.length || 0}줄이 이 박스 안에서 흐르고 현재 줄이 가운데에서 강조됩니다.
+        {!audioOnPage && <span className="text-amber-400"> 연결된 오디오가 이 슬라이드에 없습니다.</span>}
+      </p>
+      <label className="flex items-center gap-2 text-xs text-slate-400">
+        <span className="w-14 shrink-0">싱크 보정</span>
+        <input type="range" min={-3} max={3} step={0.05} value={offset}
+          onChange={e => update({ offset: Number(e.target.value) })} className="flex-1" />
+        <span className="w-14 text-right tabular-nums text-slate-300">{offset > 0 ? '+' : ''}{offset.toFixed(2)}초</span>
+      </label>
+      <p className="text-[10px] text-slate-600">가사가 노래보다 빠르면 오른쪽(+), 늦으면 왼쪽(−)으로.</p>
+      <label className="flex items-center gap-2 text-xs text-slate-400">
+        <span className="w-14 shrink-0">강조 색</span>
+        <input type="color" value={ls.highlightColor || el.styles?.color || '#000000'}
+          onChange={e => update({ highlightColor: e.target.value })} className="h-6 w-10 bg-transparent" />
+        {ls.highlightColor && (
+          <button onClick={() => update({ highlightColor: undefined })} className="text-[10px] text-slate-500 hover:text-slate-300">글자색으로</button>
+        )}
+      </label>
+    </div>
+  )
+}
+
     return el.content || ''
   }
   const enable = () => {

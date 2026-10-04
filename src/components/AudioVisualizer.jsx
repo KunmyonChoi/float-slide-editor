@@ -1,6 +1,7 @@
 import { useRef, useEffect, useState } from 'react'
 import { BlobStore } from '../core/BlobStore'
 import { DEFAULT_VIZ, barCount, staticFrame, barsFromFrequency, drawViz } from '../core/audioViz'
+import { registerAudioClock } from '../core/audioClock'
 
 /**
  * 오디오 비주얼라이저 요소 렌더러.
@@ -76,6 +77,8 @@ export default function AudioVisualizer({ element, playNow }) {
     // 분석기에 무음이 들어가 '음소거(파형만 보기)'에서 막대가 멈춘다.
     audio.crossOrigin = 'anonymous'
     audio.preload = 'auto'
+    // 가사 싱크 등 이 오디오의 재생 시각에 맞춰 움직이는 요소가 읽을 수 있게 등록
+    const unregisterClock = registerAudioClock(element.id, audio)
 
     const paintStatic = () => {
       const ctx = syncCanvasSize(cv)
@@ -121,6 +124,7 @@ export default function AudioVisualizer({ element, playNow }) {
 
     return () => {
       stopped = true
+      unregisterClock()
       gainRef.current = null
       cancelAnimationFrame(raf)
       try { audio.pause() } catch { /* 무시 */ }

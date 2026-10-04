@@ -7,6 +7,8 @@ import { tableContainerStyle, cellStyle } from '../core/slideTable'
 import { isCoarsePointer } from '../core/pointerEnv'
 import { stripSvgSelfPositioning } from '../core/svgContent'
 import AudioVisualizer from './AudioVisualizer'
+import LyricScroller from './LyricScroller'
+import { hasLyricSync } from '../core/lyricSync'
 import ChromaVideoPlayer from './ChromaVideoPlayer'
 import MatteVideoPlayer from './MatteVideoPlayer'
 
@@ -235,7 +237,8 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
         onClick={handleClick}
         onDoubleClick={handleDoubleClick}
       >
-        {(() => {
+        {/* 가사 싱크: 발표 중에는 오디오에 맞춰 가사가 흐르는 보기로 바꾼다(편집 중에는 그대로 텍스트) */}
+        {playNowProp === true && hasLyricSync(element) ? <LyricScroller sync={element.lyricSync} textStyle={styles} /> : (() => {
           const inner = showPlaceholder
             ? element.placeholder
             : isGradientText

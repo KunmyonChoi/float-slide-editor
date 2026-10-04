@@ -97,3 +97,16 @@ export async function waitMusicJob(id, { onUpdate, signal, intervalMs = 2000 } =
     })
   }
 }
+
+/** 최근 작업 목록(새 것부터). mode='song'이면 노래만. → [{ id, status, result, created, preview }] */
+export async function listMusicJobs({ mode, signal } = {}) {
+  const q = mode ? `?mode=${encodeURIComponent(mode)}` : ''
+  const body = await jsonOrThrow(await fetch(`${getMusicBase()}/api/jobs${q}`, { signal }))
+  return body.jobs || []
+}
+
+/** 노래 작업의 가사 줄 타이밍 → [{ start, end, text, section }] (초, 악보 기준) */
+export async function fetchLyricsTiming(id, { signal } = {}) {
+  const body = await jsonOrThrow(await fetch(`${getMusicBase()}/api/jobs/${encodeURIComponent(id)}/lyrics`, { signal }))
+  return body.lines || []
+}
