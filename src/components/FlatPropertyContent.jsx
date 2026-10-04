@@ -25,6 +25,7 @@ import { renderMarkdown } from '../core/markdown'
 import { DEFAULT_LYRIC_OFFSET } from '../core/lyricSync'
 import { EFFECTS, effectHasDir } from '../core/slideAnimation'
 import DiagramIconPanel from './DiagramIconPanel'
+import MediaPreview from './MediaPreview'
 
 // ── 글꼴 크기 프리셋 ────────────────────────────────
 
@@ -189,15 +190,22 @@ function SingleElementPanel({ el, animTab, setAnimTab, updateFlatElement, previe
           </div>
         )}
 
-        {el.type === 'image' && (
         {el.type === 'text' && el.lyricSync && (
           <div className="pt-1 border-t border-white/5">
             <LyricSyncSection el={el} />
           </div>
         )}
 
+        {el.type === 'image' && (
           <div className="pt-1 border-t border-white/5">
             <ImageSection el={el} updateStyle={updateStyle} previewStyle={previewStyle} />
+          </div>
+        )}
+
+        {(el.type === 'video' || el.type === 'audio') && el.content && (
+          <div className="pt-1 border-t border-white/5 space-y-2">
+            <SectionTitle>{el.type === 'audio' ? '미리듣기' : '미리보기'}</SectionTitle>
+            <MediaPreview el={el} />
           </div>
         )}
 
@@ -978,14 +986,6 @@ function CodeSection({ el }) {
 }
 
 // 마크다운 — 텍스트 박스를 마크다운으로(편집=원본, 표시=렌더, 커밋 시 재렌더). 코드 모드와 상호배타.
-function MarkdownSection({ el }) {
-  const isMd = !!el.isMarkdown
-  const update = (changes) => useFlatStore.getState().updateFlatElement(el.id, changes)
-  const rawText = () => {
-    if (el.isRich && el.content) {
-      try { return new DOMParser().parseFromString(`<body>${el.content}</body>`, 'text/html').body.textContent || '' }
-      catch { return '' }
-    }
 /** 가사 싱크(텍스트 박스 ↔ 노래 오디오) — 싱크 보정·강조 색·해제. 연결은 ✨ AI ▸ 가사 싱크 연결. */
 function LyricSyncSection({ el }) {
   const ls = el.lyricSync
@@ -1024,6 +1024,14 @@ function LyricSyncSection({ el }) {
   )
 }
 
+function MarkdownSection({ el }) {
+  const isMd = !!el.isMarkdown
+  const update = (changes) => useFlatStore.getState().updateFlatElement(el.id, changes)
+  const rawText = () => {
+    if (el.isRich && el.content) {
+      try { return new DOMParser().parseFromString(`<body>${el.content}</body>`, 'text/html').body.textContent || '' }
+      catch { return '' }
+    }
     return el.content || ''
   }
   const enable = () => {

@@ -12,6 +12,7 @@ import { INFOGRAPHIC_STYLES } from '../core/aiImageStyles'
 import { confirmDialog } from './ConfirmDialog'
 import { useEditorStore } from '../store/editorStore'
 import { isBundlerHtml } from '../core/BundlerUnpacker'
+import { isDownloadableMedia, mediaDownloadName } from '../core/mediaDownload'
 
 const DEFAULT_STYLES = {
   backgroundColor: 'rgba(0, 0, 0, 0)', backgroundImage: 'none',
@@ -75,6 +76,7 @@ export default function FlatContextMenu({ x, y, canvasX, canvasY, onClose }) {
   const singleTextEl = selectedEls.length === 1 && selectedEls[0].type === 'text' ? selectedEls[0] : null
   const singleImageEl = selectedEls.length === 1 && selectedEls[0].type === 'image' ? selectedEls[0] : null
   const singleVideoEl = selectedEls.length === 1 && selectedEls[0].type === 'video' ? selectedEls[0] : null
+  const singleAudioEl = selectedEls.length === 1 && selectedEls[0].type === 'audio' ? selectedEls[0] : null
 
   // 배경 요소 찾기 — 명시 배경(플래그/__bg)만
   const bgElement = useMemo(() => flatElements.find(el => isBackgroundElement(el)), [flatElements])
@@ -298,21 +300,18 @@ export default function FlatContextMenu({ x, y, canvasX, canvasY, onClose }) {
   // 선택한 미디어(이미지/비디오) 다운로드 (data URL / idb:// / 외부 URL 모두 처리)
   const downloadSelectedMedia = useCallback(async () => {
     const el = flatElements.find(e => e.id === singleId)
-    if (!el || (el.type !== 'image' && el.type !== 'video') || !el.content) return
-    const isVideo = el.type === 'video'
-    const pfx = isVideo ? 'video/' : 'image/'
+    if (!isDownloadableMedia(el)) return
     let src = el.content
     if (BlobStore.isIdbRef(src)) src = await BlobStore.getUrl(BlobStore.parseRef(src))
-    let url = src, revoke = false, ext = isVideo ? 'mp4' : 'png'
+    let url = src, revoke = false, mime = ''
     try {
       const resp = await fetch(src)
       const blob = await resp.blob()
-      // video/webm;codecs=... → 'webm'만 추출
-      if (blob.type.startsWith(pfx)) ext = (blob.type.split('/')[1] || ext).split(';')[0].split('+')[0]
+      mime = blob.type // video/webm;codecs=… → 'webm', audio/mpeg → 'mp3' (mediaExt)
       url = URL.createObjectURL(blob); revoke = true
     } catch { /* fetch 실패 시 원본 src로 직접 시도 */ }
-    // 녹화 삽입 등으로 filename이 있으면 우선 사용
-    const name = el.filename || `${isVideo ? 'video' : 'image'}.${ext}`
+    // 녹화 삽입 등으로 filename이 있으면 우선, 생성한 음악은 작업 id로
+    const name = mediaDownloadName(el, mime)
     const a = document.createElement('a')
     a.href = url
     a.download = name
@@ -515,6 +514,7 @@ export default function FlatContextMenu({ x, y, canvasX, canvasY, onClose }) {
       { id: 'lock', label: allLocked ? '잠금 해제' : '잠금', action: 'lock' },
       ...(singleImageEl ? [{ id: 'dlImage', label: '이미지 다운로드', action: 'downloadMedia' }] : []),
       ...(singleVideoEl ? [{ id: 'dlVideo', label: '비디오 다운로드', action: 'downloadMedia' }] : []),
+      ...(singleAudioEl ? [{ id: 'dlAudio', label: '오디오 다운로드', action: 'downloadMedia' }] : []),
       // 배경으로 변환: 단일 이미지/영상만(이미 배경인 것 제외)
       ...(selectedEls.length === 1 && !isBackgroundElement(selectedEls[0]) && ['image', 'video'].includes(selectedEls[0].type)
         ? [{ id: 'toBg', label: '배경으로 변환', action: 'convertToBg' }] : []),
