@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { activeLyricIndex, centerTranslate, hasLyricSync, pickLyricsText, textLabel, DEFAULT_LYRIC_OFFSET, LYRIC_LEAD_SEC } from '../core/lyricSync'
+import { activeLyricIndex, centerTranslate, hasLyricSync, pickLyricsText, textLabel, isTextOverflowHidden, lyricLinkChanges, lyricUnlinkChanges, DEFAULT_LYRIC_OFFSET, LYRIC_LEAD_SEC } from '../core/lyricSync'
 
 const lines = [
   { start: 16.75, end: 24.25, text: '눈을 감으면 바람이 불어와' },
@@ -59,5 +59,32 @@ describe('가사 싱크 — 오디오에 붙일 텍스트 박스 고르기', () 
     expect(textLabel(lyrics)).toBe('눈을 감으면 바람이 불어와')
     expect(textLabel({ type: 'text', isRich: true, content: '<p>[Chorus]</p><p>나는 <b>날아</b></p>' })).toBe('나는 날아')
     expect(textLabel({ type: 'text', content: '' })).toBe('(빈 텍스트)')
+  })
+})
+
+describe('넘친 글자 감추기 + 가사 싱크', () => {
+  it('렌더러와 같은 판정(overflow·overflowX)', () => {
+    expect(isTextOverflowHidden({})).toBe(false)
+    expect(isTextOverflowHidden({ overflow: 'visible' })).toBe(false)
+    expect(isTextOverflowHidden({ overflow: 'hidden' })).toBe(true)
+    expect(isTextOverflowHidden({ overflowX: 'auto' })).toBe(true)
+  })
+
+  it('연결하면 감추기를 켜고, 해제하면 연결 전 값으로 되돌린다', () => {
+    const sync = { audioId: 'a', lines: [] }
+    const before = { id: 't', type: 'text', styles: { overflow: 'visible' } }
+    const linked = lyricLinkChanges(before, sync)
+    expect(linked.styles.overflow).toBe('hidden')
+    expect(linked.lyricSync.prevOverflow).toBe('visible')
+    const el = { ...before, styles: { overflow: 'hidden' }, lyricSync: linked.lyricSync }
+    expect(lyricUnlinkChanges(el)).toEqual({ lyricSync: undefined, styles: { overflow: 'visible' } })
+  })
+
+  it('이미 연결된 박스를 다시 연결해도 처음 값을 유지, 원래 미설정이면 해제 때 미설정으로', () => {
+    const first = lyricLinkChanges({ type: 'text', styles: {} }, { audioId: 'a', lines: [] })
+    expect(first.lyricSync.prevOverflow).toBeNull()
+    const again = lyricLinkChanges({ type: 'text', styles: { overflow: 'hidden' }, lyricSync: first.lyricSync }, { audioId: 'b', lines: [] })
+    expect(again.lyricSync.prevOverflow).toBeNull()
+    expect(lyricUnlinkChanges({ lyricSync: again.lyricSync }).styles.overflow).toBeUndefined()
   })
 })

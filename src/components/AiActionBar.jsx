@@ -18,7 +18,7 @@ import CutoutInstallModal from './CutoutInstallModal'
 import MusicInstallModal from './MusicInstallModal'
 import { checkMusicHealth, listMusicJobs, fetchLyricsTiming } from '../core/MusicBackendClient'
 import { startMusicJob, canRefineStyle, MUSIC_LENGTHS, linkLyrics } from '../core/musicJobRunner'
-import { pickLyricsText, textLabel } from '../core/lyricSync'
+import { pickLyricsText, textLabel, lyricUnlinkChanges } from '../core/lyricSync'
 import { htmlToPlain } from '../core/slideTextDigest'
 import MaskBrushOverlay from './MaskBrushOverlay'
 import { useDraggableToolbar, GripHandle } from './useDraggableToolbar'
@@ -248,7 +248,7 @@ export default function AiActionBar({ elements, scale, canvasRef }) {
 
   const unlinkLyrics = useCallback(() => {
     closeMenus()
-    if (linkedText) useFlatStore.getState().updateFlatElement(linkedText.id, { lyricSync: undefined })
+    if (linkedText) useFlatStore.getState().updateFlatElement(linkedText.id, lyricUnlinkChanges(linkedText))
   }, [linkedText])
 
   const runLipsync = useCallback(() => {

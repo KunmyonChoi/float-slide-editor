@@ -5,7 +5,7 @@ import { nextFlatId } from './FlatExtractor'
 import { chat, hasApiKey } from './OpenAIClient'
 import { isLocalLlmEnabled } from './LlmBackendClient'
 import { DEFAULT_VIZ } from './audioViz'
-import { DEFAULT_LYRIC_OFFSET } from './lyricSync'
+import { DEFAULT_LYRIC_OFFSET, lyricLinkChanges } from './lyricSync'
 import { createMusicJob, waitMusicJob, fetchMusicAudio, cancelMusicJob } from './MusicBackendClient'
 
 /**
@@ -130,9 +130,11 @@ async function addAudioElement(job, anchor) {
  */
 export function linkLyrics(pageKey, textId, { audioId, jobId = null, lines, offset, source = 'score' }) {
   const off = Number.isFinite(offset) ? offset : (source === 'vocal' ? 0 : DEFAULT_LYRIC_OFFSET)
-  return useFlatStore.getState().applyToElementOnPage(pageKey, textId, {
-    lyricSync: { audioId, jobId, lines, offset: off, source },
-  })
+  const st = useFlatStore.getState()
+  // 현재 페이지에 없으면(다른 페이지 대상) 연결 전 넘침 값은 모른다 → 해제 시 기본(보이기)으로
+  const current = st.flatElements.find(e => e.id === textId) || null
+  return st.applyToElementOnPage(pageKey, textId,
+    lyricLinkChanges(current, { audioId, jobId, lines, offset: off, source }))
 }
 
 /**

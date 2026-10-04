@@ -76,3 +76,25 @@ export function textLabel(el, max = 24) {
   const first = plainText(el).split('\n').map(l => l.trim()).find(l => l && !/^\[[^\]]+\]$/.test(l)) || '(빈 텍스트)'
   return first.length > max ? first.slice(0, max) + '…' : first
 }
+
+/** 텍스트 박스가 넘친 글자를 감추는가 — 렌더러·HTML 내보내기와 같은 판정(overflow/overflowX). */
+export function isTextOverflowHidden(styles = {}) {
+  const v = [styles.overflow, styles.overflowX].map(x => String(x || ''))
+  return v.some(x => x === 'hidden' || x === 'auto' || x === 'scroll')
+}
+
+/**
+ * 가사 싱크 연결 시 텍스트 요소에 줄 변경 — 넘친 글자 감추기를 켠다. 편집 화면에서도 가사가
+ * 박스 밖으로 흘러나오지 않고, 발표 때 흐르는 영역과 같은 모양이 된다. 해제 때 되돌릴 수 있게
+ * 연결 전 값을 lyricSync.prevOverflow에 남긴다(다시 연결해도 처음 값을 유지).
+ */
+export function lyricLinkChanges(el, sync) {
+  const prevOverflow = el?.lyricSync ? el.lyricSync.prevOverflow : (el?.styles?.overflow ?? null)
+  return { lyricSync: { ...sync, prevOverflow }, styles: { overflow: 'hidden' } }
+}
+
+/** 가사 싱크 해제 시 텍스트 요소에 줄 변경 — 연결 전 넘침 설정으로 되돌린다. */
+export function lyricUnlinkChanges(el) {
+  const prev = el?.lyricSync ? el.lyricSync.prevOverflow : undefined
+  return { lyricSync: undefined, styles: { overflow: prev ?? undefined } }
+}

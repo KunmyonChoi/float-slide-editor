@@ -22,7 +22,7 @@ import { embedPngMetadata } from '../core/pngMeta'
 import { detectBgColor, applyChromaKey, chromaEntries } from '../core/chromaKey'
 import { highlightCode, CODE_FONT } from '../core/codeHighlight'
 import { renderMarkdown } from '../core/markdown'
-import { DEFAULT_LYRIC_OFFSET } from '../core/lyricSync'
+import { DEFAULT_LYRIC_OFFSET, isTextOverflowHidden, lyricUnlinkChanges } from '../core/lyricSync'
 import { EFFECTS, effectHasDir } from '../core/slideAnimation'
 import DiagramIconPanel from './DiagramIconPanel'
 import MediaPreview from './MediaPreview'
@@ -997,7 +997,7 @@ function LyricSyncSection({ el }) {
       <div className="flex items-center justify-between">
         <SectionTitle>가사 싱크</SectionTitle>
         <button
-          onClick={() => useFlatStore.getState().updateFlatElement(el.id, { lyricSync: undefined })}
+          onClick={() => useFlatStore.getState().updateFlatElement(el.id, lyricUnlinkChanges(el))}
           className="text-xs px-2 py-0.5 rounded border bg-white/5 text-slate-400 border-white/10 hover:bg-white/10"
         >해제</button>
       </div>
@@ -1315,6 +1315,25 @@ function FontSection({ el, styles, updateStyle, previewStyle, isGradientText, li
           </div>
         )
       })()}
+
+      {/* 넘친 글자 감추기 — 박스(바운딩 박스) 밖으로 넘친 글자를 자른다. 도형 안 글자는 항상 잘리므로 텍스트만. */}
+      {el.type === 'text' && (
+        <label className="flex items-center gap-2 cursor-pointer" title="끄면 박스보다 긴 글자가 박스 밖으로 이어져 보입니다">
+          <input
+            type="checkbox"
+            checked={isTextOverflowHidden(styles)}
+            onChange={e => {
+              // 끌 때는 overflowX(코드 블록 등)도 함께 풀어야 실제로 보인다 — 한 번의 변경(실행취소 1회)으로.
+              const v = e.target.checked ? 'hidden' : 'visible'
+              useFlatStore.getState().updateFlatElement(el.id, {
+                styles: { overflow: v, ...(styles.overflowX ? { overflowX: v } : {}) },
+              })
+            }}
+            className="accent-indigo-500"
+          />
+          <span className={labelClass}>박스 밖으로 넘친 글자 감추기</span>
+        </label>
+      )}
     </div>
   )
 }

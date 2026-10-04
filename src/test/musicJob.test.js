@@ -122,6 +122,7 @@ describe('노래 → 가사 싱크 자동 연결', () => {
     expect(audio.musicJobId).toBe('srv-1')
     // 소리에 맞춘 타이밍(source=vocal)은 이미 오디오 시각이라 보정 0
     expect(linked.lyricSync).toMatchObject({ audioId: audio.id, jobId: 'srv-1', lines: timing, offset: 0, source: 'vocal' })
+    expect(linked.styles.overflow).toBe('hidden') // 가사 싱크 = 넘친 글자 감추기
   })
 
   it('연주곡(타이밍 없음)은 연결하지 않는다', async () => {
