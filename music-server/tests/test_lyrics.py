@@ -54,3 +54,29 @@ class LyricTiming(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MergeAlignment(unittest.TestCase):
+    """align.merge — 정렬 결과와 악보 기반 값 합치기(모델 없이)."""
+
+    def setUp(self):
+        import align
+        self.align = align
+        self.score = [{"start": 17.0, "end": 24.0, "text": "a", "section": "verse"},
+                      {"start": 25.0, "end": 32.0, "text": "b", "section": "verse"},
+                      {"start": 33.0, "end": 40.0, "text": "c", "section": "verse"}]
+
+    def test_confident_lines_use_vocal_timing(self):
+        out = self.align.merge(self.score, [(15.0, 20.0, 0.8), (23.0, 28.0, 0.7), (31.0, 36.0, 0.75)])
+        self.assertEqual([l["start"] for l in out], [15.0, 23.0, 31.0])
+        self.assertTrue(all(l["source"] == "vocal" for l in out))
+
+    def test_low_confidence_line_falls_back_with_median_shift(self):
+        # 가운데 줄은 신뢰도가 낮다 → 악보 값(25.0) + 확실한 줄들의 차이 중앙값(−2.0)
+        out = self.align.merge(self.score, [(15.0, 20.0, 0.8), (60.0, 61.0, 0.1), (31.0, 36.0, 0.75)])
+        self.assertEqual(out[1]["source"], "score")
+        self.assertAlmostEqual(out[1]["start"], 23.0)
+
+    def test_nothing_aligned_keeps_score_timing(self):
+        out = self.align.merge(self.score, [None, None, None])
+        self.assertEqual([l["start"] for l in out], [17.0, 25.0, 33.0])

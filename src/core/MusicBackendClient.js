@@ -105,8 +105,12 @@ export async function listMusicJobs({ mode, signal } = {}) {
   return body.jobs || []
 }
 
-/** 노래 작업의 가사 줄 타이밍 → [{ start, end, text, section }] (초, 악보 기준) */
+/**
+ * 노래 작업의 가사 줄 타이밍 → { lines: [{ start, end, text, section }], offset, source }.
+ * source='vocal'이면 서버가 보컬 분리 + 강제 정렬로 소리에 맞춘 오디오 시각(offset 0),
+ * 'score'면 악보 기반(offset 기본 0.4). 아직 정렬 전인 노래는 이 요청에서 정렬해 수십 초 걸린다.
+ */
 export async function fetchLyricsTiming(id, { signal } = {}) {
   const body = await jsonOrThrow(await fetch(`${getMusicBase()}/api/jobs/${encodeURIComponent(id)}/lyrics`, { signal }))
-  return body.lines || []
+  return { lines: body.lines || [], offset: body.offset, source: body.source || 'score', busy: !!body.busy }
 }

@@ -4,8 +4,9 @@
  * element.lyricSync = {
  *   audioId,                 // 같은 슬라이드의 오디오 요소 id(재생 시각의 출처)
  *   jobId,                   // 음악 서버 작업 id(타이밍을 다시 받을 때)
- *   lines: [{ start, end, text, section }],   // 초, 노래 악보 기준(music-server/lyrics.py)
- *   offset,                  // 초. 악보 시각 + offset = 오디오 시각. 생성 오디오는 악보보다 조금 늦게 시작한다.
+ *   lines: [{ start, end, text, section }],   // 초(music-server align.py / lyrics.py)
+ *   offset,                  // 초. 타이밍 + offset = 오디오 시각. 소리 정렬(source=vocal)은 0, 악보 기반은 기본 0.4.
+ *   source,                  // 'vocal'(보컬 분리 + 강제 정렬로 소리에 맞춤) | 'score'(노래를 만든 악보에서 계산)
  *   highlightColor?,         // 현재 줄 색(없으면 글자색)
  * }
  */

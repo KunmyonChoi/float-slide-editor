@@ -32,7 +32,7 @@ Check with `uname -sm`, which should print `Darwin arm64`.
 ```bash
 sh "$SKILL_DIR/scripts/install_mac.sh" --check   # exit 0 = ready
 ```
-If it is not ready, **ask before installing**. The install downloads about 10 GB (torch plus 7.8 GB of model weights) and takes tens of minutes. Then run:
+If it is not ready, **ask before installing**. The install downloads about 11 GB (torch, 7.8 GB of YuE2 weights, and 1.3 GB of lyric-alignment models) and takes tens of minutes. Then run:
 ```bash
 sh "$SKILL_DIR/scripts/install_mac.sh"            # add --claude-skill to also link the upstream yue2-music skill
 ```
@@ -105,7 +105,7 @@ Run long jobs in the background and wait for completion. On an M1 (16 GB), a 47 
 
 ## 6. Put it in the Genitor deck
 
-Genitor's HTML import does **not** carry audio. Give the user the mp3 (or flac) and tell them to drag it onto the slide canvas. It becomes an audio visualizer element that autoplays and loops while presenting. Alternatively, in Genitor, select a text box with the music description → **✨ AI ▾ → 음악 생성…** to generate and insert it directly. For a song generated from a lyrics text box this way, that text box is linked to the audio: while presenting, the lyrics scroll inside the box with the current line centered and highlighted (line timing comes from the song's score). An existing song can be linked with **✨ AI ▾ → 가사 싱크 연결…**. For a deck made with genitor-slides, name the slide the music belongs to and give the score's designed bar times (bar N ≈ 2 s × (N−1) at 120 BPM, plus the start offset), so the user can align `data-anim` delays to the drop.
+Genitor's HTML import does **not** carry audio. Give the user the mp3 (or flac) and tell them to drag it onto the slide canvas. It becomes an audio visualizer element that autoplays and loops while presenting. Alternatively, in Genitor, select a text box with the music description → **✨ AI ▾ → 음악 생성…** to generate and insert it directly. For a song generated from a lyrics text box this way, that text box is linked to the audio: while presenting, the lyrics scroll inside the box with the current line centered and highlighted (line timing comes from aligning the lyrics to the separated vocals; the server does this right after generation). An existing song can be linked with **✨ AI ▾ → 가사 싱크 연결…**. For a deck made with genitor-slides, name the slide the music belongs to and give the score's designed bar times (bar N ≈ 2 s × (N−1) at 120 BPM, plus the start offset), so the user can align `data-anim` delays to the drop.
 
 ## Licenses
 

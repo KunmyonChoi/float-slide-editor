@@ -1003,6 +1003,7 @@ function LyricSyncSection({ el }) {
       </div>
       <p className="text-[10px] text-slate-500">
         발표 중 노래가 재생되면 가사 {ls.lines?.length || 0}줄이 이 박스 안에서 흐르고 현재 줄이 가운데에서 강조됩니다.
+        타이밍: {ls.source === 'vocal' ? '노래 소리에 맞춤(보컬 정렬)' : '악보 기반 — ✨ AI ▸ 가사 싱크를 해제 후 다시 연결하면 소리에 맞춥니다'}.
         {!audioOnPage && <span className="text-amber-400"> 연결된 오디오가 이 슬라이드에 없습니다.</span>}
       </p>
       <label className="flex items-center gap-2 text-xs text-slate-400">

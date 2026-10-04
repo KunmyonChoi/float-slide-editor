@@ -1,6 +1,6 @@
 #!/bin/sh
 # Genitor 음악 생성 서버(YuE2) — macOS 네이티브 실행기(더블클릭).
-# 첫 실행 시 install_mac.sh가 uv·Python·torch(MPS)·YuE2·모델(약 7.8 GB)을 자동 설치한다.
+# 첫 실행 시 install_mac.sh가 uv·Python·torch(MPS)·YuE2·모델(약 9 GB, 가사 정렬 모델 포함)을 자동 설치한다.
 # 이후 실행은 설치 확인만 하고 바로 서버를 띄운다.
 # 배포 zip(모든 파일이 한 폴더)과 저장소(music-server/mac/) 양쪽에서 실행된다.
 set -e

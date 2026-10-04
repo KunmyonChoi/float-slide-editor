@@ -8,7 +8,7 @@
   GET  /api/jobs/{id}            진행 상태 {status, stage, progress, error, result}
   GET  /api/jobs/{id}/audio      결과 오디오 (?format=mp3|flac, 기본 mp3)
   GET  /api/jobs/{id}/score      생성에 쓴 ABC 악보(text/plain)
-  GET  /api/jobs/{id}/lyrics     노래 가사 줄 타이밍 {lines: [{start, end, text, section}]}
+  GET  /api/jobs/{id}/lyrics     노래 가사 줄 타이밍 {lines, offset, source} — 없으면 보컬 정렬(수십 초)
   GET  /api/jobs?mode=song       최근 작업 목록
   POST /api/jobs/{id}/cancel     취소
 """
@@ -79,14 +79,15 @@ def list_jobs(mode: str | None = None):
 
 @app.get("/api/jobs/{job_id}/lyrics")
 def job_lyrics(job_id: str):
-    """노래의 가사 줄 타이밍 [{start, end, text, section}] (초, 악보 기준)."""
+    """노래의 가사 줄 타이밍 {lines: [{start, end, text, section, source}], offset, source}.
+    source="vocal"이면 소리에 맞춘 오디오 시각(offset 0). 아직이면 이 요청에서 정렬한다(곡당 수십 초)."""
     job, missing = _job_or_404(job_id)
     if missing:
         return missing
-    lines = ENGINE.lyrics_timing(job_id)
-    if not lines:
+    timing = ENGINE.lyrics_timing(job_id)
+    if not timing or not timing["lines"]:
         return JSONResponse({"error": "가사 타이밍을 만들 수 없습니다(노래가 아니거나 악보가 없음)."}, status_code=404)
-    return {"lines": lines}
+    return timing
 
 
 @app.get("/api/jobs/{job_id}")

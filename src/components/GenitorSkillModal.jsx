@@ -226,7 +226,7 @@ function Dialog() {
         <Section title="5. 음악 생성(YuE2) 사전 준비" badge="genitor-music을 쓸 때만">
           <div style={{ fontSize: 12, color: '#94a3b8', lineHeight: 1.6 }}>
             YuE2는 <b style={{ color: '#cbd5e1' }}>Apple Silicon(M1 이상) Mac</b>의 GPU에서 돌아갑니다(메모리 16 GB 이상 권장).
-            설치는 한 번만 — Python·torch·YuE2와 모델 약 7.8 GB를 받습니다. 스킬을 설치한 뒤 터미널에서:
+            설치는 한 번만 — Python·torch·YuE2와 모델 약 9 GB(가사 정렬 모델 포함)를 받습니다. 스킬을 설치한 뒤 터미널에서:
           </div>
           <CopyRow text="sh ~/.claude/skills/genitor-music/scripts/install_mac.sh" />
           <div style={{ fontSize: 11, color: '#64748b', marginTop: 6, lineHeight: 1.6 }}>

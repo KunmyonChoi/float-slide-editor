@@ -33,7 +33,7 @@ export default function MusicInstallModal({ onClose, status = 'missing', detail 
 
         {status === 'preparing' ? (
           <div style={{ fontSize: 12.5, color: '#fbbf24', lineHeight: 1.6 }}>
-            서버는 실행 중이지만 아직 준비되지 않았습니다 — 모델(약 7.8 GB)을 받는 중이거나 설치가 끝나지 않았습니다.
+            서버는 실행 중이지만 아직 준비되지 않았습니다 — 모델(약 9 GB)을 받는 중이거나 설치가 끝나지 않았습니다.
             서버 창에 <b>설치 완료</b>가 표시된 뒤 다시 시도하세요.
             {detail && <div style={{ marginTop: 4, fontSize: 11, color: '#94a3b8', wordBreak: 'break-all' }}>{detail}</div>}
           </div>
@@ -59,7 +59,7 @@ export default function MusicInstallModal({ onClose, status = 'missing', detail 
               미서명 경고로 차단되면: 우클릭 → "열기", 그래도 막히면
               <b> 시스템 설정 → 개인정보 보호 및 보안 → '보안' 섹션의 "그래도 열기"</b> 후 다시 실행하세요.
             </li>
-            <li>첫 실행은 Python·torch·YuE2와 <b>모델 약 7.8 GB</b>를 받습니다(회선에 따라 수십 분). 이후엔 바로 시작합니다.</li>
+            <li>첫 실행은 Python·torch·YuE2와 <b>모델 약 9 GB</b>(음악 생성 7.8 GB + 가사 정렬 1.3 GB)를 받습니다(회선에 따라 수십 분). 이후엔 바로 시작합니다.</li>
             <li>창에 <b>http://localhost:8326</b> 시작 표시가 뜨면 준비 완료 — 이 창에서 다시 시도하세요.</li>
           </ol>
           <div style={{ fontSize: 11, color: '#64748b', marginTop: 6, lineHeight: 1.6 }}>

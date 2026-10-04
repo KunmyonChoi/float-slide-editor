@@ -229,9 +229,14 @@ export default function AiActionBar({ elements, scale, canvasRef }) {
     if (!single || !syncAudioId || !syncJobId || busy) return
     setBusy('lyrics'); setError('')
     try {
-      const lines = await fetchLyricsTiming(syncJobId)
+      const { lines, offset, source, busy: serverBusy } = await fetchLyricsTiming(syncJobId)
       if (!lines.length) throw new Error('가사 타이밍이 비어 있습니다.')
-      linkLyrics(pageKey(), single.id, { audioId: syncAudioId, jobId: syncJobId, lines })
+      linkLyrics(pageKey(), single.id, { audioId: syncAudioId, jobId: syncJobId, lines, offset, source })
+      if (serverBusy) {
+        // 생성 중이라 소리 정렬을 못 했다 — 악보 기반으로 연결하고, 끝난 뒤 다시 연결하면 정확해진다고 알린다.
+        setError('음악 생성 중이라 악보 기반 타이밍으로 연결했습니다. 생성이 끝난 뒤 다시 연결하면 소리에 맞춥니다.')
+        return
+      }
       setPhase('idle')
     } catch (e) {
       setError(e?.message || '가사 싱크를 연결하지 못했습니다.')
@@ -578,7 +583,7 @@ export default function AiActionBar({ elements, scale, canvasRef }) {
           <div style={panelTitleStyle}><SparkleIcon /> 가사 싱크 연결</div>
           <div style={hintStyle}>
             발표 중 노래가 재생되면 이 텍스트 박스 안에서 가사가 위로 흐르고, 지금 부르는 줄이 가운데에서 강조됩니다.
-            줄 타이밍은 노래를 만든 악보에서 계산합니다.
+            줄 타이밍은 노래에서 보컬을 분리해 가사를 소리에 맞춰 정합니다(처음 연결할 때 수십 초).
           </div>
           <label style={{ fontSize: 12, color: '#cbd5e1', display: 'flex', flexDirection: 'column', gap: 4 }}>
             오디오 요소
@@ -606,7 +611,7 @@ export default function AiActionBar({ elements, scale, canvasRef }) {
             <button type="button" onClick={() => setPhase('idle')} style={ghostBtnStyle}>취소</button>
             <button type="button" onClick={runLinkLyrics} disabled={!syncAudioId || !syncJobId || !!busy}
               style={{ ...primaryBtnStyle, opacity: syncAudioId && syncJobId && !busy ? 1 : 0.5 }}>
-              {busy === 'lyrics' ? '연결 중…' : '연결'}
+              {busy === 'lyrics' ? '가사 타이밍 맞추는 중… (최대 1분)' : '연결'}
             </button>
           </div>
         </div>

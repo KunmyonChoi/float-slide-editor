@@ -28,6 +28,7 @@ YUE = Path(os.environ.get("YUE2_HOME", HOME / "YuE"))
 OUTPUTS = HOME / "outputs"
 KEEP_JOBS = 20
 SEMANTIC_TOKENS_PER_SECOND = 25  # YuE2 codec: 47.1s 오디오 = 1178 토큰(실측)
+SCORE_LYRIC_OFFSET = 0.4  # 악보 기반 타이밍을 오디오 시각으로 옮길 때의 기본 보정(초). 소리 정렬 결과는 0.
 
 sys.path.insert(0, str(YUE / "skills/yue2-music/instrumental/scripts"))
 
@@ -217,6 +218,7 @@ class Engine:
         self.wake = threading.Event()
         self.current: Job | None = None
         self.verified = False  # 가중치 해시 검증은 프로세스당 한 번
+        self.gpu = threading.Lock()  # 생성과 가사 정렬이 동시에 메모리를 쓰지 않게
         self._load_finished()
         threading.Thread(target=self._worker, daemon=True).start()
 
@@ -261,17 +263,30 @@ class Engine:
         return sorted(jobs, key=lambda j: j.created, reverse=True)[:limit]
 
     def lyrics_timing(self, job_id: str):
-        """노래 작업의 가사 줄 타이밍. 결과에 없으면(이전 버전 작업) 저장된 악보와 가사로 계산한다."""
+        """노래 작업의 가사 줄 타이밍 → {lines, offset, source} | None.
+        소리 정렬 결과가 없으면(이전 버전 작업) 지금 정렬해 저장한다. 생성이 돌고 있으면 기다리지 않고
+        악보 기반 값을 준다(source="score")."""
         job = self.jobs.get(job_id)
         if not job or job.status != "done" or job.params.get("mode") != "song":
             return None
-        if job.result and job.result.get("lyrics_timing"):
-            return job.result["lyrics_timing"]
+        r = job.result or {}
+        if r.get("lyrics_source") == "vocal" and r.get("lyrics_timing"):
+            return {"lines": r["lyrics_timing"], "offset": r.get("lyrics_offset", 0.0), "source": "vocal"}
         score = job.dir / "score.abc"
         if not score.is_file():
             return None
         from lyrics import lyric_timing
-        return lyric_timing(score.read_text(encoding="utf-8"), song_lyrics(job.params.get("lyrics", "")))
+        score_lines = lyric_timing(score.read_text(encoding="utf-8"), song_lyrics(job.params.get("lyrics", "")))
+        if not self.gpu.acquire(blocking=False):
+            return {"lines": score_lines, "offset": SCORE_LYRIC_OFFSET, "source": "score", "busy": True}
+        try:
+            lines, offset, source = self._align(job, score_lines)
+        finally:
+            self.gpu.release()
+        if source == "vocal":
+            job.result = {**r, "lyrics_timing": lines, "lyrics_offset": offset, "lyrics_source": source}
+            self._save(job)
+        return {"lines": lines, "offset": offset, "source": source}
 
     def cancel(self, job_id: str) -> bool:
         job = self.jobs.get(job_id)
@@ -306,11 +321,10 @@ class Engine:
             self.current = job
             job.status = "running"
             try:
-                self._run(job)
+                with self.gpu:
+                    self._run(job)
                 job.status, job.stage, job.progress = "done", "완료", 100
-                (job.dir / "job.json").write_text(json.dumps(
-                    {"id": job.id, "params": job.params, "result": job.result, "created": job.created},
-                    ensure_ascii=False), encoding="utf-8")
+                self._save(job)
             except Cancelled:
                 job.status, job.stage = "cancelled", "취소됨"
             except Exception as e:
@@ -318,6 +332,27 @@ class Engine:
                 job.status, job.error = "failed", f"{type(e).__name__}: {e}"
             finally:
                 self.current = None
+
+    def _save(self, job):
+        (job.dir / "job.json").write_text(json.dumps(
+            {"id": job.id, "params": job.params, "result": job.result, "created": job.created},
+            ensure_ascii=False), encoding="utf-8")
+
+    def _align(self, job, score_lines):
+        """소리에 맞춘 가사 타이밍 → (lines, offset, source). 정렬을 쓸 수 없거나 실패하면 악보 기반."""
+        import align
+        if not score_lines:
+            return None, SCORE_LYRIC_OFFSET, "score"
+        if align.available():
+            try:
+                sep = job.dir / "sep"
+                lines = align.align_lyrics(job.dir / "audio.flac", score_lines, sep,
+                                           device="mps" if device_name() == "mps" else "cpu")
+                shutil.rmtree(sep, ignore_errors=True)  # 분리한 음원(곡당 수십 MB)은 남기지 않는다
+                return lines, 0.0, "vocal"
+            except Exception:
+                traceback.print_exc()
+        return score_lines, SCORE_LYRIC_OFFSET, "score"
 
     def _set(self, job, stage, progress=None):
         job.stage = stage
@@ -403,16 +438,21 @@ class Engine:
             if plan.abc and not (job.dir / "score.abc").is_file():
                 (job.dir / "score.abc").write_text(plan.abc, encoding="utf-8")
             truncated = bool(plan.truncated or semantic.truncated)
-            timing = None
+            timing, lyric_offset, lyric_source = None, None, None
             if p.get("mode") == "song" and plan.abc:
                 try:
                     from lyrics import lyric_timing
                     timing = lyric_timing(plan.abc, request["lyrics"])
                 except Exception:
                     traceback.print_exc()
+                pipe.close()  # 정렬 모델이 메모리를 쓰기 전에 생성 모델을 내려놓는다
+                gc.collect()
+                self._set(job, "가사 타이밍 맞추는 중… (보컬 분리·정렬)", 99)
+                timing, lyric_offset, lyric_source = self._align(job, timing)
             job.result = {"seconds": round(len(audio) / 48000, 2), "style": style, "seed": seed,
                           "score": (job.dir / "score.abc").is_file(), "truncated": truncated,
-                          "fit": getattr(job, "fit", None), "lyrics_timing": timing}
+                          "fit": getattr(job, "fit", None), "lyrics_timing": timing,
+                          "lyrics_offset": lyric_offset, "lyrics_source": lyric_source}
         except InterruptedError as e:
             raise Cancelled() from e
         finally:

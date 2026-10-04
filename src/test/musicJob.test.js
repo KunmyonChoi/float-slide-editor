@@ -16,7 +16,7 @@ vi.mock('../core/MusicBackendClient', () => ({
   createMusicJob: vi.fn(async (params) => { calls.create.push(params); return { id: 'srv-1' } }),
   waitMusicJob: vi.fn(async (id, { onUpdate }) => {
     onUpdate({ status: 'running', stage: '음악 생성 중…', progress: 40 })
-    return { status: 'done', result: { seconds: 47.1, style: 'STYLE', truncated: false, lyrics_timing: timing } }
+    return { status: 'done', result: { seconds: 47.1, style: 'STYLE', truncated: false, lyrics_timing: timing, lyrics_offset: timing ? 0 : null, lyrics_source: timing ? 'vocal' : null } }
   }),
   fetchMusicAudio: vi.fn(async () => new Blob(['mp3'], { type: 'audio/mpeg' })),
   cancelMusicJob: vi.fn(async (id) => { calls.cancel.push(id) }),
@@ -120,7 +120,8 @@ describe('노래 → 가사 싱크 자동 연결', () => {
     const audio = els.find(e => e.type === 'audio')
     const linked = els.find(e => e.id === 'txt-1')
     expect(audio.musicJobId).toBe('srv-1')
-    expect(linked.lyricSync).toMatchObject({ audioId: audio.id, jobId: 'srv-1', lines: timing })
+    // 소리에 맞춘 타이밍(source=vocal)은 이미 오디오 시각이라 보정 0
+    expect(linked.lyricSync).toMatchObject({ audioId: audio.id, jobId: 'srv-1', lines: timing, offset: 0, source: 'vocal' })
   })
 
   it('연주곡(타이밍 없음)은 연결하지 않는다', async () => {
@@ -131,5 +132,19 @@ describe('노래 → 가사 싱크 자동 연결', () => {
     await vi.waitFor(() => expect(jobOf(id).status).toBe('ready'))
     await jobOf(id).apply(jobOf(id), { mode: 'add' })
     expect(useFlatStore.getState().flatElements.find(e => e.id === 'txt-1').lyricSync).toBeUndefined()
+  })
+})
+
+describe('가사 싱크 보정값', () => {
+  it('악보 기반은 기본 보정, 소리 정렬은 0, 서버가 준 값이 있으면 그 값', async () => {
+    const { useFlatStore } = await import('../store/flatStore')
+    const { linkLyrics } = await import('../core/musicJobRunner')
+    const { DEFAULT_LYRIC_OFFSET } = await import('../core/lyricSync')
+    useFlatStore.setState({ flatElements: [text()] })
+    const lines = [{ start: 1, end: 2, text: 'x' }]
+    const off = () => useFlatStore.getState().flatElements[0].lyricSync.offset
+    linkLyrics(null, 'txt-1', { audioId: 'a', lines, source: 'score' }); expect(off()).toBe(DEFAULT_LYRIC_OFFSET)
+    linkLyrics(null, 'txt-1', { audioId: 'a', lines, source: 'vocal' }); expect(off()).toBe(0)
+    linkLyrics(null, 'txt-1', { audioId: 'a', lines, source: 'score', offset: 0.4 }); expect(off()).toBe(0.4)
   })
 })

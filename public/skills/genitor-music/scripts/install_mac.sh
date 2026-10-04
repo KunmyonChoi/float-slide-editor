@@ -9,6 +9,7 @@
 #   YuE/    YuE2 소스(검증된 커밋 고정) — yue2-infer 패키지와 yue2-music 스킬 스크립트
 #   .venv/  Python 3.12 + torch(MPS)
 # 모델 가중치(약 7.8 GB)는 Hugging Face 캐시(~/.cache/huggingface)에 받는다 — 다른 설치와 공유된다.
+# 노래 가사를 소리에 맞추는 모델(Demucs 보컬 분리 약 80 MB, MMS 강제 정렬 약 1.2 GB)은 torch 캐시에 받는다.
 #
 # torch는 패키지 고정값(2.10.0)보다 높은 2.13 이상으로 설치한다. torch 2.12 이하는 MPS에서
 # BF16 causal attention이 미래 토큰을 보는 버그가 있어(YuE issue #176) 결과가 조용히 틀어진다.
@@ -20,7 +21,8 @@ HOME_DIR="${GENITOR_MUSIC_HOME:-$HOME/Library/Application Support/genitor-music}
 YUE="$HOME_DIR/YuE"
 VENV="$HOME_DIR/.venv"
 PY="$VENV/bin/python"
-MARKER="$HOME_DIR/installed-$YUE_COMMIT"
+# 설치 단계가 바뀌면 접미사를 올린다 — 이미 설치된 Mac도 새 단계(가사 정렬 의존성)를 거치게.
+MARKER="$HOME_DIR/installed-$YUE_COMMIT-align1"
 export PATH="$HOME/.local/bin:$PATH"
 
 CHECK_ONLY=0
@@ -91,7 +93,7 @@ if [ ! -f "$MARKER" ]; then
   echo "라이브러리 설치 중… (최초 1회 수 분 — torch 다운로드)"
   # 경로에 공백(Application Support)이 있어 uv가 경로를 요구사항 문자열로 쪼갠다 → 폴더 안에서 "."로 설치.
   ( cd "$YUE" && VIRTUAL_ENV="$VENV" uv pip install --quiet . "torch>=2.13" \
-      "fastapi>=0.115" "uvicorn>=0.32" --override ../torch-override.txt )
+      "fastapi>=0.115" "uvicorn>=0.32" torchaudio "demucs>=4.0" uroman --override ../torch-override.txt )
 fi
 
 "$PY" - <<'EOF'
@@ -100,6 +102,9 @@ major, minor = (int(x) for x in torch.__version__.split(".")[:2])
 assert (major, minor) >= (2, 13), f"torch {torch.__version__} < 2.13 (MPS causal attention 버그)"
 assert torch.backends.mps.is_available(), "MPS(Apple GPU)를 사용할 수 없습니다"
 print(f"torch {torch.__version__} · MPS 사용 가능")
+import torchaudio.functional as F
+F.forced_align(torch.randn(1, 8, 4).log_softmax(-1), torch.tensor([[1, 2]], dtype=torch.int32), blank=0)
+print(f"torchaudio {__import__('torchaudio').__version__} · 강제 정렬 사용 가능")
 EOF
 
 # 4) 모델 가중치 — 끊겨도 다시 실행하면 이어 받는다.
@@ -111,6 +116,16 @@ for repo in ("m-a-p/YuE2-Vae", "m-a-p/YuE2-3B"):
     print(" ", repo, "→", snapshot_download(repo))
 EOF
 fi
+
+# 5) 가사 정렬 모델 — 노래 가사를 실제 소리에 맞출 때 쓴다(없으면 악보 기반 타이밍으로 대신한다).
+echo "가사 정렬 모델 확인 중… (최초 1회 약 1.3 GB)"
+"$PY" - <<'EOF'
+from demucs.pretrained import get_model
+from torchaudio.pipelines import MMS_FA
+get_model("htdemucs")
+MMS_FA.get_model(with_star=True)
+print("  Demucs htdemucs · MMS 강제 정렬 준비 완료")
+EOF
 
 touch "$MARKER"
 
