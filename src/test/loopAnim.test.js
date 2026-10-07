@@ -40,6 +40,8 @@ describe('반복(강조) 효과 모델', () => {
     expect(loopAnimationCss({ effect: 'pulse', periodMs: 1200 }, 400)).toBe('feLoopPulse 1200ms ease-in-out 400ms infinite both')
     expect(loopAnimationCss({ effect: 'spin', periodMs: 8000, repeat: 2 }, 0)).toBe('feLoopSpin 8000ms linear 0ms 2 both')
     expect(loopAnimationCss({ effect: 'float', periodMs: 3000, phaseMs: 3500 }, 0)).toBe('feLoopFloat 3000ms ease-in-out -500ms infinite both')
+    // 등장 뒤 시작 + 시차: 등장 중에 시작하지 않고 startMs 이후 첫 박자 경계(박자는 -phase 정렬)까지 기다림
+    expect(loopAnimationCss({ effect: 'pulse', periodMs: 1000, phaseMs: 300 }, 500)).toBe('feLoopPulse 1000ms ease-in-out 1200ms infinite both')
     expect(loopAnimationCss({ effect: 'blink', periodMs: 10 }, 0)).toMatch(/^feLoopBlink 200ms /) // 최소 주기
   })
 

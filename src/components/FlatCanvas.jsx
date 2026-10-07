@@ -5,7 +5,7 @@ import { isBackgroundElement } from '../core/SnapEngine'
 import { useIsTouch } from '../core/pointerEnv'
 import { resolveConnectors, resolveConnectorEndpoints, resolveConnectorCurve, attachTargetAt, connectionPoints, nearestConnectionPoint } from '../core/ConnectorRouting'
 import { getRotatedAABB } from '../core/RotationUtils'
-import { computeSteps, isHiddenAt, animationCss, directionVars, stepDurations, DEFAULT_DUR, hasLoop, loopStartMs } from '../core/slideAnimation'
+import { computeSteps, isHiddenAt, animationCss, directionVars, stepDurations, DEFAULT_DUR, hasLoop, loopStartMs, loopPeriodMs } from '../core/slideAnimation'
 import LoopLayer from './LoopLayer'
 import FlatElementRenderer from './FlatElementRenderer'
 import FlatSelectionOverlay, { FlatGroupOverlay } from './FlatSelectionOverlay'
@@ -174,7 +174,7 @@ export default function FlatCanvas() {
     if (!animPreviewTick) return
     const info = computeSteps(renderElements)
     const hasAuto = Object.keys(info.autoOffsets || {}).length > 0
-    const loopPeriods = renderElements.filter(hasLoop).map(e => e.loopAnim.periodMs || 1000)
+    const loopPeriods = renderElements.filter(hasLoop).map(e => loopPeriodMs(e.loopAnim))
     if (info.stepCount === 0 && !hasAuto && !loopPeriods.length) { useFlatStore.getState()._setAnimPreview(null); return }
     const durs = stepDurations(info, renderElements)
     const setP = (v) => useFlatStore.getState()._setAnimPreview(v)

@@ -37,6 +37,11 @@ describe('발표 화면 — 반복 효과 래퍼', () => {
     })
     expect(loopWrappers(renderSlide([el], 0).container)).toHaveLength(0)
     const [w] = loopWrappers(renderSlide([el], 1, 0).container)
+    // 숨김↔보임 전환에도 래퍼 구조는 유지(자식 리마운트 방지) — 숨김일 땐 animation만 없다
+    const { container } = renderSlide([el], 0)
+    const hidden = container.querySelector('[style*="center center"] > [style*="inset"]')
+    expect(hidden).toBeTruthy()
+    expect(hidden.style.animation).toBe('')
     expect(w.style.animation).toContain('feLoopFloat 3000ms ease-in-out 500ms')
   })
 

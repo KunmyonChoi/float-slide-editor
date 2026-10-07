@@ -178,6 +178,13 @@ export const LOOP_STARTS = ['afterEnter', 'withEnter']
 
 export function hasLoop(el) { return !!LOOP_BY_ID[el?.loopAnim?.effect] }
 
+/** 실제 재생 주기(ms) — 효과 기본값·최소 200ms를 반영. */
+export function loopPeriodMs(loopAnim) {
+  const def = LOOP_BY_ID[loopAnim?.effect]
+  if (!def) return 0
+  return Math.max(200, loopAnim.periodMs || def.periodMs)
+}
+
 /** 효과를 고를 때의 기본 스펙(주기는 효과별 기본값). 기존 값(세기·시차·시작·횟수)은 유지한다. */
 export function makeLoopAnim(effect, prev = null) {
   const def = LOOP_BY_ID[effect]
@@ -204,13 +211,15 @@ export function loopStartMs(info, el) {
   return enterAt + (after ? (a.durationMs || DEFAULT_DUR) : 0)
 }
 
-/** 반복 재생용 CSS animation 문자열. 시차는 시작 지연에서 빼서 주기 중간부터 시작하게 한다. */
+/** 반복 재생용 CSS animation 문자열. 시차는 박자를 -phase만큼 앞당긴다 — 처음부터 보이면 주기
+ *  중간부터(음수 지연), 등장 뒤에 시작하면 startMs 이후 첫 박자 경계까지 기다린다(등장 중 시작 방지). */
 export function loopAnimationCss(loopAnim, startMs = 0) {
   const def = LOOP_BY_ID[loopAnim?.effect]
   if (!def) return null
-  const period = Math.max(200, loopAnim.periodMs || def.periodMs)
+  const period = loopPeriodMs(loopAnim)
   const phase = Math.max(0, loopAnim.phaseMs || 0) % period
-  const delay = Math.round((startMs || 0) - phase)
+  const start = startMs || 0
+  const delay = Math.round(start > 0 ? start + ((period - phase) % period) : -phase)
   const count = loopAnim.repeat > 0 ? Math.round(loopAnim.repeat) : 'infinite'
   return `${LOOP_KEYFRAME[loopAnim.effect]} ${period}ms ${def.timing} ${delay}ms ${count} both`
 }
