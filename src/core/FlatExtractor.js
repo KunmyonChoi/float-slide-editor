@@ -510,9 +510,10 @@ export function getIconGlyphSpan(el, win) {
   let glyph = rawContent
   // attr()/counter()/var() 등 함수형 content는 텍스트로 추출 불가 → 스킵
   if (/^(attr|counter|counters|var|url|element|target-text|leader)\s*\(/i.test(glyph)) return null
-  // 양 끝 따옴표 제거
+  // 양 끝 따옴표 제거 — 따옴표 문자열이 아니면(-moz-alt-content 같은 키워드) 글리프가 아니다
   const quoted = glyph.match(/^["'](.*)["']$/)
-  if (quoted) glyph = quoted[1]
+  if (!quoted) return null
+  glyph = quoted[1]
   // CSS 이스케이프 해제: "\f140" → 실제 Unicode 코드포인트
   glyph = decodeCssEscapes(glyph)
   if (!glyph) return null
@@ -1280,9 +1281,26 @@ function buildFlatElement(el, rect, cs, domOrder, forceType, transformScale = 1,
  * content가 있거나 (비어있어도) 배경/크기가 있으면 shape로 생성.
  * @returns {{ x, y, w, h, backgroundColor, borderRadius, content }|null}
  */
+// ::before/::after를 그리지 않는 대체 요소(replaced element). 그런데도 Firefox는 <img>의 ::before
+// content를 '-moz-alt-content'로 돌려줘서, 그대로 읽으면 이미지 좌상단에 그 글자가 텍스트로 박힌다.
+const REPLACED_TAGS = new Set(['IMG', 'VIDEO', 'AUDIO', 'IFRAME', 'CANVAS', 'INPUT', 'SELECT', 'TEXTAREA', 'OBJECT', 'EMBED'])
+
+/**
+ * 의사 요소 computed content → 화면에 찍히는 글자. 따옴표 문자열만 글자로 친다
+ * ('"a" "b"'처럼 이어 붙인 것은 합친다). none/normal·키워드(-moz-alt-content, open-quote 등)·
+ * 함수형(attr(), counter())은 글자가 아니므로 ''.
+ */
+export function pseudoContentText(content) {
+  const c = (content || '').trim()
+  if (!/^["']/.test(c)) return ''
+  const parts = c.match(/"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'/g) || []
+  return parts.map(q => q.slice(1, -1)).join('')
+}
+
 function extractPseudoElement(el, parentRect, pseudo) {
   const win = el.ownerDocument.defaultView
   if (!win) return null
+  if (REPLACED_TAGS.has(el.tagName)) return null
   const pcs = win.getComputedStyle(el, pseudo)
   // display: none이면 무시
   if (pcs.display === 'none') return null
@@ -1298,8 +1316,7 @@ function extractPseudoElement(el, parentRect, pseudo) {
                 (bgImage && bgImage !== 'none')
 
   // 텍스트 content ('')이 아닌 실제 텍스트도 있을 수 있음
-  const isEmptyContent = content === '""' || content === "''" || content === 'normal' || content === 'none'
-  const textContent = isEmptyContent ? '' : content.replace(/^["']|["']$/g, '')
+  const textContent = pseudoContentText(content)
 
   // 텍스트 글리프인데 width/height가 0(auto)으로 잡히면 font-size 기준으로 보정
   const fontSizePx = parseFloat(pcs.fontSize) || 0

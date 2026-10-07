@@ -1031,10 +1031,16 @@ export const useFlatStore = create((set, get) => ({
    */
   async materializeRemoteAssets() {
     const isRemote = (c) => typeof c === 'string' && /^https?:\/\//i.test(c)
+    // 오디오·영상의 data: URL(단일 파일 HTML에 임베딩된 곡 등)도 내부 저장소로 옮긴다 — 그대로 두면
+    // 수 MB짜리 base64 문자열이 요소 content에 박혀 페이지 캐시·실행 취소 기록·프로젝트 저장이
+    // 모두 무거워진다. 이미지는 data: 그대로 둔다(작고, 추출 측정에 실제 픽셀이 필요).
+    const isEmbeddedMedia = (e) => (e.type === 'video' || e.type === 'audio')
+      && typeof e.content === 'string' && e.content.startsWith('data:')
     const urls = new Set()
     const collect = (els) => {
       for (const e of els || []) {
         if ((e.type === 'image' || e.type === 'video' || e.type === 'audio') && isRemote(e.content)) urls.add(e.content)
+        else if (isEmbeddedMedia(e)) urls.add(e.content)
       }
     }
     collect(get().flatElements)
