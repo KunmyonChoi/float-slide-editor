@@ -256,6 +256,17 @@ body { width: 1920px; height: 1080px; overflow: hidden; position: relative; back
 </div>
 ```
 
+**오디오** — 보이는 `<audio controls>`는 그 자리·크기의 **오디오 비주얼라이저** 요소가 된다(발표 시
+자동재생, 막대색은 플레이어 배경에 맞춰 자동). 배경·모서리는 `<audio>`에 직접. `loop`는 보존된다.
+컨트롤 없는 숨은 `<audio>`는 추출되지 않는다. 파일은 HTML 옆 상대 경로(`audio/song1.mp3`)로 두면
+열 때 Genitor가 그 폴더를 선택하게 해 함께 불러온다(HTML+mp3를 함께 드롭해도 된다).
+```html
+<div style="position:absolute;left:840px;top:900px;width:960px;height:54px;overflow:hidden;">
+  <audio controls src="audio/song1.mp3"
+         style="display:block;width:960px;height:54px;border-radius:27px;background:#2a4157;"></audio>
+</div>
+```
+
 **아이콘** — Font Awesome 등 아이콘 폰트는 클래스가 있어야 글리프가 추출된다. `<head>`에
 해당 폰트 CSS를 link하고 `<i class="fas fa-star"></i>` 형태로. 클래스 없는 빈 `<i>`는 깨진다.
 인라인 `<svg>`도 텍스트 안에서 보존된다.

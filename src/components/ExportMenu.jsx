@@ -10,6 +10,7 @@ import { runPptExport, openPptSettings } from './PptExport'
 import { openFile } from '../core/FilePicker'
 import { confirmDialog } from './ConfirmDialog'
 import { isBundlerHtml } from '../core/BundlerUnpacker'
+import { attachLocalMedia } from '../core/localMedia'
 import { usePwaInstall } from '../core/pwaInstall'
 
 // .flatproj는 실제로 ZIP 패키지 → MIME을 application/zip으로 맞춰야 OS 열기 패널에서
@@ -131,7 +132,8 @@ export default function FileMenu({ fallbackSample }) {
     setOpen(false)
     const file = await openFile({ description: 'HTML 슬라이드', accept: ACCEPT_HTML, acceptAttr: '.html,.htm' })
     if (!file) return
-    const text = await file.text()
+    // audio/song1.mp3처럼 상대 경로로 참조한 미디어는 폴더를 골라 함께 불러온다
+    const text = await attachLocalMedia(await file.text(), { confirm: confirmDialog })
     clearPageCache()
     useFlatStore.getState().setProjectFile(null, null) // .flatproj 아님 → 재저장 대상 초기화
     useFlatStore.getState().setHtmlSourceName(file.name) // 저장/PPT 기본 파일명 도출

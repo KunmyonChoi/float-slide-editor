@@ -12,6 +12,7 @@
 import { parseAnimAttrs, parseTransitionAttrs, readSlideNotes, resolveAnimSpecs } from './deckMotion.js'
 import { stripSvgSelfPositioning } from './svgContent.js'
 import { normFractions, MAX_ROWS, MAX_COLS, TABLE_BORDER_COLOR } from './slideTable.js'
+import { DEFAULT_VIZ } from './audioViz.js'
 
 let _flatCounter = 0
 export function nextFlatId() { return `flat-${++_flatCounter}` }
@@ -827,6 +828,41 @@ function getEffectiveZIndex(el) {
     node = node.parentElement
   }
   return maxZ
+}
+
+/**
+ * 도형으로 측정한 요소를 오디오 비주얼라이저 요소로 바꾼다.
+ * .fe-audioviz는 data-cfg(viz/autoplay/muted)를 그대로 복원하고, 일반 <audio>는
+ * 발표 시 바로 재생되도록 autoplay를 켜고 막대색을 플레이어 배경에 맞춰 고른다.
+ */
+function toAudioElement(base, box, audioEl, isVizBox) {
+  const src = audioEl.getAttribute('src') || audioEl.querySelector('source')?.getAttribute('src') || ''
+  let cfg = null
+  if (isVizBox) {
+    try { cfg = JSON.parse(box.getAttribute('data-cfg') || 'null') } catch { cfg = null }
+  }
+  const barColor = vizColorOn(base.styles?.backgroundColor)
+  return {
+    ...base,
+    type: 'audio',
+    content: src,
+    isRich: false,
+    autoplay: cfg ? cfg.autoplay !== false : true,
+    loop: audioEl.loop || audioEl.hasAttribute('loop'),
+    muted: cfg ? !!cfg.muted : (audioEl.muted || audioEl.hasAttribute('muted')),
+    viz: { ...DEFAULT_VIZ, ...(cfg?.viz || (barColor ? { color: barColor } : {})) },
+  }
+}
+
+/** 배경색 위에서 잘 보이는 같은 계열의 막대색 — 밝은 배경은 어둡게, 어두운 배경은 밝게 섞는다. 배경 없으면 null. */
+export function vizColorOn(bg) {
+  const m = /rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)(?:[,\s/]+([\d.]+))?/.exec(bg || '')
+  if (!m || (m[4] !== undefined && parseFloat(m[4]) === 0)) return null
+  const rgb = [m[1], m[2], m[3]].map(Number)
+  const lum = (0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2]) / 255
+  const target = lum > 0.55 ? 0 : 255
+  const mix = lum > 0.55 ? 0.55 : 0.7
+  return '#' + rgb.map(c => Math.round(c + (target - c) * mix).toString(16).padStart(2, '0')).join('')
 }
 
 /** FlatElement 하나 생성 */
@@ -2124,6 +2160,19 @@ export function extractFlatElements(doc, win, existingMaxId = 0) {
     if (rect.right < -10 || rect.bottom < -10 || rect.left > canvasW + 10 || rect.top > canvasH + 10) continue
 
     const editorType = el.getAttribute('data-editor-type')
+
+    // 오디오 → 비주얼라이저 요소. Genitor 내보내기(.fe-audioviz: 캔버스+숨은 <audio>)와
+    // 일반 <audio controls>(보이는 플레이어 바) 둘 다. 컨트롤 없는 숨은 <audio>는 크기 0이라 위에서 스킵된다.
+    const isVizBox = el.classList.contains('fe-audioviz')
+    if (isVizBox || editorType === 'audio') {
+      const audioEl = isVizBox ? el.querySelector('audio') : el
+      if (audioEl) {
+        const aEl = buildFlatElement(el, rect, cs, zCounter++, 'shape', transformScale, originRect)
+        result.push(toAudioElement(aEl, el, audioEl, isVizBox))
+      }
+      if (isVizBox) mergedContainerIds.add(el.getAttribute('data-editor-id'))
+      continue
+    }
 
     // <table> → 편집 가능한 표 요소 하나. 셀들은 mergedContainerIds로 스킵된다.
     // (지원 밖이면 null → 아래 기존 경로가 셀별 텍스트로 추출)

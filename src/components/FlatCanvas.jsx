@@ -20,6 +20,7 @@ import { AWS_ICON_MIME, AWS_GROUP_MIME } from '../core/awsIcons'
 import { DEFAULT_VIZ } from '../core/audioViz'
 import { isAudioFile } from '../core/audioSources'
 import { isBundlerHtml } from '../core/BundlerUnpacker'
+import { attachLocalMedia } from '../core/localMedia'
 import { pointsToBBox, absoluteToRelativePoints, pointsToSvgPath } from '../core/PolyShapeUtils'
 import { confirmDialog } from './ConfirmDialog'
 import { bumpFontSizePx } from '../core/TextStyleScope'
@@ -378,7 +379,10 @@ export default function FlatCanvas() {
           })
           if (!ok) return
         }
-        const text = await htmlFile.text()
+        // 함께 드롭한 미디어 파일로 상대 경로를 먼저 맞추고, 남으면 폴더 선택을 묻는다
+        const text = await attachLocalMedia(await htmlFile.text(), {
+          files: allFiles.filter(f => f !== htmlFile), confirm: confirmDialog,
+        })
         useFlatStore.getState().clearPageCache()
         useFlatStore.getState().setProjectFile(null, null)        // .flatproj 아님
         useFlatStore.getState().setHtmlSourceName(htmlFile.name)  // 저장/PPT 기본 파일명 도출

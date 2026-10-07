@@ -1019,7 +1019,7 @@ export const useFlatStore = create((set, get) => ({
     const urls = new Set()
     const collect = (els) => {
       for (const e of els || []) {
-        if ((e.type === 'image' || e.type === 'video') && isRemote(e.content)) urls.add(e.content)
+        if ((e.type === 'image' || e.type === 'video' || e.type === 'audio') && isRemote(e.content)) urls.add(e.content)
       }
     }
     collect(get().flatElements)

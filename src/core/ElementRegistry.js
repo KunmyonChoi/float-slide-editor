@@ -7,6 +7,7 @@
 export const EDITABLE_TAGS = new Set(['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'span', 'li', 'td', 'th', 'a', 'strong', 'em', 'label', 'figcaption', 'pre', 'code', 'blockquote', 'dt', 'dd'])
 export const IMAGE_TAGS = new Set(['img'])
 export const VIDEO_TAGS = new Set(['video'])
+export const AUDIO_TAGS = new Set(['audio'])
 export const CONTAINER_TAGS = new Set(['div', 'section', 'article', 'header', 'footer', 'main', 'aside', 'nav', 'figure', 'table', 'thead', 'tbody', 'tfoot', 'tr', 'ul', 'ol', 'dl', 'details', 'summary',
   // deck-stage 커스텀 슬롯(이미지 플레이스홀더). 미인식 시 통째로 누락되므로 컨테이너로 취급
   // → 비어 있으면 테두리/배경 도형으로, 배경이미지가 있으면 그대로 추출.
@@ -15,6 +16,7 @@ export const CONTAINER_TAGS = new Set(['div', 'section', 'article', 'header', 'f
 export function classifyTag(tag) {
   if (IMAGE_TAGS.has(tag)) return 'image'
   if (VIDEO_TAGS.has(tag)) return 'video'
+  if (AUDIO_TAGS.has(tag)) return 'audio'
   if (EDITABLE_TAGS.has(tag)) return 'text'
   if (CONTAINER_TAGS.has(tag)) return 'container'
   return null
@@ -522,6 +524,8 @@ export function prepareHtmlForEditor(fullHtml) {
       ? 'image'
       : VIDEO_TAGS.has(tag)
       ? 'video'
+      : AUDIO_TAGS.has(tag)
+      ? 'audio'
       : EDITABLE_TAGS.has(tag)
       ? 'text'
       : CONTAINER_TAGS.has(tag)
