@@ -125,31 +125,80 @@ export function isVisuallyMeaningful(cs) {
 
 /**
  * 미세한 장식용 그래디언트인지 판별.
- * radial-gradient가 투명으로 fade되면서 최대 rgba alpha가 낮으면 장식 효과로 간주.
+ * radial-gradient가 투명으로 fade되면서 최대 alpha가 낮으면 장식 효과로 간주.
  * 예: radial-gradient(rgba(14, 165, 233, 0.06) 0%, rgba(0, 0, 0, 0) 70%)
+ *
+ * 두 가지를 반드시 지켜야 한다. 둘 다 실제로 그림을 통째로 날린 적이 있다.
+ *
+ * 1. **배경은 레이어가 여러 장일 수 있다.** 첫 장만 보고 판단하면 안 된다. 카세트 릴처럼
+ *    `radial-gradient(구멍), radial-gradient(테두리), conic-gradient(무늬)`로 쌓은 그림은
+ *    첫 장이 투명 구멍이라 장식으로 읽히지만, 정작 그림을 그리는 건 마지막 conic이다.
+ *    **모든 레이어가 장식일 때만** 장식이다.
+ *
+ * 2. **alpha를 밝히지 않은 색은 불투명(1)이다.** `rgb()`·`#hex`는 alpha가 1인데
+ *    alpha를 "선언한" 색만 세면 투명 끝점(0)만 잡혀 최대 alpha가 0으로 읽힌다.
+ *    선명한 그래디언트가 통째로 투명으로 오판된다.
  */
 const SUBTLE_GRADIENT_THRESHOLD = 0.25
+
+/** 쉼표로 구분된 최상위 배경 레이어로 쪼갠다(괄호 안의 쉼표는 구분자가 아니다). */
+function splitBackgroundLayers(bgImage) {
+  const layers = []
+  let depth = 0
+  let start = 0
+  for (let i = 0; i < bgImage.length; i++) {
+    const c = bgImage[i]
+    if (c === '(') depth++
+    else if (c === ')') depth--
+    else if (c === ',' && depth === 0) { layers.push(bgImage.slice(start, i).trim()); start = i + 1 }
+  }
+  layers.push(bgImage.slice(start).trim())
+  return layers.filter(Boolean)
+}
+
+// 색 토큰 하나. 함수형 색의 인자에는 괄호가 더 없다고 본다(계산된 스타일은 늘 평평하다).
+const COLOR_TOKEN = /#[0-9a-fA-F]{3,8}\b|\b(?:rgba?|hsla?|oklch|oklab|lch|lab|hwb|color)\([^()]*\)|\btransparent\b/g
+
+/** 색 토큰 하나의 alpha(0~1). 밝히지 않았으면 불투명(1). */
+function alphaOfColor(token) {
+  const t = token.trim()
+  if (/^transparent$/i.test(t)) return 0
+  if (t.startsWith('#')) {
+    const hex = t.slice(1)
+    if (hex.length === 4) return parseInt(hex[3] + hex[3], 16) / 255
+    if (hex.length === 8) return parseInt(hex.slice(6, 8), 16) / 255
+    return 1
+  }
+  // 슬래시 구분 alpha — rgb(0 0 0 / 50%), oklch(... / .3)
+  const slash = t.match(/\/\s*([\d.]+%?)\s*\)$/)
+  if (slash) return slash[1].endsWith('%') ? parseFloat(slash[1]) / 100 : parseFloat(slash[1])
+  // 쉼표 구분 alpha — rgba(r, g, b, a) / hsla(h, s, l, a)
+  const args = t.slice(t.indexOf('(') + 1, -1).split(',')
+  if (/^(?:rgba|hsla)\(/i.test(t) && args.length === 4) return parseFloat(args[3])
+  return 1
+}
+
+/** 레이어 한 장이 미세한 장식인지. */
+function isSubtleLayer(layer) {
+  if (!layer.startsWith('radial-gradient')) return false
+  const alphas = (layer.match(COLOR_TOKEN) || []).map(alphaOfColor).filter(a => !Number.isNaN(a))
+  if (alphas.length === 0) return false
+  // 투명으로 fade되어야 장식이다 — alpha 0인 끝점이 있어야 한다.
+  if (!alphas.some(a => a === 0)) return false
+  return Math.max(...alphas) < SUBTLE_GRADIENT_THRESHOLD
+}
+
 export function isSubtleGradient(bgImage) {
   if (!bgImage || bgImage === 'none') return false
-  // radial-gradient만 대상 (linear-gradient는 대부분 의미 있음)
-  if (!bgImage.startsWith('radial-gradient')) return false
-  // 투명으로 끝나는지 확인: rgba(..., 0) 이 포함되어야 함
-  if (!/ 0\)/.test(bgImage)) return false
-  // 모든 색상 stop의 alpha 값을 추출하여 최대값 확인.
-  const alphas = []
-  // rgba(...,a) / hsla(...,a) — 콤마 구분 alpha
-  for (const m of bgImage.matchAll(/(?:rgba|hsla)\(\s*[\d.]+\s*,\s*[\d.]+%?\s*,\s*[\d.]+%?\s*,\s*([\d.]+)\s*\)/g)) {
-    alphas.push(parseFloat(m[1]))
-  }
-  // oklch/oklab/lch/lab/hwb/color(... / a) — 슬래시 구분 alpha.
-  // 이게 없으면 선명한 oklch 그래디언트(예: .hm-frame 히트맵)가 rgba 투명 endpoint(alpha 0)만
-  // 잡혀 'subtle'로 오판→배경 통째로 누락된다.
-  for (const m of bgImage.matchAll(/(?:oklch|oklab|lch|lab|hwb|color)\([^)]*\/\s*([\d.]+%?)\s*\)/gi)) {
-    const v = m[1]
-    alphas.push(v.endsWith('%') ? parseFloat(v) / 100 : parseFloat(v))
-  }
-  if (alphas.length === 0) return false
-  return Math.max(...alphas) < SUBTLE_GRADIENT_THRESHOLD
+  // 레이어를 쪼개기 전에 싼 검사로 거른다. backgroundImage에는 `url(data:image/jpeg;base64,…)`로
+  // 수십만 글자가 들어온다 — splitBackgroundLayers는 문자 단위로 훑으므로 그걸 그대로 먹이면
+  // 요소마다 느려진다(회귀 테스트 훅이 10초를 넘겼다). radial-gradient가 한 장도 없으면
+  // 모든 레이어가 radial일 수 없으니 여기서 끝내도 결과가 같다.
+  if (!bgImage.includes('radial-gradient')) return false
+  const layers = splitBackgroundLayers(bgImage)
+  if (layers.length === 0) return false
+  // 한 장이라도 그림을 그리면 배경 전체가 의미 있다.
+  return layers.every(isSubtleLayer)
 }
 
 /**

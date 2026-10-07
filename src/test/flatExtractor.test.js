@@ -166,6 +166,49 @@ describe('isSubtleGradient — 미세한 장식 그래디언트 판별', () => {
       'radial-gradient(rgb(79, 70, 229), rgb(0, 0, 0))'
     )).toBe(false)
   })
+
+  // ── 아래 둘은 실제로 그림을 통째로 날렸던 경우다(카세트 릴). ──
+
+  it('레이어가 여러 장이면 모두 장식일 때만 장식 — 선명한 conic이 섞이면 false', () => {
+    // 카세트 릴: radial(구멍) + radial(테두리) + conic(무늬). 첫 장만 보면 장식으로 읽힌다.
+    expect(isSubtleGradient(
+      'radial-gradient(circle at 50% 50%, rgb(28, 23, 38) 0px, rgb(28, 23, 38) 12px, rgba(0, 0, 0, 0) 13px), '
+      + 'radial-gradient(circle at 50% 50%, rgba(0, 0, 0, 0) 0px, rgba(0, 0, 0, 0) 42px, rgb(168, 207, 142) 43px), '
+      + 'conic-gradient(rgb(255, 248, 238) 0deg, rgb(58, 50, 71) 22deg)'
+    )).toBe(false)
+  })
+
+  it('장식 레이어만 여러 장이면 true', () => {
+    expect(isSubtleGradient(
+      'radial-gradient(rgba(14, 165, 233, 0.06) 0%, rgba(0, 0, 0, 0) 70%), '
+      + 'radial-gradient(rgba(79, 70, 229, 0.05) 0%, rgba(0, 0, 0, 0) 70%)'
+    )).toBe(true)
+  })
+
+  it('alpha를 밝히지 않은 색은 불투명으로 센다 — 투명 끝점이 있어도 false', () => {
+    // rgb()는 alpha 1인데, alpha를 "선언한" 색만 세면 0만 잡혀 장식으로 오판된다.
+    expect(isSubtleGradient(
+      'radial-gradient(circle, rgb(168, 207, 142) 0px, rgba(0, 0, 0, 0) 70%)'
+    )).toBe(false)
+  })
+
+  it('#hex도 불투명으로 센다', () => {
+    expect(isSubtleGradient(
+      'radial-gradient(circle, #A8CF8E 0px, transparent 70%)'
+    )).toBe(false)
+  })
+
+  it('8자리 hex의 alpha를 읽는다 — 낮으면 장식', () => {
+    expect(isSubtleGradient(
+      'radial-gradient(circle, #A8CF8E1A 0px, transparent 70%)'
+    )).toBe(true)
+  })
+
+  it('슬래시 구분 alpha를 읽는다', () => {
+    expect(isSubtleGradient(
+      'radial-gradient(circle, rgb(168 207 142 / 10%) 0px, rgba(0, 0, 0, 0) 70%)'
+    )).toBe(true)
+  })
 })
 
 // ═══════════════════════════════════════════════════════════════
