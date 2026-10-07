@@ -229,10 +229,14 @@ export function loopAnimationCss(loopAnim, startMs = 0) {
   return `${LOOP_KEYFRAME[loopAnim.effect]} ${period}ms ${def.timing} ${delay}ms ${count} both`
 }
 
+/** 실제 세기 배율 — 0.25~3으로 자르고, 숫자가 아니면 1. */
+export function loopIntensity(loopAnim) {
+  return Number.isFinite(loopAnim?.intensity) ? Math.min(3, Math.max(0.25, loopAnim.intensity)) : 1
+}
+
 /** 세기 → CSS 변수(--fe-li). 키프레임이 진폭에 곱한다. */
 export function loopVars(loopAnim) {
-  const i = Number.isFinite(loopAnim?.intensity) ? Math.min(3, Math.max(0.25, loopAnim.intensity)) : 1
-  return { '--fe-li': String(i) }
+  return { '--fe-li': String(loopIntensity(loopAnim)) }
 }
 
 /** 반복 효과 래퍼 클래스 — 동작 줄이기 설정 대응(fe-loop-anim) + 반짝 스윕의 ::after 빛 띠. */

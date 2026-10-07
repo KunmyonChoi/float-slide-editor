@@ -6,6 +6,7 @@ JS 경로(src/core/PptMotion.js)의 미러. 같은 덱을 어느 경로로 내�
 python-pptx는 이 영역을 다루지 않으므로 lxml로 슬라이드 XML에 직접 붙인다.
 """
 import base64
+import math
 import re
 
 from pptx.oxml.ns import qn, _nsmap
@@ -44,8 +45,26 @@ _LOOPS = {
 _LOOP_SCALE = {'pulse': 0.08, 'breathe': 0.035}
 
 
+def _jsround(v) -> int:
+    """JS Math.round 미러(.5는 위로). 파이썬 round는 짝수 쪽으로 반올림해 두 경로가 1ms씩 어긋난다."""
+    return math.floor(v + 0.5)
+
+
 def _r3(v):
-    return round(v * 100000) / 100000
+    return _jsround(v * 100000) / 100000
+
+
+def _num(v, default=0):
+    """공개 JSON에서 온 값을 숫자로 — JS처럼 '1200' 같은 문자열도 받고, 못 읽으면 default."""
+    if isinstance(v, bool):
+        return int(v)
+    if isinstance(v, (int, float)):
+        return v if math.isfinite(v) else default
+    try:
+        f = float(v)
+        return f if math.isfinite(f) else default
+    except (TypeError, ValueError):
+        return default
 
 
 def _fmt(v):
@@ -54,33 +73,42 @@ def _fmt(v):
 
 
 def is_ppt_loop(el) -> bool:
-    return (el.get('loopAnim') or {}).get('effect') in _LOOPS
+    effect = (el.get('loopAnim') or {}).get('effect')
+    return isinstance(effect, str) and effect in _LOOPS
 
 
 def _loop_period(loop) -> int:
-    return max(200, loop.get('periodMs') or _LOOPS[loop['effect']][2])
+    return max(200, _num(loop.get('periodMs')) or _LOOPS[loop['effect']][2])
 
 
-def _loop_bhvr(effect, cid, spid, period, intensity, canvas) -> str:
+def _opacity_bhvr(cid, spid, half, low) -> str:
+    """투명도 1 → low → 1 (반 주기씩, 왕복)."""
+    return ('<p:anim calcmode="lin" valueType="num"><p:cBhvr>'
+            '<p:cTn id="%d" dur="%d" autoRev="1" fill="hold" accel="50000" decel="50000"/>'
+            '<p:tgtEl><p:spTgt spid="%d"/></p:tgtEl>'
+            '<p:attrNameLst><p:attrName>style.opacity</p:attrName></p:attrNameLst></p:cBhvr>'
+            '<p:tavLst><p:tav tm="0"><p:val><p:fltVal val="1"/></p:val></p:tav>'
+            '<p:tav tm="100000"><p:val><p:fltVal val="%s"/></p:val></p:tav></p:tavLst></p:anim>'
+            % (cid, half, spid, _fmt(_r3(low))))
+
+
+def _loop_bhvr(effect, cid, spid, period, intensity, canvas, ids) -> str:
     tgt = '<p:tgtEl><p:spTgt spid="%d"/></p:tgtEl>' % spid
-    half = round(period / 2)
+    half = _jsround(period / 2)
     ease = ' accel="50000" decel="50000"'
     if effect in _LOOP_SCALE:
-        by = round((1 + _LOOP_SCALE[effect] * intensity) * 100000)
-        return ('<p:animScale><p:cBhvr><p:cTn id="%d" dur="%d" autoRev="1" fill="hold"%s/>%s'
-                '</p:cBhvr><p:by x="%d" y="%d"/></p:animScale>' % (cid, half, ease, tgt, by, by))
+        by = _jsround((1 + _LOOP_SCALE[effect] * intensity) * 100000)
+        out = ('<p:animScale><p:cBhvr><p:cTn id="%d" dur="%d" autoRev="1" fill="hold"%s/>%s'
+               '</p:cBhvr><p:by x="%d" y="%d"/></p:animScale>' % (cid, half, ease, tgt, by, by))
+        if effect == 'breathe':  # 앱 키프레임처럼 커지면서 살짝 옅어진다(투명도 0.15 × 세기)
+            out += _opacity_bhvr(ids.next(), spid, half, 1 - 0.15 * intensity)
+        return out
     if effect == 'spin':
         return ('<p:animRot by="21600000"><p:cBhvr><p:cTn id="%d" dur="%d" fill="hold"/>%s'
                 '<p:attrNameLst><p:attrName>r</p:attrName></p:attrNameLst></p:cBhvr></p:animRot>'
                 % (cid, period, tgt))
     if effect == 'blink':
-        low = _r3(1 - 0.75 * min(1, intensity))
-        return ('<p:anim calcmode="lin" valueType="num"><p:cBhvr>'
-                '<p:cTn id="%d" dur="%d" autoRev="1" fill="hold"%s/>%s'
-                '<p:attrNameLst><p:attrName>style.opacity</p:attrName></p:attrNameLst></p:cBhvr>'
-                '<p:tavLst><p:tav tm="0"><p:val><p:fltVal val="1"/></p:val></p:tav>'
-                '<p:tav tm="100000"><p:val><p:fltVal val="%s"/></p:val></p:tav></p:tavLst></p:anim>'
-                % (cid, half, ease, tgt, _fmt(low)))
+        return _opacity_bhvr(cid, spid, half, 1 - 0.75 * min(1, intensity))
     if effect == 'float':
         path, dur, rev = 'M 0 0 L 0 %s E' % _fmt(_r3(-12 * intensity / canvas['h'])), half, ' autoRev="1"'
     else:  # wiggle
@@ -93,27 +121,32 @@ def _loop_bhvr(effect, cid, spid, period, intensity, canvas) -> str:
 
 
 def _loop_par(spid, loop, delay, node_type, canvas, ids) -> str:
-    """반복 효과 하나 → <p:par>. repeatCount는 1000 = 1회, 0(무한)은 indefinite."""
+    """반복 효과 하나 → <p:par>. repeatCount는 1000 = 1회, 0(무한)은 indefinite.
+
+    node_type이 None이면 단계 밖(tmRoot 직속)에 슬라이드 진입 기준 지연으로 따로 예약하는 노드다.
+    """
     preset_id, cls, _ = _LOOPS[loop['effect']]
     outer = ids.next()
     raw = loop.get('intensity')
-    intensity = min(3, max(0.25, raw)) if isinstance(raw, (int, float)) else 1
-    bhvr = _loop_bhvr(loop['effect'], ids.next(), spid, _loop_period(loop), intensity, canvas)
-    rep = loop.get('repeat') or 0
-    repeat = str(round(rep) * 1000) if rep > 0 else 'indefinite'
+    intensity = (min(3, max(0.25, raw))
+                 if isinstance(raw, (int, float)) and not isinstance(raw, bool) and math.isfinite(raw) else 1)
+    bhvr = _loop_bhvr(loop['effect'], ids.next(), spid, _loop_period(loop), intensity, canvas, ids)
+    rep = _num(loop.get('repeat'))
+    repeat = str(_jsround(rep) * 1000) if rep > 0 else 'indefinite'
     return (
         '<p:par><p:cTn id="%d" presetID="%d" presetClass="%s" presetSubtype="0"'
-        ' repeatCount="%s" fill="hold" grpId="0" nodeType="%s">'
+        ' repeatCount="%s" fill="hold" grpId="0"%s>'
         '<p:stCondLst><p:cond delay="%d"/></p:stCondLst>'
         '<p:childTnLst>%s</p:childTnLst></p:cTn></p:par>'
-        % (outer, preset_id, cls, repeat, node_type, max(0, round(delay)), bhvr)
+        % (outer, preset_id, cls, repeat, (' nodeType="%s"' % node_type) if node_type else '',
+           max(0, _jsround(delay)), bhvr)
     )
 
 
 def _loop_delay(loop, start_ms) -> int:
     """PptMotion.pptLoopDelay 미러 — 음수 지연이 없으니 시차는 한 주기를 더해 맞춘다."""
     period = _loop_period(loop)
-    phase = max(0, loop.get('phaseMs') or 0) % period
+    phase = max(0, _num(loop.get('phaseMs'))) % period
     return start_ms + ((period - phase) % period) if start_ms > 0 else (period - phase) % period
 
 _RT_AUDIO = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/audio'
@@ -271,6 +304,24 @@ def _audio_node(spid, volume, ids) -> str:
     )
 
 
+def _chained_step_starts(step_count, step_of, offset_of, auto_offsets, order, by_id) -> dict:
+    """PptMotion.chainedStepStarts 미러 — auto_chain 장에서 각 클릭 단계의 시작 시각(ms)."""
+    def dur(i):
+        return by_id[i]['anim'].get('durationMs') or DEFAULT_DUR
+    t = 0
+    for i, off in auto_offsets.items():
+        t = max(t, off + dur(i))
+    starts = {}
+    for s in range(step_count):
+        ids = [i for i in order if step_of.get(i) == s]
+        if not ids:
+            continue
+        t += AUDIO_TERM
+        starts[s] = t
+        t += max([0] + [(offset_of.get(i) or 0) + dur(i) for i in ids])
+    return starts
+
+
 def timing_xml(elements, spids_of, audio=None, auto_chain=False, id_seed=2, canvas=None) -> str:
     """요소 anim(+나레이션) → <p:timing> 문자열. 실을 게 없으면 ''.
 
@@ -292,8 +343,11 @@ def timing_xml(elements, spids_of, audio=None, auto_chain=False, id_seed=2, canv
         return [(spid, by_id[eid]['anim'], delay) for spid in spids_of[eid]]
 
     # 반복 효과는 요소가 보이기 시작하는 묶음에 같이 넣는다(PptMotion.buildTimingXml과 같은 규칙).
+    # auto_chain(나레이션) 장은 끝나지 않는 반복이 뒤 단계를 막으므로 묶음 밖에 절대 지연으로 예약한다.
     cv = {'w': (canvas or {}).get('w') or 1920, 'h': (canvas or {}).get('h') or 1080}
-    auto_loops, step_loops = [], {}
+    step_start = _chained_step_starts(step_count, step_of, offset_of, auto_offsets, order, by_id) \
+        if auto_chain else {}
+    auto_loops, step_loops, free_loops = [], {}, []
     for e in loops:
         eid = e.get('id')
         entrance = eid in by_id and _EFFECTS[e['anim']['effect']][1] == 'entr'
@@ -303,10 +357,13 @@ def timing_xml(elements, spids_of, audio=None, auto_chain=False, id_seed=2, canv
             enter_at = auto_offsets.get(eid, offset_of.get(eid)) or 0
             after = (e['loopAnim'].get('start') or 'afterEnter') == 'afterEnter'
             start = enter_at + ((a.get('durationMs') or DEFAULT_DUR) if after else 0)
-        delay = _loop_delay(e['loopAnim'], start)
-        fx = [(spid, e['loopAnim'], delay, cv) for spid in spids_of[eid]]
         step = step_of.get(eid) if entrance else None
-        if step is None:
+        base = step_start.get(step, 0) if (auto_chain and step is not None) else 0
+        delay = base + _loop_delay(e['loopAnim'], start)
+        fx = [(spid, e['loopAnim'], delay, cv) for spid in spids_of[eid]]
+        if auto_chain:
+            free_loops += fx
+        elif step is None:
             auto_loops += fx
         else:
             step_loops.setdefault(step, []).extend(fx)
@@ -327,7 +384,7 @@ def timing_xml(elements, spids_of, audio=None, auto_chain=False, id_seed=2, canv
             effects += expand(eid, offset_of.get(eid) or 0)
         steps.append((auto_chain, AUDIO_TERM if auto_chain else 0, effects + step_loops.get(s, [])))
 
-    if not steps and not audio:
+    if not steps and not free_loops and not audio:
         return ''
 
     body = ''.join(_step_par(effects, auto_start, delay, ids) for auto_start, delay, effects in steps)
@@ -340,6 +397,7 @@ def timing_xml(elements, spids_of, audio=None, auto_chain=False, id_seed=2, canv
             '<p:nextCondLst><p:cond evt="onNext" delay="0"><p:tgtEl><p:sldTgt/></p:tgtEl></p:cond></p:nextCondLst>'
             '</p:seq>' % body
         )
+    loop_x = ''.join(_loop_par(spid, loop, delay, None, cv_, ids) for spid, loop, delay, cv_ in free_loops)
     audio_x = _audio_node(audio['spid'], audio.get('volume'), ids) if audio else ''
     bld_spids = []
     for e in usable + [e for e in loops if e not in usable]:
@@ -351,9 +409,9 @@ def timing_xml(elements, spids_of, audio=None, auto_chain=False, id_seed=2, canv
     return (
         '<p:timing><p:tnLst><p:par>'
         '<p:cTn id="1" dur="indefinite" restart="never" nodeType="tmRoot"><p:childTnLst>'
-        '%s%s'
+        '%s%s%s'
         '</p:childTnLst></p:cTn></p:par></p:tnLst>'
-        '%s</p:timing>' % (seq, audio_x, ('<p:bldLst>%s</p:bldLst>' % bld) if bld else '')
+        '%s</p:timing>' % (seq, loop_x, audio_x, ('<p:bldLst>%s</p:bldLst>' % bld) if bld else '')
     )
 
 

@@ -65,6 +65,31 @@ describe('PptMotion — 반복(강조) 효과', () => {
     expect(xml).toContain('presetClass="path"')
   })
 
+  it('숨쉬기는 크기와 함께 투명도도 왕복한다(앱 키프레임과 같게)', () => {
+    const xml = buildTimingXml([el('a', { loopAnim: makeLoopAnim('breathe') })], spids({ a: [2] }))
+    expect(xml).toContain('<p:by x="103500" y="103500"/>')
+    expect(xml).toContain('<p:fltVal val="0.85"/>')
+    const ids = [...xml.matchAll(/<p:cTn id="(\d+)"/g)].map(m => m[1])
+    expect(new Set(ids).size).toBe(ids.length)
+  })
+
+  it('나레이션(autoChain) 장: 반복은 단계 체인 밖에 절대 지연으로 따로 예약 — 뒤 단계를 막지 않는다', () => {
+    const els = [
+      el('a', { anim: enter({ seq: 0 }), loopAnim: makeLoopAnim('pulse') }),        // 단계1: 300 + 500
+      el('b', { anim: enter({ seq: 1, durationMs: 400 }) }),                        // 단계2
+      el('c', { loopAnim: makeLoopAnim('spin') }),                                    // 반복만 → 0
+      el('d', { anim: enter({ seq: 2 }), loopAnim: { ...makeLoopAnim('blink'), start: 'withEnter' } }), // 단계3
+    ]
+    const xml = buildTimingXml(els, spids({ a: [2], b: [3], c: [4], d: [5] }), null, { autoChain: true })
+    const seq = xml.slice(xml.indexOf('<p:seq'), xml.indexOf('</p:seq>'))
+    expect(seq).not.toContain('repeatCount')                       // 체인 안엔 반복 없음
+    const free = xml.slice(xml.indexOf('</p:seq>'))
+    const delays = [...free.matchAll(/repeatCount="indefinite" fill="hold" grpId="0"><p:stCondLst><p:cond delay="(\d+)"/g)].map(m => +m[1])
+    expect(free).not.toContain('nodeType=')
+    // a: 단계1 시작 300 + 등장 500 = 800 / c: 0 / d: 단계1(300~800) → 단계2(1100~1500) → 단계3 시작 1800, 등장과 함께
+    expect(delays.sort((x, y) => x - y)).toEqual([0, 800, 1800])
+  })
+
   it('반짝 스윕만 있으면 타이밍 없음', () => {
     expect(buildTimingXml([el('a', { loopAnim: makeLoopAnim('shimmer') })], spids({ a: [2] }))).toBe('')
   })
