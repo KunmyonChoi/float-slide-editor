@@ -3236,7 +3236,7 @@ function LoopSection({ el }) {
           )}
           <p className="text-[10px] text-slate-600">
             발표 중 요소가 보이는 동안 반복됩니다(횟수 0 = 무한). 시차로 여러 요소의 박자를 엇갈리게 할 수 있습니다.
-            {loop.effect === 'shimmer' && ' 반짝 스윕은 배경이 있는 요소에 잘 보입니다.'}
+            {loop.effect === 'shimmer' && ' 반짝 스윕은 배경이 있는 요소에 잘 보입니다(PPT 내보내기에는 대응 효과가 없어 빠집니다).'}
           </p>
         </>
       )}

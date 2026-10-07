@@ -319,7 +319,7 @@ def build_pptx(pages: dict, default_canvas_size: dict, fonts: list = None,
             if gid:
                 group_shapes.setdefault(gid, []).extend(added)
             # 요소 하나가 도형 여럿을 낳으면(그라데이션 래스터 + 텍스트 등) 함께 움직인다.
-            if el.get('anim') and added:
+            if (el.get('anim') or el.get('loopAnim')) and added:
                 anim_spids[el.get('id')] = [sh.shape_id for sh in added]
 
         # 같은 그룹의 도형들을 PowerPoint 그룹으로 묶기
@@ -344,7 +344,9 @@ def build_pptx(pages: dict, default_canvas_size: dict, fonts: list = None,
             audio_target = motion.add_narration(slide, prs, page_index, page_data.get('audio'))
             motion.apply_slide_motion(
                 slide,
-                {'elements': info['content_elements'], 'transition': page_data.get('transition')},
+                # canvasSize: 반복 효과 이동 경로는 슬라이드(덱 레이아웃) 크기 대비 비율
+                {'elements': info['content_elements'], 'transition': page_data.get('transition'),
+                 'canvasSize': cs},
                 anim_spids, audio_target,
             )
         except Exception as e:

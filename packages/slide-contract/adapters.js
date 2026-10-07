@@ -45,6 +45,7 @@ export function internalElementToPublic(el) {
     if (el.fillColor) out.fillColor = el.fillColor
   }
   if (el.anim) out.anim = el.anim // 등장 모션(PPT timing·발표 모드 공용)
+  if (el.loopAnim) out.loopAnim = el.loopAnim // 반복(강조) 효과(PPT 강조 timing·발표 모드 공용)
   if (el.points != null) out.points = el.points
   if (el.link != null) out.link = el.link
   if (el.merged) out.merged = true
@@ -76,6 +77,7 @@ export function publicElementToInternal(pel) {
     out.isRich = false
   }
   if (pel.anim) out.anim = pel.anim
+  if (pel.loopAnim) out.loopAnim = pel.loopAnim
   if (pel.type === 'video' || pel.type === 'audio') {
     if (pel.autoplay) out.autoplay = true
     if (pel.loop) out.loop = true

@@ -45,6 +45,12 @@ PPTX 엔진의 **유일한 외부 API**. 소비 SW는 이 `SlideDeck` JSON만 �
             "durationMs": 500, "delayMs": 0,
             "trigger": { "mode": "click", "ref": null },  // click|auto|with|after
             "seq": 0
+          },
+          "loopAnim": {                         // 선택. 반복(강조) 효과 → PPT 강조/경로 + 반복
+            "effect": "pulse",                  // pulse|breathe|float|spin|wiggle|blink|shimmer(PPT 제외)
+            "periodMs": 1200, "intensity": 1, "phaseMs": 0,
+            "start": "afterEnter",              // afterEnter|withEnter (등장 효과가 있을 때)
+            "repeat": 0                         // 0 = 무한(슬라이드가 끝날 때까지)
           } }
       ],
       "notes": "발표자 원고",                     // 선택. 슬라이드 노트
