@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
+import { useState, useEffect, useLayoutEffect, useCallback, useRef, useMemo } from 'react'
 import { useFlatStore } from '../store/flatStore'
 import { useEditorStore } from '../store/editorStore'
 import { resolveConnectors } from './ConnectorRouting'
@@ -10,6 +10,8 @@ import { correctTranscriptWithNotes } from './captionAlign'
 import { presentationOrder } from './karaoke'
 import { hasApiKey } from './OpenAIClient'
 import { openAiSettings } from '../components/AiSettingsModal'
+import { waitMediaIds, onMediaSignal, mediaAdvanceDecision, applySlideAdvance, effectiveAdvanceMode, activeBgm } from './mediaAdvance'
+import { getAudioClock } from './audioClock'
 
 /**
  * usePresentationEngine — 발표 상태 일체(덱·현재 슬라이드·빌드 단계·잉크·나레이션·자막)를
@@ -165,7 +167,12 @@ export function usePresentationEngine({ onExit } = {}) {
 
   const page = allPages?.[sortedKeys[currentSlide]]
   // 커넥터 기하는 참조 도형에서 유도 — 발표 모드에서도 해석된 사본으로 렌더
-  const elements = useMemo(() => resolveConnectors(page?.elements || []), [page])
+  // 진행 기준이 '미디어 끝'·'모두 끝날 때'면 그 장의 오디오·영상을 기다릴 대상으로 표시해서 그린다
+  // (요소마다 옵션을 켜지 않아도 되게 — mediaAdvance.applySlideAdvance).
+  const advanceMode = page?.advance?.mode || 'auto'
+  const elements = useMemo(
+    () => applySlideAdvance(resolveConnectors(page?.elements || []), advanceMode),
+    [page, advanceMode])
   const canvasSize = useMemo(() => page?.canvasSize || { w: 1280, h: 720 }, [page])
   const animInfo = useMemo(() => computeSteps(elements), [elements])
   const totalSlides = sortedKeys.length
@@ -302,9 +309,52 @@ export function usePresentationEngine({ onExit } = {}) {
   // 이 슬라이드에서 음성이 실제로 흐르는가 — 자동 진행의 신호원을 고르는 기준.
   const audioWillPlay = narration && hasAudio && !audioBlocked
 
+  // ── 자동 진행 기준 ──
+  // 자동 진행('음성 후 자동 진행')·루프(전시회)에서 이 장을 언제 넘길지. 장마다 page.advance로 고른다.
+  //   narration: 나레이션이 끝나면(없으면 루프의 머무는 시간)  — 예전 동작
+  //   media:     '끝까지 재생' 오디오·영상이 끝나면(나레이션은 무시)
+  //   all:       나레이션과 그 미디어가 모두 끝나면
+  //   time:      N초 뒤 · click: 자동으로 넘기지 않음
+  //   auto(기본): 끝까지 재생할 미디어가 있으면 all, 없으면 narration
+  // 미디어 신호는 슬라이드 진입 회차(token)별로 모은다 — 이전 장에서 늦게 도착한 신호가 다음 장의
+  // 기다림을 풀어 버리지 않게.
+  const autoOn = autoAdvance || loopPresentation
+  const allWaitIds = useMemo(() => waitMediaIds(elements), [elements])
+  const effMode = effectiveAdvanceMode(advanceMode, allWaitIds.length)
+  const waitIds = useMemo(() => (effMode === 'media' || effMode === 'all' ? allWaitIds : []), [effMode, allWaitIds])
+  const waitKey = waitIds.join('|')
+  const slideToken = `${currentSlide}:${loopCycle}`
+  const slideTokenRef = useRef(slideToken)
+  // 미디어 재생은 자식의 일반 이펙트에서 시작되므로, 그보다 먼저 도는 레이아웃 이펙트에서 갱신한다.
+  useLayoutEffect(() => { slideTokenRef.current = slideToken }, [slideToken])
+  const [mediaState, setMediaState] = useState({ token: slideToken, status: {}, narrationEnded: false })
+  const curMedia = mediaState.token === slideToken ? mediaState : { status: {}, narrationEnded: false }
+  const markMedia = useCallback((patch) => {
+    setMediaState(prev => {
+      const token = slideTokenRef.current
+      const base = prev.token === token ? prev : { token, status: {}, narrationEnded: false }
+      return patch(base)
+    })
+  }, [])
+  useEffect(() => onMediaSignal((id, kind) => {
+    markMedia(s => (s.status[id] ? s : { ...s, status: { ...s.status, [id]: kind } }))
+  }), [markMedia])
+
   const onAudioEnded = useCallback(() => {
-    if (autoAdvance || loopPresentation) advanceSlide()
-  }, [autoAdvance, loopPresentation, advanceSlide])
+    // '나레이션 끝'은 늘 기록한다(BGM 덕킹·남은 시간 표시가 읽는다). 바로 넘기는 건 narration 기준뿐 —
+    // 미디어를 기다리는 장은 아래 판정 이펙트가, time/click은 각자 규칙이 넘긴다.
+    markMedia(s => ({ ...s, narrationEnded: true }))
+    if (effMode === 'narration' && autoOn) advanceSlide()
+  }, [markMedia, effMode, autoOn, advanceSlide])
+
+  // 나레이션이 지금 흐르는 중인가 — 'media' 기준이면 기다리지 않는다.
+  const narrationPlaying = audioWillPlay && !curMedia.narrationEnded
+  const mediaDecision = loading ? 'none' : mediaAdvanceDecision({
+    auto: autoOn,
+    narrationPending: effMode === 'all' && narrationPlaying,
+    waitIds,
+    status: curMedia.status,
+  })
 
   const replayAudio = useCallback(() => {
     const el = audioElRef.current
@@ -345,11 +395,69 @@ export function usePresentationEngine({ onExit } = {}) {
   // 저장이 allPages를 새로 만들면 두 객체의 신원이 바뀐다. 그때마다 타이머를 다시 걸면
   // 슬라이드가 필요 이상으로 오래 머문다.
   const buildTotalMs = autoBuildTotalMs(animInfo, elements)
+  // narration 기준인 장만 — 미디어를 기다리는 장·시간 지정·클릭 전용 장은 각자 규칙이 맡는다.
+  const dwellOn = !loading && loopPresentation && effMode === 'narration' && !audioWillPlay
   useEffect(() => {
-    if (loading || !loopPresentation || audioWillPlay) return
+    if (!dwellOn) return
     const t = setTimeout(advanceSlide, buildTotalMs + LOOP_DWELL_MS)
     return () => clearTimeout(t)
-  }, [loading, loopPresentation, audioWillPlay, buildTotalMs, advanceSlide, currentSlide, loopCycle])
+  }, [dwellOn, buildTotalMs, advanceSlide, currentSlide, loopCycle])
+
+  // 시간 지정(time) — 장에 들어선 뒤 N초. 나레이션·미디어와 무관.
+  const advanceAfterMs = effMode === 'time' ? Math.max(1, page?.advance?.seconds || 10) * 1000 : 0
+  useEffect(() => {
+    if (loading || !autoOn || !advanceAfterMs) return
+    const t = setTimeout(advanceSlide, advanceAfterMs)
+    return () => clearTimeout(t)
+  }, [loading, autoOn, advanceAfterMs, advanceSlide, currentSlide, loopCycle])
+
+  // 남은 시간 표시용 — 장에 들어선 시각
+  const slideStartRef = useRef(0)
+  useEffect(() => { slideStartRef.current = Date.now() }, [currentSlide, loopCycle, loading])
+
+  // 기다릴 미디어가 있는 장의 넘김 판정. 나레이션·미디어가 모두 끝나면 바로 넘긴다.
+  // 미디어가 하나도 재생되지 못했으면(dwell) 루프에서는 머무는 시간 뒤에, 나레이션이 흐른
+  // 자동 진행에서는 그 나레이션 기준(바로)으로 넘긴다 — 어느 쪽이든 덱이 멈추지 않게.
+  useEffect(() => {
+    if (mediaDecision === 'advance') { advanceSlide(); return }
+    if (mediaDecision !== 'dwell') return
+    if (!loopPresentation) { if (audioWillPlay) advanceSlide(); return }
+    const t = setTimeout(advanceSlide, buildTotalMs + LOOP_DWELL_MS)
+    return () => clearTimeout(t)
+  }, [mediaDecision, waitKey, loopPresentation, audioWillPlay, buildTotalMs, advanceSlide])
+
+  // ── 다음 장까지 남은 시간(초) — 발표자 표시용. 알 수 없으면 null ──
+  // 미디어 길이는 재생 중인 요소(audioClock 등록부)에서 읽는다. 최대 재생 시간이 있으면 그만큼만.
+  const getAdvanceEta = useCallback(() => {
+    if (!autoOn || loading || effMode === 'click') return null
+    const now = Date.now()
+    if (effMode === 'time') return Math.max(0, (slideStartRef.current + advanceAfterMs - now) / 1000)
+    if (effMode === 'narration' && !audioWillPlay) {
+      return loopPresentation
+        ? Math.max(0, (slideStartRef.current + buildTotalMs + LOOP_DWELL_MS - now) / 1000)
+        : null
+    }
+    const remainOf = (m, maxSec) => {
+      if (!m || !Number.isFinite(m.duration)) return null
+      const end = maxSec > 0 ? Math.min(m.duration, maxSec) : m.duration
+      return Math.max(0, end - (m.currentTime || 0))
+    }
+    const parts = []
+    if (effMode !== 'media' && narrationPlaying) parts.push(remainOf(audioElRef.current))
+    for (const id of waitIds) {
+      if (curMedia.status[id]) continue
+      parts.push(remainOf(getAudioClock(id), elements.find(e => e.id === id)?.playMaxSec))
+    }
+    if (!parts.length || parts.some(v => v == null)) return null
+    return Math.max(...parts)
+  }, [autoOn, loading, effMode, advanceAfterMs, audioWillPlay, loopPresentation, buildTotalMs,
+    narrationPlaying, waitIds, curMedia.status, elements])
+
+  // ── 여러 장에 걸쳐 흐르는 BGM(bgmSpan) — 슬라이드를 넘겨도 끊기지 않게 발표 화면 밖에서 재생 ──
+  const pagesInOrder = useMemo(() => sortedKeys.map(k => allPages?.[k]), [sortedKeys, allPages])
+  const bgm = useMemo(
+    () => (loading ? null : activeBgm(pagesInOrder, currentSlide)?.element || null),
+    [loading, pagesInOrder, currentSlide])
 
   // ── 가라오케 자막(STT 단어별 하이라이트) ──
   const captionsOn = useEditorStore(s => s.karaokeCaptions)
@@ -443,6 +551,10 @@ export function usePresentationEngine({ onExit } = {}) {
     setAudioEl, getAudioTime, getAudioStatus,
     narration, setNarration, hasAudio, deckHasAudio, autoAdvance, autoBuild, loopPresentation,
     onAudioEnded, onAudioError, replayAudio,
+    // 자동 진행 기준 · 끝날 때까지 기다리는 미디어 · 남은 시간 · BGM
+    advanceMode: effMode,
+    waitMediaPending: waitIds.filter(id => !curMedia.status[id]).length,
+    getAdvanceEta, bgm, narrationPlaying,
     // 자막
     captionsOn, toggleCaptions, captionWords, captionBusy, captionErr,
     // 키보드

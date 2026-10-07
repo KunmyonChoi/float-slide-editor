@@ -26,6 +26,7 @@ import { DEFAULT_LYRIC_OFFSET, isTextOverflowHidden, lyricUnlinkChanges } from '
 import { EFFECTS, effectHasDir, LOOP_EFFECTS, makeLoopAnim, isEntrance } from '../core/slideAnimation'
 import DiagramIconPanel from './DiagramIconPanel'
 import MediaPreview from './MediaPreview'
+import { waitsForEnd, canWaitForEnd, isBgm, effectiveAutoplay, effectiveLoop } from '../core/mediaAdvance'
 
 // ── 글꼴 크기 프리셋 ────────────────────────────────
 
@@ -2655,8 +2656,10 @@ function TableSection({ el, update, updateStyle }) {
 }
 
 function VideoSection({ el, update, updateStyle, previewStyle }) {
-  const autoplay = el.autoplay ?? false
-  const loop = el.loop ?? false
+  // '끝날 때까지 기다림'이 켜지면 자동 재생은 켜짐, 반복은 꺼짐으로 고정(mediaAdvance.js)
+  const waitEnd = waitsForEnd(el)
+  const autoplay = effectiveAutoplay(el)
+  const loop = effectiveLoop(el)
   const muted = el.muted ?? true
   const hideControls = el.hideControls ?? false
 
@@ -2669,6 +2672,7 @@ function VideoSection({ el, update, updateStyle, previewStyle }) {
         <input
           type="checkbox"
           checked={autoplay}
+          disabled={waitEnd}
           onChange={e => update({ autoplay: e.target.checked })}
           className="accent-indigo-500"
         />
@@ -2678,11 +2682,13 @@ function VideoSection({ el, update, updateStyle, previewStyle }) {
         <input
           type="checkbox"
           checked={loop}
+          disabled={waitEnd}
           onChange={e => update({ loop: e.target.checked })}
           className="accent-indigo-500"
         />
         <span className={labelClass}>반복 재생</span>
       </label>
+      <AdvanceOnEndToggle el={el} update={update} />
       <label className="flex items-center gap-2 cursor-pointer">
         <input
           type="checkbox"
@@ -2703,6 +2709,72 @@ function VideoSection({ el, update, updateStyle, previewStyle }) {
       </label>
       <VideoChromaKey el={el} update={update} />
     </div>
+  )
+}
+
+// '끝날 때까지 기다린 뒤 다음 슬라이드' — 자동 진행·전시회(루프)에서 나레이션이 먼저 끝나도
+// 이 오디오·영상이 끝까지 재생된 뒤에 넘어간다. 임베드(YouTube 등)와 배경 영상은 끝을 알 수 없어 비노출.
+function AdvanceOnEndToggle({ el, update }) {
+  const bgm = isBgm(el)
+  return (
+    <div className="space-y-2">
+      {!bgm && canWaitForEnd(el) && <AdvanceOnEndCheckbox el={el} update={update} />}
+      {(el.type === 'audio' || canWaitForEnd(el)) && (
+        <label className="flex items-center gap-2" title="발표에서 이 시간까지만 재생하고 2초 페이드아웃 후 멈춥니다(끝까지 재생 옵션이면 그때 다음 슬라이드). 비우면 끝까지.">
+          <span className={`${labelClass} flex-1`}>최대 재생 시간</span>
+          <input type="number" min="1" max="3600" step="1" placeholder="끝까지"
+            value={el.playMaxSec > 0 ? el.playMaxSec : ''}
+            onChange={e => { const v = parseFloat(e.target.value); update({ playMaxSec: v > 0 ? Math.min(3600, v) : undefined }) }}
+            className="w-20 bg-white/5 border border-white/10 rounded px-1.5 py-0.5 text-xs text-slate-200" />
+          <span className={labelClass}>초</span>
+        </label>
+      )}
+      {el.type === 'audio' && <BgmControl el={el} update={update} />}
+    </div>
+  )
+}
+
+// 여러 슬라이드에 걸친 배경 음악 — 이 슬라이드부터 N장 동안(0=끝까지) 끊기지 않고 흐른다.
+// 나레이션이 나오면 소리를 줄인다. 켜면 '끝까지 재생 후 다음'은 쓸 수 없다(여러 장에 걸치므로).
+function BgmControl({ el, update }) {
+  const on = isBgm(el)
+  const span = on ? el.bgmSpan : 3
+  return (
+    <div className="space-y-1">
+      <label className="flex items-start gap-2 cursor-pointer" title="슬라이드를 넘겨도 끊기지 않고 이어지는 배경 음악. 나레이션이 나오는 동안은 소리를 줄입니다.">
+        <input type="checkbox" checked={on} className="accent-indigo-500 mt-0.5"
+          onChange={e => update(e.target.checked ? { bgmSpan: 3, advanceOnEnd: undefined } : { bgmSpan: undefined })} />
+        <span className={labelClass}>여러 슬라이드에 걸쳐 재생 (BGM)</span>
+      </label>
+      {on && (
+        <div className="flex items-center gap-2 pl-6">
+          <input type="number" min="1" max="999" step="1" disabled={span === 0}
+            value={span === 0 ? '' : span}
+            onChange={e => { const v = parseInt(e.target.value, 10); if (v >= 1) update({ bgmSpan: Math.min(999, v) }) }}
+            className="w-16 bg-white/5 border border-white/10 rounded px-1.5 py-0.5 text-xs text-slate-200 disabled:opacity-40" />
+          <span className={labelClass}>장 동안</span>
+          <label className="flex items-center gap-1 cursor-pointer">
+            <input type="checkbox" checked={span === 0} className="accent-indigo-500"
+              onChange={e => update({ bgmSpan: e.target.checked ? 0 : 3 })} />
+            <span className={labelClass}>끝까지</span>
+          </label>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function AdvanceOnEndCheckbox({ el, update }) {
+  return (
+    <label className="flex items-start gap-2 cursor-pointer" title="자동 진행·반복 재생(전시회)에서 나레이션이 먼저 끝나도 이 미디어가 끝날 때까지 기다립니다. 켜면 자동 재생, 반복 끔으로 고정됩니다.">
+      <input
+        type="checkbox"
+        checked={!!el.advanceOnEnd}
+        onChange={e => update({ advanceOnEnd: e.target.checked })}
+        className="accent-indigo-500 mt-0.5"
+      />
+      <span className={labelClass}>끝까지 재생 후 다음 슬라이드<br /><span className="opacity-60">자동 진행·전시회 모드</span></span>
+    </label>
   )
 }
 
@@ -2831,8 +2903,9 @@ function VideoChromaKey({ el, update }) {
 }
 
 function AudioVizSection({ el, update, updateStyle }) {
-  const autoplay = el.autoplay ?? false
-  const loop = el.loop ?? false
+  const waitEnd = waitsForEnd(el)
+  const autoplay = effectiveAutoplay(el)
+  const loop = effectiveLoop(el)
   const muted = el.muted ?? false
   const viz = { ...DEFAULT_VIZ, ...(el.viz || {}) }
   const updateViz = (changes) => update({ viz: { ...viz, ...changes } })
@@ -2915,17 +2988,18 @@ function AudioVizSection({ el, update, updateStyle }) {
       {/* 재생 옵션 (영상과 동일) */}
       <div className="pt-1 border-t border-white/5 space-y-2">
         <label className="flex items-center gap-2 cursor-pointer">
-          <input type="checkbox" checked={autoplay} onChange={e => update({ autoplay: e.target.checked })} className="accent-indigo-500" />
+          <input type="checkbox" checked={autoplay} disabled={waitEnd} onChange={e => update({ autoplay: e.target.checked })} className="accent-indigo-500" />
           <span className={labelClass}>자동 재생 (발표 모드)</span>
         </label>
         <label className="flex items-center gap-2 cursor-pointer">
-          <input type="checkbox" checked={loop} onChange={e => update({ loop: e.target.checked })} className="accent-indigo-500" />
+          <input type="checkbox" checked={loop} disabled={waitEnd} onChange={e => update({ loop: e.target.checked })} className="accent-indigo-500" />
           <span className={labelClass}>반복 재생</span>
         </label>
         <label className="flex items-center gap-2 cursor-pointer">
           <input type="checkbox" checked={muted} onChange={e => update({ muted: e.target.checked })} className="accent-indigo-500" />
           <span className={labelClass}>음소거 (파형만 보기)</span>
         </label>
+        <AdvanceOnEndToggle el={el} update={update} />
       </div>
     </div>
   )
@@ -3287,6 +3361,46 @@ function SlideTransitionSection() {
   )
 }
 
+// 자동 진행 기준 — '음성 후 자동 진행'·'반복 재생(전시회)'에서 이 슬라이드를 언제 넘길지.
+// 손으로 넘기는 발표에는 영향 없음. 기본(자동)은 끝까지 재생할 미디어가 있으면 나레이션과 함께
+// 기다리고, 없으면 나레이션이 끝날 때 넘긴다.
+const ADVANCE_OPTIONS = [
+  ['auto', '자동', '끝까지 재생할 미디어가 있으면 나레이션과 함께 기다리고, 없으면 나레이션이 끝나면'],
+  ['narration', '나레이션', '나레이션이 끝나면(미디어는 기다리지 않음)'],
+  ['media', '미디어', '이 슬라이드의 오디오·영상이 끝나면(나레이션은 기다리지 않음)'],
+  ['all', '모두', '나레이션과 오디오·영상이 모두 끝나면'],
+  ['time', '시간', '지정한 시간이 지나면'],
+  ['click', '클릭', '자동으로 넘기지 않음(전시회에서도 이 장에서 멈춤)'],
+]
+function SlideAdvanceSection() {
+  const a = useFlatStore(s => s.pageAdvance)
+  const setA = useFlatStore(s => s.setPageAdvance)
+  const mode = a?.mode || 'auto'
+  const seconds = a?.seconds || 10
+  const desc = ADVANCE_OPTIONS.find(o => o[0] === mode)?.[2]
+  return (
+    <div className="space-y-1.5 pt-3 border-t border-white/5">
+      <SectionTitle>자동 진행 기준</SectionTitle>
+      <div className="grid grid-cols-3 gap-1">
+        {ADVANCE_OPTIONS.map(([v, label, tip]) => (
+          <button key={v} title={tip}
+            onClick={() => setA(v === 'auto' ? null : { mode: v, ...(v === 'time' ? { seconds } : {}) })}
+            onMouseDown={e => e.preventDefault()}
+            className={`text-xs px-1 py-1 rounded border transition-colors ${
+              mode === v ? 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30'
+                : 'bg-white/5 text-slate-400 border-white/10 hover:bg-white/10'}`}
+          >{label}</button>
+        ))}
+      </div>
+      {mode === 'time' && (
+        <NumInput label="시간" unit="초" min={1} max={3600} step={1}
+          value={seconds} onChange={(v) => setA({ mode: 'time', seconds: v })} />
+      )}
+      <p className="text-[11px] leading-snug text-slate-500">{desc}. 음성 후 자동 진행·반복 재생(전시회)에서만 적용.</p>
+    </div>
+  )
+}
+
 function SlideBackgroundPanel() {
   const { flatElements, canvasSize, updateFlatElement, previewFlatElement,
           addFlatElement, removeFlatElement } = useFlatStore()
@@ -3465,6 +3579,9 @@ function SlideBackgroundPanel() {
 
         {/* ── 슬라이드 전환 ── */}
         <SlideTransitionSection />
+
+        {/* ── 자동 진행 기준 ── */}
+        <SlideAdvanceSection />
 
         {/* ── 레이어 목록 ── */}
         <div className="space-y-1.5 pt-3 border-t border-white/5">

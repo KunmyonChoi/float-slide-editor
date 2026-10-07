@@ -9,7 +9,7 @@
  * 3. 빈 요소 제외 — 시각 속성(배경/테두리/그림자)도 없고 텍스트도 없는 요소 스킵
  */
 
-import { parseAnimAttrs, parseLoopAttrs, parseTransitionAttrs, readSlideNotes, resolveAnimSpecs } from './deckMotion.js'
+import { parseAnimAttrs, parseLoopAttrs, parseTransitionAttrs, parseAdvanceAttrs, parseMediaAttrs, readSlideNotes, resolveAnimSpecs } from './deckMotion.js'
 import { stripSvgSelfPositioning } from './svgContent.js'
 import { normFractions, MAX_ROWS, MAX_COLS, TABLE_BORDER_COLOR } from './slideTable.js'
 import { DEFAULT_VIZ } from './audioViz.js'
@@ -510,9 +510,10 @@ export function getIconGlyphSpan(el, win) {
   let glyph = rawContent
   // attr()/counter()/var() 등 함수형 content는 텍스트로 추출 불가 → 스킵
   if (/^(attr|counter|counters|var|url|element|target-text|leader)\s*\(/i.test(glyph)) return null
-  // 양 끝 따옴표 제거
+  // 양 끝 따옴표 제거 — 따옴표 문자열이 아니면(-moz-alt-content 같은 키워드) 글리프가 아니다
   const quoted = glyph.match(/^["'](.*)["']$/)
-  if (quoted) glyph = quoted[1]
+  if (!quoted) return null
+  glyph = quoted[1]
   // CSS 이스케이프 해제: "\f140" → 실제 Unicode 코드포인트
   glyph = decodeCssEscapes(glyph)
   if (!glyph) return null
@@ -875,6 +876,9 @@ function toAudioElement(base, box, audioEl, isVizBox) {
     loop: audioEl.loop || audioEl.hasAttribute('loop'),
     muted: cfg ? !!cfg.muted : (audioEl.muted || audioEl.hasAttribute('muted')),
     viz: { ...DEFAULT_VIZ, ...(cfg?.viz || (barColor ? { color: barColor } : {})) },
+    // 끝까지 재생 후 다음·최대 재생 시간·BGM — <audio> 또는 .fe-audioviz 상자에 선언
+    ...parseMediaAttrs(audioEl, box,
+      audioEl.parentElement && !audioEl.parentElement.classList.contains('slide') ? audioEl.parentElement : null),
   }
 }
 
@@ -1277,9 +1281,26 @@ function buildFlatElement(el, rect, cs, domOrder, forceType, transformScale = 1,
  * content가 있거나 (비어있어도) 배경/크기가 있으면 shape로 생성.
  * @returns {{ x, y, w, h, backgroundColor, borderRadius, content }|null}
  */
+// ::before/::after를 그리지 않는 대체 요소(replaced element). 그런데도 Firefox는 <img>의 ::before
+// content를 '-moz-alt-content'로 돌려줘서, 그대로 읽으면 이미지 좌상단에 그 글자가 텍스트로 박힌다.
+const REPLACED_TAGS = new Set(['IMG', 'VIDEO', 'AUDIO', 'IFRAME', 'CANVAS', 'INPUT', 'SELECT', 'TEXTAREA', 'OBJECT', 'EMBED'])
+
+/**
+ * 의사 요소 computed content → 화면에 찍히는 글자. 따옴표 문자열만 글자로 친다
+ * ('"a" "b"'처럼 이어 붙인 것은 합친다). none/normal·키워드(-moz-alt-content, open-quote 등)·
+ * 함수형(attr(), counter())은 글자가 아니므로 ''.
+ */
+export function pseudoContentText(content) {
+  const c = (content || '').trim()
+  if (!/^["']/.test(c)) return ''
+  const parts = c.match(/"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'/g) || []
+  return parts.map(q => q.slice(1, -1)).join('')
+}
+
 function extractPseudoElement(el, parentRect, pseudo) {
   const win = el.ownerDocument.defaultView
   if (!win) return null
+  if (REPLACED_TAGS.has(el.tagName)) return null
   const pcs = win.getComputedStyle(el, pseudo)
   // display: none이면 무시
   if (pcs.display === 'none') return null
@@ -1295,8 +1316,7 @@ function extractPseudoElement(el, parentRect, pseudo) {
                 (bgImage && bgImage !== 'none')
 
   // 텍스트 content ('')이 아닌 실제 텍스트도 있을 수 있음
-  const isEmptyContent = content === '""' || content === "''" || content === 'normal' || content === 'none'
-  const textContent = isEmptyContent ? '' : content.replace(/^["']|["']$/g, '')
+  const textContent = pseudoContentText(content)
 
   // 텍스트 글리프인데 width/height가 0(auto)으로 잡히면 font-size 기준으로 보정
   const fontSizePx = parseFloat(pcs.fontSize) || 0
@@ -1827,7 +1847,7 @@ function buildPseudoFlatElements(el, rect, domOrder) {
  */
 export function extractFlatElementsFromIframe(iframeRef, existingMaxId = 0) {
   const iframe = iframeRef?.current
-  if (!iframe) return { elements: [], canvasSize: { w: 1280, h: 800 }, notes: '', transition: null }
+  if (!iframe) return { elements: [], canvasSize: { w: 1280, h: 800 }, notes: '', transition: null, advance: null }
   // existingMaxId를 extractFlatElements에 전달해 내부 resetFlatCounter() 대신
   // 기존 최대 ID부터 카운터를 시작하게 한다.
   // (충돌 시 같은 id 두 요소가 함께 선택돼 그룹처럼 핸들이 표시되는 버그 방지)
@@ -1995,7 +2015,7 @@ export function extractTableData(tableEl, win) {
 }
 
 export function extractFlatElements(doc, win, existingMaxId = 0) {
-  if (!doc || !win) return { elements: [], canvasSize: { w: 1280, h: 800 }, notes: '', transition: null }
+  if (!doc || !win) return { elements: [], canvasSize: { w: 1280, h: 800 }, notes: '', transition: null, advance: null }
 
   // 좌표/가시성 측정 전에 진행 중인 등장 애니메이션을 최종 상태로 고정한다.
   settleAnimations(doc)
@@ -2061,6 +2081,7 @@ export function extractFlatElements(doc, win, existingMaxId = 0) {
     || (slideEls.length === 1 ? slideEls[0] : (slideEls.length === 0 ? doc.body : null))
   const notes = noteRoot ? readSlideNotes(noteRoot) : ''
   const transition = noteRoot ? parseTransitionAttrs(noteRoot) : null
+  const advance = noteRoot ? parseAdvanceAttrs(noteRoot) : null
 
   // 3. opacity:0 또는 visibility:hidden으로 숨겨진 슬라이드 감지를 위한 추가 필터
   // (revealPresent가 없어도 개별 요소 단위로 체크)
@@ -2287,6 +2308,9 @@ export function extractFlatElements(doc, win, existingMaxId = 0) {
       vEl.autoplay = el.autoplay || el.hasAttribute('autoplay')
       vEl.loop = el.loop || el.hasAttribute('loop')
       vEl.muted = el.muted || el.hasAttribute('muted')
+      // 끝까지 재생 후 다음·최대 재생 시간 — <video> 또는 바로 위 래퍼(슬라이드 자체는 제외)
+      const vWrap = el.parentElement && !el.parentElement.classList.contains('slide') ? el.parentElement : null
+      Object.assign(vEl, parseMediaAttrs(el, vWrap))
       result.push(vEl)
     } else if (editorType === 'container') {
       // flex 컨테이너(예: .win-bar, .live-flag, .kicker): 자식들이 독립 위치를
@@ -2693,7 +2717,7 @@ export function extractFlatElements(doc, win, existingMaxId = 0) {
     }
   }
 
-  return { elements: result, canvasSize, fontImports, notes, transition }
+  return { elements: result, canvasSize, fontImports, notes, transition, advance }
 }
 
 /**

@@ -10,6 +10,8 @@ import AudioVisualizer from './AudioVisualizer'
 import LyricScroller from './LyricScroller'
 import { hasLyricSync } from '../core/lyricSync'
 import ChromaVideoPlayer from './ChromaVideoPlayer'
+import { waitsForEnd, effectiveAutoplay, effectiveLoop } from '../core/mediaAdvance'
+import MediaSignalBox from './MediaSignalBox'
 import MatteVideoPlayer from './MatteVideoPlayer'
 
 /**
@@ -262,8 +264,9 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
     // 전역 mode를 읽으면 발표가 켜졌을 때 뒤에 남아있는 편집 캔버스의 영상(직전 편집 페이지)까지
     // 함께 자동재생되어 두 페이지 오디오가 겹친다 — 그 문제를 방지한다.
     const isBgVideo = isFullCanvasBg
-    const autoplay = isBgVideo ? true : (element.autoplay ?? false)
-    const loop = isBgVideo ? true : (element.loop ?? false)
+    // '끝날 때까지 기다림'(advanceOnEnd)이면 반복을 끄고 자동 재생을 켠다(mediaAdvance.js).
+    const autoplay = isBgVideo ? true : effectiveAutoplay(element)
+    const loop = isBgVideo ? true : effectiveLoop(element)
     const muted = isBgVideo ? true : (element.muted ?? true)
     const hideControls = isBgVideo ? true : (element.hideControls ?? false)
     const playNow = isBgVideo || playNowProp === true
@@ -311,7 +314,11 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
 
     return (
       <div style={baseStyle} onMouseDown={handleMouseDown} onClick={handleClick}>
-        <div style={{
+        <MediaSignalBox
+          elementId={element.id}
+          signal={playNowProp === true && !isBgVideo && waitsForEnd(element)}
+          maxPlaySec={playNowProp === true && !isBgVideo ? element.playMaxSec : 0}
+          style={{
           width: '100%', height: '100%', position: 'relative',
           boxSizing: 'border-box',
           ...vidBorders,
@@ -369,7 +376,7 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
                 {hideControls && <div style={{ position: 'absolute', inset: 0, zIndex: 1 }} />}
               </>
           }
-        </div>
+        </MediaSignalBox>
       </div>
     )
   }

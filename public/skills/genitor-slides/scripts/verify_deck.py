@@ -23,6 +23,8 @@ Genitor로 가져가야 어긋난 게 보이므로 특히 중요하다.
   ANIM-REF       with/after가 가리킬 이름이 없거나 같은 슬라이드에 그 이름이 없음,
                  뒤에 선언된 앵커를 가리키는 참조.
   LOOP           알 수 없는 반복 효과(data-anim-loop)/시작값.
+  MEDIA          자동 진행 기준(슬라이드 data-advance)·미디어 재생 옵션(data-advance="end"·
+                 data-max-play·data-bgm)의 잘못된 값·자리, controls 없는 <audio>.
   NOTES          .fe-notes에 type="text/plain"이 없거나, 한 슬라이드에 둘 이상.
   (경고)         노트 없는 슬라이드, click 단계 과다, 중첩된 data-anim 등.
 
@@ -346,6 +348,58 @@ CHECK_JS = """
     const tr = (slide.getAttribute('data-transition') || '').trim();
     if (tr && !TRANSITIONS.includes(tr)) {
       problems.push(`${S} ANIM 알 수 없는 전환 "${tr}" — 무시된다`);
+    }
+
+    // ── 자동 진행 기준(슬라이드) · 미디어 재생 옵션 ──
+    const ADVANCES = ['auto', 'narration', 'media', 'all', 'time', 'click'];
+    const adv = (slide.getAttribute('data-advance') || '').trim();
+    if (adv && !ADVANCES.includes(adv)) {
+      problems.push(`${S} MEDIA 알 수 없는 진행 기준 data-advance="${adv}" — 무시되어 자동(auto)으로 진행된다`);
+    }
+    const after = slide.getAttribute('data-advance-after');
+    if (adv === 'time') {
+      const n = Number(after);
+      if (after == null || !Number.isFinite(n) || n < 1 || n > 3600) {
+        problems.push(`${S} MEDIA data-advance="time"인데 data-advance-after가 1~3600초가 아니다 (10초로 폴백)`);
+      }
+    } else if (after != null) {
+      warnings.push(`${S} MEDIA data-advance-after는 data-advance="time"에만 쓰인다 (무시됨)`);
+    }
+    if (adv === 'click') {
+      warnings.push(`${S} MEDIA data-advance="click" — 전시회(반복 재생)에서도 이 장에서 멈춘다`);
+    }
+    const isMediaHost = (n) => n.matches('audio, video')
+      || (!n.classList.contains('slide') && !!n.querySelector(':scope > audio, :scope > video'));
+    for (const h of slide.querySelectorAll('[data-advance], [data-max-play], [data-bgm]')) {
+      if (h === slide) continue;
+      const at = `${S} <${h.tagName.toLowerCase()}>`;
+      if (!isMediaHost(h)) {
+        warnings.push(`${at} MEDIA 재생 옵션은 <audio>/<video>나 그 바로 위 래퍼에만 쓰인다 (무시됨)`);
+        continue;
+      }
+      const m = h.matches('audio, video') ? h : h.querySelector(':scope > audio, :scope > video');
+      const ma = (h.getAttribute('data-advance') || '').trim();
+      if (ma && ma !== 'end') {
+        problems.push(`${at} MEDIA 미디어의 data-advance는 "end"만 쓴다 ("${ma}"는 슬라이드용 값 — 무시된다)`);
+      }
+      const mp = h.getAttribute('data-max-play');
+      if (mp != null && !(Number(mp) > 0)) {
+        problems.push(`${at} MEDIA data-max-play="${mp}" — 양수(초)가 아니라 무시된다`);
+      }
+      const bgm = h.getAttribute('data-bgm');
+      if (bgm != null) {
+        if (m.tagName !== 'AUDIO') problems.push(`${at} MEDIA data-bgm은 오디오 전용 — 무시된다`);
+        else if (bgm !== 'end' && !(Number.isInteger(Number(bgm)) && Number(bgm) >= 1)) {
+          problems.push(`${at} MEDIA data-bgm="${bgm}" — 장 수(1 이상 정수) 또는 "end"`);
+        }
+        if (ma === 'end') warnings.push(`${at} MEDIA BGM은 여러 장에 걸치므로 data-advance="end"가 무시된다`);
+      }
+      if (m.tagName === 'AUDIO' && !m.hasAttribute('controls')) {
+        problems.push(`${at} MEDIA controls 없는 <audio>는 가져오지 않는다 — 재생 옵션도 사라진다`);
+      }
+      if (ma === 'end' && m.tagName === 'VIDEO' && m.hasAttribute('loop')) {
+        warnings.push(`${at} MEDIA 끝까지 재생 후 다음인 영상의 loop는 꺼진다`);
+      }
     }
 
     summary.push({ slide: si + 1, paragraphs, clicks, autos, notes: noteEls.length > 0,

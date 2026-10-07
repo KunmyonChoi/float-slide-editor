@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react'
 import { useEditorStore } from '../store/editorStore'
 import { INK_COLORS } from '../core/usePresentationEngine'
 
@@ -149,11 +150,52 @@ export function InkControls({ eng, inline = false }) {
 }
 
 /** 단일 화면 발표의 하단 오버레이 묶음 */
+const ADVANCE_LABEL = { narration: '나레이션 후', media: '미디어 끝나면', all: '나레이션·미디어 끝나면', time: '시간 지정' }
+
+/** 초 → m:ss */
+function fmtEta(sec) {
+  const s = Math.max(0, Math.ceil(sec))
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
+}
+
+/**
+ * AdvanceCountdown — 자동 진행·전시회에서 "다음 장까지 1:42". 알 수 없으면(클릭 전용·길이 미상) 숨김.
+ * @param {boolean} inline true면 발표자 창 상단 바에 박히는 형태(고정 위치 없음)
+ */
+export function AdvanceCountdown({ eng, inline = false }) {
+  const [eta, setEta] = useState(null)
+  const { getAdvanceEta } = eng
+  useEffect(() => {
+    const read = () => setEta(getAdvanceEta ? getAdvanceEta() : null)
+    read()
+    const t = setInterval(read, 500)
+    return () => clearInterval(t)
+  }, [getAdvanceEta])
+  if (eta == null) return null
+  const label = ADVANCE_LABEL[eng.advanceMode] || ''
+  return (
+    <div
+      title={`자동 진행 기준: ${label}`}
+      style={inline
+        ? { display: 'flex', alignItems: 'center', gap: 8 }
+        : {
+          position: 'fixed', top: 16, right: 20, zIndex: 1011, pointerEvents: 'none',
+          display: 'flex', alignItems: 'center', gap: 6,
+          padding: '4px 10px', ...PANEL, color: '#cbd5e1', fontSize: 12, opacity: 0.55,
+        }}
+    >
+      <span style={{ fontSize: 11, color: '#64748b' }}>다음 장까지</span>
+      <span style={{ fontVariantNumeric: 'tabular-nums', fontSize: inline ? 18 : 13, fontWeight: 600 }}>{fmtEta(eta)}</span>
+    </div>
+  )
+}
+
 export default function PresenterToolbar({ eng }) {
   return (
     <>
       <NarrationControls eng={eng} />
       <InkControls eng={eng} />
+      <AdvanceCountdown eng={eng} />
     </>
   )
 }

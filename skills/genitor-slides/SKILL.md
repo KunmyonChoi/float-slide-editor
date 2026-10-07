@@ -267,6 +267,23 @@ body { width: 1920px; height: 1080px; overflow: hidden; position: relative; back
 </div>
 ```
 
+**오디오·영상 재생 옵션** — `<audio>`/`<video>`(또는 바로 위 래퍼 div)에 단다. 발표의 '음성 후 자동
+진행'·'반복 재생(전시회)'에서 쓰인다(손으로 넘기는 발표에는 영향 없음).
+
+| 속성 | 값 | 뜻 |
+|---|---|---|
+| `data-advance="end"` | — | **끝까지 재생 후 다음 슬라이드.** 나레이션이 먼저 끝나도 이 미디어가 끝날 때까지 기다린다. 자동 재생 켜짐·반복 꺼짐으로 고정 |
+| `data-max-play` | 초 | 이 시간까지만 재생하고 2초 페이드아웃 후 멈춘다(`data-advance="end"`면 그때 다음 장) |
+| `data-bgm` | 장 수 또는 `end` | **여러 슬라이드에 걸친 BGM.** 이 장부터 N장(또는 끝까지) 끊기지 않고 흐르고, 나레이션이 나오는 동안은 소리를 줄인다. 오디오 전용 |
+
+```html
+<!-- 곡 하나 = 슬라이드 하나인 플레이어 덱: 곡이 끝나면 다음 곡 -->
+<audio controls data-advance="end" src="audio/song1.mp3" style="…"></audio>
+<!-- 1장부터 끝까지 깔리는 배경 음악 -->
+<audio controls data-bgm="end" src="audio/bgm.mp3" style="…"></audio>
+```
+임베드(YouTube/Vimeo)와 화면을 꽉 채운 배경 영상은 끝을 알 수 없어 `data-advance="end"`가 무시된다.
+
 **아이콘** — Font Awesome 등 아이콘 폰트는 클래스가 있어야 글리프가 추출된다. `<head>`에
 해당 폰트 CSS를 link하고 `<i class="fas fa-star"></i>` 형태로. 클래스 없는 빈 `<i>`는 깨진다.
 인라인 `<svg>`도 텍스트 안에서 보존된다.
@@ -455,6 +472,25 @@ Genitor에서 아래 요소를 고르기 어렵다. `viewBox`로 캔버스 좌�
 | `data-transition-dir` | `left` `right` `up` `down` — `slide`만 | `right` |
 | `data-transition-duration` | ms (50~3000) | `400` |
 
+**자동 진행 기준** — `.slide`에 선언한다(선택). '음성 후 자동 진행'·'반복 재생(전시회)'에서 이 장을
+언제 넘길지 정한다.
+
+```html
+<div class="slide" data-advance="all" …>                          <!-- 나레이션·미디어 모두 끝나면 -->
+<div class="slide" data-advance="time" data-advance-after="12" …>  <!-- 12초 뒤 -->
+```
+
+| `data-advance` | 넘기는 시점 |
+|---|---|
+| (없음) / `auto` | `data-advance="end"` 미디어가 있으면 나레이션과 그 미디어가 모두 끝나면, 없으면 나레이션이 끝나면(전시회에서 나레이션이 없으면 5초) |
+| `narration` | 나레이션이 끝나면(미디어는 기다리지 않음) |
+| `media` | 이 장의 오디오·영상이 끝나면(나레이션은 기다리지 않음). 미디어에 `data-advance="end"`가 없으면 장의 오디오·영상 전부를 기다린다 |
+| `all` | 나레이션과 오디오·영상이 모두 끝나면 |
+| `time` | `data-advance-after`초 뒤(1~3600, 기본 10) |
+| `click` | 자동으로 넘기지 않음(전시회에서도 이 장에서 멈춤) |
+
+미디어가 재생되지 못하면(자동재생 차단·파일 없음) 전시회에서는 5초 뒤 넘어가 덱이 멈추지 않는다.
+
 **주의**
 - `data-anim`은 **`.slide` 직계 자식**(=하나의 요소)에 단다. 그 안의 여러 조각(li·아이콘 등)이
   각각 추출되면 **모두 한 단계로 함께** 움직인다. 항목별로 따로 등장시키려면 항목마다 요소를
@@ -575,7 +611,8 @@ Genitor에서 아래 요소를 고르기 어렵다. `viewBox`로 캔버스 좌�
 6. **ANIM-REF** — `with`/`after`가 가리킬 `data-anim-ref`가 없거나 같은 슬라이드에 그 이름이 없음
 7. **NOTES** — `<script class="fe-notes">`에 `type="text/plain"`이 없거나 한 슬라이드에 둘 이상
 8. **LOOP** — 알 수 없는 반복 효과(`data-anim-loop`)/시작값
-9. **경고** — 노트 없는 슬라이드, click 단계가 너무 많은 슬라이드, 중첩된 `data-anim`, 안에 상자/그림 자식이
+9. **MEDIA** — 슬라이드 `data-advance`·`data-advance-after`, 미디어 `data-advance="end"`·`data-max-play`·`data-bgm`의 잘못된 값·자리, controls 없는 `<audio>`
+10. **경고** — 노트 없는 슬라이드, click 단계가 너무 많은 슬라이드, 중첩된 `data-anim`, 안에 상자/그림 자식이
    있거나 풀캔버스인 반복 요소, 반복 효과가 6개를 넘는 슬라이드
 
 ```bash

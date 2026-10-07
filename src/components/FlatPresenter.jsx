@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useEditorStore } from '../store/editorStore'
 import PresentedSlide from './PresentedSlide'
 import PresenterToolbar from './PresenterToolbar'
+import BgmPlayer from './BgmPlayer'
 import { usePresentationEngine } from '../core/usePresentationEngine'
 import { useWebFontImports } from '../core/useWebFontImports'
 import { useWakeLock } from '../core/useWakeLock'
@@ -123,6 +124,8 @@ export default function FlatPresenter() {
 
       {/* 노트 음성 재생기(숨김) */}
       <audio ref={setAudioEl} onEnded={eng.onAudioEnded} onError={eng.onAudioError} />
+      {/* 여러 장에 걸쳐 흐르는 BGM — 슬라이드 밖에서 재생해 장이 바뀌어도 끊기지 않게 */}
+      {!eng.loading && <BgmPlayer element={eng.bgm} duck={eng.narrationPlaying} />}
 
       {!loading && <PresenterToolbar eng={eng} />}
 
