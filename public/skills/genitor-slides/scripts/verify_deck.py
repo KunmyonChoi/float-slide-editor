@@ -247,8 +247,17 @@ CHECK_JS = """
       if (st && st !== 'afterEnter' && st !== 'withEnter') {
         problems.push(`${at} LOOP 알 수 없는 시작 "${st}" (afterEnter로 폴백)`);
       }
-      if (h.parentElement !== slide) {
-        warnings.push(`${at} LOOP .slide 직계 자식이 아님 — 안의 조각들이 각자 제 중심으로 따로 움직인다`);
+      // 조각으로 나뉘는 건 '직계 자식 여부'가 아니라 안에 상자·그림 자식이 있는지로 갈린다
+      // (등장 카드 안쪽 아이콘에 다는 건 정상 — 아이콘 하나만 반복된다).
+      const splits = [...h.querySelectorAll('*')].some(c => {
+        if (c.closest('.fe-notes')) return false;
+        const t = c.tagName;
+        if (t === 'IMG' || t === 'svg' || t === 'SVG' || t === 'CANVAS' || t === 'VIDEO') return true;
+        const d = getComputedStyle(c).display;
+        return d !== 'inline' && d !== 'contents' && d !== 'none';
+      });
+      if (splits) {
+        warnings.push(`${at} LOOP 안에 상자/그림 자식이 있음 — 조각들이 각자 제 중심으로 따로 움직인다`);
       }
       const r = h.getBoundingClientRect();
       if (r.width >= CW * 0.95 && r.height >= CH * 0.95) {

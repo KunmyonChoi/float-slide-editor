@@ -12,6 +12,8 @@ describe('data-anim-loop 파싱/직렬화', () => {
     expect(parseLoopAttrs(elOf(''))).toBeNull()
     expect(parseLoopAttrs(elOf('data-anim-loop="none"'))).toBeNull()
     expect(parseLoopAttrs(elOf('data-anim-loop="explode"'))).toBeNull()
+    expect(parseLoopAttrs(elOf('data-anim-loop="constructor"'))).toBeNull()   // 프로토타입 키
+    expect(loopToAttrs({ effect: 'toString' })).toBe('')
   })
 
   it('효과만 쓰면 효과별 기본 주기와 기본값', () => {

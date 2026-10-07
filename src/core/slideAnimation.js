@@ -176,19 +176,24 @@ const LOOP_KEYFRAME = {
 }
 export const LOOP_STARTS = ['afterEnter', 'withEnter']
 
-export function hasLoop(el) { return !!LOOP_BY_ID[el?.loopAnim?.effect] }
+/** 알려진 반복 효과 id인지 — 객체 키 조회라 'constructor' 같은 내장 이름을 걸러야 한다. */
+export function isLoopEffect(id) { return typeof id === 'string' && Object.hasOwn(LOOP_BY_ID, id) }
+/** 효과 id → 기본 주기(ms). 모르는 효과면 0. */
+export function loopDefaultPeriodMs(id) { return isLoopEffect(id) ? LOOP_BY_ID[id].periodMs : 0 }
+
+export function hasLoop(el) { return isLoopEffect(el?.loopAnim?.effect) }
 
 /** 실제 재생 주기(ms) — 효과 기본값·최소 200ms를 반영. */
 export function loopPeriodMs(loopAnim) {
-  const def = LOOP_BY_ID[loopAnim?.effect]
-  if (!def) return 0
+  if (!isLoopEffect(loopAnim?.effect)) return 0
+  const def = LOOP_BY_ID[loopAnim.effect]
   return Math.max(200, loopAnim.periodMs || def.periodMs)
 }
 
 /** 효과를 고를 때의 기본 스펙(주기는 효과별 기본값). 기존 값(세기·시차·시작·횟수)은 유지한다. */
 export function makeLoopAnim(effect, prev = null) {
+  if (!isLoopEffect(effect)) return null
   const def = LOOP_BY_ID[effect]
-  if (!def) return null
   return {
     intensity: 1, phaseMs: 0, start: 'afterEnter', repeat: 0,
     ...(prev || {}),
@@ -214,8 +219,8 @@ export function loopStartMs(info, el) {
 /** 반복 재생용 CSS animation 문자열. 시차는 박자를 -phase만큼 앞당긴다 — 처음부터 보이면 주기
  *  중간부터(음수 지연), 등장 뒤에 시작하면 startMs 이후 첫 박자 경계까지 기다린다(등장 중 시작 방지). */
 export function loopAnimationCss(loopAnim, startMs = 0) {
-  const def = LOOP_BY_ID[loopAnim?.effect]
-  if (!def) return null
+  if (!isLoopEffect(loopAnim?.effect)) return null
+  const def = LOOP_BY_ID[loopAnim.effect]
   const period = loopPeriodMs(loopAnim)
   const phase = Math.max(0, loopAnim.phaseMs || 0) % period
   const start = startMs || 0

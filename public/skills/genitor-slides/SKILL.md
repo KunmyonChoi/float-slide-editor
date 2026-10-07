@@ -575,8 +575,8 @@ Genitor에서 아래 요소를 고르기 어렵다. `viewBox`로 캔버스 좌�
 6. **ANIM-REF** — `with`/`after`가 가리킬 `data-anim-ref`가 없거나 같은 슬라이드에 그 이름이 없음
 7. **NOTES** — `<script class="fe-notes">`에 `type="text/plain"`이 없거나 한 슬라이드에 둘 이상
 8. **LOOP** — 알 수 없는 반복 효과(`data-anim-loop`)/시작값
-9. **경고** — 노트 없는 슬라이드, click 단계가 너무 많은 슬라이드, 중첩된 `data-anim`, 직계 자식이 아니거나
-   풀캔버스인 반복 요소, 반복 효과가 6개를 넘는 슬라이드
+9. **경고** — 노트 없는 슬라이드, click 단계가 너무 많은 슬라이드, 중첩된 `data-anim`, 안에 상자/그림 자식이
+   있거나 풀캔버스인 반복 요소, 반복 효과가 6개를 넘는 슬라이드
 
 ```bash
 pip install playwright --break-system-packages && playwright install chromium   # 최초 1회

@@ -1226,8 +1226,6 @@ function buildFlatElement(el, rect, cs, domOrder, forceType, transformScale = 1,
     elemY = cy - height / 2
   }
 
-  const animIdx = animIdxFor(el)
-  const loopIdx = loopIdxFor(el)
   const result = {
     id: nextFlatId(),
     sourceId: el.getAttribute('data-editor-id'),
@@ -1238,8 +1236,7 @@ function buildFlatElement(el, rect, cs, domOrder, forceType, transformScale = 1,
     height,
     rotation,
     zIndex: 0, // 후처리에서 재할당
-    ...(animIdx >= 0 ? { _animIdx: animIdx } : {}),
-    ...(loopIdx >= 0 ? { _loopIdx: loopIdx } : {}),
+    ...animField(el),
     _domOrder: domOrder,
     _originalZIndex: effectiveZIndex,
     content,

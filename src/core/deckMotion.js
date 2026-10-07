@@ -25,7 +25,7 @@
  *
  * 프레임워크 무의존. DOM 요소를 받지만 getAttribute/querySelector만 쓴다(jsdom 가능).
  */
-import { LOOP_EFFECTS, LOOP_STARTS } from './slideAnimation.js'
+import { LOOP_STARTS, isLoopEffect, loopDefaultPeriodMs } from './slideAnimation.js'
 
 export const ANIM_EFFECTS = [
   'fadeIn', 'slideIn', 'scaleIn', 'pop', 'fadeOut', 'slideOut', 'scaleOut',
@@ -85,20 +85,18 @@ export function parseAnimAttrs(el) {
   return spec
 }
 
-const LOOP_DEFAULT_PERIOD = Object.fromEntries(LOOP_EFFECTS.map(e => [e.id, e.periodMs]))
-
 /**
  * 요소의 data-anim-loop* 속성 → loopAnim 스펙(element.loopAnim과 같은 모양). 없거나 모르는 효과면 null.
  * @param {Element} el
  */
 export function parseLoopAttrs(el) {
   const effect = attr(el, 'data-anim-loop')
-  if (!effect || effect === 'none' || !(effect in LOOP_DEFAULT_PERIOD)) return null
+  if (!isLoopEffect(effect)) return null
   const intensity = parseFloat(attr(el, 'data-anim-loop-intensity'))
   const start = attr(el, 'data-anim-loop-start')
   return {
     effect,
-    periodMs: clampInt(attr(el, 'data-anim-loop-period'), LOOP_DEFAULT_PERIOD[effect], 200, 30000),
+    periodMs: clampInt(attr(el, 'data-anim-loop-period'), loopDefaultPeriodMs(effect), 200, 30000),
     intensity: Number.isFinite(intensity) ? Math.min(3, Math.max(0.25, intensity)) : 1,
     phaseMs: clampInt(attr(el, 'data-anim-loop-phase'), 0, 0, 30000),
     start: LOOP_STARTS.includes(start) ? start : 'afterEnter',
@@ -239,10 +237,10 @@ export function animToAttrs(anim, nameOf = null, selfName = null) {
 
 /** element.loopAnim → data-anim-loop* 속성 문자열(앞에 공백 포함). 기본값은 생략. 없으면 ''. */
 export function loopToAttrs(loop) {
-  if (!loop || !(loop.effect in LOOP_DEFAULT_PERIOD)) return ''
+  if (!isLoopEffect(loop?.effect)) return ''
   const parts = [`data-anim-loop="${loop.effect}"`]
-  const period = Math.round(loop.periodMs || LOOP_DEFAULT_PERIOD[loop.effect])
-  if (period !== LOOP_DEFAULT_PERIOD[loop.effect]) parts.push(`data-anim-loop-period="${period}"`)
+  const period = Math.round(loop.periodMs || loopDefaultPeriodMs(loop.effect))
+  if (period !== loopDefaultPeriodMs(loop.effect)) parts.push(`data-anim-loop-period="${period}"`)
   if (Number.isFinite(loop.intensity) && loop.intensity !== 1) parts.push(`data-anim-loop-intensity="${Math.round(loop.intensity * 100) / 100}"`)
   if (loop.phaseMs > 0) parts.push(`data-anim-loop-phase="${Math.round(loop.phaseMs)}"`)
   if (loop.start === 'withEnter') parts.push('data-anim-loop-start="withEnter"')
