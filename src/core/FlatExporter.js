@@ -2,11 +2,11 @@
  * FlatExporter
  * 원본 iframe과 Flat 변환 결과를 독립 HTML 파일로 내보낸다.
  */
-import { animToAttrs, transitionToAttrs, notesToScript, buildAnimNameMap } from './deckMotion.js'
+import { animToAttrs, loopToAttrs, transitionToAttrs, notesToScript, buildAnimNameMap } from './deckMotion.js'
 import { tableContainerStyle, cellStyle } from './slideTable.js'
 
 /**
- * 렌더된 요소 HTML의 여는 태그에 data-anim* 속성을 끼워 넣는다.
+ * 렌더된 요소 HTML의 여는 태그에 data-anim*(등장/퇴장)·data-anim-loop*(반복) 속성을 끼워 넣는다.
  * (요소 렌더 분기가 여러 갈래라 문자열 후처리로 한 곳에서 처리 — 다시 가져올 때
  *  FlatExtractor가 같은 속성을 읽어 el.anim으로 복원한다.)
  * @param {Object} el flat 요소
@@ -15,6 +15,7 @@ import { tableContainerStyle, cellStyle } from './slideTable.js'
  */
 function withAnim(el, html, nameMap) {
   const attrs = animToAttrs(el.anim, (id) => nameMap.get(id) || null, nameMap.get(el.id) || null)
+    + loopToAttrs(el.loopAnim)
   if (!attrs || !html.startsWith('<div')) return html
   return `<div${attrs}` + html.slice(4)
 }

@@ -467,6 +467,35 @@ Genitor에서 아래 요소를 고르기 어렵다. `viewBox`로 캔버스 좌�
   의도한 문단 수와 다르면 참조가 어긋난 것이다.
 - 배경(풀캔버스 도형)에는 모션을 걸지 않는다.
 
+### 반복 효과 (`data-anim-loop`)
+
+등장/퇴장과 별개로, 요소가 **보이는 동안 계속 반복**되는 강조 효과다. `data-anim`과 같은 요소에
+함께 달 수 있다(예: 팝으로 등장한 뒤 계속 맥박). 발표 모드에서만 움직이고 편집 화면은 정지 상태다.
+
+```html
+<!-- 음악 슬라이드: 앨범아트 원판이 20초에 한 바퀴 -->
+<div data-anim-loop="spin" data-anim-loop-period="20000" style="position:absolute;left:320px;top:300px;width:240px;height:240px;border-radius:50%;background:#FFF4E0;"></div>
+<!-- 마지막 장: 클릭하면 팝으로 등장, 그 뒤 계속 맥박 -->
+<div data-anim="pop" data-anim-loop="pulse" style="position:absolute;left:760px;top:820px;width:400px;height:96px;border-radius:48px;background:#6366f1;color:#fff;font-size:36px;font-weight:700;line-height:96px;text-align:center;">QR 스캔하세요</div>
+```
+
+| 속성 | 값 | 기본 |
+|---|---|---|
+| `data-anim-loop` | `pulse`(맥박) `breathe`(숨쉬기) `float`(떠다니기) `spin`(회전) `wiggle`(까딱임) `blink`(깜빡임) `shimmer`(반짝 스윕) | (없으면 반복 없음) |
+| `data-anim-loop-period` | 한 주기 ms (200~30000) | 효과별: pulse 1200 · breathe 3000 · float 3000 · spin 8000 · wiggle 1000 · blink 1000 · shimmer 2400 |
+| `data-anim-loop-intensity` | 세기 배율 0.25~3 | `1` |
+| `data-anim-loop-phase` | 시차 ms — 여러 요소의 박자를 엇갈리게 | `0` |
+| `data-anim-loop-start` | `afterEnter`(등장이 끝난 뒤) `withEnter`(등장과 함께) — `data-anim` 등장이 있을 때만 의미 | `afterEnter` |
+| `data-anim-loop-repeat` | 반복 횟수(0 = 무한, 최대 99) | `0` |
+
+- 쓰임새: 계속 눈길을 끌어야 하는 **한두 개**(행동 유도 버튼, LIVE 배지, 가리키는 화살표, 음악 장의
+  회전 원판, 대기 화면의 로고). 한 화면에 여러 개가 계속 움직이면 산만하다(검증이 6개 넘으면 경고).
+- 아이콘 여러 개를 함께 띄울 땐 `data-anim-loop-phase`를 200~600ms씩 달리 줘 박자를 엇갈리게 한다.
+- `.slide` 직계 자식, 하나의 요소에 단다. 카드처럼 조각(배경+글자)이 여럿 나오는 요소에 달면 조각이
+  각자 제 중심으로 움직인다(특히 `spin`은 어긋난다).
+- `shimmer`는 배경이 있는 요소(배지·버튼·태그)에 쓴다 — 빛 띠가 요소 영역을 훑는다.
+- 반복을 CSS `@keyframes`로 직접 쓰지 않는다(추출 때 측정이 흔들리고 Genitor 반복으로 안 들어온다).
+
 ## 좌표·배치 규칙
 
 - 캔버스는 **1920×1080** 기준(16:9면 다른 크기도 가능, 단 body·slide·요소를 한 기준으로 통일).
@@ -545,7 +574,9 @@ Genitor에서 아래 요소를 고르기 어렵다. `viewBox`로 캔버스 좌�
 5. **ANIM** — 알 수 없는 효과/트리거/방향, 중복된 `data-anim-name`
 6. **ANIM-REF** — `with`/`after`가 가리킬 `data-anim-ref`가 없거나 같은 슬라이드에 그 이름이 없음
 7. **NOTES** — `<script class="fe-notes">`에 `type="text/plain"`이 없거나 한 슬라이드에 둘 이상
-8. **경고** — 노트 없는 슬라이드, click 단계가 너무 많은 슬라이드, 중첩된 `data-anim`
+8. **LOOP** — 알 수 없는 반복 효과(`data-anim-loop`)/시작값
+9. **경고** — 노트 없는 슬라이드, click 단계가 너무 많은 슬라이드, 중첩된 `data-anim`, 직계 자식이 아니거나
+   풀캔버스인 반복 요소, 반복 효과가 6개를 넘는 슬라이드
 
 ```bash
 pip install playwright --break-system-packages && playwright install chromium   # 최초 1회
