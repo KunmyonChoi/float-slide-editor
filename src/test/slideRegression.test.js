@@ -50,6 +50,11 @@ function getSlideOriginalHtml(fixture) {
 describe.skipIf(!fixtureAvailable)('슬라이드 회귀 테스트 — 픽스처 기반', () => {
   let slideReports = []
 
+  // 이 훅은 4.9MB 픽스처의 슬라이드 20장을 전부 분석한다 — I/O가 아니라 순수 CPU다.
+  // 단독으로 4.2초인데 vitest 기본 훅 제한이 10초라, 전체 스위트를 돌릴 때 워커들이
+  // 경합하면 그대로 넘겨 "Hook timed out in 10000ms"로 죽는다. 그러면 이 파일의 144개가
+  // 통째로 건너뛰어지면서 진짜 회귀가 났을 때와 구분이 안 된다. 제한을 넉넉히 준다 —
+  // 느린 것이 문제가 아니라 느려도 되는 훅에 짧은 예산이 붙어 있던 것이 문제였다.
   beforeAll(() => {
     slideReports = fixtures.map(f => {
       // 전체 덱에서 해당 슬라이드만 추출하여 비교
@@ -58,7 +63,7 @@ describe.skipIf(!fixtureAvailable)('슬라이드 회귀 테스트 — 픽스처 
       const result = analyzeStructural(slideHtml, flatHtml, f.slideIndex, f.flatElements, f.canvasSize)
       return { ...result, slideIndex: f.slideIndex }
     })
-  })
+  }, 60000)
 
   it('픽스처가 1개 이상의 슬라이드를 포함한다', () => {
     expect(fixtures.length).toBeGreaterThanOrEqual(1)
