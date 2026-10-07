@@ -27,7 +27,7 @@ const SKILLS = [
   {
     name: 'genitor-music',
     title: 'genitor-music',
-    desc: '덱·모션그래픽용 배경음악과 노래를 오픈 모델 YuE2로 내 Mac의 GPU에서 생성. 템포·구간·드롭을 악보로 설계해 애니메이션과 맞출 수 있음. Claude Code + Apple Silicon Mac에서 실행(그 외 환경은 프롬프트·악보만 만들고 생성은 앱의 음악 생성으로).',
+    desc: '덱·모션그래픽용 배경음악과 노래를 오픈 모델 YuE2로 내 컴퓨터의 GPU에서 생성. 템포·구간·드롭을 악보로 설계해 애니메이션과 맞출 수 있음. Claude Code + Apple Silicon Mac 또는 Linux + NVIDIA GPU에서 실행(그 외 환경은 프롬프트·악보만 만들고 생성은 앱의 음악 생성으로).',
   },
 ]
 
@@ -38,9 +38,10 @@ const skillUrl = (name, path) => `${base}skills/${name}/${path}`
 // scripts/verify_deck.py를 참조하므로 같이 내려받아야 검증 스크립트를 실제로 쓸 수 있다.
 const EXTRA_FILES = {
   'genitor-slides': ['scripts/verify_deck.py'],
-  // 설치 스크립트·MPS 래퍼·모션그래픽용 예시 악보(SKILL.md가 모두 경로로 참조한다)
+  // 설치 스크립트·MPS/CUDA 래퍼·모션그래픽용 예시 악보(SKILL.md가 모두 경로로 참조한다)
   'genitor-music': [
     'scripts/install_mac.sh', 'scripts/yue2_mac.py',
+    'scripts/install_linux.sh', 'scripts/yue2_cuda.py',
     'assets/make_motion_bgm_events.py', 'assets/motion-bgm-events.json', 'assets/motion-bgm-style.txt',
   ],
 }
@@ -229,6 +230,14 @@ function Dialog() {
             설치는 한 번만 — Python·torch·YuE2와 모델 약 9 GB(가사 정렬 모델 포함)를 받습니다. 스킬을 설치한 뒤 터미널에서:
           </div>
           <CopyRow text="sh ~/.claude/skills/genitor-music/scripts/install_mac.sh" />
+          <div style={{ fontSize: 12, color: '#94a3b8', lineHeight: 1.6, marginTop: 8 }}>
+            <b style={{ color: '#cbd5e1' }}>Linux + NVIDIA GPU</b>(BF16 지원 — RTX 30/40·A6000·A100 등, GPU 메모리 24 GB 이상)에서는
+            이미 받아 둔 YuE 소스 폴더(<code>.venv</code> 포함)를 그대로 쓸 수 있습니다:
+          </div>
+          <CopyRow text="sh ~/.claude/skills/genitor-music/scripts/install_linux.sh --yue /path/to/YuE" />
+          <div style={{ fontSize: 11, color: '#64748b', marginTop: 6, lineHeight: 1.6 }}>
+            YuE 폴더가 없으면 <code>--yue</code> 없이 실행해 고정 버전을 새로 설치합니다(약 15 GB).
+          </div>
           <div style={{ fontSize: 11, color: '#64748b', marginTop: 6, lineHeight: 1.6 }}>
             Claude Code에게 시켜도 됩니다(다운로드 전에 확인을 받습니다). 이 앱에서 텍스트 박스 ▸ <b style={{ color: '#94a3b8' }}>✨ AI ▸ 음악 생성</b>을
             쓰려면 음악 서버(<b style={{ color: '#94a3b8' }}>genitor-music-mac.zip</b>의 launch.command)를 실행하세요 — 같은 설치를 공유합니다.

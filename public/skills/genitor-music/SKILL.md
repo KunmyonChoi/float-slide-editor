@@ -3,18 +3,19 @@ name: genitor-music
 description: >-
   Generate background music (instrumental BGM) and songs for Genitor decks and
   motion graphics with the open YuE2 model, running locally on an Apple Silicon
-  Mac's GPU (MPS). Use when the user wants music for slides, a presentation,
+  Mac's GPU (MPS) or a Linux machine's NVIDIA GPU (CUDA). Use when the user wants music for slides, a presentation,
   a promo or motion graphic — "배경음악 만들어줘", "BGM 생성", "슬라이드에 깔 음악",
   "이 가사로 노래 만들어", "모션그래픽 음악", "비트에 맞출 음악" — including a
   designed score whose tempo, sections, drop and final hit line up with planned
   animation. Pairs with genitor-slides (the deck); beat analysis for syncing visuals
-  is a separate, later step (music-sync), not part of generation. Runs in Claude Code on macOS arm64 only; elsewhere it prepares
-  the prompt/score and hands generation to Genitor's built-in "음악 생성".
+  is a separate, later step (music-sync), not part of generation. Runs in Claude Code on macOS arm64 or
+  Linux + NVIDIA (BF16 GPU); elsewhere it prepares the prompt/score and hands generation to Genitor's
+  built-in "음악 생성".
 ---
 
 # genitor-music
 
-Make music with **YuE2** (open weights, `m-a-p/YuE2-3B`). It runs locally on the user's Apple Silicon Mac and the result drops into a Genitor deck as an audio element. YuE2 takes three inputs: an English **style** line, **lyrics** with section tags, and an optional **ABC score**. The score fixes tempo, bars, chords and section order. Style text can only *request* drums, timbre and silences.
+Make music with **YuE2** (open weights, `m-a-p/YuE2-3B`). It runs locally on the user's Apple Silicon Mac or Linux NVIDIA machine and the result drops into a Genitor deck as an audio element. YuE2 takes three inputs: an English **style** line, **lyrics** with section tags, and an optional **ABC score**. The score fixes tempo, bars, chords and section order. Style text can only *request* drums, timbre and silences.
 
 `SKILL_DIR` = the directory of this file.
 
@@ -22,12 +23,39 @@ Make music with **YuE2** (open weights, `m-a-p/YuE2-3B`). It runs locally on the
 
 | Environment | What to do |
 |---|---|
-| Claude Code on macOS **arm64** (M1 or later) | Everything below |
-| Claude Desktop / claude.ai / Linux / Windows | YuE2 cannot run here: there is no Apple GPU, and CPU is far too slow. Write the style line (and the score, if one is wanted) and tell the user how to generate it in Genitor: select a text box → **✨ AI ▾ → 음악 생성…** with the Genitor music server running on their Mac. |
+| Claude Code on macOS **arm64** (M1 or later) | Everything below, **macOS** rows |
+| Claude Code on **Linux + NVIDIA GPU** (BF16: compute capability ≥ 8, e.g. RTX 30/40, A6000, A100) | Everything below, **Linux** rows |
+| Claude Desktop / claude.ai / Windows / Linux without an NVIDIA GPU | YuE2 cannot run here: CPU is far too slow. Write the style line (and the score, if one is wanted) and tell the user how to generate it in Genitor: select a text box → **✨ AI ▾ → 음악 생성…** with the Genitor music server running on their Mac. |
 
-Check with `uname -sm`, which should print `Darwin arm64`.
+Check with `uname -sm` (`Darwin arm64` → macOS; `Linux x86_64` → Linux) and, on Linux,
+`nvidia-smi --query-gpu=index,name,compute_cap,memory.used --format=csv`.
 
-## 1. Install (once per Mac)
+## 1. Install
+
+### Linux (once per machine)
+```bash
+sh "$SKILL_DIR/scripts/install_linux.sh" --check                # exit 0 = ready
+sh "$SKILL_DIR/scripts/install_linux.sh" --yue /path/to/YuE     # reuse an existing YuE checkout + its .venv
+```
+If the user already has a YuE source checkout (e.g. a clone of `multimodal-art-projection/YuE` with a
+`.venv` where `pip install .` was run), point `--yue` at it: nothing is downloaded except model weights
+missing from the Hugging Face cache. Look for one before installing (`ls */YuE/.venv`, the user's source
+folders). Without `--yue`, the script fetches the pinned YuE commit into `~/.local/share/genitor-music/YuE`
+and installs a Python 3.12 venv with uv (about 15 GB with weights, tens of minutes) — **ask before
+running that**. Either way it writes `~/.local/share/genitor-music/env.sh` (`GENITOR_MUSIC_HOME` changes the
+folder):
+```bash
+. "${GENITOR_MUSIC_HOME:-$HOME/.local/share/genitor-music}/env.sh"   # sets YUE2_HOME, GENITOR_MUSIC_PY
+PY="$GENITOR_MUSIC_PY"
+RUNNER="$SKILL_DIR/scripts/yue2_cuda.py"
+YUE2_CLI="$(dirname "$PY")/yue2"
+DEVICE=cuda
+```
+`yue2_cuda.py` runs the upstream yue2-music instrumental workflow unchanged; it only replaces the loader
+so that the checkout's own yue2-infer version is accepted (upstream pins 0.1.5) while keeping the CUDA/BF16
+checks and the frozen weight checks (revision files and SHA-256).
+
+### macOS (once per Mac)
 
 ```bash
 sh "$SKILL_DIR/scripts/install_mac.sh" --check   # exit 0 = ready
@@ -40,13 +68,20 @@ It installs to `~/Library/Application Support/genitor-music` (`$HOME_DIR` below)
 
 ```bash
 HOME_DIR="$HOME/Library/Application Support/genitor-music"
+YUE2_HOME="$HOME_DIR/YuE"
 PY="$HOME_DIR/.venv/bin/python"
-MAC="$SKILL_DIR/scripts/yue2_mac.py"
+RUNNER="$SKILL_DIR/scripts/yue2_mac.py"
+YUE2_CLI="$HOME_DIR/.venv/bin/yue2"
+DEVICE=mps
 ```
 
 ## 2. One GPU job at a time
 
-The Genitor music server (`launch.command`, port 8326) may already be generating. Two YuE2 runs at once can exhaust 16 GB of unified memory. Check before every run:
+**Linux:** one YuE2 run per GPU. Pick a GPU with little memory in use from `nvidia-smi` and prefix each
+command with `CUDA_VISIBLE_DEVICES=<index>`; runs on different GPUs can go in parallel. A run needs about
+24 GB of GPU memory.
+
+**macOS:** the Genitor music server (`launch.command`, port 8326) may already be generating. Two YuE2 runs at once can exhaust 16 GB of unified memory. Check before every run:
 ```bash
 curl -s localhost:8326/api/health   # "running": null and "queued": 0 → free
 ```
@@ -72,29 +107,29 @@ curl -s -o bgm.mp3 "localhost:8326/api/jobs/<id>/audio?format=mp3"   # or flac
 
 ### Instrumental BGM, composed by YuE2 (default)
 ```bash
-"$PY" "$MAC" run --style "Instrumental, ..." --output WORK/bgm --offline
+"$PY" "$RUNNER" run --style "Instrumental, ..." --output WORK/bgm --offline
 ```
-**Check the length first.** YuE2's planner does not follow section tags reliably. A request meant to be short once produced a 226 s score. Add `--prepare-only`, read `nominal_seconds` from the output, and only then generate with `"$PY" "$MAC" generate --prepared WORK/bgm/prepared --output WORK/bgm/generation --offline`. If the score is too long, re-plan with another `--seed` or shorten the score at a group boundary before generating (the Genitor music server does this automatically: short ≤ 75 s, medium ≤ 120 s, long ≤ 200 s, keeping the ending section).
+**Check the length first.** YuE2's planner does not follow section tags reliably. A request meant to be short once produced a 226 s score. Add `--prepare-only`, read `nominal_seconds` from the output, and only then generate with `"$PY" "$RUNNER" generate --prepared WORK/bgm/prepared --output WORK/bgm/generation --offline`. If the score is too long, re-plan with another `--seed` or shorten the score at a group boundary before generating (the Genitor music server does this automatically: short ≤ 75 s, medium ≤ 120 s, long ≤ 200 s, keeping the ending section).
 
-This runs the upstream yue2-music workflow unchanged: YuE2 plans an ABC score, the Vocal notes move to Ins, and the score is rendered. The wrapper swaps only the CUDA-only loader for MPS and still checks the weight hashes. Output goes to `WORK/bgm/generation/native/audio.flac`, with a summary in `generation/summary.json` and a player plus mp3 in `listen/` (made with `"$PY" "$MAC" share WORK/bgm/generation --output WORK/bgm/listen`). Output folders must be new.
+This runs the upstream yue2-music workflow unchanged: YuE2 plans an ABC score, the Vocal notes move to Ins, and the score is rendered. The wrapper swaps only the CUDA-only loader for MPS and still checks the weight hashes. Output goes to `WORK/bgm/generation/native/audio.flac`, with a summary in `generation/summary.json` and a player plus mp3 in `listen/` (made with `"$PY" "$RUNNER" share WORK/bgm/generation --output WORK/bgm/listen`). Output folders must be new.
 
 ### Designed score for motion graphics
 Only when the user wants sync points. Start from `assets/make_motion_bgm_events.py`: A minor, 120 BPM, 24 bars (about 48 s). The structure is intro stabs → build with a one-beat rest → drop at bar 9 → stop-time break → chorus → final hit at bar 23. At 120 BPM a beat is 0.5 s, which divides evenly into 30/60 fps frames. Edit the notes and sections, run it to write `events.json`, then:
 ```bash
-"$PY" "$MAC" run --composer agent --events WORK/events.json --style-file "$SKILL_DIR/assets/motion-bgm-style.txt" --output WORK/mg --offline
+"$PY" "$RUNNER" run --composer agent --events WORK/events.json --style-file "$SKILL_DIR/assets/motion-bgm-style.txt" --output WORK/mg --offline
 ```
-Events format: `[onset, duration, MIDI]` in quarter notes, plus chords and section labels. See `$HOME_DIR/YuE/skills/yue2-music/instrumental/references/event-schema.md`. Ins is monophonic, so no stacked notes.
+Events format: `[onset, duration, MIDI]` in quarter notes, plus chords and section labels. See `$YUE2_HOME/skills/yue2-music/instrumental/references/event-schema.md`. Ins is monophonic, so no stacked notes.
 
 ### Song with lyrics
 ```bash
 cat > WORK/req.json <<'EOF'
 {"id":"song","style":"Korean, warm female vocal, acoustic pop, 88 BPM","lyrics":"[Verse]\n...\n\n[Chorus]\n...","cot":"full","seed":831001}
 EOF
-"$HOME_DIR/.venv/bin/yue2" generate --device mps --offline --request WORK/req.json --output WORK/song
+"$YUE2_CLI" generate --device "$DEVICE" --offline --request WORK/req.json --output WORK/song
 ```
 Do not use `examples/generate.py`, which hardcodes CUDA.
 
-Run long jobs in the background and wait for completion. On an M1 (16 GB), a 47 s instrumental took about 8 minutes (about 10× real time) and peaked at about 8 GB of GPU memory. Warn before anything longer than about 3 minutes of audio, because MPS memory grows with length. To get another take, change `seed` in `prepared/request.json` and run `"$PY" "$MAC" generate --prepared WORK/x/prepared --output WORK/x/gen-2 --offline`.
+Run long jobs in the background and wait for completion. On an M1 (16 GB), a 47 s instrumental took about 8 minutes (about 10× real time) and peaked at about 8 GB of GPU memory; warn before anything longer than about 3 minutes of audio there, because MPS memory grows with length. On Linux an RTX A6000 rendered a 46 s instrumental in about 34 s (plus about 15 s to plan), and 2–3 minute songs in about 1.5–2 minutes. To get another take, change `seed` in `prepared/request.json` and run `"$PY" "$RUNNER" generate --prepared WORK/x/prepared --output WORK/x/gen-2 --offline`.
 
 ## 5. Check before reporting
 
