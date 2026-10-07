@@ -175,3 +175,46 @@ input, textarea, select,
 @media (prefers-reduced-motion: reduce) {
   .fe-el-anim { animation: none !important; }
 }
+
+/* 반복(강조) 효과 — 진폭은 --fe-li(세기 배율)로 조절. 래퍼는 등장 래퍼 안쪽에 한 겹 더 두어
+   두 transform이 서로 덮어쓰지 않게 한다(slideAnimation.loopAnimationCss). */
+@keyframes feLoopPulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(calc(1 + 0.08 * var(--fe-li, 1))); }
+}
+@keyframes feLoopBreathe {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(calc(1 + 0.035 * var(--fe-li, 1))); opacity: calc(1 - 0.15 * var(--fe-li, 1)); }
+}
+@keyframes feLoopFloat {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(calc(-12px * var(--fe-li, 1))); }
+}
+@keyframes feLoopSpin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+@keyframes feLoopWiggle {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(calc(10px * var(--fe-li, 1))); }
+  75% { transform: translateX(calc(-10px * var(--fe-li, 1))); }
+}
+@keyframes feLoopBlink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: calc(1 - 0.75 * min(1, var(--fe-li, 1))); }
+}
+/* 반짝 스윕: 래퍼의 --fe-shx를 움직여 ::after 빛 띠를 훑게 한다(@property로 등록해야 보간되고,
+   ::after가 값을 물려받도록 inherits: true). */
+@property --fe-shx { syntax: '<percentage>'; inherits: true; initial-value: -150%; }
+@keyframes feLoopShimmer {
+  0% { --fe-shx: -150%; }
+  60%, 100% { --fe-shx: 250%; }
+}
+.fe-loop-shimmer { overflow: hidden; }
+.fe-loop-shimmer::after {
+  content: ''; position: absolute; inset: 0; pointer-events: none; z-index: 1;
+  background: linear-gradient(105deg, transparent 35%,
+    rgba(255, 255, 255, calc(0.45 * min(1.6, var(--fe-li, 1)))) 50%, transparent 65%);
+  transform: translateX(var(--fe-shx));
+}
+@media (prefers-reduced-motion: reduce) {
+  .fe-loop-anim { animation: none !important; }
+  .fe-loop-shimmer::after { display: none; }
+}

@@ -150,3 +150,78 @@ export function directionVars(anim) {
   const fmt = (v) => (v === 0 ? '0' : `${v}%`)
   return { '--fe-dx': fmt(M[0] * s), '--fe-dy': fmt(M[1] * s) }
 }
+
+// ── 반복(강조) 효과 ──
+// 등장/퇴장(el.anim)과 별개로 el.loopAnim에 둔다 — 같은 요소가 "팝으로 등장한 뒤 계속 맥박"처럼
+// 둘을 함께 쓸 수 있어야 하기 때문이다. (el.loop는 영상·오디오 반복 재생 플래그라 이름을 피한다.)
+// el.loopAnim = {
+//   effect: LOOP_EFFECTS id, periodMs: 한 주기, intensity: 세기 배율(0.25~3),
+//   phaseMs: 시차(주기를 이만큼 앞당겨 시작 — 여러 요소의 박자를 엇갈리게),
+//   start: 'afterEnter'(등장이 끝난 뒤) | 'withEnter'(등장과 함께), repeat: 0=무한 | 횟수,
+// }
+
+export const LOOP_EFFECTS = [
+  { id: 'pulse', label: '맥박', periodMs: 1200, timing: 'ease-in-out' },
+  { id: 'breathe', label: '숨쉬기', periodMs: 3000, timing: 'ease-in-out' },
+  { id: 'float', label: '떠다니기', periodMs: 3000, timing: 'ease-in-out' },
+  { id: 'spin', label: '회전', periodMs: 8000, timing: 'linear' },
+  { id: 'wiggle', label: '까딱임', periodMs: 1000, timing: 'ease-in-out' },
+  { id: 'blink', label: '깜빡임', periodMs: 1000, timing: 'ease-in-out' },
+  { id: 'shimmer', label: '반짝 스윕', periodMs: 2400, timing: 'ease-in-out' },
+]
+const LOOP_BY_ID = Object.fromEntries(LOOP_EFFECTS.map(e => [e.id, e]))
+const LOOP_KEYFRAME = {
+  pulse: 'feLoopPulse', breathe: 'feLoopBreathe', float: 'feLoopFloat', spin: 'feLoopSpin',
+  wiggle: 'feLoopWiggle', blink: 'feLoopBlink', shimmer: 'feLoopShimmer',
+}
+export const LOOP_STARTS = ['afterEnter', 'withEnter']
+
+export function hasLoop(el) { return !!LOOP_BY_ID[el?.loopAnim?.effect] }
+
+/** 효과를 고를 때의 기본 스펙(주기는 효과별 기본값). 기존 값(세기·시차·시작·횟수)은 유지한다. */
+export function makeLoopAnim(effect, prev = null) {
+  const def = LOOP_BY_ID[effect]
+  if (!def) return null
+  return {
+    intensity: 1, phaseMs: 0, start: 'afterEnter', repeat: 0,
+    ...(prev || {}),
+    effect,
+    periodMs: def.periodMs,
+  }
+}
+
+/**
+ * 반복 효과가 시작되는 시각(ms) — 요소가 보이기 시작하는 순간(자동 요소는 슬라이드 진입, 클릭
+ * 단계 요소는 그 단계 시작)을 0으로 한 값. 등장 효과가 없거나 퇴장 효과만 있으면 처음부터 보이므로 0.
+ * afterEnter는 등장 시간만큼 기다리고, withEnter는 등장과 같이 움직인다.
+ */
+export function loopStartMs(info, el) {
+  if (!hasLoop(el)) return null
+  const a = el.anim
+  if (!a || !isEntrance(a.effect)) return 0
+  const enterAt = info?.autoOffsets?.[el.id] ?? info?.offsetOf?.[el.id] ?? 0
+  const after = (el.loopAnim.start || 'afterEnter') === 'afterEnter'
+  return enterAt + (after ? (a.durationMs || DEFAULT_DUR) : 0)
+}
+
+/** 반복 재생용 CSS animation 문자열. 시차는 시작 지연에서 빼서 주기 중간부터 시작하게 한다. */
+export function loopAnimationCss(loopAnim, startMs = 0) {
+  const def = LOOP_BY_ID[loopAnim?.effect]
+  if (!def) return null
+  const period = Math.max(200, loopAnim.periodMs || def.periodMs)
+  const phase = Math.max(0, loopAnim.phaseMs || 0) % period
+  const delay = Math.round((startMs || 0) - phase)
+  const count = loopAnim.repeat > 0 ? Math.round(loopAnim.repeat) : 'infinite'
+  return `${LOOP_KEYFRAME[loopAnim.effect]} ${period}ms ${def.timing} ${delay}ms ${count} both`
+}
+
+/** 세기 → CSS 변수(--fe-li). 키프레임이 진폭에 곱한다. */
+export function loopVars(loopAnim) {
+  const i = Number.isFinite(loopAnim?.intensity) ? Math.min(3, Math.max(0.25, loopAnim.intensity)) : 1
+  return { '--fe-li': String(i) }
+}
+
+/** 반복 효과 래퍼 클래스 — 동작 줄이기 설정 대응(fe-loop-anim) + 반짝 스윕의 ::after 빛 띠. */
+export function loopClassName(loopAnim) {
+  return loopAnim?.effect === 'shimmer' ? 'fe-loop-anim fe-loop-shimmer' : 'fe-loop-anim'
+}
