@@ -196,6 +196,15 @@ input, textarea, select,
   25% { transform: translateX(calc(10px * var(--fe-li, 1))); }
   75% { transform: translateX(calc(-10px * var(--fe-li, 1))); }
 }
+/* 내려오기: 260px × 세기만큼 떨어지며(가운데쯤 살짝 옆으로 흘렀다 돌아옴) 처음엔 나타나고 끝엔 사라진다.
+   선형 시간이라 일정한 속도로 내려온다 — 끝과 처음이 둘 다 투명이라 반복 경계가 보이지 않는다. */
+@keyframes feLoopFall {
+  0% { transform: translate(0, 0); opacity: 0; }
+  12% { opacity: 1; }
+  50% { transform: translate(calc(8px * var(--fe-li, 1)), calc(130px * var(--fe-li, 1))); }
+  82% { opacity: 1; }
+  100% { transform: translate(0, calc(260px * var(--fe-li, 1))); opacity: 0; }
+}
 @keyframes feLoopBlink {
   0%, 100% { opacity: 1; }
   50% { opacity: calc(1 - 0.75 * min(1, var(--fe-li, 1))); }

@@ -11,7 +11,14 @@ describe('반복(강조) 효과 모델', () => {
     expect(a).toEqual({ effect: 'spin', periodMs: 8000, intensity: 1, phaseMs: 0, start: 'afterEnter', repeat: 0 })
     const b = makeLoopAnim('pulse', { ...a, intensity: 2, phaseMs: 300, repeat: 3 })
     expect(b).toMatchObject({ effect: 'pulse', periodMs: 1200, intensity: 2, phaseMs: 300, repeat: 3 })
-    expect(LOOP_EFFECTS.map(e => e.id)).toEqual(['pulse', 'breathe', 'float', 'spin', 'wiggle', 'blink', 'shimmer'])
+    expect(LOOP_EFFECTS.map(e => e.id)).toEqual(['pulse', 'breathe', 'float', 'spin', 'wiggle', 'blink', 'shimmer', 'fall'])
+  })
+
+  it('내려오기(fall) — 4초 기본 주기, 선형으로 떨어지는 키프레임', () => {
+    const fall = makeLoopAnim('fall')
+    expect(fall.periodMs).toBe(4000)
+    expect(hasLoop({ loopAnim: fall })).toBe(true)
+    expect(loopAnimationCss({ ...fall, periodMs: 2500, phaseMs: 700 })).toBe('feLoopFall 2500ms linear -700ms infinite both')
   })
 
   it('hasLoop — 알 수 없는 효과는 무시', () => {

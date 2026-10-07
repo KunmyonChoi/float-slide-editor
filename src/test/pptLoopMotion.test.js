@@ -65,6 +65,17 @@ describe('PptMotion — 반복(강조) 효과', () => {
     expect(xml).toContain('presetClass="path"')
   })
 
+  it('내려오기는 아래로 한 번 이동하는 경로를 반복한다(왕복·가감속 없음)', () => {
+    const xml = buildTimingXml([el('d', { loopAnim: { ...makeLoopAnim('fall'), intensity: 2, periodMs: 3000 } })],
+      spids({ d: [2] }), null, { canvas: { w: 1920, h: 1040 } })
+    expect(xml).toContain('path="M 0 0 L 0 0.5 E"')
+    const motion = xml.slice(xml.indexOf('<p:animMotion'))
+    const ctn = motion.slice(0, motion.indexOf('/>') + 2)
+    expect(ctn).toContain('dur="3000"')
+    expect(ctn).not.toContain('autoRev')
+    expect(ctn).not.toContain('accel=')
+  })
+
   it('숨쉬기는 크기와 함께 투명도도 왕복한다(앱 키프레임과 같게)', () => {
     const xml = buildTimingXml([el('a', { loopAnim: makeLoopAnim('breathe') })], spids({ a: [2] }))
     expect(xml).toContain('<p:by x="103500" y="103500"/>')

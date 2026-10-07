@@ -236,7 +236,7 @@ CHECK_JS = """
     }
 
     // ── 반복 효과 ──
-    const LOOPS = ['pulse', 'breathe', 'float', 'spin', 'wiggle', 'blink', 'shimmer'];
+    const LOOPS = ['pulse', 'breathe', 'float', 'spin', 'wiggle', 'blink', 'shimmer', 'fall'];
     const loopHosts = [...slide.querySelectorAll('[data-anim-loop]')];
     for (const h of loopHosts) {
       const at = `${S} <${h.tagName.toLowerCase()}> "${(h.textContent || '').trim().slice(0, 20)}"`;

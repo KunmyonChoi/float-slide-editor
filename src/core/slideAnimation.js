@@ -168,11 +168,14 @@ export const LOOP_EFFECTS = [
   { id: 'wiggle', label: '까딱임', periodMs: 1000, timing: 'ease-in-out' },
   { id: 'blink', label: '깜빡임', periodMs: 1000, timing: 'ease-in-out' },
   { id: 'shimmer', label: '반짝 스윕', periodMs: 2400, timing: 'ease-in-out' },
+  // 내려오기: 제자리에서 260px × 세기만큼 아래로 떨어지며 나타났다 사라진다 — 작은 도형 여러 개에
+  // 시차(phase)를 엇갈려 주면 빗방울·눈·먼지 같은 파티클이 된다.
+  { id: 'fall', label: '내려오기', periodMs: 4000, timing: 'linear' },
 ]
 const LOOP_BY_ID = Object.fromEntries(LOOP_EFFECTS.map(e => [e.id, e]))
 const LOOP_KEYFRAME = {
   pulse: 'feLoopPulse', breathe: 'feLoopBreathe', float: 'feLoopFloat', spin: 'feLoopSpin',
-  wiggle: 'feLoopWiggle', blink: 'feLoopBlink', shimmer: 'feLoopShimmer',
+  wiggle: 'feLoopWiggle', blink: 'feLoopBlink', shimmer: 'feLoopShimmer', fall: 'feLoopFall',
 }
 export const LOOP_STARTS = ['afterEnter', 'withEnter']
 

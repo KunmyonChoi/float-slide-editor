@@ -517,8 +517,8 @@ Genitor에서 아래 요소를 고르기 어렵다. `viewBox`로 캔버스 좌�
 
 | 속성 | 값 | 기본 |
 |---|---|---|
-| `data-anim-loop` | `pulse`(맥박) `breathe`(숨쉬기) `float`(떠다니기) `spin`(회전) `wiggle`(까딱임) `blink`(깜빡임) `shimmer`(반짝 스윕) | (없으면 반복 없음) |
-| `data-anim-loop-period` | 한 주기 ms (200~30000) | 효과별: pulse 1200 · breathe 3000 · float 3000 · spin 8000 · wiggle 1000 · blink 1000 · shimmer 2400 |
+| `data-anim-loop` | `pulse`(맥박) `breathe`(숨쉬기) `float`(떠다니기) `spin`(회전) `wiggle`(까딱임) `blink`(깜빡임) `shimmer`(반짝 스윕) `fall`(내려오기) | (없으면 반복 없음) |
+| `data-anim-loop-period` | 한 주기 ms (200~30000) | 효과별: pulse 1200 · breathe 3000 · float 3000 · spin 8000 · wiggle 1000 · blink 1000 · shimmer 2400 · fall 4000 |
 | `data-anim-loop-intensity` | 세기 배율 0.25~3 | `1` |
 | `data-anim-loop-phase` | 시차 ms — 여러 요소의 박자를 엇갈리게 | `0` |
 | `data-anim-loop-start` | `afterEnter`(등장이 끝난 뒤) `withEnter`(등장과 함께) — `data-anim` 등장이 있을 때만 의미 | `afterEnter` |
@@ -530,6 +530,10 @@ Genitor에서 아래 요소를 고르기 어렵다. `viewBox`로 캔버스 좌�
 - `.slide` 직계 자식, 하나의 요소에 단다. 카드처럼 조각(배경+글자)이 여럿 나오는 요소에 달면 조각이
   각자 제 중심으로 움직인다(특히 `spin`은 어긋난다).
 - `shimmer`는 배경이 있는 요소(배지·버튼·태그)에 쓴다 — 빛 띠가 요소 영역을 훑는다.
+- `fall`은 제자리에서 **260px × 세기**만큼 아래로 떨어지며 나타났다 사라진다(선형). 작은 도형 여러 개에
+  주기·시차·시작 높이를 조금씩 달리 주면 **빗방울·눈·먼지 파티클**이 된다 — 빗줄기는 가는 막대 +
+  짧은 주기(1~1.6초)·세기 3, 먼지·눈은 작은 원 + 긴 주기(6~10초)·세기 1.5~3. 파티클은 의도한 장식이므로
+  '반복 효과 6개 초과' 경고는 넘어가도 된다. 글자를 덮지 않게 그림 쪽(패널 밖)에만 둔다.
 - 반복을 CSS `@keyframes`로 직접 쓰지 않는다(추출 때 측정이 흔들리고 Genitor 반복으로 안 들어온다).
 
 ## 좌표·배치 규칙

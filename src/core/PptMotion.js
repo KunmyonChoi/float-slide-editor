@@ -47,6 +47,9 @@ const LOOP_MAP = {
   blink: { presetID: 9, cls: 'emph', bhvr: (t) => opacityBhvr(t, t.id, 1 - 0.75 * Math.min(1, t.intensity)) },
   float: { presetID: 0, cls: 'path', bhvr: (t) =>
     motionBhvr(t, `M 0 0 L 0 ${round3(-12 * t.intensity / t.canvas.h)} E`, Math.round(t.period / 2), true) },
+  // 내려오기: 아래로 한 번 이동(왕복 없음)을 반복 — 앱처럼 나타났다 사라지는 투명도는 옮기지 않는다.
+  fall: { presetID: 0, cls: 'path', bhvr: (t) =>
+    motionBhvr(t, `M 0 0 L 0 ${round3(260 * t.intensity / t.canvas.h)} E`, t.period, false, false) },
   wiggle: { presetID: 0, cls: 'path', bhvr: (t) => {
     const dx = round3(10 * t.intensity / t.canvas.w)
     return motionBhvr(t, `M 0 0 L ${dx} 0 L ${-dx} 0 L 0 0 E`, t.period, false)
@@ -71,9 +74,9 @@ function scaleBhvr(amp) {
       `${tgt(t.spid)}</p:cBhvr><p:by x="${by}" y="${by}"/></p:animScale>`
   }
 }
-function motionBhvr(t, path, dur, autoRev) {
+function motionBhvr(t, path, dur, autoRev, ease = true) {
   return `<p:animMotion origin="layout" path="${path}" pathEditMode="relative"><p:cBhvr>` +
-    `<p:cTn id="${t.id}" dur="${dur}"${autoRev ? ' autoRev="1"' : ''} fill="hold" accel="50000" decel="50000"/>` +
+    `<p:cTn id="${t.id}" dur="${dur}"${autoRev ? ' autoRev="1"' : ''} fill="hold"${ease ? ' accel="50000" decel="50000"' : ''}/>` +
     `${tgt(t.spid)}<p:attrNameLst><p:attrName>ppt_x</p:attrName><p:attrName>ppt_y</p:attrName></p:attrNameLst>` +
     '</p:cBhvr></p:animMotion>'
 }
