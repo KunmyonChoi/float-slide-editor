@@ -85,6 +85,7 @@ export function buildRegeneratedCache(orderedSnapshot, freshHtml) {
         notesAudioVolume: prev.notesAudioVolume ?? 1,
         notesCaptions: prev.notesCaptions || null,
         transition: prev.transition || fresh.transition || null,
+        advance: prev.advance || fresh.advance || null,
       }
       usedHtml.add(String(snap.htmlSlideIndex))
     } else {
@@ -334,6 +335,8 @@ export const useFlatStore = create((set, get) => ({
   pageNotes: '',
   /** 현재 페이지 슬라이드 전환(페이지별 저장). null=없음, { type:'fade'|'slide'|'zoom', durationMs } */
   pageTransition: null,
+  /** 현재 페이지 자동 진행 기준(페이지별 저장). null=자동, { mode:'narration'|'media'|'all'|'time'|'click', seconds? } */
+  pageAdvance: null,
   /** 속성창 '애니메이션' 탭 활성 여부 — 켜지면 캔버스에 순서 배지 표시 */
   animPanelOpen: false,
   setAnimPanelOpen(v) { set({ animPanelOpen: !!v }) },
@@ -395,6 +398,12 @@ export const useFlatStore = create((set, get) => ({
     if (_currentPageKey && _pageCache[_currentPageKey]) _pageCache[_currentPageKey].transition = t
     set({ pageTransition: t })
   },
+  /** 현재 페이지 자동 진행 기준(없으면 null=자동). 자동 진행·전시회 모드에서만 쓰인다 */
+  setPageAdvance(a) {
+    const v = a && a.mode && a.mode !== 'auto' ? a : null
+    if (_currentPageKey && _pageCache[_currentPageKey]) _pageCache[_currentPageKey].advance = v
+    set({ pageAdvance: v })
+  },
 
   setPageNotes(text) {
     if (_currentPageKey && _pageCache[_currentPageKey]) _pageCache[_currentPageKey].notes = text
@@ -437,6 +446,7 @@ export const useFlatStore = create((set, get) => ({
         notesAudioHash: hydrateFrom.notesAudioHash || '',
         notesAudioVolume: hydrateFrom.notesAudioVolume ?? 1,
         transition: hydrateFrom.transition || null,
+        advance: hydrateFrom.advance || null,
       }
     }
     if (key && _pageCache[key]) _pageCache[key].notesCaptions = captions
@@ -582,6 +592,7 @@ export const useFlatStore = create((set, get) => ({
       _pageCache[_currentPageKey].notesAudioVolume = get().pageNotesAudioVolume
       _pageCache[_currentPageKey].notesCaptions = get().pageNotesCaptions
       _pageCache[_currentPageKey].transition = get().pageTransition
+      _pageCache[_currentPageKey].advance = get().pageAdvance
     }
     if (get().flatElements.length === 0) return
     const existed = _pageCache[_currentPageKey]
@@ -601,6 +612,7 @@ export const useFlatStore = create((set, get) => ({
       notesAudioVolume: get().pageNotesAudioVolume,
       notesCaptions: get().pageNotesCaptions,
       transition: get().pageTransition,
+      advance: get().pageAdvance,
     }
     get()._syncPageInfo()
   },
@@ -629,6 +641,7 @@ export const useFlatStore = create((set, get) => ({
       pageNotesAudioVolume: cached.notesAudioVolume ?? 1,
       pageNotesCaptions: cached.notesCaptions || null,
       pageTransition: cached.transition || null,
+      pageAdvance: cached.advance || null,
     })
     get()._syncPageInfo()
     return true
@@ -646,7 +659,7 @@ export const useFlatStore = create((set, get) => ({
     }
 
     // 캐시 미스 → 새로 추출
-    const { elements, canvasSize, fontImports, notes, transition } = extractFlatElementsFromIframe(iframeRef, _globalMaxFlatId(get().flatElements))
+    const { elements, canvasSize, fontImports, notes, transition, advance } = extractFlatElementsFromIframe(iframeRef, _globalMaxFlatId(get().flatElements))
     _history.clear()
     _currentPageKey = pageKey || null
     set({
@@ -660,7 +673,7 @@ export const useFlatStore = create((set, get) => ({
       canRedo: false,
       currentPageHtmlBacked: true, // iframe에서 갓 추출 = HTML 백킹
       // 노트/전환은 HTML에 선언돼 있으면 함께 들어온다(deckMotion). 음성은 항상 없음.
-      pageNotes: notes || '', pageTransition: transition || null,
+      pageNotes: notes || '', pageTransition: transition || null, pageAdvance: advance || null,
       pageNotesAudio: null, pageNotesAudioHash: '', pageNotesAudioVolume: 1,
     })
     get()._syncPageInfo()
@@ -703,7 +716,7 @@ export const useFlatStore = create((set, get) => ({
     await new Promise(r => setTimeout(r, 400))
 
     if (_currentPageKey) delete _pageCache[_currentPageKey]
-    const { elements, canvasSize, fontImports, notes, transition } = extractFlatElementsFromIframe(ref, _globalMaxFlatId(get().flatElements))
+    const { elements, canvasSize, fontImports, notes, transition, advance } = extractFlatElementsFromIframe(ref, _globalMaxFlatId(get().flatElements))
     _history.clear()
     set({
       flatElements: elements,
@@ -717,6 +730,7 @@ export const useFlatStore = create((set, get) => ({
       // 노트가 그대로면 그 노트로 만든 음성·자막도 그대로 유효하므로 함께 보존한다.
       pageNotes: get().pageNotes || notes || '',
       pageTransition: get().pageTransition || transition || null,
+      pageAdvance: get().pageAdvance || advance || null,
     })
     get()._syncPageInfo()
   },
@@ -785,8 +799,8 @@ export const useFlatStore = create((set, get) => ({
         ref.current.contentWindow?.postMessage({ type: 'fe:navigate', page: route.h, v: route.v }, '*')
         await new Promise(r => setTimeout(r, 400))
         try {
-          const { elements, canvasSize, fontImports, notes, transition } = extractFlatElementsFromIframe(ref, _globalMaxFlatId(get().flatElements))
-          freshHtml[route.id] = { elements, canvasSize: canonicalCs || canvasSize, fontImports: fontImports || [], history: { stack: [], pointer: -1 }, notes: notes || '', transition: transition || null }
+          const { elements, canvasSize, fontImports, notes, transition, advance } = extractFlatElementsFromIframe(ref, _globalMaxFlatId(get().flatElements))
+          freshHtml[route.id] = { elements, canvasSize: canonicalCs || canvasSize, fontImports: fontImports || [], history: { stack: [], pointer: -1 }, notes: notes || '', transition: transition || null, advance: advance || null }
         } catch (e) {
           console.warn(`Regen page ${route.id} failed:`, e.message)
         }
@@ -829,7 +843,7 @@ export const useFlatStore = create((set, get) => ({
 
     // 캐시 미스 → DOM 렌더 대기 후 추출
     setTimeout(() => {
-      const { elements, canvasSize, fontImports, notes, transition } = extractFlatElementsFromIframe(ref, _globalMaxFlatId(get().flatElements))
+      const { elements, canvasSize, fontImports, notes, transition, advance } = extractFlatElementsFromIframe(ref, _globalMaxFlatId(get().flatElements))
       _history.clear()
       _currentPageKey = pageKey || null
       set({
@@ -840,7 +854,7 @@ export const useFlatStore = create((set, get) => ({
         editingFlatId: null,
         canUndo: false,
         canRedo: false,
-        pageNotes: notes || '', pageTransition: transition || null,
+        pageNotes: notes || '', pageTransition: transition || null, pageAdvance: advance || null,
         pageNotesAudio: null, pageNotesAudioHash: '', pageNotesAudioVolume: 1,
       })
     }, 150)
@@ -982,6 +996,7 @@ export const useFlatStore = create((set, get) => ({
             htmlSlideIndex: route.id, // 출처 (h,v) 경로
             notes: result.notes || '',          // HTML에 실린 발표자 노트(deckMotion 규약)
             transition: result.transition || null,
+            advance: result.advance || null,
           }
         } catch (e) {
           console.warn(`Preload page ${route.id} failed:`, e.message)
@@ -1131,6 +1146,7 @@ export const useFlatStore = create((set, get) => ({
       notesAudioVolume: src.notesAudioVolume ?? 1,
       notesCaptions: src.notesCaptions || null,
       transition: src.transition || null,
+      advance: src.advance || null,
     }
 
     _currentPageKey = `${insertAt}-0`
@@ -2286,6 +2302,7 @@ export const useFlatStore = create((set, get) => ({
         notesAudioVolume: cached.notesAudioVolume ?? 1,
         notesCaptions: cached.notesCaptions || null,
         transition: cached.transition || null,
+        advance: cached.advance || null,
       }
     }
     // 현재 페이지가 캐시에 없는 경우 (단일 페이지)
@@ -2301,6 +2318,7 @@ export const useFlatStore = create((set, get) => ({
         notesAudioVolume: get().pageNotesAudioVolume ?? 1,
         notesCaptions: get().pageNotesCaptions || null,
         transition: get().pageTransition || null,
+        advance: get().pageAdvance || null,
       }
     }
     return { pages, currentPageKey: _currentPageKey }
@@ -2347,6 +2365,7 @@ export const useFlatStore = create((set, get) => ({
         notesAudioVolume: _pageCache[key].notesAudioVolume ?? 1,
         notesCaptions: _pageCache[key].notesCaptions || null,
         transition: _pageCache[key].transition || null,
+        advance: _pageCache[key].advance || null,
       }
     }
 
@@ -2368,6 +2387,7 @@ export const useFlatStore = create((set, get) => ({
           htmlSlideIndex: route.id,
           notes: result.notes || '',
           transition: result.transition || null,
+          advance: result.advance || null,
         }
       } catch (e) {
         console.warn(`Page ${route.id} extraction failed:`, e.message)
@@ -2391,6 +2411,7 @@ export const useFlatStore = create((set, get) => ({
         notesAudioVolume: get().pageNotesAudioVolume ?? 1,
         notesCaptions: get().pageNotesCaptions || null,
         transition: get().pageTransition || null,
+        advance: get().pageAdvance || null,
       }
     }
 
@@ -2434,6 +2455,7 @@ export const useFlatStore = create((set, get) => ({
         // 구버전 프로젝트 파일(자막 기능 이전)에는 이 필드가 없다 — 없으면 null(정상, 재생성 필요).
         notesCaptions: pagesData[key].notesCaptions || null,
         transition: pagesData[key].transition || null,
+        advance: pagesData[key].advance || null,
       }
     }
 
@@ -2457,6 +2479,7 @@ export const useFlatStore = create((set, get) => ({
         pageNotesAudioVolume: page.notesAudioVolume ?? 1,
         pageNotesCaptions: page.notesCaptions || null,
         pageTransition: page.transition || null,
+        pageAdvance: page.advance || null,
       })
     }
     // 페이지 카운트/인덱스 동기화 — 누락 시 PageBar가 로드 직후 전체 페이지 수를

@@ -258,6 +258,65 @@ export function transitionToAttrs(t) {
   return ' ' + parts.join(' ')
 }
 
+// ── 자동 진행 기준(슬라이드) · 미디어 재생 옵션(요소) ──
+//   <div class="slide" data-advance="all">                       나레이션·미디어가 모두 끝나면
+//   <div class="slide" data-advance="time" data-advance-after="12"> 12초 뒤
+//   <audio controls data-advance="end" data-max-play="90" data-bgm="3" …>
+//     끝까지 재생 후 다음 · 최대 90초(페이드아웃) · 이 장부터 3장 동안 이어지는 BGM("end"=끝까지)
+// 자동 진행('음성 후 자동 진행')·전시회(루프)에서만 쓰인다 — 손으로 넘기는 발표에는 영향 없음.
+export const ADVANCE_MODES = ['auto', 'narration', 'media', 'all', 'time', 'click']
+export const DEFAULT_ADVANCE_AFTER_SEC = 10
+
+/**
+ * 슬라이드의 data-advance* → page.advance. 기본(auto)이면 null.
+ * @returns {null | { mode, seconds? }}
+ */
+export function parseAdvanceAttrs(slideEl) {
+  const mode = attr(slideEl, 'data-advance')
+  if (!mode || mode === 'auto' || !ADVANCE_MODES.includes(mode)) return null
+  const a = { mode }
+  if (mode === 'time') a.seconds = clampInt(attr(slideEl, 'data-advance-after'), DEFAULT_ADVANCE_AFTER_SEC, 1, 3600)
+  return a
+}
+
+/** page.advance → 슬라이드 태그 속성 문자열(앞 공백 포함). 기본이면 ''. */
+export function advanceToAttrs(a) {
+  if (!a || !a.mode || a.mode === 'auto' || !ADVANCE_MODES.includes(a.mode)) return ''
+  let out = ` data-advance="${escAttr(a.mode)}"`
+  if (a.mode === 'time') out += ` data-advance-after="${clampInt(a.seconds, DEFAULT_ADVANCE_AFTER_SEC, 1, 3600)}"`
+  return out
+}
+
+/**
+ * 오디오·영상 노드의 미디어 옵션 → 요소 필드. 노드 자신(과 넘겨준 래퍼)만 본다 —
+ * closest()로 올라가면 슬라이드의 data-advance(진행 기준)를 잘못 읽는다.
+ * @param {...Element} nodes 미디어 요소, 그 래퍼 순
+ * @returns {{ advanceOnEnd?: true, playMaxSec?: number, bgmSpan?: number }}
+ */
+export function parseMediaAttrs(...nodes) {
+  const pick = (name) => {
+    for (const n of nodes) { const v = attr(n, name); if (v) return v }
+    return ''
+  }
+  const out = {}
+  if (pick('data-advance') === 'end') out.advanceOnEnd = true
+  const max = parseFloat(pick('data-max-play'))
+  if (Number.isFinite(max) && max > 0) out.playMaxSec = Math.min(3600, max)
+  const bgm = pick('data-bgm')
+  if (bgm === 'end') out.bgmSpan = 0
+  else if (bgm) out.bgmSpan = clampInt(bgm, 1, 1, 999)
+  return out
+}
+
+/** 요소의 미디어 옵션 → 속성 문자열(앞 공백 포함). 없으면 ''. */
+export function mediaToAttrs(el) {
+  let out = ''
+  if (el?.advanceOnEnd) out += ' data-advance="end"'
+  if (Number.isFinite(el?.playMaxSec) && el.playMaxSec > 0) out += ` data-max-play="${el.playMaxSec}"`
+  if (Number.isInteger(el?.bgmSpan) && el.bgmSpan >= 0) out += ` data-bgm="${el.bgmSpan === 0 ? 'end' : el.bgmSpan}"`
+  return out
+}
+
 /**
  * 발표자 노트 → 슬라이드 안에 넣을 <script class="fe-notes"> 블록. 없으면 ''.
  * type="text/plain"이라 실행되지 않고, 렌더에도 잡히지 않는다.

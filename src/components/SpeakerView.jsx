@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useEditorStore } from '../store/editorStore'
 import PresentedSlide from './PresentedSlide'
+import BgmPlayer from './BgmPlayer'
 import { SlideThumbnail } from './SlideListPanel'
-import { NarrationControls, InkControls } from './PresenterToolbar'
+import { NarrationControls, InkControls, AdvanceCountdown } from './PresenterToolbar'
 import { useWebFontImports } from '../core/useWebFontImports'
 import { useWakeLock } from '../core/useWakeLock'
 import { usePresentationEngine } from '../core/usePresentationEngine'
@@ -168,6 +169,9 @@ export default function SpeakerView() {
         </span>
 
         <div style={{ flexGrow: 1 }} />
+
+        <AdvanceCountdown eng={eng} inline />
+        <div style={{ width: 16 }} />
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <span style={{ fontSize: 11, color: '#64748b' }}>경과</span>
@@ -390,6 +394,8 @@ export default function SpeakerView() {
 
       {/* 노트 음성 재생기(숨김) — 발표자 창에서만 재생한다(두 창이 겹쳐 울리지 않도록) */}
       <audio ref={setAudioEl} onEnded={eng.onAudioEnded} onError={eng.onAudioError} />
+      {/* 여러 장에 걸쳐 흐르는 BGM — 슬라이드 밖에서 재생해 장이 바뀌어도 끊기지 않게 */}
+      {!eng.loading && <BgmPlayer element={eng.bgm} duck={eng.narrationPlaying} />}
 
       {gridOpen && (
         <SlideGrid

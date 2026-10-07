@@ -2,7 +2,7 @@
  * FlatExporter
  * 원본 iframe과 Flat 변환 결과를 독립 HTML 파일로 내보낸다.
  */
-import { animToAttrs, loopToAttrs, transitionToAttrs, notesToScript, buildAnimNameMap } from './deckMotion.js'
+import { animToAttrs, loopToAttrs, transitionToAttrs, advanceToAttrs, mediaToAttrs, notesToScript, buildAnimNameMap } from './deckMotion.js'
 import { tableContainerStyle, cellStyle } from './slideTable.js'
 
 /**
@@ -16,6 +16,8 @@ import { tableContainerStyle, cellStyle } from './slideTable.js'
 function withAnim(el, html, nameMap) {
   const attrs = animToAttrs(el.anim, (id) => nameMap.get(id) || null, nameMap.get(el.id) || null)
     + loopToAttrs(el.loopAnim)
+    // 오디오·영상 재생 옵션(끝까지 재생 후 다음·최대 재생 시간·BGM) — 다시 가져올 때 같은 요소로 복원
+    + (el.type === 'audio' || el.type === 'video' ? mediaToAttrs(el) : '')
   if (!attrs || !html.startsWith('<div')) return html
   return `<div${attrs}` + html.slice(4)
 }
@@ -92,7 +94,7 @@ export function exportFlatHtml(flatElements, canvasSize, fontImports = [], pageM
 <title>Flat Export</title>${preconnect}${fontLinks}
 <style>* { box-sizing: border-box; margin: 0; padding: 0; }</style>${fontStyleBlock}
 </head>
-<body${transitionToAttrs(pageMeta.transition)} style="width:${canvasSize.w}px;height:${canvasSize.h}px;overflow:hidden;position:relative;">
+<body${transitionToAttrs(pageMeta.transition)}${advanceToAttrs(pageMeta.advance)} style="width:${canvasSize.w}px;height:${canvasSize.h}px;overflow:hidden;position:relative;">
 ${els.join('\n')}
 ${notesToScript(pageMeta.notes)}
 ${flatElements.some(e => e.type === 'audio') ? AUDIO_VIZ_SCRIPT : ''}
@@ -144,7 +146,7 @@ export function exportFlatHtmlAllPages(pages) {
     const nameMap = buildAnimNameMap(page.elements)
     const elHtmls = page.elements.map(el => withAnim(el, renderElement(el), nameMap)).join('\n')
     const notes = notesToScript(page.notes)
-    return `<div class="slide${i === 0 ? ' active' : ''}"${transitionToAttrs(page.transition)} style="width:${pcs.w}px;height:${pcs.h}px;">\n${elHtmls}\n${notes ? notes + '\n' : ''}</div>`
+    return `<div class="slide${i === 0 ? ' active' : ''}"${transitionToAttrs(page.transition)}${advanceToAttrs(page.advance)} style="width:${pcs.w}px;height:${pcs.h}px;">\n${elHtmls}\n${notes ? notes + '\n' : ''}</div>`
   }).join('\n\n')
 
   return `<!DOCTYPE html>

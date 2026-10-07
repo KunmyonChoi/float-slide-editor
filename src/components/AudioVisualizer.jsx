@@ -2,6 +2,8 @@ import { useRef, useEffect, useState } from 'react'
 import { BlobStore } from '../core/BlobStore'
 import { DEFAULT_VIZ, barCount, staticFrame, barsFromFrequency, drawViz } from '../core/audioViz'
 import { registerAudioClock } from '../core/audioClock'
+import { waitsForEnd, effectiveAutoplay, effectiveLoop, isBgm, reportMediaEnded, reportMediaFailed } from '../core/mediaAdvance'
+import { maxPlayGain } from '../core/useMediaEndSignal'
 
 /**
  * 오디오 비주얼라이저 요소 렌더러.
@@ -49,7 +51,18 @@ export default function AudioVisualizer({ element, playNow }) {
   }
 
   // 발표 모드라도 자동재생이 꺼져 있으면 정적(소리 없음). 음악 화면 기본은 autoplay=true.
-  const live = playNow && (element.autoplay ?? false)
+  // '끝날 때까지 기다림'(advanceOnEnd)이면 자동 재생·반복 끔으로 고정하고 끝남/실패를 엔진에 알린다.
+  // BGM(bgmSpan)은 슬라이드를 넘겨도 이어지도록 발표 화면 밖의 BgmPlayer가 재생한다 — 여기선 정적.
+  const live = playNow && effectiveAutoplay(element) && !isBgm(element)
+  const signal = playNow && waitsForEnd(element)
+  const loopOn = effectiveLoop(element)
+  // 최대 재생 시간 — 그 직전 페이드아웃 후 멈추고, 끝까지 재생 옵션이면 '끝남'으로 알린다.
+  const maxSec = element.playMaxSec > 0 ? element.playMaxSec : 0
+
+  // 파일을 못 불러온 경우 — 기다리는 슬라이드가 멈추지 않게 실패를 알린다.
+  useEffect(() => {
+    if (signal && failed) reportMediaFailed(element.id)
+  }, [signal, failed, element.id])
 
   // 정적 프레임 1장 — 편집/자동재생 off, 또는 발표라도 url 미해석(idb 로딩 중)일 때.
   // (둘 다 아니면 라이브 effect가 그림). url 미해석 동안 빈 캔버스 방지.
@@ -72,7 +85,26 @@ export default function AudioVisualizer({ element, playNow }) {
     let stopped = false, raf = 0, ctxAudio = null
     const audio = new Audio()
     audio.src = url
-    audio.loop = !!element.loop
+    audio.loop = loopOn
+    let finished = false
+    const finish = () => {
+      if (finished) return
+      finished = true
+      if (signal) reportMediaEnded(element.id)
+    }
+    if (signal) {
+      audio.onended = finish
+      audio.onerror = () => reportMediaFailed(element.id)
+    }
+    // 최대 재생 시간: 볼륨 배율을 돌려주고, 시간이 다 되면 멈춘다.
+    const capGain = () => {
+      if (!maxSec) return 1
+      if (audio.currentTime >= maxSec) { audio.pause(); finish(); return 0 }
+      return maxPlayGain(audio.currentTime, maxSec)
+    }
+    // 정리(cleanup)의 pause()가 진행 중인 play()를 끊으면 AbortError로 거부된다 — 실패가 아니다.
+    // (StrictMode의 이중 실행·의존성 변경으로 이펙트가 다시 돌 때마다 생긴다.)
+    const playFailed = (e) => { if (signal && !stopped && e?.name !== 'AbortError') reportMediaFailed(element.id) }
     // 음소거는 GainNode로만 처리 — audio.muted는 MediaElementSource 신호까지 끊어
     // 분석기에 무음이 들어가 '음소거(파형만 보기)'에서 막대가 멈춘다.
     audio.crossOrigin = 'anonymous'
@@ -103,7 +135,7 @@ export default function AudioVisualizer({ element, playNow }) {
         if (stopped) return
         // 볼륨 실시간 반영(음소거 우선)
         if (gainRef.current) {
-          gainRef.current.gain.value = element.muted ? 0 : liveRef.current.volume
+          gainRef.current.gain.value = element.muted ? 0 : liveRef.current.volume * capGain()
         }
         analyser.getByteFrequencyData(data)
         const { viz: v, width: w, height: h } = liveRef.current
@@ -112,13 +144,14 @@ export default function AudioVisualizer({ element, playNow }) {
         raf = requestAnimationFrame(loop)
       }
       ctxAudio.resume().catch(() => {})
-      audio.play().catch(() => { /* 자동재생 차단(비음소거) — 사용자 상호작용 후 재생 */ })
+      audio.play().catch(playFailed) // 자동재생 차단(비음소거) — 기다리는 장이면 실패로 알림
       loop()
     } catch {
       // Web Audio 실패 시: 분석기 없이 소리만 재생(이 경로엔 gain이 없으므로 muted/volume 직접 적용) + 정적 프레임
       audio.muted = !!element.muted
       audio.volume = liveRef.current.volume
-      audio.play().catch(() => {})
+      if (maxSec) audio.ontimeupdate = () => { audio.volume = liveRef.current.volume * capGain() }
+      audio.play().catch(playFailed)
       paintStatic()
     }
 
@@ -127,13 +160,16 @@ export default function AudioVisualizer({ element, playNow }) {
       unregisterClock()
       gainRef.current = null
       cancelAnimationFrame(raf)
+      audio.onended = null
+      audio.onerror = null
+      audio.ontimeupdate = null
       try { audio.pause() } catch { /* 무시 */ }
       audio.src = ''
       try { ctxAudio && ctxAudio.close() } catch { /* 무시 */ }
     }
     // smoothing은 분석기 생성 시 1회 설정 → 변경 시 재구독 필요(나머지 viz는 ref로 라이브 반영)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [live, url, element.loop, element.muted, viz.smoothing])
+  }, [live, url, loopOn, signal, maxSec, element.id, element.muted, viz.smoothing])
 
   return (
     <div style={{
