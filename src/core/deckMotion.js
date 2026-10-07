@@ -17,8 +17,15 @@
  *   요소 → element.anim  (src/core/slideAnimation.js)
  *   슬라이드 → page.notes / page.transition
  *
+ * 반복(강조) 효과는 등장과 독립된 별도 속성 묶음이다(같은 요소에 함께 달 수 있다):
+ *     <div data-anim="pop" data-anim-loop="pulse" data-anim-loop-period="1200"
+ *          data-anim-loop-intensity="1.5" data-anim-loop-phase="300"
+ *          data-anim-loop-start="withEnter" data-anim-loop-repeat="3">…</div>
+ *   요소 → element.loopAnim
+ *
  * 프레임워크 무의존. DOM 요소를 받지만 getAttribute/querySelector만 쓴다(jsdom 가능).
  */
+import { LOOP_STARTS, isLoopEffect, loopDefaultPeriodMs } from './slideAnimation.js'
 
 export const ANIM_EFFECTS = [
   'fadeIn', 'slideIn', 'scaleIn', 'pop', 'fadeOut', 'slideOut', 'scaleOut',
@@ -76,6 +83,25 @@ export function parseAnimAttrs(el) {
     spec.dir = ANIM_DIRS.includes(dir) ? dir : 'up'
   }
   return spec
+}
+
+/**
+ * 요소의 data-anim-loop* 속성 → loopAnim 스펙(element.loopAnim과 같은 모양). 없거나 모르는 효과면 null.
+ * @param {Element} el
+ */
+export function parseLoopAttrs(el) {
+  const effect = attr(el, 'data-anim-loop')
+  if (!isLoopEffect(effect)) return null
+  const intensity = parseFloat(attr(el, 'data-anim-loop-intensity'))
+  const start = attr(el, 'data-anim-loop-start')
+  return {
+    effect,
+    periodMs: clampInt(attr(el, 'data-anim-loop-period'), loopDefaultPeriodMs(effect), 200, 30000),
+    intensity: Number.isFinite(intensity) ? Math.min(3, Math.max(0.25, intensity)) : 1,
+    phaseMs: clampInt(attr(el, 'data-anim-loop-phase'), 0, 0, 30000),
+    start: LOOP_STARTS.includes(start) ? start : 'afterEnter',
+    repeat: clampInt(attr(el, 'data-anim-loop-repeat'), 0, 0, 99),
+  }
 }
 
 /**
@@ -206,6 +232,19 @@ export function animToAttrs(anim, nameOf = null, selfName = null) {
     if (refName) parts.push(`data-anim-ref="${escAttr(refName)}"`)
   }
   if (selfName) parts.push(`data-anim-name="${escAttr(selfName)}"`)
+  return ' ' + parts.join(' ')
+}
+
+/** element.loopAnim → data-anim-loop* 속성 문자열(앞에 공백 포함). 기본값은 생략. 없으면 ''. */
+export function loopToAttrs(loop) {
+  if (!isLoopEffect(loop?.effect)) return ''
+  const parts = [`data-anim-loop="${loop.effect}"`]
+  const period = Math.round(loop.periodMs || loopDefaultPeriodMs(loop.effect))
+  if (period !== loopDefaultPeriodMs(loop.effect)) parts.push(`data-anim-loop-period="${period}"`)
+  if (Number.isFinite(loop.intensity) && loop.intensity !== 1) parts.push(`data-anim-loop-intensity="${Math.round(loop.intensity * 100) / 100}"`)
+  if (loop.phaseMs > 0) parts.push(`data-anim-loop-phase="${Math.round(loop.phaseMs)}"`)
+  if (loop.start === 'withEnter') parts.push('data-anim-loop-start="withEnter"')
+  if (loop.repeat > 0) parts.push(`data-anim-loop-repeat="${Math.round(loop.repeat)}"`)
   return ' ' + parts.join(' ')
 }
 

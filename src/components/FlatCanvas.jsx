@@ -5,7 +5,8 @@ import { isBackgroundElement } from '../core/SnapEngine'
 import { useIsTouch } from '../core/pointerEnv'
 import { resolveConnectors, resolveConnectorEndpoints, resolveConnectorCurve, attachTargetAt, connectionPoints, nearestConnectionPoint } from '../core/ConnectorRouting'
 import { getRotatedAABB } from '../core/RotationUtils'
-import { computeSteps, isHiddenAt, animationCss, directionVars, stepDurations, DEFAULT_DUR } from '../core/slideAnimation'
+import { computeSteps, isHiddenAt, animationCss, directionVars, stepDurations, DEFAULT_DUR, hasLoop, loopStartMs, loopPeriodMs } from '../core/slideAnimation'
+import LoopLayer from './LoopLayer'
 import FlatElementRenderer from './FlatElementRenderer'
 import FlatSelectionOverlay, { FlatGroupOverlay } from './FlatSelectionOverlay'
 import AiActionBar from './AiActionBar'
@@ -43,7 +44,7 @@ function looksLikeDeckHtml(s) {
  * FlatElement 배열을 절대 배치로 렌더링하는 캔버스.
  * SlideCanvas와 동일한 스케일링 로직 사용.
  */
-// 애니메이션 탭 활성 시 캔버스에 진행 순서 배지(①②③) 표시 — 같은 단계는 같은 번호.
+// 애니메이션 탭 활성 시 캔버스에 진행 순서 배지(①②③) 표시 — 같은 단계는 같은 번호. 반복 효과는 ↻.
 function AnimationBadges({ elements, scale }) {
   const info = computeSteps(elements)
   const s = Math.max(0.4, scale || 1)
@@ -52,20 +53,28 @@ function AnimationBadges({ elements, scale }) {
       {elements.map(el => {
         const step = info.stepOf[el.id]
         const isAuto = el.anim?.trigger?.mode === 'auto' && el.anim?.effect && el.anim.effect !== 'none'
-        if (step == null && !isAuto) return null
+        const loop = hasLoop(el)
+        if (step == null && !isAuto && !loop) return null
         const exit = el.anim?.effect?.endsWith('Out')
+        const badge = {
+          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+          minWidth: 18, height: 18, padding: '0 4px', borderRadius: 9,
+          fontSize: 11, fontWeight: 700, color: '#fff',
+          border: '1.5px solid #fff', boxShadow: '0 1px 4px rgba(0,0,0,0.4)',
+        }
         return (
           <div key={el.id} style={{
             position: 'absolute', left: el.x, top: el.y, zIndex: 9998, pointerEvents: 'none',
             transform: `translate(-35%, -35%) scale(${1 / s})`, transformOrigin: 'top left',
+            display: 'flex', gap: 2,
           }}>
-            <span style={{
-              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-              minWidth: 18, height: 18, padding: '0 4px', borderRadius: 9,
-              fontSize: 11, fontWeight: 700, color: '#fff',
-              background: isAuto ? '#0ea5e9' : exit ? '#ef4444' : '#6366f1',
-              border: '1.5px solid #fff', boxShadow: '0 1px 4px rgba(0,0,0,0.4)',
-            }}>{isAuto ? '자동' : step + 1}</span>
+            {(step != null || isAuto) && (
+              <span style={{ ...badge, background: isAuto ? '#0ea5e9' : exit ? '#ef4444' : '#6366f1' }}>
+                {isAuto ? '자동' : step + 1}
+              </span>
+            )}
+            {/* 반복 효과 배지 */}
+            {loop && <span style={{ ...badge, background: '#f59e0b' }} title="반복 효과">↻</span>}
           </div>
         )
       })}
@@ -165,7 +174,8 @@ export default function FlatCanvas() {
     if (!animPreviewTick) return
     const info = computeSteps(renderElements)
     const hasAuto = Object.keys(info.autoOffsets || {}).length > 0
-    if (info.stepCount === 0 && !hasAuto) { useFlatStore.getState()._setAnimPreview(null); return }
+    const loopPeriods = renderElements.filter(hasLoop).map(e => loopPeriodMs(e.loopAnim))
+    if (info.stepCount === 0 && !hasAuto && !loopPeriods.length) { useFlatStore.getState()._setAnimPreview(null); return }
     const durs = stepDurations(info, renderElements)
     const setP = (v) => useFlatStore.getState()._setAnimPreview(v)
     const timers = []
@@ -184,6 +194,8 @@ export default function FlatCanvas() {
         .map(e => e.anim?.durationMs || DEFAULT_DUR))
       t = maxDelay + maxDur + 400
     }
+    // 반복 효과는 끝이 없으므로 마지막 단계 뒤로 두 주기쯤(1.5~6초) 더 보여 주고 끝낸다
+    if (loopPeriods.length) t += Math.min(6000, Math.max(1500, 2 * Math.max(...loopPeriods)))
     timers.push(setTimeout(() => setP(null), t))
     return () => timers.forEach(clearTimeout)
   }, [animPreviewTick]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -1404,7 +1416,23 @@ export default function FlatCanvas() {
                       animation: animationCss(el.anim, animInfo.autoOffsets?.[el.id] ?? 0),
                       ...(directionVars(el.anim) || {}),
                     }}>
-                      <FlatElementRenderer element={{ ...el, x: 0, y: 0 }} isSelected={false} isEditing={false} scale={scale} playNow={false} />
+                      <LoopLayer el={el} startMs={loopStartMs(animInfo, el)}>
+                        <FlatElementRenderer element={{ ...el, x: 0, y: 0 }} isSelected={false} isEditing={false} scale={scale} playNow={false} />
+                      </LoopLayer>
+                    </div>
+                  )
+                }
+
+                // 반복 효과만 있는 요소 — 미리보기 시작마다 처음부터 반복
+                if (step == null && hasLoop(el)) {
+                  return (
+                    <div key={`loop-${el.id}-${animPreviewTick}`} style={{
+                      position: 'absolute', left: el.x, top: el.y, width: el.width, height: el.height,
+                      zIndex: el.zIndex,
+                    }}>
+                      <LoopLayer el={el} startMs={loopStartMs(animInfo, el)}>
+                        <FlatElementRenderer element={{ ...el, x: 0, y: 0 }} isSelected={false} isEditing={false} scale={scale} playNow={false} />
+                      </LoopLayer>
                     </div>
                   )
                 }
@@ -1422,7 +1450,9 @@ export default function FlatCanvas() {
                       animation: playing ? animationCss(el.anim, animInfo.offsetOf[el.id]) : undefined,
                       ...(playing ? (directionVars(el.anim) || {}) : {}),
                     }}>
-                      <FlatElementRenderer element={{ ...el, x: 0, y: 0 }} isSelected={false} isEditing={false} scale={scale} playNow={false} />
+                      <LoopLayer el={el} startMs={loopStartMs(animInfo, el)} active={!showHidden}>
+                        <FlatElementRenderer element={{ ...el, x: 0, y: 0 }} isSelected={false} isEditing={false} scale={scale} playNow={false} />
+                      </LoopLayer>
                     </div>
                   )
                 }

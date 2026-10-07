@@ -11,7 +11,7 @@
  * 단계 구성은 발표 모드와 같은 규칙을 쓰려고 slideAnimation.computeSteps를 그대로 쓴다.
  */
 import JSZip from 'jszip'
-import { computeSteps, DEFAULT_DUR } from './slideAnimation'
+import { computeSteps, DEFAULT_DUR, hasLoop, loopStartMs, loopPeriodMs, loopIntensity } from './slideAnimation'
 import { AUDIO_TERM } from './usePresentationEngine'
 
 /** 애니메이션 대상 도형에 붙일 이름 — 내보내기와 후처리가 공유하는 약속. */
@@ -31,6 +31,55 @@ const EFFECT_MAP = {
 }
 
 const DIR_ATTR = { left: 'l', right: 'r', up: 'u', down: 'd' }
+
+// 반복(강조) 효과 → PowerPoint 강조/이동 경로 + "슬라이드가 끝날 때까지 반복"(repeatCount).
+// 반짝 스윕은 대응하는 효과가 없어 빠진다. 진폭은 앱 키프레임(index.css)과 같은 값.
+// 이동 경로 좌표는 슬라이드 크기 대비 비율이라 캔버스 px로 나눈다.
+const breatheScale = scaleBhvr(0.035)
+const LOOP_MAP = {
+  pulse: { presetID: 6, cls: 'emph', bhvr: scaleBhvr(0.08) },
+  // 숨쉬기는 앱 키프레임처럼 커지면서 살짝 옅어진다(투명도 0.15 × 세기).
+  breathe: { presetID: 6, cls: 'emph', bhvr: (t) =>
+    breatheScale(t) + opacityBhvr(t, t.ids.next(), 1 - 0.15 * t.intensity) },
+  spin: { presetID: 8, cls: 'emph', bhvr: (t) =>
+    `<p:animRot by="21600000"><p:cBhvr><p:cTn id="${t.id}" dur="${t.period}" fill="hold"/>` +
+    `${tgt(t.spid)}<p:attrNameLst><p:attrName>r</p:attrName></p:attrNameLst></p:cBhvr></p:animRot>` },
+  blink: { presetID: 9, cls: 'emph', bhvr: (t) => opacityBhvr(t, t.id, 1 - 0.75 * Math.min(1, t.intensity)) },
+  float: { presetID: 0, cls: 'path', bhvr: (t) =>
+    motionBhvr(t, `M 0 0 L 0 ${round3(-12 * t.intensity / t.canvas.h)} E`, Math.round(t.period / 2), true) },
+  wiggle: { presetID: 0, cls: 'path', bhvr: (t) => {
+    const dx = round3(10 * t.intensity / t.canvas.w)
+    return motionBhvr(t, `M 0 0 L ${dx} 0 L ${-dx} 0 L 0 0 E`, t.period, false)
+  } },
+}
+
+function round3(v) { return Math.round(v * 100000) / 100000 }
+function tgt(spid) { return `<p:tgtEl><p:spTgt spid="${spid}"/></p:tgtEl>` }
+/** 투명도 1 → low → 1 (반 주기씩, 왕복). */
+function opacityBhvr(t, id, low) {
+  return '<p:anim calcmode="lin" valueType="num"><p:cBhvr>' +
+    `<p:cTn id="${id}" dur="${Math.round(t.period / 2)}" autoRev="1" fill="hold" accel="50000" decel="50000"/>` +
+    `${tgt(t.spid)}<p:attrNameLst><p:attrName>style.opacity</p:attrName></p:attrNameLst></p:cBhvr>` +
+    '<p:tavLst><p:tav tm="0"><p:val><p:fltVal val="1"/></p:val></p:tav>' +
+    `<p:tav tm="100000"><p:val><p:fltVal val="${round3(low)}"/></p:val></p:tav></p:tavLst></p:anim>`
+}
+function scaleBhvr(amp) {
+  return (t) => {
+    const by = Math.round((1 + amp * t.intensity) * 100000)
+    return '<p:animScale><p:cBhvr>' +
+      `<p:cTn id="${t.id}" dur="${Math.round(t.period / 2)}" autoRev="1" fill="hold" accel="50000" decel="50000"/>` +
+      `${tgt(t.spid)}</p:cBhvr><p:by x="${by}" y="${by}"/></p:animScale>`
+  }
+}
+function motionBhvr(t, path, dur, autoRev) {
+  return `<p:animMotion origin="layout" path="${path}" pathEditMode="relative"><p:cBhvr>` +
+    `<p:cTn id="${t.id}" dur="${dur}"${autoRev ? ' autoRev="1"' : ''} fill="hold" accel="50000" decel="50000"/>` +
+    `${tgt(t.spid)}<p:attrNameLst><p:attrName>ppt_x</p:attrName><p:attrName>ppt_y</p:attrName></p:attrNameLst>` +
+    '</p:cBhvr></p:animMotion>'
+}
+
+/** PowerPoint로 옮길 수 있는 반복 효과인지(반짝 스윕 등은 false). */
+export function isPptLoop(el) { return hasLoop(el) && !!LOOP_MAP[el.loopAnim.effect] }
 
 /** 전환 속도 — PowerPoint는 3단계뿐이라 ms를 여기에 접는다. */
 function speedOf(ms) {
@@ -82,6 +131,30 @@ function effectPar({ spid, anim, delay, nodeType }, ids) {
     '</p:childTnLst></p:cTn></p:par>'
 }
 
+/** 반복 효과 하나 → `<p:par>` 조각. repeatCount는 1000 = 1회, 0(무한)은 indefinite.
+ *  nodeType이 없으면 단계 밖(tmRoot 직속)에 슬라이드 진입 기준 지연으로 따로 예약하는 노드다. */
+function loopPar({ spid, loop, delay, nodeType, canvas }, ids) {
+  const map = LOOP_MAP[loop.effect]
+  const outerId = ids.next()
+  const bhvr = map.bhvr({ id: ids.next(), spid, period: loopPeriodMs(loop), intensity: loopIntensity(loop), canvas, ids })
+  const repeat = loop.repeat > 0 ? String(Math.round(loop.repeat) * 1000) : 'indefinite'
+  return '<p:par>' +
+    `<p:cTn id="${outerId}" presetID="${map.presetID}" presetClass="${map.cls}" presetSubtype="0"` +
+    ` repeatCount="${repeat}" fill="hold" grpId="0"${nodeType ? ` nodeType="${nodeType}"` : ''}>` +
+    `<p:stCondLst><p:cond delay="${Math.max(0, Math.round(delay))}"/></p:stCondLst>` +
+    `<p:childTnLst>${bhvr}</p:childTnLst></p:cTn></p:par>`
+}
+
+/**
+ * 반복 효과의 PowerPoint 시작 지연(ms). 앱은 시차를 음수 지연으로 주기 중간부터 시작하지만
+ * PowerPoint는 음수 지연이 없어 한 주기를 더해 같은 박자에 맞춘다.
+ */
+function pptLoopDelay(loop, startMs) {
+  const period = loopPeriodMs(loop)
+  const phase = Math.max(0, loop.phaseMs || 0) % period
+  return startMs > 0 ? startMs + ((period - phase) % period) : (period - phase) % period
+}
+
 /**
  * 한 단계 → 2겹 par로 감싼다.
  * autoStart면 앞 단계가 끝나는 대로 이어서(=파워포인트 '이전 효과 다음에'),
@@ -89,7 +162,7 @@ function effectPar({ spid, anim, delay, nodeType }, ids) {
  */
 function stepPar(effects, { autoStart, groupDelay = 0 }, ids) {
   if (!effects.length) return ''
-  const inner = effects.map((e, i) => effectPar({
+  const inner = effects.map((e, i) => (e.loop ? loopPar : effectPar)({
     ...e, nodeType: i === 0 ? (autoStart ? 'afterEffect' : 'clickEffect') : 'withEffect',
   }, ids)).join('')
   return '<p:par>' +
@@ -99,6 +172,25 @@ function stepPar(effects, { autoStart, groupDelay = 0 }, ids) {
     `<p:cTn id="${ids.next()}" fill="hold"><p:stCondLst><p:cond delay="${Math.max(0, Math.round(groupDelay))}"/></p:stCondLst>` +
     `<p:childTnLst>${inner}</p:childTnLst>` +
     '</p:cTn></p:par></p:childTnLst></p:cTn></p:par>'
+}
+
+/**
+ * autoChain 장에서 각 클릭 단계가 슬라이드 진입 후 몇 ms에 시작하는지.
+ * 자동 묶음 → (텀 + 단계1) → (텀 + 단계2)… 가 앞 묶음이 끝나는 대로 이어지는 순서를 그대로 계산한다.
+ */
+function chainedStepStarts(info, byId) {
+  const durOf = (id) => byId.get(id).anim.durationMs || DEFAULT_DUR
+  let t = 0
+  for (const id of Object.keys(info.autoOffsets)) t = Math.max(t, info.autoOffsets[id] + durOf(id))
+  const starts = []
+  for (let s = 0; s < info.stepCount; s++) {
+    const ids = info.order.filter(id => info.stepOf[id] === s)
+    if (!ids.length) continue
+    t += AUDIO_TERM
+    starts[s] = t
+    t += Math.max(0, ...ids.map(id => (info.offsetOf[id] || 0) + durOf(id)))
+  }
+  return starts
 }
 
 /**
@@ -112,9 +204,11 @@ function stepPar(effects, { autoStart, groupDelay = 0 }, ids) {
  * @param {{spid:number, volume?:number}|null} [audio] 슬라이드 진입 시 자동 재생할 나레이션
  * @param {{autoChain?:boolean}} [opts]
  */
-export function buildTimingXml(elements, spidOf, audio = null, { autoChain = false } = {}) {
-  const usable = (elements || []).filter(e => e?.anim && EFFECT_MAP[e.anim.effect] && spidOf.get(e.id)?.length)
-  if (!usable.length && !audio) return ''
+export function buildTimingXml(elements, spidOf, audio = null, { autoChain = false, canvas = null } = {}) {
+  const shaped = (elements || []).filter(e => spidOf.get(e?.id)?.length)
+  const usable = shaped.filter(e => e.anim && EFFECT_MAP[e.anim.effect])
+  const loops = shaped.filter(isPptLoop)
+  if (!usable.length && !loops.length && !audio) return ''
 
   const info = computeSteps(usable)
   const byId = new Map(usable.map(e => [e.id, e]))
@@ -125,15 +219,37 @@ export function buildTimingXml(elements, spidOf, audio = null, { autoChain = fal
   const expand = (id, delay) =>
     spidOf.get(id).map(spid => ({ spid, anim: byId.get(id).anim, delay }))
 
+  // 반복 효과는 요소가 보이기 시작하는 묶음에 같이 넣는다 — 등장 단계가 있으면 그 단계,
+  // 없거나(반복만) 퇴장만 있으면 처음부터 보이므로 자동 시작 묶음. 지연은 그 묶음 시작 기준.
+  // (PowerPoint의 "슬라이드가 끝날 때까지" 반복과 같은 배치 — 다음 클릭에도 계속 돈다.)
+  // 단, autoChain(나레이션) 장은 단계가 앞 묶음이 끝나야 이어지므로 끝나지 않는 반복이 묶음에
+  // 있으면 뒤 단계가 영영 시작되지 않는다. 그 장은 단계 시작 시각이 결정적이라 반복을 묶음 밖
+  // (tmRoot 직속)에 슬라이드 진입 기준 절대 지연으로 따로 예약한다.
+  const cv = { w: canvas?.w || 1920, h: canvas?.h || 1080 }
+  const stepStart = autoChain ? chainedStepStarts(info, byId) : null
+  const autoLoops = [], stepLoops = {}, freeLoops = []
+  for (const e of loops) {
+    const entrance = byId.has(e.id) && EFFECT_MAP[e.anim.effect].cls === 'entr'
+    const step = entrance ? info.stepOf[e.id] : undefined
+    const start = entrance ? loopStartMs(info, e) : 0
+    const base = autoChain && step != null ? stepStart[step] : 0
+    const delay = base + pptLoopDelay(e.loopAnim, start)
+    const fx = spidOf.get(e.id).map(spid => ({ spid, loop: e.loopAnim, delay, canvas: cv }))
+    if (autoChain) freeLoops.push(...fx)
+    else if (step == null) autoLoops.push(...fx)
+    else (stepLoops[step] ||= []).push(...fx)
+  }
+
   const steps = []
   // 자동 시작 묶음 — 슬라이드가 열리자마자 각자의 delay로 시작한다.
   const autoIds = Object.keys(info.autoOffsets)
-  if (autoIds.length) {
+  if (autoIds.length || autoLoops.length) {
     steps.push({
       autoStart: true,
       effects: autoIds
         .sort((a, b) => (byId.get(a).anim.seq || 0) - (byId.get(b).anim.seq || 0))
-        .flatMap(id => expand(id, info.autoOffsets[id])),
+        .flatMap(id => expand(id, info.autoOffsets[id]))
+        .concat(autoLoops),
     })
   }
   // 클릭 단계 — autoChain이면 클릭 대신 앞 단계에 이어서 자동 진행한다.
@@ -143,10 +259,10 @@ export function buildTimingXml(elements, spidOf, audio = null, { autoChain = fal
     steps.push({
       autoStart: autoChain,
       groupDelay: autoChain ? AUDIO_TERM : 0,
-      effects: stepIds.flatMap(id => expand(id, info.offsetOf[id] || 0)),
+      effects: stepIds.flatMap(id => expand(id, info.offsetOf[id] || 0)).concat(stepLoops[s] || []),
     })
   }
-  if (!steps.length && !audio) return ''
+  if (!steps.length && !freeLoops.length && !audio) return ''
 
   const body = steps.map(st => stepPar(st.effects, { autoStart: st.autoStart, groupDelay: st.groupDelay }, ids)).join('')
   const seq = steps.length
@@ -156,13 +272,14 @@ export function buildTimingXml(elements, spidOf, audio = null, { autoChain = fal
       '<p:nextCondLst><p:cond evt="onNext" delay="0"><p:tgtEl><p:sldTgt/></p:tgtEl></p:cond></p:nextCondLst>' +
       '</p:seq>'
     : ''
+  const loopNodes = freeLoops.map(fx => loopPar({ ...fx, nodeType: null }, ids)).join('')
   const audioNode = audio ? audioMediaNode(audio, ids) : ''
-  const bld = [...new Set(usable.flatMap(e => spidOf.get(e.id)))]
+  const bld = [...new Set([...usable, ...loops].flatMap(e => spidOf.get(e.id)))]
     .map(spid => `<p:bldP spid="${spid}" grpId="0" animBg="1"/>`).join('')
 
   return '<p:timing><p:tnLst><p:par>' +
     '<p:cTn id="1" dur="indefinite" restart="never" nodeType="tmRoot"><p:childTnLst>' +
-    seq + audioNode +
+    seq + loopNodes + audioNode +
     '</p:childTnLst></p:cTn></p:par></p:tnLst>' +
     (bld ? `<p:bldLst>${bld}</p:bldLst>` : '') +
     '</p:timing>'
@@ -202,7 +319,7 @@ export function injectSlideMotion(slideXml, page, audio = null) {
   const spidOf = readSpids(slideXml)
   const transition = buildTransitionXml(page?.transition)
   // 나레이션이 실린 장은 앱 발표 모드처럼 저절로 흐르게 한다(클릭 없이).
-  const timing = buildTimingXml(page?.elements, spidOf, audio, { autoChain: !!audio })
+  const timing = buildTimingXml(page?.elements, spidOf, audio, { autoChain: !!audio, canvas: page?.canvasSize })
   if (!transition && !timing) return slideXml
   return slideXml.replace('</p:sld>', `${transition}${timing}</p:sld>`)
 }

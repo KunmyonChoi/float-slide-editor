@@ -23,7 +23,7 @@ import { detectBgColor, applyChromaKey, chromaEntries } from '../core/chromaKey'
 import { highlightCode, CODE_FONT } from '../core/codeHighlight'
 import { renderMarkdown } from '../core/markdown'
 import { DEFAULT_LYRIC_OFFSET, isTextOverflowHidden, lyricUnlinkChanges } from '../core/lyricSync'
-import { EFFECTS, effectHasDir } from '../core/slideAnimation'
+import { EFFECTS, effectHasDir, LOOP_EFFECTS, makeLoopAnim, isEntrance } from '../core/slideAnimation'
 import DiagramIconPanel from './DiagramIconPanel'
 import MediaPreview from './MediaPreview'
 
@@ -3182,6 +3182,62 @@ function AnimationTab({ el }) {
             ? <p className="text-[10px] text-slate-600">페이지 진입 시 자동 재생됩니다. 지연(ms)으로 타이밍을 조절하세요. 캔버스에 하늘색 <b>자동</b> 배지로 표시됩니다.</p>
             : <p className="text-[10px] text-slate-600">발표 모드에서 클릭(또는 ←/→)으로 단계 진행됩니다. 캔버스의 번호는 진행 순서입니다.</p>
           }
+        </>
+      )}
+
+      <LoopSection el={el} />
+    </div>
+  )
+}
+
+// 반복(강조) 효과 — 등장/퇴장과 별개(el.loopAnim). 발표·미리보기에서 요소가 보이는 동안 계속 반복.
+const LOOP_STARTS_UI = [['afterEnter', '등장 후'], ['withEnter', '등장과 함께']]
+function LoopSection({ el }) {
+  const loop = el.loopAnim || null
+  const effect = loop?.effect || 'none'
+  const setLoop = (loopAnim) => useFlatStore.getState().updateFlatElement(el.id, { loopAnim })
+  const patch = (changes) => setLoop({ ...loop, ...changes })
+  const hasEnter = isEntrance(el.anim?.effect)
+  return (
+    <div className="pt-3 border-t border-white/10 space-y-3">
+      <div>
+        <p className={`${labelClass} mb-0.5`}>반복 효과</p>
+        <select value={effect} className={selectClass} style={selectStyle}
+          onChange={e => setLoop(e.target.value === 'none' ? undefined : makeLoopAnim(e.target.value, loop))}>
+          <option value="none">없음</option>
+          {LOOP_EFFECTS.map(e => <option key={e.id} value={e.id}>{e.label}</option>)}
+        </select>
+      </div>
+      {loop && (
+        <>
+          <div className="grid grid-cols-2 gap-1.5">
+            <NumInput label="주기" unit="ms" min={200} max={30000} step={100}
+              value={loop.periodMs || 1000} onChange={v => patch({ periodMs: v })} />
+            <NumInput label="세기" unit="%" min={25} max={300} step={5}
+              value={Math.round((loop.intensity ?? 1) * 100)} onChange={v => patch({ intensity: v / 100 })} />
+            <NumInput label="시차" unit="ms" min={0} max={30000} step={50}
+              value={loop.phaseMs || 0} onChange={v => patch({ phaseMs: v })} />
+            <NumInput label="횟수" unit={loop.repeat > 0 ? '회' : '∞'} min={0} max={99} step={1}
+              value={loop.repeat || 0} onChange={v => patch({ repeat: Math.round(v) })} />
+          </div>
+          {hasEnter && (
+            <div>
+              <p className={`${labelClass} mb-0.5`}>반복 시작</p>
+              <div className="grid grid-cols-2 gap-1">
+                {LOOP_STARTS_UI.map(([m, label]) => (
+                  <button key={m} onClick={() => patch({ start: m })}
+                    className={`text-xs py-1 rounded border transition-colors ${
+                      (loop.start || 'afterEnter') === m ? 'bg-amber-500/20 text-amber-300 border-amber-500/30'
+                        : 'bg-white/5 text-slate-400 border-white/10 hover:bg-white/10'}`}
+                  >{label}</button>
+                ))}
+              </div>
+            </div>
+          )}
+          <p className="text-[10px] text-slate-600">
+            발표 중 요소가 보이는 동안 반복됩니다(횟수 0 = 무한). 시차로 여러 요소의 박자를 엇갈리게 할 수 있습니다.
+            {loop.effect === 'shimmer' && ' 반짝 스윕은 배경이 있는 요소에 잘 보입니다(PPT 내보내기에는 대응 효과가 없어 빠집니다).'}
+          </p>
         </>
       )}
     </div>

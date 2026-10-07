@@ -2,7 +2,7 @@
  * PptExporter — PPTX 내보내기 (pptxgenjs, lazy import)
  */
 import { htmlToTextRuns, cssColorToHex, applyTextTransform } from './HtmlToTextRuns'
-import { animObjectName, applyMotionToPptx } from './PptMotion'
+import { animObjectName, applyMotionToPptx, isPptLoop } from './PptMotion'
 import { BlobStore } from './BlobStore'
 import { parseGradient } from './GradientParser'
 import { cssColorToRgba } from './CssColor'
@@ -82,10 +82,11 @@ export async function exportToPptx(pages, defaultCanvasSize, { editorVersion = '
 
   // pptxgenjs에는 애니메이션 API가 없다 — 모션이 있는 덱만 파일을 받아 전환·등장 XML을
   // 끼워 넣고 내려준다. 모션이 없으면 예전 경로(writeFile) 그대로 — 후처리 비용 0.
-  const ordered = sortedKeys.map(k => pages[k])
+  // 반복 효과의 이동 경로는 슬라이드(=덱 레이아웃 cs) 크기 대비 비율이라 그 크기를 같이 넘긴다
+  const ordered = sortedKeys.map(k => ({ ...pages[k], canvasSize: cs }))
   const hasMotion = ordered.some(p =>
     (p?.transition && p.transition.type && p.transition.type !== 'none') ||
-    (p?.elements || []).some(el => el?.anim?.effect && el.anim.effect !== 'none'))
+    (p?.elements || []).some(el => (el?.anim?.effect && el.anim.effect !== 'none') || isPptLoop(el)))
   const narration = embedNarration ? await collectNarration(ordered) : []
   if (!hasMotion && !narration.some(Boolean)) {
     await pptx.writeFile({ fileName: filename })
@@ -126,7 +127,7 @@ function downloadBlob(blob, filename) {
 }
 
 /**
- * anim이 붙은 요소가 만드는 모든 도형에 같은 이름표를 달아주는 얇은 래퍼.
+ * anim(등장/퇴장)이나 반복 효과가 붙은 요소가 만드는 모든 도형에 같은 이름표를 달아주는 얇은 래퍼.
  * PptMotion이 이 이름으로 spid를 찾아 타이밍을 건다. 요소 하나가 도형 여럿을
  * 낳아도(그라데이션 래스터 + 텍스트 상자) 전부 잡히도록 매 호출에 붙인다.
  */
@@ -143,7 +144,7 @@ function tagged(slide, name) {
 }
 
 async function addElementToSlide(rawSlide, el, canvasSize) {
-  const slide = el.anim?.effect ? tagged(rawSlide, animObjectName(el.id)) : rawSlide
+  const slide = el.anim?.effect || isPptLoop(el) ? tagged(rawSlide, animObjectName(el.id)) : rawSlide
   const x = el.x * PX_TO_INCH
   const y = el.y * PX_TO_INCH
   let w = el.width * PX_TO_INCH

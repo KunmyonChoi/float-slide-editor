@@ -2,7 +2,8 @@ import { useMemo } from 'react'
 import FlatElementRenderer from './FlatElementRenderer'
 import PresenterInkOverlay from './PresenterInkOverlay'
 import KaraokeCaptions from './KaraokeCaptions'
-import { isHiddenAt, animationCss, directionVars } from '../core/slideAnimation'
+import LoopLayer from './LoopLayer'
+import { isHiddenAt, animationCss, directionVars, hasLoop, loopStartMs } from '../core/slideAnimation'
 import { slideTransitionCss, slideTransitionVars } from '../core/slideTransition'
 
 /**
@@ -72,8 +73,25 @@ export default function PresentedSlide({
                 animation: animationCss(el.anim, animInfo.autoOffsets?.[el.id] ?? 0),
                 ...(directionVars(el.anim) || {}),
               }}>
-                <FlatElementRenderer element={{ ...el, x: 0, y: 0 }} isSelected={false}
-                  isEditing={false} scale={scale} canvasSize={canvasSize} playNow={true} />
+                <LoopLayer el={el} startMs={loopStartMs(animInfo, el)}>
+                  <FlatElementRenderer element={{ ...el, x: 0, y: 0 }} isSelected={false}
+                    isEditing={false} scale={scale} canvasSize={canvasSize} playNow={true} />
+                </LoopLayer>
+              </div>
+            )
+          }
+
+          // 등장/퇴장 없이 반복 효과만 — 위치 래퍼 + 반복 래퍼, 슬라이드 진입부터 반복
+          if (step == null && hasLoop(el)) {
+            return (
+              <div key={el.id} style={{
+                position: 'absolute', left: el.x, top: el.y, width: el.width, height: el.height,
+                zIndex: el.zIndex,
+              }}>
+                <LoopLayer el={el} startMs={loopStartMs(animInfo, el)}>
+                  <FlatElementRenderer element={{ ...el, x: 0, y: 0 }} isSelected={false}
+                    isEditing={false} scale={scale} canvasSize={canvasSize} playNow={true} />
+                </LoopLayer>
               </div>
             )
           }
@@ -95,8 +113,11 @@ export default function PresentedSlide({
               animation: playing ? animationCss(el.anim, animInfo.offsetOf[el.id]) : undefined,
               ...(playing ? (directionVars(el.anim) || {}) : {}),
             }}>
-              <FlatElementRenderer element={{ ...el, x: 0, y: 0 }} isSelected={false}
-                isEditing={false} scale={scale} canvasSize={canvasSize} playNow={true} />
+              {/* 보이는 동안만 반복 — 단계가 드러나는 순간 시작하고, 되돌아가 숨으면 멈춘다 */}
+              <LoopLayer el={el} startMs={loopStartMs(animInfo, el)} active={!showHidden}>
+                <FlatElementRenderer element={{ ...el, x: 0, y: 0 }} isSelected={false}
+                  isEditing={false} scale={scale} canvasSize={canvasSize} playNow={true} />
+              </LoopLayer>
             </div>
           )
         })}

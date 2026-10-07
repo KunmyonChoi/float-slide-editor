@@ -9,7 +9,7 @@
  * 3. 빈 요소 제외 — 시각 속성(배경/테두리/그림자)도 없고 텍스트도 없는 요소 스킵
  */
 
-import { parseAnimAttrs, parseTransitionAttrs, readSlideNotes, resolveAnimSpecs } from './deckMotion.js'
+import { parseAnimAttrs, parseLoopAttrs, parseTransitionAttrs, readSlideNotes, resolveAnimSpecs } from './deckMotion.js'
 import { stripSvgSelfPositioning } from './svgContent.js'
 import { normFractions, MAX_ROWS, MAX_COLS, TABLE_BORDER_COLOR } from './slideTable.js'
 import { DEFAULT_VIZ } from './audioViz.js'
@@ -42,7 +42,17 @@ function setupAnimContext(slideRoot) {
     specs.push(spec)
     if (spec.name && !byName.has(spec.name)) byName.set(spec.name, idx)
   }
-  _animCtx = hosts.length ? { hosts, specs, byName } : null
+  // 반복 효과 호스트는 따로 모은다 — 등장 호스트 안쪽 아이콘에만 반복을 다는 식으로 둘이 겹쳐도
+  // 각자 가장 가까운 호스트를 찾는다. 참조가 없으므로 스펙만 있으면 된다.
+  const loopHosts = []
+  const loopSpecs = []
+  for (const node of slideRoot?.querySelectorAll?.('[data-anim-loop]') || []) {
+    const spec = parseLoopAttrs(node)
+    if (!spec) continue
+    loopHosts.push(node)
+    loopSpecs.push(spec)
+  }
+  _animCtx = hosts.length || loopHosts.length ? { hosts, specs, byName, loopHosts, loopSpecs } : null
 }
 
 /** 이 DOM 요소를 덮는 가장 가까운 `[data-anim]` 호스트의 인덱스(없으면 -1). */
@@ -53,10 +63,18 @@ function animIdxFor(el) {
   return _animCtx.hosts.indexOf(host)
 }
 
-/** 요소 리터럴에 펼쳐 넣는 `_animIdx` 필드(해당 없으면 빈 객체). */
+/** 이 DOM 요소를 덮는 가장 가까운 `[data-anim-loop]` 호스트의 인덱스(없으면 -1). */
+function loopIdxFor(el) {
+  if (!_animCtx?.loopHosts.length || typeof el?.closest !== 'function') return -1
+  const host = el.closest('[data-anim-loop]')
+  return host ? _animCtx.loopHosts.indexOf(host) : -1
+}
+
+/** 요소 리터럴에 펼쳐 넣는 `_animIdx`/`_loopIdx` 필드(해당 없으면 빈 객체). */
 function animField(el) {
   const i = animIdxFor(el)
-  return i >= 0 ? { _animIdx: i } : {}
+  const j = loopIdxFor(el)
+  return { ...(i >= 0 ? { _animIdx: i } : {}), ...(j >= 0 ? { _loopIdx: j } : {}) }
 }
 
 /**
@@ -79,8 +97,14 @@ function visibleTextContent(el) {
   return out
 }
 
-/** 후처리 — _animIdx가 붙은 flat 요소에 el.anim을 확정한다(해소 규칙은 deckMotion). */
+/** 후처리 — _animIdx/_loopIdx가 붙은 flat 요소에 el.anim/el.loopAnim을 확정한다(해소 규칙은 deckMotion). */
 function applyAnimSpecs(elements) {
+  for (const el of elements) {
+    const j = el._loopIdx
+    delete el._loopIdx
+    const spec = j != null ? _animCtx?.loopSpecs[j] : null
+    if (spec) el.loopAnim = { ...spec }
+  }
   if (!_animCtx) {
     for (const el of elements) delete el._animIdx
     return
@@ -1202,7 +1226,6 @@ function buildFlatElement(el, rect, cs, domOrder, forceType, transformScale = 1,
     elemY = cy - height / 2
   }
 
-  const animIdx = animIdxFor(el)
   const result = {
     id: nextFlatId(),
     sourceId: el.getAttribute('data-editor-id'),
@@ -1213,7 +1236,7 @@ function buildFlatElement(el, rect, cs, domOrder, forceType, transformScale = 1,
     height,
     rotation,
     zIndex: 0, // 후처리에서 재할당
-    ...(animIdx >= 0 ? { _animIdx: animIdx } : {}),
+    ...animField(el),
     _domOrder: domOrder,
     _originalZIndex: effectiveZIndex,
     content,
@@ -2555,11 +2578,13 @@ export function extractFlatElements(doc, win, existingMaxId = 0) {
     if (el._pseudoBefore) {
       const pe = pseudoToFlatElement(el._pseudoBefore, el.sourceId, 'before', el._domOrder - 0.5, el._originalZIndex)
       if (el._animIdx != null) pe._animIdx = el._animIdx   // 불릿/장식도 본체와 같은 단계로
+      if (el._loopIdx != null) pe._loopIdx = el._loopIdx
       pseudoElements.push(pe)
     }
     if (el._pseudoAfter) {
       const pe = pseudoToFlatElement(el._pseudoAfter, el.sourceId, 'after', el._domOrder + 0.5, el._originalZIndex)
       if (el._animIdx != null) pe._animIdx = el._animIdx
+      if (el._loopIdx != null) pe._loopIdx = el._loopIdx
       pseudoElements.push(pe)
     }
     delete el._pseudoBefore

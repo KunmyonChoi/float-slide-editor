@@ -42,6 +42,8 @@ def _public_el_to_internal(pel: dict) -> dict:
             out['fillColor'] = pel.get('fillColor')
     if pel.get('anim'):  # 등장 모션 → PPT timing
         out['anim'] = pel['anim']
+    if pel.get('loopAnim'):  # 반복(강조) 효과 → PPT 강조 timing
+        out['loopAnim'] = pel['loopAnim']
     for k in ('points', 'link'):
         if pel.get(k) is not None:
             out[k] = pel[k]

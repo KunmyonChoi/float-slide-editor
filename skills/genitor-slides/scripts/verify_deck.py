@@ -22,6 +22,7 @@ Genitor로 가져가야 어긋난 게 보이므로 특히 중요하다.
                  너무 길게 끄는 단계, 재생시간을 한 번도 안 준 덱.
   ANIM-REF       with/after가 가리킬 이름이 없거나 같은 슬라이드에 그 이름이 없음,
                  뒤에 선언된 앵커를 가리키는 참조.
+  LOOP           알 수 없는 반복 효과(data-anim-loop)/시작값.
   NOTES          .fe-notes에 type="text/plain"이 없거나, 한 슬라이드에 둘 이상.
   (경고)         노트 없는 슬라이드, click 단계 과다, 중첩된 data-anim 등.
 
@@ -230,6 +231,41 @@ CHECK_JS = """
       }
       specs.push({ h, at, eff, trig, ref, dur, delay, node: h, desc });
       if (h.getAttribute('data-anim-duration')) deckUsesDuration = true;
+    }
+
+    // ── 반복 효과 ──
+    const LOOPS = ['pulse', 'breathe', 'float', 'spin', 'wiggle', 'blink', 'shimmer'];
+    const loopHosts = [...slide.querySelectorAll('[data-anim-loop]')];
+    for (const h of loopHosts) {
+      const at = `${S} <${h.tagName.toLowerCase()}> "${(h.textContent || '').trim().slice(0, 20)}"`;
+      const eff = (h.getAttribute('data-anim-loop') || '').trim();
+      if (!LOOPS.includes(eff)) {
+        problems.push(`${at} LOOP 알 수 없는 반복 효과 "${eff}" — 무시되어 반복이 사라진다`);
+        continue;
+      }
+      const st = (h.getAttribute('data-anim-loop-start') || '').trim();
+      if (st && st !== 'afterEnter' && st !== 'withEnter') {
+        problems.push(`${at} LOOP 알 수 없는 시작 "${st}" (afterEnter로 폴백)`);
+      }
+      // 조각으로 나뉘는 건 '직계 자식 여부'가 아니라 안에 상자·그림 자식이 있는지로 갈린다
+      // (등장 카드 안쪽 아이콘에 다는 건 정상 — 아이콘 하나만 반복된다).
+      const splits = [...h.querySelectorAll('*')].some(c => {
+        if (c.closest('.fe-notes')) return false;
+        const t = c.tagName;
+        if (t === 'IMG' || t === 'svg' || t === 'SVG' || t === 'CANVAS' || t === 'VIDEO') return true;
+        const d = getComputedStyle(c).display;
+        return d !== 'inline' && d !== 'contents' && d !== 'none';
+      });
+      if (splits) {
+        warnings.push(`${at} LOOP 안에 상자/그림 자식이 있음 — 조각들이 각자 제 중심으로 따로 움직인다`);
+      }
+      const r = h.getBoundingClientRect();
+      if (r.width >= CW * 0.95 && r.height >= CH * 0.95) {
+        warnings.push(`${at} LOOP 풀캔버스 요소에 반복 효과 — 화면 전체가 흔들린다`);
+      }
+    }
+    if (loopHosts.length > 6) {
+      warnings.push(`${S} LOOP 반복 효과 ${loopHosts.length}개 — 한 화면에 계속 움직이는 요소가 많으면 시선이 흩어진다`);
     }
 
     // ── 단계 계산 (Genitor의 computeSteps와 같은 규칙) ──
