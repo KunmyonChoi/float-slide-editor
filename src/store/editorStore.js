@@ -383,8 +383,12 @@ export const useEditorStore = create((set, get) => ({
 
   /** 편집 모드 복귀 */
   exitPresentation() {
-    const { iframeRef, presentSessionId } = get()
+    const { iframeRef, presentSessionId, videoRecording } = get()
     set({ mode: 'edit' })
+    // 녹화 중 발표가 다른 경로로 닫혀도 녹화기가 알아채고 정리하도록 정지를 요청해 둔다.
+    if (videoRecording && videoRecording.phase !== 'stopping') {
+      set({ videoRecording: { ...videoRecording, phase: 'stopping' } })
+    }
 
     // 청중 창에 종료를 알린다(스스로 닫는다). 한 번만, 여기서만 보낸다 —
     // 컴포넌트 정리에서 보내면 리마운트마다 청중 창이 닫혀버린다.
@@ -408,6 +412,46 @@ export const useEditorStore = create((set, get) => ({
       iframeRef?.current?.blur?.()
       window.focus()
     } catch { /* 무시 */ }
+  },
+
+  /**
+   * 영상 내보내기(녹화) 진행 상태 — null이면 녹화 중이 아니다.
+   *   phase: 'preparing'(발표 화면 준비·녹화 시작 전) → 'playing'(덱 재생) →
+   *          'finished'(마지막 장까지 끝남) | 'stopping'(정지 버튼·Esc·공유 종료)
+   *   startedAt: 녹화(MediaRecorder)를 시작한 시각(ms) — REC 표시의 경과 시간 기준
+   *   noAudio: 탭 오디오 없이 영상만 담는 중
+   * 발표 엔진은 이 값이 있으면 '녹화 모드'로 돈다(자동 진행 강제·루프 없음·클릭 장은 시간 기본값).
+   */
+  videoRecording: null,
+
+  /** 녹화용 발표 진입 — 전체화면·발표자 창 없이 단일 화면(FlatPresenter)으로. */
+  beginVideoRecording({ startIndex = 0, noAudio = false } = {}) {
+    const { iframeRef } = get()
+    set({
+      selectedId: null, mode: 'present', presentStartIndex: startIndex,
+      screenPicker: null, presenterActive: false,
+      audienceScreen: null, audiencePopupBlocked: false, presentSessionId: null,
+      videoRecording: { phase: 'preparing', startIndex, startedAt: 0, noAudio: !!noAudio },
+    })
+    iframeRef?.current?.contentWindow?.postMessage({ type: 'fe:setMode', mode: 'present' }, '*')
+  },
+
+  /** 녹화 상태 일부 갱신(녹화 중일 때만) */
+  updateVideoRecording(patch) {
+    const cur = get().videoRecording
+    if (cur) set({ videoRecording: { ...cur, ...patch } })
+  },
+
+  /** 녹화 중 사용자가 멈춤(정지 버튼·Esc) — 녹화기가 지금까지 담은 것을 저장하고 끝낸다. */
+  requestStopVideoRecording() {
+    const cur = get().videoRecording
+    if (cur && cur.phase !== 'stopping') set({ videoRecording: { ...cur, phase: 'stopping' } })
+  },
+
+  /** 녹화 정리 — 상태를 비우고 발표에서 나온다. */
+  endVideoRecording() {
+    set({ videoRecording: null })
+    if (get().mode === 'present') get().exitPresentation()
   },
 
   // ── DOM 읽기 헬퍼 (Phase 3) ────────────────────────────────
