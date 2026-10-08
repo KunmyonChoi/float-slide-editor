@@ -11,6 +11,7 @@
   WRAP           선언한 <br> 수보다 실제 렌더된 줄이 많은 요소(의도치 않은 줄바꿈).
   OVERFLOW       내용 높이가 지정 height를 넘는 요소.
   OUTSIDE        캔버스 밖으로 나간 요소.
+  SAFE (경고)    9:16 세로 캔버스에서 쇼츠·릴스·틱톡 UI가 덮는 띠(위 220·아래 420·오른쪽 140px)에 놓인 글자.
   PAD            상자(배경·테두리) 위에 얹힌 글자가 상자를 넘거나 여백이 좁은 것.
                  카드와 글자는 절대 위치 형제라 서로를 모른다 — 위 검사들은 전부 통과하면서
                  글자가 상자를 뚫고 나갈 수 있다(선언 산수가 어긋난 채 나온 실제 사례).
@@ -36,6 +37,7 @@ with/after도 각자 클릭 단계가 되므로, 속성만 세면 "4단계"인 �
   python3 verify_deck.py deck.html
   python3 verify_deck.py deck.html --shots out/     # 슬라이드 PNG + 컨택트시트
   python3 verify_deck.py deck.html --size 1280x720  # 캔버스가 1920x1080이 아닐 때
+  python3 verify_deck.py deck.html --size 1080x1920 # 세로 9:16(쇼츠·릴스·틱톡) — SAFE 검사 포함
 
 준비(최초 1회):
   pip install playwright --break-system-packages && playwright install chromium
@@ -105,6 +107,19 @@ CHECK_JS = """
           `${at} OUTSIDE ${Math.round(box.width)}x${Math.round(box.height)} ` +
           `(캔버스 ${CW}x${CH}) :: ${label}`
         );
+      }
+
+      // 9:16 숏폼(쇼츠·릴스·틱톡)은 위 채널/검색 UI, 아래 캡션·음악 표시, 오른쪽 버튼 열이
+      // 화면을 덮는다. 글자가 그 띠에 걸리면 경고(배경·사진·장식은 덮여도 괜찮다).
+      if (text && CH / CW > 1.7) {
+        const SAFE = { top: CH * 220 / 1920, bottom: CH - CH * 420 / 1920, right: CW - CW * 140 / 1080 };
+        const hits = [];
+        if (box.top < SAFE.top) hits.push('위 220');
+        if (box.bottom > SAFE.bottom) hits.push('아래 420');
+        if (box.right > SAFE.right) hits.push('오른쪽 140');
+        if (hits.length) {
+          warnings.push(`${at} SAFE 9:16 플랫폼 UI가 덮는 띠(${hits.join('·')})에 글자 :: ${label}`);
+        }
       }
     }
 

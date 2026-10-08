@@ -7,7 +7,8 @@ description: >-
   user wants to draft slides in Claude (Design / Code / Web) and then continue
   editing or presenting them in Genitor — e.g. "make a 5-slide deck I can edit
   in Genitor", "export these slides as Genitor HTML", "add speaker notes and
-  build animations". Output extracts cleanly into editable text/shape/image
+  build animations", or vertical 9:16 / 4:5 / 1:1 decks for YouTube Shorts,
+  Instagram Reels and feed, and TikTok. Output extracts cleanly into editable text/shape/image
   elements because the markup mirrors Genitor's own HTML export; notes ride in
   a per-slide script block with class fe-notes, and motion in data-anim
   attributes.
@@ -55,9 +56,44 @@ Genitor(float-editor)는 HTML을 받아 **편집 가능한 flat 요소(text·sha
 따라서 출력은 **항상 단일 자립형(self-contained) `.html` 문서**여야 한다(외부 JS 의존 금지,
 폰트만 CDN `<link>` 허용).
 
+## 타겟 화면 (가장 먼저 정한다)
+
+덱이 보일 화면부터 정한다 — 캔버스 크기가 레이아웃·글자 크기·이미지 구도를 모두 바꾼다.
+
+| 타겟 | 캔버스 | 요청에 이런 말이 있으면 |
+|---|---|---|
+| 가로 16:9 — 발표·유튜브 영상 | **1920×1080** (기본) | 발표, 프레젠테이션, PPT, 강의, 유튜브 |
+| 세로 9:16 — 쇼츠·릴스·틱톡·스토리 | **1080×1920** | 쇼츠, Shorts, 릴스, Reels, 틱톡, TikTok, 스토리, 세로, 모바일 전체화면 |
+| 세로 4:5 — 인스타그램 피드 | **1080×1350** | 인스타 피드, 캐러셀, 4:5 |
+| 정사각 1:1 | **1080×1080** | 정사각, 1:1, 카드뉴스(정사각) |
+
+- 요청에 위 단서가 있으면 그 크기로 바로 만든다. 단서가 **없으면 만들기 전에 한 번 묻는다** —
+  선택지 도구가 있으면(Claude Code의 AskUserQuestion 등) 위 네 가지를 선택지로, 없으면 한 줄로
+  "어디에 쓰실 건가요? ① 발표(16:9) ② 쇼츠·릴스·틱톡(9:16) ③ 인스타 피드(4:5) ④ 정사각(1:1)".
+  답을 기다릴 수 없는 환경(자동 실행 등)이면 16:9로 만들고 그렇게 했다고 밝힌다.
+- 한 덱은 한 크기만 쓴다. 같은 내용을 여러 화면용으로 달라고 하면 덱을 따로 만든다(좌표를
+  비율로 늘리지 말고 그 화면에 맞게 **다시 배치**한다).
+- Genitor는 `<body>` 크기로 캔버스를 자동 감지한다(세로도 그대로). 사용자가 Genitor에서 새로
+  시작할 때도 파일 ▸ 새 프로젝트에서 같은 네 가지 타겟을 고를 수 있다.
+
+### 세로(9:16 · 4:5 · 1:1) 레이아웃 규칙
+
+- **한 장 = 한 메시지.** 가로처럼 좌우 2단으로 나누지 말고 위→아래로 쌓는다(이미지 → 제목 →
+  본문/버튼). 폭이 1080이라 한 줄 글자 수가 가로의 절반쯤이다.
+- 글자는 휴대폰에서 읽힐 크기로: 제목 **72~120px**, 본문 **40~52px**, 작은 글씨도 **32px 이상**.
+  좌우 여백 **64~80px**(본문 폭 ≈ 920~950px).
+- **9:16 안전 영역** — 쇼츠·릴스·틱톡은 위에 채널/검색 UI, 아래에 캡션·음악 표시, 오른쪽에
+  좋아요·댓글 버튼을 덮어 그린다. 글자와 핵심 요소는 **위 220px · 아래 420px · 오른쪽 140px**을
+  피해 둔다(대략 x 64~940, y 220~1500). 배경·사진·장식은 전체를 채워도 된다.
+- 4:5·1:1은 피드 안에서 덮는 UI가 없으므로 사방 여백 64px만 지킨다.
+- 이미지를 생성·고를 때도 세로 구도로(주제는 위쪽, 글자가 놓일 아래쪽은 단순하게).
+- 검증은 `--size`로 같은 크기를 준다: `verify_deck.py deck.html --size 1080x1920`. 9:16이면 안전
+  영역 밖에 놓인 글자를 **SAFE** 경고로 알려준다.
+
 ## 정본 스캐폴드 (이 골격을 그대로 사용)
 
-- 캔버스 기본값 **1920×1080**(FHD, 16:9). `<body>`와 각 `.slide`의 width/height를 동일하게.
+- 캔버스 기본값 **1920×1080**(FHD, 16:9) — 세로·정사각은 "타겟 화면" 표의 크기.
+  `<body>`와 각 `.slide`의 width/height를 동일하게.
 - 슬라이드마다 `<div class="slide">`, **첫 장만 `active`**.
 - 요소는 모두 `.slide` 안에서 `position:absolute; left/top/width/height(px)`.
 - `box-sizing:border-box` 전역 적용(스캐폴드에 포함).
@@ -105,8 +141,9 @@ body { width: 1920px; height: 1080px; overflow: hidden; position: relative; back
 > Genitor가 각 장을 페이지로 인식한다. 굳이 미리보기 네비를 넣고 싶다면 `position:fixed` +
 > `onclick` 요소로 — 그런 요소는 추출 시 자동 제외되므로 슬라이드 내용에 섞이지 않는다.
 >
-> 캔버스는 16:9이기만 하면 다른 크기(예: 1280×720)도 되지만, **한 덱 안에선 body·slide·요소
-> 좌표를 하나의 기준으로 통일**한다. 기본은 1920×1080을 권장.
+> 캔버스는 "타겟 화면" 표의 크기 중 하나로(16:9는 1280×720 같은 다른 크기도 된다), **한 덱
+> 안에선 body·slide·요소 좌표를 하나의 기준으로 통일**한다. 세로 덱이면 위 예시의
+> 1920/1080을 1080/1920으로 바꿔 쓴다.
 
 ## 스타일 다양성 (단조로움 방지) — 중요
 
@@ -538,8 +575,8 @@ Genitor에서 아래 요소를 고르기 어렵다. `viewBox`로 캔버스 좌�
 
 ## 좌표·배치 규칙
 
-- 캔버스는 **1920×1080** 기준(16:9면 다른 크기도 가능, 단 body·slide·요소를 한 기준으로 통일).
-- 안전 여백 ~120px. 요소끼리 겹치지 않게, px로 직접 레이아웃(그리드를 머릿속으로 계산).
+- 캔버스는 "타겟 화면"에서 정한 크기(기본 **1920×1080**). body·slide·요소를 한 기준으로 통일.
+- 안전 여백 ~120px(가로). 세로·정사각은 "세로 레이아웃 규칙"의 여백·안전 영역을 따른다. 요소끼리 겹치지 않게, px로 직접 레이아웃(그리드를 머릿속으로 계산).
 **상자 안 글자에는 여백을 남긴다 (좌표 산수를 검산할 것)**
 
 카드(도형)와 그 위의 글자는 부모-자식이 아니라 **절대 위치 형제**다. 브라우저가 대신 맞춰 주지
@@ -608,6 +645,7 @@ Genitor에서 아래 요소를 고르기 어렵다. `viewBox`로 캔버스 좌�
 2. **WRAP** — 선언한 `<br>` 수보다 실제 렌더된 줄 수가 많은 요소(의도치 않은 줄바꿈)
 3. **OVERFLOW** — `scrollHeight`가 지정 height를 넘는 요소
 4. **OUTSIDE** — 캔버스(기본 1920×1080, 다른 크기는 `--size`로 지정) 밖으로 나간 요소
+   (9:16이면 쇼츠·릴스·틱톡 UI가 덮는 띠에 놓인 글자를 **SAFE** 경고로 함께 알려준다)
 
 노트·모션 규약도 함께 검사한다 — 이쪽은 조용히 어긋나므로(가져가 봐야 안다) 특히 중요하다:
 
@@ -623,6 +661,7 @@ Genitor에서 아래 요소를 고르기 어렵다. `viewBox`로 캔버스 좌�
 pip install playwright --break-system-packages && playwright install chromium   # 최초 1회
 python3 scripts/verify_deck.py deck.html                # 문제 목록 출력, 없으면 "OK" (기본 1920x1080)
 python3 scripts/verify_deck.py deck.html --size 1280x720   # 캔버스가 1920x1080이 아닐 때
+python3 scripts/verify_deck.py deck.html --size 1080x1920  # 세로 9:16 — 안전 영역(SAFE)도 검사
 python3 scripts/verify_deck.py deck.html --shots out/      # 슬라이드별 PNG + 컨택트시트
 ```
 

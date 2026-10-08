@@ -17,6 +17,22 @@ export const CANVAS_PRESETS = [
   { id: '1920x1080', label: '1920 × 1080', w: 1920, h: 1080,  ratio: '16 : 9  FHD  (기본)' },
   { id: '1920x1200', label: '1920 × 1200', w: 1920, h: 1200,  ratio: '16 : 10  WUXGA' },
   { id: '2560x1440', label: '2560 × 1440', w: 2560, h: 1440,  ratio: '16 : 9  QHD' },
+  // ── 세로·소셜 (모바일 피드/숏폼) ─────────────────────────────
+  { id: '1080x1920', label: '1080 × 1920', w: 1080, h: 1920,  ratio: '9 : 16  쇼츠·릴스·틱톡', group: 'social' },
+  { id: '720x1280',  label: '720 × 1280',  w: 720,  h: 1280,  ratio: '9 : 16', group: 'social' },
+  { id: '1080x1350', label: '1080 × 1350', w: 1080, h: 1350,  ratio: '4 : 5  인스타 피드', group: 'social' },
+  { id: '1080x1080', label: '1080 × 1080', w: 1080, h: 1080,  ratio: '1 : 1  정사각', group: 'social' },
+]
+
+/**
+ * 새 프로젝트를 시작할 때 고르는 타겟 화면 — 용도별 대표 해상도.
+ * (genitor-slides 스킬의 "타겟 화면" 선택지와 같은 목록)
+ */
+export const CANVAS_TARGETS = [
+  { id: 'landscape', label: '가로 16:9 — 발표·유튜브', w: 1920, h: 1080 },
+  { id: 'vertical', label: '세로 9:16 — 쇼츠·릴스·틱톡', w: 1080, h: 1920 },
+  { id: 'portrait', label: '세로 4:5 — 인스타그램 피드', w: 1080, h: 1350 },
+  { id: 'square', label: '정사각 1:1', w: 1080, h: 1080 },
 ]
 
 /**
@@ -108,7 +124,7 @@ export default function CanvasSizeSelector() {
       <AnchoredMenu anchorRef={ref} open={open}>
         <div
           style={{
-            width: 232,
+            width: 248,
             background: 'rgba(15,23,42,0.97)',
             backdropFilter: 'blur(16px)',
             border: '1px solid rgba(255,255,255,0.1)',
@@ -119,13 +135,19 @@ export default function CanvasSizeSelector() {
         >
           {/* 프리셋 목록 */}
           <div style={{ padding: '6px 6px 0' }}>
-            {CANVAS_PRESETS.map(preset => {
+            {CANVAS_PRESETS.map((preset, i) => {
               const isActive = preset.id === 'auto'
                 ? canvasSize === null
                 : canvasSize?.w === preset.w && canvasSize?.h === preset.h
+              const groupStart = preset.group && CANVAS_PRESETS[i - 1]?.group !== preset.group
               return (
+                <div key={preset.id}>
+                {groupStart && (
+                  <p style={{ fontSize: 11, color: '#475569', margin: '8px 10px 4px', paddingTop: 6, borderTop: '1px solid rgba(255,255,255,0.07)' }}>
+                    세로 · 소셜
+                  </p>
+                )}
                 <button
-                  key={preset.id}
                   onClick={() => selectPreset(preset)}
                   style={{
                     display: 'flex', alignItems: 'center', justifyContent: 'space-between',
@@ -145,6 +167,7 @@ export default function CanvasSizeSelector() {
                     {preset.ratio ?? ''}
                   </span>
                 </button>
+                </div>
               )
             })}
           </div>

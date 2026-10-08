@@ -12,6 +12,7 @@ import { confirmDialog } from './ConfirmDialog'
 import { isBundlerHtml } from '../core/BundlerUnpacker'
 import { attachLocalMedia } from '../core/localMedia'
 import { usePwaInstall } from '../core/pwaInstall'
+import { CANVAS_TARGETS } from './CanvasSizeSelector'
 
 // .flatproj는 실제로 ZIP 패키지 → MIME을 application/zip으로 맞춰야 OS 열기 패널에서
 // 콘텐츠 타입 매칭으로 회색(선택 불가) 처리되지 않는다.
@@ -148,8 +149,8 @@ export default function FileMenu({ fallbackSample }) {
     loadHtml(fallbackSample, { imported: true })
   }, [clearPageCache, loadHtml, fallbackSample])
 
-  // 새 프로젝트 — 현재 작업을 비우고 빈 슬라이드로 시작
-  const handleNewProject = useCallback(async () => {
+  // 새 프로젝트 — 현재 작업을 비우고 고른 타겟 화면 크기의 빈 슬라이드로 시작
+  const handleNewProject = useCallback(async (target) => {
     setOpen(false)
     if (hasContent) {
       const ok = await confirmDialog({
@@ -165,7 +166,9 @@ export default function FileMenu({ fallbackSample }) {
     // 즉시 보이도록 startScratchProject를 직접 호출한다(빈 덱 HTML 추출 트리거에 의존하지 않음).
     clearPageCache()
     useEditorStore.getState().resetDeck()
-    useFlatStore.getState().startScratchProject('title')
+    // 해상도 선택기도 그 크기로 고정(자동 감지면 빈 덱 재감지가 1920×1080으로 되돌릴 수 있다)
+    useEditorStore.getState().setCanvasSize(target ? { w: target.w, h: target.h } : null)
+    useFlatStore.getState().startScratchProject('title', target)
   }, [hasContent, clearPageCache])
 
   // 프로젝트 저장 — 기억된 파일이 있으면 같은 파일에 덮어쓰기, 없으면 저장 팝업(Ctrl+S와 동일)
@@ -365,7 +368,10 @@ export default function FileMenu({ fallbackSample }) {
   }, [])
 
   const ITEMS = [
-    { id: 'newProject', label: '새 프로젝트', action: handleNewProject },
+    { id: 'newProject', label: '새 프로젝트', submenu: 'newProject',
+      children: CANVAS_TARGETS.map(t => ({
+        id: 'new-' + t.id, label: t.label, shortcut: `${t.w}×${t.h}`, action: () => handleNewProject(t),
+      })) },
     { id: 'sepNew', type: 'separator' },
     { id: 'openProject', label: '프로젝트 열기', action: handleOpenProject },
     { id: 'recent', label: '최근 프로젝트', submenu: 'recent', disabled: recents.length === 0,

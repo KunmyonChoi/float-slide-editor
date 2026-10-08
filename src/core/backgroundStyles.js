@@ -61,12 +61,21 @@ export function getBackgroundStyle(id) {
   return BACKGROUND_STYLES.find(s => s.id === id) || BACKGROUND_STYLES[0]
 }
 
-/** AI 배경 생성 프롬프트 — 세이프존/무텍스트/16:9 공통 규칙 + 스타일 directive + 선택 주제 */
-export function buildBackgroundPrompt(style, extra) {
+/** 캔버스 비율 → 프롬프트의 화면 묘사(가로 16:9 발표 / 세로 9:16·4:5 모바일 / 정사각). */
+export function backgroundFrame(canvas) {
+  const r = (canvas?.w || 16) / (canvas?.h || 9)
+  if (r > 1.2) return 'A clean, modern 16:9 presentation slide background image.'
+  if (r < 0.7) return 'A clean, modern vertical 9:16 full-screen mobile background image (Shorts/Reels/TikTok), filling the whole frame edge to edge.'
+  if (r < 0.9) return 'A clean, modern vertical 4:5 social feed post background image, filling the whole frame edge to edge.'
+  return 'A clean, modern square 1:1 social post background image, filling the whole frame edge to edge.'
+}
+
+/** AI 배경 생성 프롬프트 — 세이프존/무텍스트/화면 비율 공통 규칙 + 스타일 directive + 선택 주제 */
+export function buildBackgroundPrompt(style, extra, canvas = null) {
   const dir = style?.directive || ''
   const subject = (extra || '').trim() ? ` Theme/subject to evoke: ${extra.trim()}.` : ''
   return [
-    'A clean, modern 16:9 presentation slide background image.',
+    backgroundFrame(canvas),
     dir + '.',
     subject,
     'Keep it subtle and low-contrast so overlaid title and body text remain readable;',

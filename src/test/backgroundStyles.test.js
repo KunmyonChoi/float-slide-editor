@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { BACKGROUND_STYLES, BACKGROUND_GROUPS, DEFAULT_BACKGROUND_STYLE_ID, getBackgroundStyle, buildBackgroundPrompt } from '../core/backgroundStyles'
+import { BACKGROUND_STYLES, BACKGROUND_GROUPS, DEFAULT_BACKGROUND_STYLE_ID, getBackgroundStyle, buildBackgroundPrompt, backgroundFrame } from '../core/backgroundStyles'
 
 describe('backgroundStyles', () => {
   it('17종, 고유 id + label/desc/directive + 유효한 group', () => {
@@ -38,5 +38,14 @@ describe('backgroundStyles', () => {
   it('주제 없으면 주제 절 생략', () => {
     const p = buildBackgroundPrompt(BACKGROUND_STYLES[0], '')
     expect(p).not.toContain('Theme/subject')
+  })
+
+  it('backgroundFrame: 캔버스 비율에 맞춘 화면 묘사(16:9·9:16·4:5·1:1)', () => {
+    expect(backgroundFrame(null)).toContain('16:9')
+    expect(backgroundFrame({ w: 1920, h: 1080 })).toContain('16:9')
+    expect(backgroundFrame({ w: 1080, h: 1920 })).toContain('vertical 9:16')
+    expect(backgroundFrame({ w: 1080, h: 1350 })).toContain('4:5')
+    expect(backgroundFrame({ w: 1080, h: 1080 })).toContain('1:1')
+    expect(buildBackgroundPrompt(BACKGROUND_STYLES[0], '', { w: 1080, h: 1920 })).toContain('vertical 9:16')
   })
 })

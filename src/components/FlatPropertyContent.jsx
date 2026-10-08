@@ -3055,10 +3055,12 @@ function AiBackgroundSection({ onApply }) {
   const generate = async () => {
     if (!hasApiKey()) { openAiSettings(); return }
     const style = BACKGROUND_STYLES.find(s => s.id === styleId)
-    const fullPrompt = buildBackgroundPrompt(style, prompt)
+    // 캔버스 비율대로 — 세로(9:16·4:5) 덱이면 세로 배경을 만든다
+    const cs = useFlatStore.getState().canvasSize || { w: 1280, h: 720 }
+    const fullPrompt = buildBackgroundPrompt(style, prompt, cs)
     setStatus('loading'); setError('')
     try {
-      const dataUrl = await generateImage(fullPrompt, { width: 1280, height: 720 })
+      const dataUrl = await generateImage(fullPrompt, { width: cs.w, height: cs.h })
       onApply(embedPngMetadata(dataUrl, {
         description: prompt || style?.label || '',
         prompt: fullPrompt,
@@ -3132,7 +3134,7 @@ function AiBackgroundSection({ onApply }) {
         }`}
       >{loading ? '생성 중…' : '✨ 배경 생성'}</button>
       {error && <p className="text-[10px] text-red-400">{error}</p>}
-      <p className="text-[9px] text-slate-600">한 장 생성(비용 발생). 텍스트 자리를 비운 16:9 배경입니다.</p>
+      <p className="text-[9px] text-slate-600">한 장 생성(비용 발생). 텍스트 자리를 비운, 캔버스 비율(가로·세로)에 맞춘 배경입니다.</p>
     </div>
   )
 }

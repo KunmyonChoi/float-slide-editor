@@ -181,7 +181,10 @@ function scaleFlatElements(elements, oldCs, newCs) {
   if (!oldCs?.w || !oldCs?.h) return elements
   const sx = newCs.w / oldCs.w
   const sy = newCs.h / oldCs.h
-  const sf = (sx + sy) / 2 // 글꼴/패딩 등: 가로·세로 평균
+  // 글꼴/패딩 등: 가로·세로 평균. 단 가로↔세로가 뒤집히면(16:9→9:16) 평균이 1보다 커져 글자는
+  // 커지는데 폭은 줄어 넘친다 — 그때는 줄어드는 쪽(min)에 맞춘다.
+  const flips = (oldCs.w >= oldCs.h) !== (newCs.w >= newCs.h)
+  const sf = flips ? Math.min(sx, sy) : (sx + sy) / 2
   const r = (v) => Math.round(v * 100) / 100
   return elements.map(el => {
     const out = { ...el, x: r(el.x * sx), y: r(el.y * sy), width: r(el.width * sx), height: r(el.height * sy) }
@@ -694,9 +697,9 @@ export const useFlatStore = create((set, get) => ({
   /** 새 프로젝트 시작 시, 첫 빈 페이지 추출 후 적용할 시작 레이아웃 예약 */
   setPendingStarterLayout(layoutId) { _pendingStarterLayout = layoutId },
 
-  /** iframe 없이 1페이지(시작 레이아웃) flat 프로젝트 생성 — 최초 빈 실행 시 사용 */
-  startScratchProject(layoutId = 'title') {
-    const cs = { w: 1920, h: 1080 }
+  /** iframe 없이 1페이지(시작 레이아웃) flat 프로젝트 생성 — 최초 빈 실행·새 프로젝트(타겟 화면 크기)에 사용 */
+  startScratchProject(layoutId = 'title', size = null) {
+    const cs = size?.w && size?.h ? { w: size.w, h: size.h } : { w: 1920, h: 1080 }
     const theme = get()._currentTheme()
     const layoutEls = _applyThemeRoles(_buildStarterLayout(layoutId, cs), theme)
     const elements = [_buildThemeBgElement(theme, cs), ...layoutEls] // 테마 배경 + 테마색 텍스트

@@ -14,7 +14,8 @@ const MUTED = '#64748b'
 export const CONTENT_ROLES = new Set(['body', 'left', 'right'])
 
 /**
- * 상대 좌표 텍스트 스펙 → px (size는 캔버스 높이 비율).
+ * 상대 좌표 텍스트 스펙 → px (size는 캔버스 짧은 변 비율 — 가로 덱은 높이, 세로 덱은 너비라
+ * 세로 9:16에서도 글자가 폭을 넘지 않는다).
  * 첫 인자는 빈 박스에 흐리게 표시될 안내문(placeholder). 실제 content는 빈 값으로 시작 →
  * 사용자가 입력하면 안내문이 사라진다.
  */
@@ -30,7 +31,7 @@ function text(placeholder, { xf, yf, wf, hf, size, weight = 400, align = 'left',
     isRich: false,
     layoutRole: role,
     styles: {
-      fontSize: Math.round(size * cs.h) + 'px',
+      fontSize: Math.round(size * Math.min(cs.w, cs.h)) + 'px',
       fontWeight: String(weight),
       color,
       textAlign: align,
