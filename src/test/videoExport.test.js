@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
-  pickRecorderMime, videoExtension, videoOutputSize, captureCropRect,
+  pickRecorderMime, videoExtension, videoOutputSize, captureCropRect, cropBounds,
   videoFileName, formatElapsed, captureErrorMessage, VIDEO_MIME_CANDIDATES,
   expectedStagePixels, isUpscaled, upscaleNotice,
 } from '../core/videoExport'
@@ -43,6 +43,16 @@ describe('영상 내보내기 — 출력 크기(덱 비율 유지)', () => {
 })
 
 describe('영상 내보내기 — 탭 캡처에서 잘라낼 슬라이드 영역', () => {
+  // 잘라낼 사각형이 슬라이드(영상 px)의 온 픽셀 안쪽에 있고, 슬라이드 비율을 지키고, 1% 넘게 깎지 않았는지
+  const expectInside = (r, [x0, y0, x1, y1]) => {
+    expect(r.sx).toBeGreaterThanOrEqual(Math.ceil(x0 - 0.01) - 1e-9)
+    expect(r.sy).toBeGreaterThanOrEqual(Math.ceil(y0 - 0.01) - 1e-9)
+    expect(r.sx + r.sw).toBeLessThanOrEqual(Math.floor(x1 + 0.01) + 1e-9)
+    expect(r.sy + r.sh).toBeLessThanOrEqual(Math.floor(y1 + 0.01) + 1e-9)
+    expect(r.sw / r.sh).toBeCloseTo((x1 - x0) / (y1 - y0), 6)
+    expect(r.sw).toBeGreaterThan((x1 - x0) * 0.99)
+    expect(r.sh).toBeGreaterThan((y1 - y0) * 0.99)
+  }
   it('CSS px → 영상 px 배율(기기 배율 2)', () => {
     const r = captureCropRect({ left: 100, top: 0, width: 1080, height: 607.5 },
       { w: 1280, h: 652 }, { w: 2560, h: 1304 })
@@ -57,6 +67,44 @@ describe('영상 내보내기 — 탭 캡처에서 잘라낼 슬라이드 영역
     const r = captureCropRect({ left: -10, top: -10, width: 120, height: 120 },
       { w: 100, h: 100 }, { w: 100, h: 100 })
     expect(r).toEqual({ sx: 0, sy: 0, sw: 100, sh: 100 })
+  })
+  it('가장자리가 픽셀 중간에 걸리면 안쪽 온 픽셀로 맞춘다(검정이 섞인 테두리 줄 방지)', () => {
+    // 1600×900 창의 9:16 덱: 슬라이드 559.25..1040.75 × 0..856
+    const r = captureCropRect({ left: 559.25, top: 0, width: 481.5, height: 856 },
+      { w: 1600, h: 900 }, { w: 1600, h: 900 })
+    expectInside(r, [559.25, 0, 1040.75, 856])
+    expect(r.sx).toBe(560)
+    expect(r.sw).toBe(480)
+    // 중간 캔버스로 옮길 정수 범위 — 슬라이드 온 픽셀만(검정이 섞인 559·1040열 제외)
+    expect(cropBounds(r)).toEqual({ x: 560, y: 1, w: 480, h: 854 }) // 비율 맞춤으로 위아래 ~1px
+  })
+  it('가장자리가 온 픽셀이면 하나도 깎지 않는다', () => {
+    const r = captureCropRect({ left: 372, top: 0, width: 856, height: 856 },
+      { w: 1600, h: 900 }, { w: 1600, h: 900 })
+    expect(r).toEqual({ sx: 372, sy: 0, sw: 856, sh: 856 })
+    expect(cropBounds(r)).toEqual({ x: 372, y: 0, w: 856, h: 856 })
+  })
+  it('배율이 소수인 기기(1.5배)에서도 안쪽 · 비율 유지', () => {
+    const rect = { left: 64.96875, top: 0.1666666716337204, width: 770.0625, height: 1369 }
+    const kx = 1350 / 900, ky = 2120 / 1413
+    const r = captureCropRect(rect, { w: 900, h: 1413 }, { w: 1350, h: 2120 })
+    expectInside(r, [rect.left * kx, rect.top * ky, (rect.left + rect.width) * kx, (rect.top + rect.height) * ky])
+    const b = cropBounds(r)
+    expect(b.x).toBeLessThanOrEqual(r.sx)
+    expect(b.y).toBeLessThanOrEqual(r.sy)
+    expect(b.x + b.w).toBeGreaterThanOrEqual(r.sx + r.sw)
+    expect(b.y + b.h).toBeGreaterThanOrEqual(r.sy + r.sh)
+    // 정수 범위도 슬라이드 온 픽셀 안
+    expect(b.x).toBeGreaterThanOrEqual(Math.ceil(rect.left * kx))
+    expect(b.x + b.w).toBeLessThanOrEqual(Math.floor((rect.left + rect.width) * kx))
+  })
+  it('부동소수 오차로 정수에서 살짝 벗어난 값은 한 픽셀을 통째로 깎지 않는다', () => {
+    const r = captureCropRect({ left: 372.0000001, top: 0, width: 855.9999998, height: 856.0000001 },
+      { w: 1600, h: 900 }, { w: 1600, h: 900 })
+    expect(r.sx).toBe(372)
+    expect(r.sw).toBeCloseTo(856, 4)
+    expect(r.sh).toBeCloseTo(856, 4)
+    expect(cropBounds(r)).toEqual({ x: 372, y: 0, w: 856, h: 856 })
   })
   it('그릴 수 없으면 null', () => {
     expect(captureCropRect(null, { w: 1, h: 1 }, { w: 1, h: 1 })).toBeNull()

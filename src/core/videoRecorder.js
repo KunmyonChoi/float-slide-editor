@@ -1,7 +1,7 @@
 import { useEditorStore } from '../store/editorStore'
 import { useFlatStore } from '../store/flatStore'
 import {
-  pickRecorderMime, videoOutputSize, captureCropRect, videoFileName,
+  pickRecorderMime, videoOutputSize, captureCropRect, cropBounds, videoFileName,
   VIDEO_QUALITIES, RECORD_PAD_MS, captureErrorMessage,
 } from './videoExport'
 
@@ -144,6 +144,11 @@ async function record({ videoTrack, audioTracks, noAudio, resolution, fps, quali
     ctx.fillStyle = '#000'
     ctx.fillRect(0, 0, out.w, out.h)
 
+    // 슬라이드를 감싼 정수 픽셀 범위만 1:1로 옮겨 두는 중간 캔버스 — 영상에서 곧바로 늘려 그리면 보간이
+    // 범위 바로 바깥(검정)까지 섞어 영상 가장자리에 어두운 줄이 생긴다. 캔버스 끝 바깥은 끝 픽셀이 되풀이된다.
+    const crop1 = document.createElement('canvas')
+    const ctx1 = crop1.getContext('2d', { alpha: false })
+
     let stageEl = null
     let raf = 0
     // 실제로 잘라 담은 슬라이드 크기(영상 픽셀) — 가장 작았던 값. 출력보다 작으면 결과 창에서 알린다.
@@ -158,7 +163,11 @@ async function record({ videoTrack, audioTracks, noAudio, resolution, fps, quali
         { w: video.videoWidth, h: video.videoHeight })
       if (!crop) return
       if (!captured || crop.sw < captured.w) captured = { w: Math.round(crop.sw), h: Math.round(crop.sh) }
-      ctx.drawImage(video, crop.sx, crop.sy, crop.sw, crop.sh, 0, 0, out.w, out.h)
+      const b = cropBounds(crop)
+      if (crop1.width !== b.w || crop1.height !== b.h) { crop1.width = b.w; crop1.height = b.h }
+      ctx1.drawImage(video, b.x, b.y, b.w, b.h, 0, 0, b.w, b.h)
+      ctx.drawImage(crop1, Math.max(0, crop.sx - b.x), Math.max(0, crop.sy - b.y),
+        Math.min(crop.sw, b.w), Math.min(crop.sh, b.h), 0, 0, out.w, out.h)
     }
     draw()
     cleanups.push(() => cancelAnimationFrame(raf))

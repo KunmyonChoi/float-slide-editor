@@ -113,6 +113,9 @@ export function videoOutputSize(canvasSize, resolution = 'canvas') {
  * 탭 캡처 프레임은 CSS 뷰포트를 기기 배율만큼 키운(또는 줄인) 그림이므로
  * 슬라이드의 getBoundingClientRect(CSS px)에 videoWidth / innerWidth 배율을 곱한다.
  * 프레임 밖으로 나간 부분은 잘라낸다(drawImage가 범위 밖을 받지 않는 브라우저가 있다).
+ * 가장자리는 안쪽 온 픽셀로 맞추고, 그만큼 비율이 틀어지지 않게 한쪽을 가운데 기준으로 조금 더 깎는다.
+ * 그래서 결과는 늘 정수 사각형 [floor(sx), ceil(sx+sw)) 안에 있다 — 녹화기는 그 정수 사각형을 먼저
+ * 1:1로 옮겨 담은 뒤 늘리므로 보간이 사각형 바깥(검정)을 끌어오지 않는다(cropBounds).
  *
  * @param {{left:number, top:number, width:number, height:number}} stageRect  CSS px
  * @param {{w:number,h:number}} viewport  window.innerWidth/innerHeight
@@ -127,15 +130,47 @@ export function captureCropRect(stageRect, viewport, video) {
   let y0 = stageRect.top * ky
   let x1 = (stageRect.left + stageRect.width) * kx
   let y1 = (stageRect.top + stageRect.height) * ky
+  const aspect = (x1 - x0) / (y1 - y0)
   x0 = Math.max(0, Math.min(video.w, x0))
   y0 = Math.max(0, Math.min(video.h, y0))
   x1 = Math.max(0, Math.min(video.w, x1))
   y1 = Math.max(0, Math.min(video.h, y1))
-  const sw = x1 - x0
-  const sh = y1 - y0
-  if (sw < 1 || sh < 1) return null
-  return { sx: x0, sy: y0, sw, sh }
+  if (x1 - x0 < 1 || y1 - y0 < 1) return null
+  // 슬라이드 가장자리가 픽셀 중간에 걸리면(예: 세로 덱의 left 559.25px) 그 가장자리 픽셀은 슬라이드와
+  // 바깥 검정이 섞인 색이라, 늘려 담으면 영상 테두리에 어두운 줄이 생긴다 — 안쪽 온 픽셀로 맞춘다.
+  const ix0 = Math.max(0, Math.ceil(x0 - SNAP_EPS))
+  const iy0 = Math.max(0, Math.ceil(y0 - SNAP_EPS))
+  const ix1 = Math.min(video.w, Math.floor(x1 + SNAP_EPS))
+  const iy1 = Math.min(video.h, Math.floor(y1 + SNAP_EPS))
+  if (ix1 - ix0 >= 1 && iy1 - iy0 >= 1) { x0 = ix0; y0 = iy0; x1 = ix1; y1 = iy1 }
+  let sx = x0
+  let sy = y0
+  let sw = x1 - x0
+  let sh = y1 - y0
+  // 맞추느라 깎인 만큼 비율이 틀어지지 않게, 남는 쪽을 가운데 기준으로 조금 더 깎는다(슬라이드 안쪽이라 섞임 없음).
+  // (부동소수 수준의 차이는 그대로 둔다)
+  if (aspect > 0 && Number.isFinite(aspect) && Math.abs(sw / sh / aspect - 1) > 1e-6) {
+    if (sw / sh > aspect) { const w = sh * aspect; sx += (sw - w) / 2; sw = w }
+    else { const h = sw / aspect; sy += (sh - h) / 2; sh = h }
+  }
+  return { sx, sy, sw, sh }
 }
+
+/**
+ * captureCropRect 결과를 감싸는 정수 픽셀 사각형 — 이 범위만 1:1로 먼저 옮겨 담으면, 늘릴 때의 보간이
+ * 범위 밖 픽셀을 섞지 못한다(가장자리 픽셀이 되풀이될 뿐).
+ * @returns {{x:number,y:number,w:number,h:number}}
+ */
+export function cropBounds(crop) {
+  const x = Math.floor(crop.sx + SNAP_EPS)
+  const y = Math.floor(crop.sy + SNAP_EPS)
+  const w = Math.max(1, Math.ceil(crop.sx + crop.sw - SNAP_EPS) - x)
+  const h = Math.max(1, Math.ceil(crop.sy + crop.sh - SNAP_EPS) - y)
+  return { x, y, w, h }
+}
+
+/** 부동소수 오차(856.0000001 등)를 정수로 보는 여유 */
+const SNAP_EPS = 0.01
 
 /** 저장 파일 이름 — 프로젝트/원본 이름(없으면 slide-export) + 확장자 */
 export function videoFileName(baseName, mime) {
