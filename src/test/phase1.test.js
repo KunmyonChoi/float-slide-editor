@@ -465,13 +465,25 @@ describe('CanvasSizeSelector — 캔버스 크기 프리셋', () => {
     expect(new Set(ids).size).toBe(ids.length)
   })
 
-  it('auto 이외의 프리셋이 너비 오름차순으로 정렬되어 있다', () => {
-    const sized = CANVAS_PRESETS.filter((p) => p.w !== null)
+  it('auto 이외의 가로 프리셋이 너비 오름차순으로 정렬되어 있다', () => {
+    const sized = CANVAS_PRESETS.filter((p) => p.w !== null && !p.group)
     for (let i = 1; i < sized.length; i++) {
       expect(sized[i].w * 10000 + sized[i].h).toBeGreaterThanOrEqual(
         sized[i - 1].w * 10000 + sized[i - 1].h
       )
     }
+  })
+
+  it('세로·소셜 프리셋(9:16·4:5·1:1)은 목록 끝에 한 그룹으로 모여 있다', () => {
+    const social = CANVAS_PRESETS.filter((p) => p.group === 'social').map((p) => `${p.w}x${p.h}`)
+    expect(social).toEqual(['1080x1920', '720x1280', '1080x1350', '1080x1080'])
+    const firstSocial = CANVAS_PRESETS.findIndex((p) => p.group === 'social')
+    expect(CANVAS_PRESETS.slice(firstSocial).every((p) => p.group === 'social')).toBe(true)
+  })
+
+  it('새 프로젝트 타겟 화면 — 16:9·9:16·4:5·1:1', async () => {
+    const { CANVAS_TARGETS } = await import('../components/CanvasSizeSelector.jsx')
+    expect(CANVAS_TARGETS.map((t) => `${t.w}x${t.h}`)).toEqual(['1920x1080', '1080x1920', '1080x1350', '1080x1080'])
   })
 })
 

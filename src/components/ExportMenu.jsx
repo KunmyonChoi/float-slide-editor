@@ -12,6 +12,7 @@ import { confirmDialog } from './ConfirmDialog'
 import { isBundlerHtml } from '../core/BundlerUnpacker'
 import { attachLocalMedia } from '../core/localMedia'
 import { usePwaInstall } from '../core/pwaInstall'
+import { CANVAS_TARGETS } from './CanvasSizeSelector'
 
 // .flatproj는 실제로 ZIP 패키지 → MIME을 application/zip으로 맞춰야 OS 열기 패널에서
 // 콘텐츠 타입 매칭으로 회색(선택 불가) 처리되지 않는다.
@@ -148,10 +149,12 @@ export default function FileMenu({ fallbackSample }) {
     loadHtml(fallbackSample, { imported: true })
   }, [clearPageCache, loadHtml, fallbackSample])
 
-  // 새 프로젝트 — 현재 작업을 비우고 빈 슬라이드로 시작
-  const handleNewProject = useCallback(async () => {
+  // 새 프로젝트 — 현재 작업을 비우고 고른 타겟 화면 크기의 빈 슬라이드로 시작
+  const handleNewProject = useCallback(async (target) => {
     setOpen(false)
-    if (hasContent) {
+    // 현재 페이지만 보면 빈 페이지에 서 있을 때 확인 없이 다른 페이지까지 모두 지운다
+    const fs = useFlatStore.getState()
+    if (fs.flatElements.length > 0 || fs.flatPageCount > 1) {
       const ok = await confirmDialog({
         title: '새 프로젝트 시작',
         message: '현재 작업 내용이 모두 사라집니다.\n저장하지 않았다면 먼저 저장하세요. 계속할까요?',
@@ -165,8 +168,11 @@ export default function FileMenu({ fallbackSample }) {
     // 즉시 보이도록 startScratchProject를 직접 호출한다(빈 덱 HTML 추출 트리거에 의존하지 않음).
     clearPageCache()
     useEditorStore.getState().resetDeck()
-    useFlatStore.getState().startScratchProject('title')
-  }, [hasContent, clearPageCache])
+    // 해상도 선택기는 자동 감지로 둔다 — 고정하면 이후 가져오는 HTML(다른 화면비 덱)이 이 크기로
+    // 강제 렌더된다. 빈 flat 덱은 자동 감지가 캔버스 크기를 바꾸지 않으므로 타겟 크기가 유지된다.
+    useEditorStore.getState().setCanvasSize(null)
+    useFlatStore.getState().startScratchProject('title', target)
+  }, [clearPageCache])
 
   // 프로젝트 저장 — 기억된 파일이 있으면 같은 파일에 덮어쓰기, 없으면 저장 팝업(Ctrl+S와 동일)
   const handleSaveProject = useCallback(async () => {
@@ -365,7 +371,10 @@ export default function FileMenu({ fallbackSample }) {
   }, [])
 
   const ITEMS = [
-    { id: 'newProject', label: '새 프로젝트', action: handleNewProject },
+    { id: 'newProject', label: '새 프로젝트', submenu: 'newProject',
+      children: CANVAS_TARGETS.map(t => ({
+        id: 'new-' + t.id, label: t.label, shortcut: `${t.w}×${t.h}`, action: () => handleNewProject(t),
+      })) },
     { id: 'sepNew', type: 'separator' },
     { id: 'openProject', label: '프로젝트 열기', action: handleOpenProject },
     { id: 'recent', label: '최근 프로젝트', submenu: 'recent', disabled: recents.length === 0,
