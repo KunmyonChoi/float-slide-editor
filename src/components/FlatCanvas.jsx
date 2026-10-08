@@ -27,6 +27,9 @@ import { confirmDialog } from './ConfirmDialog'
 import { bumpFontSizePx } from '../core/TextStyleScope'
 import { copyElementToSystemClipboard } from '../core/SystemClipboard'
 
+// 글자를 치지 않는 입력 — 포커스가 있어도 Ctrl+Z는 편집 되돌리기로
+const NON_TEXT_INPUTS = new Set(['range', 'color', 'checkbox', 'radio', 'button', 'file'])
+
 // 다이어그램 모드 연결점을 도형 변에서 바깥으로 띄우는 거리(리사이즈 핸들과 구분)
 const CONNECT_DOT_OUT = 14
 
@@ -747,7 +750,15 @@ export default function FlatCanvas() {
       }
 
       if (useFlatStore.getState().editingFlatId) return  // 텍스트 편집 중
-      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return
+      if (e.target.tagName === 'TEXTAREA') return
+      if (e.target.tagName === 'INPUT') {
+        // 글자를 치는 입력칸은 제 되돌리기를 쓴다. 슬라이더·색·체크박스처럼 글자가 없는 입력은 끌고 난 뒤 포커스가
+        // 남아 있어도 Ctrl+Z가 편집 되돌리기가 되게 한다(방향키·Delete 등 다른 단축키는 그 입력에 맡긴다).
+        if (!NON_TEXT_INPUTS.has(e.target.type) || !(e.ctrlKey || e.metaKey) || e.altKey) return
+        if (e.code === 'KeyZ') { e.preventDefault(); if (e.shiftKey) redo(); else undo() }
+        else if (e.code === 'KeyY') { e.preventDefault(); redo() }
+        return
+      }
       if (e.target.contentEditable === 'true') return
 
       // 패널 접기/펴기: [ = 왼쪽 슬라이드 목록, ] = 오른쪽 속성창, \ = 하단 발표자 노트 (보조키 없이)

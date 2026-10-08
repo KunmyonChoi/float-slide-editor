@@ -26,6 +26,9 @@ export class HistoryStack {
     }
   }
 
+  /** cmd가 맨 위(되돌린 적 없이 마지막으로 쌓은 것)인가 — 합치기 판단용 */
+  isTop(cmd) { return this._pointer === this._stack.length - 1 && this._stack[this._pointer] === cmd }
+
   undo() {
     if (!this.canUndo) return null
     return this._stack[this._pointer--]

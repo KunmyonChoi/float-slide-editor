@@ -4,6 +4,11 @@ import { createRoot } from 'react-dom/client'
 import './index.css'
 import './core/pwaInstall' // beforeinstallprompt를 가장 먼저 가로채도록 조기 로드
 import App from './App.jsx'
+import { installHistoryGestures } from './core/historyGestures'
+import { useFlatStore } from './store/flatStore'
+
+// 슬라이더·색상 창을 끄는 동안의 변경은 되돌리기 한 번(놓는 순간 단위)
+installHistoryGestures(() => useFlatStore.getState())
 
 // 개발용 확인 페이지(피사체 분리 서버 검증). `/?cutoutdev=1`로만 진입.
 const isCutoutDev = typeof window !== 'undefined'
