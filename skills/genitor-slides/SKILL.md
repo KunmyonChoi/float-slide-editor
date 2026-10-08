@@ -144,6 +144,15 @@ body { width: 1920px; height: 1080px; overflow: hidden; position: relative; back
             border-radius:24px;box-shadow:0 15px 45px rgba(0,0,0,0.3);"></div>
 ```
 
+**유리 패널(간유리)** — 반투명 채움 + `backdrop-filter:blur(Npx) saturate(1.4)`이면 뒤의 그림·글자가 흐리게 비친다.
+사진 위 재생기·정보 카드에 좋다. 채움은 반투명(알파 0.1~0.35)이어야 효과가 보이고, 얇은 밝은 테두리를 함께 주면 유리 가장자리처럼
+보인다. 유리 패널에는 투명도를 바꾸는 반복 효과(breathe·blink)를 걸지 않는다(그동안 흐림이 꺼진다). PPTX에서는 흐림 없이 반투명 채움만 남는다.
+```html
+<div style="position:absolute;left:1180px;top:240px;width:640px;height:600px;border-radius:32px;
+     background:rgba(255,255,255,0.14);border:1px solid rgba(255,255,255,0.35);
+     backdrop-filter:blur(22px) saturate(1.4);-webkit-backdrop-filter:blur(22px) saturate(1.4);"></div>
+```
+
 **카드 + 텍스트(병합)** — 배경/테두리가 있는 div에 **텍스트 노드 한 줄만** 있을 때, 하나의
 편집 가능한 텍스트 요소로 병합된다. 카드 안의 글은 중앙정렬이 깔끔. **이 레시피는 한 줄짜리
 카드 전용이다.** `<br>`이나 두 개 이상의 `<strong>`/`<span>`이 필요해지는 순간 아래

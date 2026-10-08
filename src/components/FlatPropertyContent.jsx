@@ -1991,6 +1991,32 @@ function ImageChromaKey({ elementId }) {
   )
 }
 
+// 유리 효과 — 뒤에 있는 그림·글자를 흐리게 비춘다(backdrop-filter). 채도를 살짝 올려 실제 간유리처럼 보이게.
+// 채움이 불투명하면 뒤가 안 보이므로, 켤 때 안내한다.
+function glassBlurOf(bf) {
+  const m = /blur\(([\d.]+)px\)/.exec(bf || '')
+  return m ? Math.round(parseFloat(m[1])) : 0
+}
+function GlassControl({ styles, updateStyle }) {
+  const blur = glassBlurOf(styles.backdropFilter)
+  const set = (v) => updateStyle('backdropFilter', v > 0 ? `blur(${v}px) saturate(1.4)` : 'none')
+  const bg = styles.backgroundColor || ''
+  const alpha = /rgba?\([^)]*,\s*([\d.]+)\s*\)/.exec(bg)
+  const opaque = blur > 0 && (!alpha || parseFloat(alpha[1]) >= 0.95) && !/^rgba\(0, 0, 0, 0\)$/.test(bg)
+  return (
+    <div title="뒤에 있는 그림·글자를 흐리게 비춥니다(간유리). 채움을 반투명하게 두어야 보입니다.">
+      <div className="flex items-center justify-between mb-0.5">
+        <p className={labelClass}>유리 효과 (뒤 흐리기)</p>
+        <span className="text-[11px] tabular-nums text-slate-400">{blur ? `${blur}px` : '끔'}</span>
+      </div>
+      <input type="range" min="0" max="40" step="1" value={blur}
+        onChange={e => set(parseInt(e.target.value, 10))}
+        className="w-full" style={{ accentColor: '#6366f1' }} />
+      {opaque && <p className="text-[11px] text-amber-300/80 mt-0.5">채움이 불투명해서 뒤가 비치지 않습니다 — 배경색 투명도를 낮춰 주세요.</p>}
+    </div>
+  )
+}
+
 // 곡선 글자 — 원호를 따라 휘는 정도(+ 위로 볼록한 아치, − 아래로 오목한 미소, 0 = 곧게).
 // 배지·로고처럼 한 줄 글자에 쓴다. 편집(더블클릭)하는 동안은 곧게 보인다.
 function TextArcControl({ el, update }) {
@@ -2045,6 +2071,7 @@ function EffectSection({ styles, updateStyle, isText, el, update }) {
         </div>
       )}
       {isText && el && <TextArcControl el={el} update={update} />}
+      {el && (el.type === 'shape' || el.type === 'text') && <GlassControl styles={styles} updateStyle={updateStyle} />}
     </div>
   )
 }

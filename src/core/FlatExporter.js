@@ -317,6 +317,7 @@ function textStyleBase(s, includeGradient, excludeTextShadow) {
     // 그래디언트 텍스트: textShadow는 내부 span의 drop-shadow filter로 처리
     !excludeTextShadow && s.textShadow && s.textShadow !== 'none' ? `text-shadow:${s.textShadow}` : '',
     s.textStroke && s.textStroke !== 'none' ? `-webkit-text-stroke:${s.textStroke};paint-order:stroke fill` : '',
+    glassCss(s),
     s.padding && s.padding !== '0px' ? `padding:${s.padding}` : '',
     s.opacity && s.opacity !== '1' ? `opacity:${s.opacity}` : '',
     `white-space:${s.whiteSpace || 'pre-wrap'}`,
@@ -327,8 +328,15 @@ function textStyleBase(s, includeGradient, excludeTextShadow) {
 function textStyle(s) { return textStyleBase(s, true, false) }
 function textStyleNoGradient(s, excludeTextShadow) { return textStyleBase(s, false, excludeTextShadow) }
 
+/** 유리 효과(backdrop-filter) → CSS(웹킷 접두어 함께). 없으면 ''. */
+function glassCss(s) {
+  const bf = s.backdropFilter
+  return bf && bf !== 'none' ? `backdrop-filter:${bf};-webkit-backdrop-filter:${bf}` : ''
+}
+
 function shapeStyle(s) {
   return [
+    glassCss(s),
     s.backgroundColor && s.backgroundColor !== 'rgba(0, 0, 0, 0)' ? `background-color:${s.backgroundColor}` : '',
     s.backgroundImage && s.backgroundImage !== 'none' ? `background-image:${s.backgroundImage}` : '',
     s.borderRadius && s.borderRadius !== '0px' ? `border-radius:${s.borderRadius}` : '',

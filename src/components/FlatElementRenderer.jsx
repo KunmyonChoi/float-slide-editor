@@ -212,6 +212,8 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
           // 외곽선(텍스트 스트로크) — 그래디언트가 아니면 div에 직접 적용
           ...(!isGradientText && !curved && styles.textStroke && styles.textStroke !== 'none' ? { WebkitTextStroke: styles.textStroke, paintOrder: 'stroke fill' } : {}),
           opacity: styles.opacity,
+          // 유리 효과(뒤 그림 흐리기) — 배경이 반투명일 때 의미가 있다
+          ...glassStyle(styles),
           padding: styles.padding,
           overflow: (styles.overflow === 'hidden' || styles.overflow === 'auto' || styles.overflow === 'scroll' ||
                      styles.overflowX === 'hidden' || styles.overflowX === 'auto' || styles.overflowX === 'scroll')
@@ -617,6 +619,7 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
     ...shapeBorderProps,
     boxShadow: styles.boxShadow,
     opacity: styles.opacity,
+    ...glassStyle(styles),
   }
 
   if (hasIdbBg) {
@@ -790,6 +793,12 @@ function useVideoPoster(url, enabled) {
  * 이미지 요소 — content가 idb:// 참조면 blob URL로 해석해 표시(데이터/HTTP URL은 그대로).
  * (피사체 뒤 텍스트 컷아웃 등 idb 저장 이미지가 안 보이던 문제 수정)
  */
+/** 유리 효과(backdrop-filter) — 'none'이 아니면 웹킷 접두어와 함께. */
+function glassStyle(styles) {
+  const bf = styles.backdropFilter
+  return bf && bf !== 'none' ? { backdropFilter: bf, WebkitBackdropFilter: bf } : {}
+}
+
 /** 색온도·비네팅 덮는 레이어 — 클릭은 아래로 통과. */
 function FxOverlays({ layers, radius }) {
   if (!layers?.length) return null
