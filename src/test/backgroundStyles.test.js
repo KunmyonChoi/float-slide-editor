@@ -47,5 +47,8 @@ describe('backgroundStyles', () => {
     expect(backgroundFrame({ w: 1080, h: 1350 })).toContain('4:5')
     expect(backgroundFrame({ w: 1080, h: 1080 })).toContain('1:1')
     expect(buildBackgroundPrompt(BACKGROUND_STYLES[0], '', { w: 1080, h: 1920 })).toContain('vertical 9:16')
+    expect(backgroundFrame({ w: 1920, h: 1200 })).toContain('16:10')
+    expect(backgroundFrame({ w: 1024, h: 768 })).toContain('4:3')
+    expect(backgroundFrame({ w: 1366, h: 768 })).toContain('1.78:1')
   })
 })

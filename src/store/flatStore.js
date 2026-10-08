@@ -182,8 +182,9 @@ function scaleFlatElements(elements, oldCs, newCs) {
   const sx = newCs.w / oldCs.w
   const sy = newCs.h / oldCs.h
   // 글꼴/패딩 등: 가로·세로 평균. 단 가로↔세로가 뒤집히면(16:9→9:16) 평균이 1보다 커져 글자는
-  // 커지는데 폭은 줄어 넘친다 — 그때는 줄어드는 쪽(min)에 맞춘다.
-  const flips = (oldCs.w >= oldCs.h) !== (newCs.w >= newCs.h)
+  // 커지는데 폭은 줄어 넘친다 — 그때는 줄어드는 쪽(min)에 맞춘다. 정사각(1:1)은 별도 방향으로 본다
+  // (16:9→1:1도 폭만 0.56배로 줄어 평균이면 넘친다).
+  const flips = Math.sign(oldCs.w - oldCs.h) !== Math.sign(newCs.w - newCs.h)
   const sf = flips ? Math.min(sx, sy) : (sx + sy) / 2
   const r = (v) => Math.round(v * 100) / 100
   return elements.map(el => {

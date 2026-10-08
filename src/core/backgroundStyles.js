@@ -61,13 +61,23 @@ export function getBackgroundStyle(id) {
   return BACKGROUND_STYLES.find(s => s.id === id) || BACKGROUND_STYLES[0]
 }
 
-/** 캔버스 비율 → 프롬프트의 화면 묘사(가로 16:9 발표 / 세로 9:16·4:5 모바일 / 정사각). */
+/** w×h → "16:9" 같은 비율 표기(약분해 작은 정수면 그대로, 아니면 "1.78:1"). */
+function aspectLabel(w, h) {
+  if (Math.abs(w / h - 1.6) < 0.01) return '16:10' // 약분하면 8:5지만 화면 규격은 16:10으로 부른다
+  const gcd = (a, b) => (b ? gcd(b, a % b) : a)
+  const g = gcd(Math.round(w), Math.round(h)) || 1
+  const a = Math.round(w) / g, b = Math.round(h) / g
+  return a <= 21 && b <= 21 ? `${a}:${b}` : (w >= h ? `${(w / h).toFixed(2)}:1` : `1:${(h / w).toFixed(2)}`)
+}
+
+/** 캔버스 비율 → 프롬프트의 화면 묘사(가로 발표 / 세로 숏폼·피드 / 정사각). 비율은 실제 캔버스 값. */
 export function backgroundFrame(canvas) {
-  const r = (canvas?.w || 16) / (canvas?.h || 9)
-  if (r > 1.2) return 'A clean, modern 16:9 presentation slide background image.'
-  if (r < 0.7) return 'A clean, modern vertical 9:16 full-screen mobile background image (Shorts/Reels/TikTok), filling the whole frame edge to edge.'
-  if (r < 0.9) return 'A clean, modern vertical 4:5 social feed post background image, filling the whole frame edge to edge.'
-  return 'A clean, modern square 1:1 social post background image, filling the whole frame edge to edge.'
+  const w = canvas?.w || 16, h = canvas?.h || 9
+  const r = w / h, ar = aspectLabel(w, h)
+  if (r > 1.1) return `A clean, modern ${ar} presentation slide background image.`
+  if (r < 0.7) return `A clean, modern vertical ${ar} full-screen mobile background image (Shorts/Reels/TikTok), filling the whole frame edge to edge.`
+  if (r < 0.9) return `A clean, modern vertical ${ar} social feed post background image, filling the whole frame edge to edge.`
+  return `A clean, modern square ${ar} social post background image, filling the whole frame edge to edge.`
 }
 
 /** AI 배경 생성 프롬프트 — 세이프존/무텍스트/화면 비율 공통 규칙 + 스타일 directive + 선택 주제 */

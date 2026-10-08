@@ -39,4 +39,11 @@ describe('세로 캔버스', () => {
     const after = titleOf(useFlatStore.getState().flatElements)
     expect(px(after.styles.fontSize)).toBeCloseTo(px(before.styles.fontSize) * 2 / 3, 1)
   })
+
+  it('가로→정사각(1920×1080→1080×1080): 폭이 줄어드는 비율로 글자도 줄인다', () => {
+    const before = titleOf(useFlatStore.getState().flatElements)
+    useFlatStore.getState().setResolution({ w: 1080, h: 1080 })
+    const after = titleOf(useFlatStore.getState().flatElements)
+    expect(px(after.styles.fontSize)).toBeCloseTo(px(before.styles.fontSize) * 1080 / 1920, 1)
+  })
 })

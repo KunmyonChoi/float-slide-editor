@@ -152,7 +152,9 @@ export default function FileMenu({ fallbackSample }) {
   // 새 프로젝트 — 현재 작업을 비우고 고른 타겟 화면 크기의 빈 슬라이드로 시작
   const handleNewProject = useCallback(async (target) => {
     setOpen(false)
-    if (hasContent) {
+    // 현재 페이지만 보면 빈 페이지에 서 있을 때 확인 없이 다른 페이지까지 모두 지운다
+    const fs = useFlatStore.getState()
+    if (fs.flatElements.length > 0 || fs.flatPageCount > 1) {
       const ok = await confirmDialog({
         title: '새 프로젝트 시작',
         message: '현재 작업 내용이 모두 사라집니다.\n저장하지 않았다면 먼저 저장하세요. 계속할까요?',
@@ -166,10 +168,11 @@ export default function FileMenu({ fallbackSample }) {
     // 즉시 보이도록 startScratchProject를 직접 호출한다(빈 덱 HTML 추출 트리거에 의존하지 않음).
     clearPageCache()
     useEditorStore.getState().resetDeck()
-    // 해상도 선택기도 그 크기로 고정(자동 감지면 빈 덱 재감지가 1920×1080으로 되돌릴 수 있다)
-    useEditorStore.getState().setCanvasSize(target ? { w: target.w, h: target.h } : null)
+    // 해상도 선택기는 자동 감지로 둔다 — 고정하면 이후 가져오는 HTML(다른 화면비 덱)이 이 크기로
+    // 강제 렌더된다. 빈 flat 덱은 자동 감지가 캔버스 크기를 바꾸지 않으므로 타겟 크기가 유지된다.
+    useEditorStore.getState().setCanvasSize(null)
     useFlatStore.getState().startScratchProject('title', target)
-  }, [hasContent, clearPageCache])
+  }, [clearPageCache])
 
   // 프로젝트 저장 — 기억된 파일이 있으면 같은 파일에 덮어쓰기, 없으면 저장 팝업(Ctrl+S와 동일)
   const handleSaveProject = useCallback(async () => {
