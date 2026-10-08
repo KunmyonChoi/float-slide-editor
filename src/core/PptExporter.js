@@ -3,6 +3,7 @@
  */
 import { htmlToTextRuns, cssColorToHex, applyTextTransform } from './HtmlToTextRuns'
 import { isCurvedText, curvedTextSvg } from './curvedText'
+import { normalizeFx, bakeFxToDataUrl } from './imageFx'
 import { animObjectName, applyMotionToPptx, isPptLoop } from './PptMotion'
 import { BlobStore } from './BlobStore'
 import { parseGradient } from './GradientParser'
@@ -452,6 +453,10 @@ async function addImage(slide, el, pos) {
     // data:/idb://(BlobStore)/http(s) 모두 data URL로 해석
     imgOpts.data = await contentToDataUrl(el.content)
   }
+  // 그림 보정은 파워포인트로 옮길 수 없어 캔버스로 구워 넣는다(imageFx.js)
+  if (imgOpts.data && normalizeFx(el.imageFx)) {
+    try { imgOpts.data = await bakeFxToDataUrl(imgOpts.data, el.imageFx) } catch { /* 원본 그대로 */ }
+  }
 
   if (!imgOpts.data) {
     // 해석 실패 시 플레이스홀더
@@ -487,7 +492,11 @@ async function addShape(slide, el, pos) {
   // 복잡 배경 → 그림으로 그려 도형 뒤(먼저)에 배치
   if (complexBg) {
     try {
-      const pngData = await cssBgToPng(bgImage, el.width, el.height, s.backgroundColor)
+      let pngData = await cssBgToPng(bgImage, el.width, el.height, s.backgroundColor)
+      // 배경 그림 보정 — 그린 배경 그림에 구워 넣는다
+      if (pngData && bgImage.includes('url(') && normalizeFx(el.imageFx)) {
+        try { pngData = await bakeFxToDataUrl(pngData, el.imageFx) } catch { /* 원본 그대로 */ }
+      }
       if (pngData) {
         slide.addImage({
           data: pngData,
@@ -501,6 +510,27 @@ async function addShape(slide, el, pos) {
     const sidePresent2 = (v) => v && v !== 'none' && !v.startsWith('0px')
     const anyBorder = border || [s.borderTop, s.borderRight, s.borderBottom, s.borderLeft].some(sidePresent2)
     if (!anyBorder && el.fillRatio == null) return
+  }
+
+  // 배경 그림(url 하나) — 전체 화면 <img>를 가져오면 이렇게 배경 도형이 된다. 그림으로 먼저 깔고(보정은 구워서),
+  // 채움·테두리·그림자가 없으면 그것으로 끝.
+  const urlBg = !complexBg && /^url\(\s*['"]?([^'")]+)['"]?\s*\)$/.exec(bgImage.trim())
+  if (urlBg) {
+    try {
+      let data = await contentToDataUrl(urlBg[1])
+      if (data && normalizeFx(el.imageFx)) {
+        try { data = await bakeFxToDataUrl(data, el.imageFx) } catch { /* 원본 그대로 */ }
+      }
+      if (data) {
+        slide.addImage({
+          data, x: pos.x, y: pos.y, w: pos.w, h: pos.h,
+          sizing: { type: s.backgroundSize === 'contain' ? 'contain' : 'cover', w: pos.w, h: pos.h },
+          ...(pos.rotate ? { rotate: pos.rotate } : {}),
+          ...(transparency ? { transparency } : {}),
+        })
+      }
+    } catch { /* 그림을 못 읽으면 아래 채움·테두리만 */ }
+    if (!solidFill && !border && !shadow && el.fillRatio == null) return
   }
 
   if (!complexBg && !hasGradient && !solidFill && !border && !shadow && el.fillRatio == null) return

@@ -10,6 +10,7 @@
  */
 
 import { parseAnimAttrs, parseLoopAttrs, parseTransitionAttrs, parseAdvanceAttrs, parseMediaAttrs, readSlideNotes, resolveAnimSpecs } from './deckMotion.js'
+import { parseFxAttr, fxFromCssFilter } from './imageFx.js'
 import { stripSvgSelfPositioning } from './svgContent.js'
 import { normFractions, MAX_ROWS, MAX_COLS, TABLE_BORDER_COLOR } from './slideTable.js'
 import { DEFAULT_VIZ } from './audioViz.js'
@@ -1301,6 +1302,15 @@ function buildFlatElement(el, rect, cs, domOrder, forceType, transformScale = 1,
     styles,
     // 원본 레이아웃 (너비 보정 전 getBoundingClientRect 결과)
     originalRect: { x: rect.left, y: rect.top, w: rect.width, h: rect.height },
+  }
+  // 그림 보정(data-img-fx, 또는 <img>/<video>의 CSS filter) — 이미지·영상은 바로 위 래퍼에 단 것도 읽는다.
+  // (전체 화면 그림은 뒤에서 배경 도형으로 바뀌어도 이 값이 따라간다.)
+  {
+    const host = (type === 'image' || type === 'video') && el.parentElement
+      && !el.parentElement.classList?.contains('slide') && el.parentElement.tagName !== 'BODY' ? el.parentElement : null
+    const fx = parseFxAttr(el.getAttribute('data-img-fx') || host?.getAttribute?.('data-img-fx'))
+      || ((type === 'image' || type === 'video') ? fxFromCssFilter(cs.filter) : null)
+    if (fx) result.imageFx = fx
   }
   // 곡선 글자(data-text-arc="−100~100") — 렌더러가 원호를 따라 휘어 그린다(curvedText.js)
   if (type === 'text') {

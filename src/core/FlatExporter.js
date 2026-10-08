@@ -3,6 +3,7 @@
  * 원본 iframe과 Flat 변환 결과를 독립 HTML 파일로 내보낸다.
  */
 import { animToAttrs, loopToAttrs, transitionToAttrs, advanceToAttrs, mediaToAttrs, notesToScript, buildAnimNameMap } from './deckMotion.js'
+import { fxToAttr, fxFilterCss } from './imageFx.js'
 import { tableContainerStyle, cellStyle } from './slideTable.js'
 
 /**
@@ -19,6 +20,7 @@ function withAnim(el, html, nameMap) {
     // 오디오·영상 재생 옵션(끝까지 재생 후 다음·최대 재생 시간·BGM) — 다시 가져올 때 같은 요소로 복원
     + (el.type === 'audio' || el.type === 'video' ? mediaToAttrs(el) : '')
     + (el.type === 'text' && Number(el.textArc) ? ` data-text-arc="${Math.round(Number(el.textArc))}"` : '')
+    + (fxToAttr(el.imageFx) ? ` data-img-fx="${fxToAttr(el.imageFx)}"` : '')
   if (!attrs || !html.startsWith('<div')) return html
   return `<div${attrs}` + html.slice(4)
 }
@@ -201,7 +203,9 @@ function renderElement(el) {
       ? `object-position:${el.styles.objectPosition};` : ''
     const imgBorder = el.styles.border && !el.styles.border.startsWith('0px') ? `border:${el.styles.border};` : ''
     const imgOpacity = el.styles.opacity && el.styles.opacity !== '1' ? `opacity:${el.styles.opacity};` : ''
-    return `<div style="${flatStyle(el)}"><img src="${escHtml(el.content)}" alt="" style="width:100%;height:100%;object-fit:${el.styles.objectFit || 'contain'};${objPos}display:block;border-radius:${el.styles.borderRadius || '0'};${imgBorder}${imgOpacity}" /></div>`
+    // 그림 보정: 밝기·대비·채도·흐림은 CSS filter로도 남겨 브라우저에서 바로 보이게(색온도·비네팅은 data-img-fx로만)
+    const imgFilter = fxFilterCss(el.imageFx) ? `filter:${fxFilterCss(el.imageFx)};` : ''
+    return `<div style="${flatStyle(el)}"><img src="${escHtml(el.content)}" alt="" style="width:100%;height:100%;object-fit:${el.styles.objectFit || 'contain'};${objPos}display:block;border-radius:${el.styles.borderRadius || '0'};${imgBorder}${imgOpacity}${imgFilter}" /></div>`
   }
   if (el.type === 'text') {
     const textContent = el.isRich ? el.content : escHtml(el.content)

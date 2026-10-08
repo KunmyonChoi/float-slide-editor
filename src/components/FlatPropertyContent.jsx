@@ -28,6 +28,7 @@ import DiagramIconPanel from './DiagramIconPanel'
 import MediaPreview from './MediaPreview'
 import { waitsForEnd, canWaitForEnd, isBgm, effectiveAutoplay, effectiveLoop } from '../core/mediaAdvance'
 import { textArcOf, TEXT_ARC_MIN, TEXT_ARC_MAX } from '../core/curvedText'
+import { fullFx, normalizeFx, FX_RANGES } from '../core/imageFx'
 
 // ── 글꼴 크기 프리셋 ────────────────────────────────
 
@@ -199,8 +200,9 @@ function SingleElementPanel({ el, animTab, setAnimTab, updateFlatElement, previe
         )}
 
         {el.type === 'image' && (
-          <div className="pt-1 border-t border-white/5">
+          <div className="pt-1 border-t border-white/5 space-y-3">
             <ImageSection el={el} updateStyle={updateStyle} previewStyle={previewStyle} />
+            <ImageFxControls el={el} />
           </div>
         )}
 
@@ -212,8 +214,9 @@ function SingleElementPanel({ el, animTab, setAnimTab, updateFlatElement, previe
         )}
 
         {el.type === 'video' && (
-          <div className="pt-1 border-t border-white/5">
+          <div className="pt-1 border-t border-white/5 space-y-3">
             <VideoSection el={el} update={update} updateStyle={updateStyle} previewStyle={previewStyle} />
+            <ImageFxControls el={el} />
           </div>
         )}
 
@@ -1849,6 +1852,50 @@ function ObjectFitControl({ el, updateStyle, previewStyle }) {
         </div>
       )}
     </>
+  )
+}
+
+// 그림 보정 — 이미지·영상·배경 그림 공용(imageFx.js). 드래그 중엔 미리보기, 놓으면 저장(실행 취소 1단계).
+const FX_SLIDERS = [
+  ['brightness', '밝기', '%'], ['contrast', '대비', '%'], ['saturation', '채도', '%'],
+  ['warmth', '색온도', ''], ['blur', '흐림', 'px'], ['vignette', '비네팅', ''],
+]
+function ImageFxControls({ el }) {
+  const fx = fullFx(el.imageFx)
+  const active = !!normalizeFx(el.imageFx)
+  const st = () => useFlatStore.getState()
+  const next = (k, v) => normalizeFx({ ...fx, [k]: v }) || undefined
+  const label = (k, v) => k === 'warmth' ? (v > 0 ? `따뜻하게 ${v}` : v < 0 ? `차갑게 ${-v}` : '0') : `${v}`
+  return (
+    <div className="space-y-2">
+      <SectionTitle>
+        <span className="flex items-center justify-between w-full">
+          <span>그림 보정</span>
+          {active && (
+            <button type="button" onMouseDown={e => e.preventDefault()}
+              onClick={() => st().updateFlatElement(el.id, { imageFx: undefined })}
+              className="text-[11px] font-normal text-indigo-300 hover:text-indigo-200">초기화</button>
+          )}
+        </span>
+      </SectionTitle>
+      {FX_SLIDERS.map(([k, name, unit]) => {
+        const [lo, hi] = FX_RANGES[k]
+        return (
+          <div key={k}>
+            <div className="flex items-center justify-between">
+              <p className={labelClass}>{name}</p>
+              <span className="text-[11px] tabular-nums text-slate-400">{label(k, fx[k])}{k !== 'warmth' ? unit : ''}</span>
+            </div>
+            <input type="range" min={lo} max={hi} step="1" value={fx[k]}
+              onChange={e => st().previewFlatElement(el.id, { imageFx: next(k, Number(e.target.value)) })}
+              onMouseUp={e => st().updateFlatElement(el.id, { imageFx: next(k, Number(e.target.value)) })}
+              onTouchEnd={e => st().updateFlatElement(el.id, { imageFx: next(k, Number(e.target.value)) })}
+              onKeyUp={e => st().updateFlatElement(el.id, { imageFx: next(k, Number(e.target.value)) })}
+              className="w-full" style={{ accentColor: '#6366f1' }} />
+          </div>
+        )
+      })}
+    </div>
   )
 }
 
@@ -3801,6 +3848,9 @@ function SlideBackgroundPanel() {
                   className="w-full" style={{ accentColor: '#6366f1' }}
                 />
               </div>
+
+              {/* 배경 그림 보정 — url 그림이 있는 배경 레이어 */}
+              {styles.backgroundImage?.includes('url(') && <ImageFxControls el={currentBg} />}
 
               {/* 배경 이미지 */}
               <div className="space-y-1.5">

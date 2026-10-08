@@ -253,6 +253,18 @@ body { width: 1920px; height: 1080px; overflow: hidden; position: relative; back
 </div>
 ```
 
+**그림 보정** — 이미지·영상(또는 바로 위 래퍼 div)에 `data-img-fx`를 달면 Genitor가 보정해 그린다.
+`brightness`·`contrast`·`saturation`(%, 0~200, 기본 100) · `warmth`(−100 차갑게 ~ 100 따뜻하게) · `blur`(px, 0~40) ·
+`vignette`(0~100, 가장자리를 어둡게). 글자를 얹을 배경 사진은 **어둡게 + 비네팅**이 검은 오버레이 도형보다 낫다(그림을
+덮지 않으므로 그림 선택·이미지 AI가 그대로 된다). 화면을 꽉 채운 배경 그림에도 쓸 수 있다. 밝기·대비·채도·흐림은 CSS
+`filter`로도 함께 주면 브라우저에서 바로 보인다(색온도·비네팅은 Genitor에서만).
+```html
+<div data-img-fx="brightness:80;contrast:110;warmth:30;vignette:60"
+     style="position:absolute;left:0px;top:0px;width:1920px;height:1080px;overflow:hidden;">
+  <img src="images/bg.jpg" alt="" style="width:100%;height:100%;object-fit:cover;display:block;filter:brightness(0.8) contrast(1.1);" />
+</div>
+```
+
 > **미디어를 도형이 덮지 않게 하라(중요).** Genitor는 클릭 시 **최상위 요소**를 선택한다. 이미지/영상
 > 위에 전면 오버레이·테두리 도형을 얹거나, 래퍼 div에 배경/테두리/그림자를 주면 **래퍼가 "도형"으로
 > 추출돼 미디어를 덮는다** → 미디어 대신 그 도형이 선택되어 "이미지가 도형으로 로드"되고 이미지
