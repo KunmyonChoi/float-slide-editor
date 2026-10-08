@@ -8,7 +8,7 @@ import { animObjectName, applyMotionToPptx, isPptLoop } from './PptMotion'
 import { BlobStore } from './BlobStore'
 import { parseGradient } from './GradientParser'
 import { cssColorToRgba } from './CssColor'
-import { DEFAULT_VIZ, barCount, staticFrame, drawViz } from './audioViz'
+import { DEFAULT_VIZ, paintStaticViz } from './audioViz'
 
 // px → inches (96 DPI 기준)
 const PX_TO_INCH = 1 / 96
@@ -686,9 +686,14 @@ function addAudioSnapshot(slide, el, pos) {
     cv.width = W * SCALE; cv.height = H * SCALE
     const ctx = cv.getContext('2d')
     ctx.scale(SCALE, SCALE)
+    paintStaticViz(ctx, W, H, viz)
+    // 배경은 막대 뒤에 깐다(그리기가 먼저 캔버스를 지우므로 뒤에서 채운다)
     const bg = el.styles?.backgroundColor
-    if (bg && bg !== 'transparent' && bg !== 'rgba(0, 0, 0, 0)') { ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H) }
-    drawViz(ctx, W, H, staticFrame(barCount(W, viz.barWidth, viz.barGap)), viz)
+    if (bg && bg !== 'transparent' && bg !== 'rgba(0, 0, 0, 0)') {
+      ctx.globalCompositeOperation = 'destination-over'
+      ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H)
+      ctx.globalCompositeOperation = 'source-over'
+    }
     const data = cv.toDataURL('image/png')
     const opts = { x: pos.x, y: pos.y, w: pos.w, h: pos.h, data }
     if (pos.rotate) opts.rotate = pos.rotate

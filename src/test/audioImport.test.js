@@ -51,7 +51,7 @@ describe('오디오 HTML 가져오기', () => {
   })
 
   it('Genitor 내보내기(.fe-audioviz)는 data-cfg를 복원하고 중복 요소를 만들지 않는다', () => {
-    const cfg = JSON.stringify({ viz: { shape: 'mirror', color: '#ff0000', barWidth: 4, barGap: 2 }, autoplay: false, muted: true })
+    const cfg = JSON.stringify({ viz: { shape: 'mirror', channels: 'stereo', color: '#ff0000', color2: '#00ff00', barWidth: 4, barGap: 2 }, autoplay: false, muted: true })
       .replace(/"/g, '&quot;')
     const els = extract(`<!DOCTYPE html><html><body>
       <div class="fe-audioviz" data-cfg="${cfg}" style="position:absolute;left:10px;top:20px;width:400px;height:120px;">
@@ -61,7 +61,20 @@ describe('오디오 HTML 가져오기', () => {
     const audios = els.filter(e => e.type === 'audio')
     expect(audios).toHaveLength(1)
     expect(audios[0]).toMatchObject({ content: 'idb://abc', width: 400, height: 120, autoplay: false, muted: true, loop: true })
-    expect(audios[0].viz).toMatchObject({ shape: 'mirror', color: '#ff0000', barWidth: 4 })
+    expect(audios[0].viz).toMatchObject({ shape: 'mirror', channels: 'stereo', color: '#ff0000', color2: '#00ff00', barWidth: 4 })
+  })
+
+  it('data-viz·data-viz-channels·data-viz-color2로 모양과 스테레오를 고른다(래퍼에 달아도 된다)', () => {
+    const els = extract(`<!DOCTYPE html><html><body>
+      <div data-viz="circle" data-viz-channels="stereo" style="position:absolute;left:0px;top:0px;width:300px;height:300px;overflow:hidden;">
+        <audio controls src="a.mp3" data-viz-color="#ff8800" data-viz-color2="#22ccff" style="display:block;width:300px;height:300px;border-radius:150px;"></audio>
+      </div>
+      <div style="position:absolute;left:400px;top:0px;width:600px;height:80px;overflow:hidden;">
+        <audio controls src="b.mp3" data-viz="sparkle" data-viz-channels="5.1" style="display:block;width:600px;height:80px;border-radius:8px;"></audio>
+      </div></body></html>`)
+    const [a, b] = els.filter(e => e.type === 'audio')
+    expect(a.viz).toMatchObject({ shape: 'circle', channels: 'stereo', color: '#ff8800', color2: '#22ccff' })
+    expect(b.viz).toMatchObject({ shape: 'bars', channels: 'mono' }) // 모르는 값은 기본값
   })
 
   it('vizColorOn — 밝은 배경은 어둡게, 어두운 배경은 밝게, 투명은 null', () => {

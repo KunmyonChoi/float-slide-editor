@@ -4,6 +4,7 @@
  */
 import { animToAttrs, loopToAttrs, transitionToAttrs, advanceToAttrs, mediaToAttrs, notesToScript, buildAnimNameMap } from './deckMotion.js'
 import { fxToAttr, fxFilterCss } from './imageFx.js'
+import { DEFAULT_VIZ, VIZ_RUNTIME_SRC } from './audioViz.js'
 import { tableContainerStyle, cellStyle } from './slideTable.js'
 
 /**
@@ -433,7 +434,7 @@ function audioVizHtml(el) {
   const br = el.styles.borderRadius && el.styles.borderRadius !== '0px' ? `border-radius:${el.styles.borderRadius};overflow:hidden;` : ''
   const bg = el.styles.backgroundColor && el.styles.backgroundColor !== 'rgba(0, 0, 0, 0)' && el.styles.backgroundColor !== 'transparent' ? `background:${el.styles.backgroundColor};` : ''
   const op = el.styles.opacity && el.styles.opacity !== '1' ? `opacity:${el.styles.opacity};` : ''
-  const viz = { shape: 'bars', barWidth: 6, barGap: 3, barRadius: 3, color: '#6366f1', smoothing: 0.8, sensitivity: 1, ...(el.viz || {}) }
+  const viz = { ...DEFAULT_VIZ, ...(el.viz || {}) }
   const cfg = escHtml(JSON.stringify({ viz, autoplay: el.autoplay !== false, muted: !!el.muted }))
   return `<div style="${flatStyle(el)};${br}${bg}${op}" class="fe-audioviz" data-cfg="${cfg}">`
     + `<canvas style="width:100%;height:100%;display:block"></canvas>`
@@ -441,15 +442,11 @@ function audioVizHtml(el) {
     + `</div>`
 }
 
-// 내보낸 HTML에 1회 삽입되는 비주얼라이저 초기화 스크립트(주파수 반응 + 정적 폴백).
-// 첫 사용자 클릭(또는 음소거 자동재생)에 재생 시작. audioViz.js의 drawViz/barsFromFrequency 로직을 인라인 미러.
+// 내보낸 HTML에 1회 삽입되는 비주얼라이저 초기화 스크립트(주파수/파형 반응 + 정적 폴백).
+// 첫 사용자 클릭(또는 음소거 자동재생)에 재생 시작. 그리기는 audioViz.js의 함수 소스를 그대로 넣는다(VIZ_RUNTIME_SRC).
 const AUDIO_VIZ_SCRIPT = `<script>
 (function(){
-  function rr(c,x,y,w,h,r){var rad=Math.max(0,Math.min(r,w/2,h/2));c.beginPath();c.moveTo(x+rad,y);c.arcTo(x+w,y,x+w,y+h,rad);c.arcTo(x+w,y+h,x,y+h,rad);c.arcTo(x,y+h,x,y,rad);c.arcTo(x,y,x+w,y,rad);c.closePath();}
-  function draw(ctx,w,h,mags,v){ctx.clearRect(0,0,w,h);ctx.fillStyle=v.color;var unit=Math.max(1,v.barWidth+v.barGap),n=mags.length,tot=n*unit-v.barGap,x=Math.max(0,(w-tot)/2),mb=Math.max(1,v.barWidth*0.06);for(var i=0;i<n;i++){var m=Math.max(0,Math.min(1,mags[i]||0));if(v.shape==='mirror'){var hf=Math.max(mb/2,(h/2)*m);rr(ctx,x,h/2-hf,v.barWidth,hf*2,v.barRadius);}else{var bh=Math.max(mb,h*m);rr(ctx,x,h-bh,v.barWidth,bh,v.barRadius);}ctx.fill();x+=unit;}}
-  function barCount(w,bw,bg){var u=Math.max(1,bw+bg);return Math.max(1,Math.floor((w+bg)/u));}
-  function staticFrame(n){var o=[];for(var i=0;i<n;i++){var s=Math.sin(i*0.55+1)*0.5+Math.sin(i*0.17+2.1)*0.35+Math.sin(i*1.3)*0.15;o.push(0.12+0.88*Math.abs(s));}return o;}
-  function bars(f,n,sens){var o=new Array(n).fill(0);if(!f.length)return o;var u=Math.max(1,Math.floor(f.length*0.7));for(var i=0;i<n;i++){var a=Math.floor(i/n*u),b=Math.max(a+1,Math.floor((i+1)/n*u)),s=0;for(var j=a;j<b;j++)s+=f[j];o[i]=Math.max(0,Math.min(1,s/(b-a)/255*sens));}return o;}
+${VIZ_RUNTIME_SRC}
   var starters=[];
   document.querySelectorAll('.fe-audioviz').forEach(function(box){
     var cfg;try{cfg=JSON.parse(box.getAttribute('data-cfg'));}catch(e){return;}
@@ -457,21 +454,23 @@ const AUDIO_VIZ_SCRIPT = `<script>
     // R4: RAF ID를 저장해 슬라이드 숨김 시 루프 중단, 재표시 시 재개
     var rafId=0,running=false;
     function size(){var dpr=window.devicePixelRatio||1,w=box.clientWidth||0,h=box.clientHeight||0;if(!w||!h)return null;cv.width=Math.max(1,Math.round(w*dpr));cv.height=Math.max(1,Math.round(h*dpr));var ctx=cv.getContext('2d');ctx.setTransform(dpr,0,0,dpr,0,0);return {ctx:ctx,w:w,h:h};}
-    function paintStatic(){var s=size();if(!s)return;draw(s.ctx,s.w,s.h,staticFrame(barCount(s.w,v.barWidth,v.barGap)),v);}
+    function paintStatic(){var s=size();if(!s)return;paintViz(s.ctx,s.w,s.h,staticVizFrame(s.w,s.h,v),v);}
     paintStatic();
-    var started=false,an=null,data=null;
-    function loop(){if(!running)return;var s=size();if(s&&an&&data){an.getByteFrequencyData(data);draw(s.ctx,s.w,s.h,bars(data,barCount(s.w,v.barWidth,v.barGap),v.sensitivity),v);}rafId=requestAnimationFrame(loop);}
+    var started=false,nodes=null;
+    function loop(){if(!running)return;var s=size();if(s&&nodes){paintViz(s.ctx,s.w,s.h,vizLiveFrame(nodes,vizBarsPerChannel(s.w,s.h,v),v),v);}rafId=requestAnimationFrame(loop);}
     function stopLoop(){running=false;cancelAnimationFrame(rafId);}
     function resumeLoop(){if(!started||running)return;running=true;loop();}
     function start(){
       if(started)return;started=true;
       try{
         var AC=window.AudioContext||window.webkitAudioContext,ac=new AC();
-        var src=ac.createMediaElementSource(audio),_an=ac.createAnalyser();
-        _an.fftSize=256;_an.smoothingTimeConstant=Math.max(0,Math.min(0.99,v.smoothing));
+        var src=ac.createMediaElementSource(audio);
+        function mk(n){var a=ac.createAnalyser();a.fftSize=n;a.smoothingTimeConstant=Math.max(0,Math.min(0.99,v.smoothing));return a;}
+        function tap(from,o){var f=mk(256),t=mk(2048);from.connect(f,o);from.connect(t,o);return [f,t];}
         var g=ac.createGain();g.gain.value=cfg.muted?0:1;
-        src.connect(_an);_an.connect(g);g.connect(ac.destination);
-        an=_an;data=new Uint8Array(_an.frequencyBinCount);
+        src.connect(g);g.connect(ac.destination);
+        if(v.channels==='stereo'){var sp=ac.createChannelSplitter(2);src.connect(sp);var l=tap(sp,0),r=tap(sp,1);nodes={L:l[0],R:r[0],waveL:l[1],waveR:r[1]};}
+        else{var m=tap(src,0);nodes={L:m[0],waveL:m[1]};}
         running=true;loop();
         ac.resume&&ac.resume();
       }catch(e){audio.muted=cfg.muted;}

@@ -24,7 +24,8 @@ Genitor로 가져가야 어긋난 게 보이므로 특히 중요하다.
                  뒤에 선언된 앵커를 가리키는 참조.
   LOOP           알 수 없는 반복 효과(data-anim-loop)/시작값.
   MEDIA          자동 진행 기준(슬라이드 data-advance)·미디어 재생 옵션(data-advance="end"·
-                 data-max-play·data-bgm)의 잘못된 값·자리, controls 없는 <audio>.
+                 data-max-play·data-bgm)·비주얼라이저(data-viz·data-viz-channels)의 잘못된 값·자리,
+                 controls 없는 <audio>.
   NOTES          .fe-notes에 type="text/plain"이 없거나, 한 슬라이드에 둘 이상.
   (경고)         노트 없는 슬라이드, click 단계 과다, 중첩된 data-anim 등.
 
@@ -400,6 +401,20 @@ CHECK_JS = """
       }
       if (ma === 'end' && m.tagName === 'VIDEO' && m.hasAttribute('loop')) {
         warnings.push(`${at} MEDIA 끝까지 재생 후 다음인 영상의 loop는 꺼진다`);
+      }
+    }
+    // 비주얼라이저 모양·채널 — <audio>나 그 바로 위 래퍼에만, 정해진 값만
+    for (const h of slide.querySelectorAll('[data-viz], [data-viz-channels], [data-viz-color], [data-viz-color2]')) {
+      const at = `${S} <${h.tagName.toLowerCase()}>`;
+      const host = h.matches('audio') || (!h.classList.contains('slide') && !!h.querySelector(':scope > audio'));
+      if (!host) { warnings.push(`${at} MEDIA data-viz*는 <audio>나 그 바로 위 래퍼에만 쓰인다 (무시됨)`); continue; }
+      const shape = h.getAttribute('data-viz');
+      if (shape != null && !['bars', 'mirror', 'wave', 'circle', 'blocks'].includes(shape.trim())) {
+        problems.push(`${at} MEDIA data-viz="${shape}" — bars·mirror·wave·circle·blocks 중 하나 (무시된다)`);
+      }
+      const ch = h.getAttribute('data-viz-channels');
+      if (ch != null && !['mono', 'stereo'].includes(ch.trim())) {
+        problems.push(`${at} MEDIA data-viz-channels="${ch}" — mono 또는 stereo (무시된다)`);
       }
     }
 

@@ -1,6 +1,6 @@
 import { useRef, useEffect, useState } from 'react'
 import { BlobStore } from '../core/BlobStore'
-import { DEFAULT_VIZ, barCount, staticFrame, barsFromFrequency, drawViz } from '../core/audioViz'
+import { DEFAULT_VIZ, vizBarsPerChannel, vizLiveFrame, paintViz, paintStaticViz } from '../core/audioViz'
 import { registerAudioClock } from '../core/audioClock'
 import { waitsForEnd, effectiveAutoplay, effectiveLoop, isBgm, reportMediaEnded, reportMediaFailed } from '../core/mediaAdvance'
 import { maxPlayGain } from '../core/useMediaEndSignal'
@@ -72,10 +72,9 @@ export default function AudioVisualizer({ element, playNow }) {
     const cv = canvasRef.current
     if (!cv) return
     const ctx = syncCanvasSize(cv)
-    const n = barCount(width, viz.barWidth, viz.barGap)
-    drawViz(ctx, width, height, staticFrame(n), viz)
+    paintStaticViz(ctx, width, height, viz)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [staticNow, width, height, viz.shape, viz.barWidth, viz.barGap, viz.barRadius, viz.color])
+  }, [staticNow, width, height, viz.shape, viz.channels, viz.barWidth, viz.barGap, viz.barRadius, viz.color, viz.color2])
 
   // 발표 모드: 실시간 주파수 반응. 자체 Audio 객체를 만들어 그래프 once-only 제약/StrictMode 회피.
   useEffect(() => {
@@ -114,33 +113,44 @@ export default function AudioVisualizer({ element, playNow }) {
 
     const paintStatic = () => {
       const ctx = syncCanvasSize(cv)
-      drawViz(ctx, liveRef.current.width, liveRef.current.height,
-        staticFrame(barCount(liveRef.current.width, liveRef.current.viz.barWidth, liveRef.current.viz.barGap)),
-        liveRef.current.viz)
+      paintStaticViz(ctx, liveRef.current.width, liveRef.current.height, liveRef.current.viz)
     }
 
     try {
       const AC = window.AudioContext || window.webkitAudioContext
       ctxAudio = new AC()
       const srcNode = ctxAudio.createMediaElementSource(audio)
-      const analyser = ctxAudio.createAnalyser()
-      analyser.fftSize = 256
-      analyser.smoothingTimeConstant = Math.max(0, Math.min(0.99, viz.smoothing))
+      // 막대용(fftSize 256 — 막대 하나 ≈ 주파수 칸 하나)과 파형용(2048 ≈ 46ms — 저음도 몇 주기가 보이게)을 따로 둔다
+      const mkAnalyser = (size) => {
+        const a = ctxAudio.createAnalyser()
+        a.fftSize = size
+        a.smoothingTimeConstant = Math.max(0, Math.min(0.99, viz.smoothing))
+        return a
+      }
       const gain = ctxAudio.createGain()
       gain.gain.value = element.muted ? 0 : liveRef.current.volume
       gainRef.current = gain
-      srcNode.connect(analyser); analyser.connect(gain); gain.connect(ctxAudio.destination)
-      const data = new Uint8Array(analyser.frequencyBinCount)
+      // 소리: src → gain → 스피커. 분석: src → 분석기(모노) / src → 채널 분리 → 왼쪽·오른쪽 분석기(스테레오).
+      // 분석기를 소리 경로 밖에 두어 음소거(gain 0)에도 막대가 움직이고, 채널 수를 바꿔도 소리는 그대로다.
+      srcNode.connect(gain); gain.connect(ctxAudio.destination)
+      const tap = (from, out) => { const f = mkAnalyser(256), t = mkAnalyser(2048); from.connect(f, out); from.connect(t, out); return [f, t] }
+      const [mono, monoWave] = tap(srcNode, 0)
+      const split = ctxAudio.createChannelSplitter(2)
+      srcNode.connect(split)
+      const [left, leftWave] = tap(split, 0)
+      const [right, rightWave] = tap(split, 1)
       const loop = () => {
         if (stopped) return
         // 볼륨 실시간 반영(음소거 우선)
         if (gainRef.current) {
           gainRef.current.gain.value = element.muted ? 0 : liveRef.current.volume * capGain()
         }
-        analyser.getByteFrequencyData(data)
         const { viz: v, width: w, height: h } = liveRef.current
+        const nodes = v.channels === 'stereo'
+          ? { L: left, R: right, waveL: leftWave, waveR: rightWave }
+          : { L: mono, waveL: monoWave }
         const ctx = syncCanvasSize(cv)
-        drawViz(ctx, w, h, barsFromFrequency(data, barCount(w, v.barWidth, v.barGap), v.sensitivity), v)
+        paintViz(ctx, w, h, vizLiveFrame(nodes, vizBarsPerChannel(w, h, v), v), v)
         raf = requestAnimationFrame(loop)
       }
       ctxAudio.resume().catch(() => {})

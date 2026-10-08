@@ -13,7 +13,7 @@ import { detectListType, applyListType } from '../core/TextListTransform'
 import { addRow, removeRow, addCol, removeCol, setHeaderRow, setBorder } from '../core/slideTable'
 import { useScrub } from './useScrub'
 import { isCoarsePointer } from '../core/pointerEnv'
-import { DEFAULT_VIZ, VIZ_SHAPES } from '../core/audioViz'
+import { DEFAULT_VIZ, VIZ_SHAPES, VIZ_CHANNELS } from '../core/audioViz'
 import { setFontSizeUniformPx, stripInlineFormatting, richToPlainText, FORMAT_STRIP } from '../core/TextStyleScope'
 import { generateImage, hasApiKey } from '../core/OpenAIClient'
 import { openAiSettings } from './AiSettingsModal'
@@ -3002,6 +3002,14 @@ function VideoChromaKey({ el, update }) {
   )
 }
 
+const STEREO_HINT = {
+  bars: '가운데 선 위로 왼쪽 채널, 아래로 오른쪽 채널이 뻗습니다.',
+  blocks: '가운데 선 위로 왼쪽 채널, 아래로 오른쪽 채널 칸이 켜집니다.',
+  mirror: '가운데에서 왼쪽으로 왼쪽 채널, 오른쪽으로 오른쪽 채널이 펼쳐집니다(낮은 소리가 가운데).',
+  wave: '위 줄이 왼쪽 채널, 아래 줄이 오른쪽 채널 파형입니다.',
+  circle: '왼쪽 반원이 왼쪽 채널, 오른쪽 반원이 오른쪽 채널입니다.',
+}
+
 function AudioVizSection({ el, update, updateStyle }) {
   const waitEnd = waitsForEnd(el)
   const autoplay = effectiveAutoplay(el)
@@ -3014,7 +3022,7 @@ function AudioVizSection({ el, update, updateStyle }) {
     <div className="space-y-2">
       <SectionTitle>오디오 비주얼라이저</SectionTitle>
       <p className="text-[11px] text-slate-500 leading-relaxed">
-        발표 모드에서 음악이 재생되며 막대가 주파수에 맞춰 반응합니다. 편집 화면은 미리보기(정적)입니다.
+        발표 모드에서 음악이 재생되며 막대(파형은 선)가 소리에 맞춰 반응합니다. 편집 화면은 미리보기(정적)입니다.
       </p>
 
       {/* 모양 */}
@@ -3024,6 +3032,19 @@ function AudioVizSection({ el, update, updateStyle }) {
         options={VIZ_SHAPES}
         onChange={v => updateViz({ shape: v })}
       />
+
+      {/* 채널 — 스테레오면 왼쪽·오른쪽을 따로 그린다 */}
+      <SelectInput
+        label="채널"
+        value={viz.channels}
+        options={VIZ_CHANNELS}
+        onChange={v => updateViz({ channels: v })}
+      />
+      {viz.channels === 'stereo' && (
+        <p className="text-[11px] text-slate-500 leading-relaxed">
+          {STEREO_HINT[viz.shape] || STEREO_HINT.bars}
+        </p>
+      )}
 
       {/* 막대 두께 / 간격 */}
       <div className="grid grid-cols-2 gap-1.5">
@@ -3047,9 +3068,15 @@ function AudioVizSection({ el, update, updateStyle }) {
 
       {/* 막대 색 */}
       <div>
-        <p className={`${labelClass} mb-0.5`}>막대 색</p>
+        <p className={`${labelClass} mb-0.5`}>{viz.channels === 'stereo' ? '왼쪽 채널 색' : '막대 색'}</p>
         <ColorPicker value={viz.color} onChange={v => updateViz({ color: v })} />
       </div>
+      {viz.channels === 'stereo' && (
+        <div>
+          <p className={`${labelClass} mb-0.5`}>오른쪽 채널 색</p>
+          <ColorPicker value={viz.color2 || viz.color} onChange={v => updateViz({ color2: v })} />
+        </div>
+      )}
 
       {/* 박스 배경 / 모서리 */}
       <div>

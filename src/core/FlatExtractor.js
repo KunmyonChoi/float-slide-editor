@@ -13,7 +13,7 @@ import { parseAnimAttrs, parseLoopAttrs, parseTransitionAttrs, parseAdvanceAttrs
 import { parseFxAttr, fxFromCssFilter } from './imageFx.js'
 import { stripSvgSelfPositioning } from './svgContent.js'
 import { normFractions, MAX_ROWS, MAX_COLS, TABLE_BORDER_COLOR } from './slideTable.js'
-import { DEFAULT_VIZ } from './audioViz.js'
+import { DEFAULT_VIZ, VIZ_SHAPES } from './audioViz.js'
 
 let _flatCounter = 0
 export function nextFlatId() { return `flat-${++_flatCounter}` }
@@ -932,11 +932,29 @@ function toAudioElement(base, box, audioEl, isVizBox) {
     autoplay: cfg ? cfg.autoplay !== false : true,
     loop: audioEl.loop || audioEl.hasAttribute('loop'),
     muted: cfg ? !!cfg.muted : (audioEl.muted || audioEl.hasAttribute('muted')),
-    viz: { ...DEFAULT_VIZ, ...(cfg?.viz || (barColor ? { color: barColor } : {})) },
+    viz: { ...DEFAULT_VIZ, ...(cfg?.viz || (barColor ? { color: barColor } : {})),
+      ...vizAttrsOf(audioEl, audioEl.parentElement && !audioEl.parentElement.classList.contains('slide') ? audioEl.parentElement : null) },
     // 끝까지 재생 후 다음·최대 재생 시간·BGM — <audio> 또는 .fe-audioviz 상자에 선언
     ...parseMediaAttrs(audioEl, box,
       audioEl.parentElement && !audioEl.parentElement.classList.contains('slide') ? audioEl.parentElement : null),
   }
+}
+
+/**
+ * <audio>(또는 바로 위 래퍼)의 비주얼라이저 속성 — data-viz(모양)·data-viz-channels·data-viz-color·data-viz-color2.
+ * 모르는 값은 버린다.
+ */
+export function vizAttrsOf(...nodes) {
+  const get = (name) => { for (const n of nodes) { const v = n?.getAttribute?.(name); if (v) return v.trim() } return '' }
+  const out = {}
+  const shape = get('data-viz')
+  if (VIZ_SHAPES.some(o => o.value === shape)) out.shape = shape
+  const ch = get('data-viz-channels')
+  if (ch === 'mono' || ch === 'stereo') out.channels = ch
+  const c1 = get('data-viz-color'), c2 = get('data-viz-color2')
+  if (c1) out.color = c1
+  if (c2) out.color2 = c2
+  return out
 }
 
 /** 배경색 위에서 잘 보이는 같은 계열의 막대색 — 밝은 배경은 어둡게, 어두운 배경은 밝게 섞는다. 배경 없으면 null. */

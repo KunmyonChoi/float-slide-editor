@@ -300,6 +300,27 @@ body { width: 1920px; height: 1080px; overflow: hidden; position: relative; back
 </div>
 ```
 
+**비주얼라이저 모양·스테레오** — `<audio>`(또는 바로 위 래퍼 div)에 단다. 없으면 모노 막대.
+
+| 속성 | 값 | 뜻 |
+|---|---|---|
+| `data-viz` | `bars` `mirror` `wave` `circle` `blocks` | 막대(아래→위) · 미러(가운데 상하) · 파형(선) · 원형(둘레 막대) · LED 칸 |
+| `data-viz-channels` | `mono` `stereo` | 스테레오면 왼쪽·오른쪽 채널을 따로 그린다(아래) |
+| `data-viz-color` | CSS 색 | 막대 색(스테레오면 왼쪽 채널). 없으면 플레이어 배경에 맞춰 자동 |
+| `data-viz-color2` | CSS 색 | 스테레오 오른쪽 채널 색(없으면 `data-viz-color`) |
+
+스테레오 배치: 막대·LED는 가운데 선 위로 왼쪽/아래로 오른쪽, 미러는 가운데에서 왼쪽으로 왼쪽/오른쪽으로
+오른쪽(낮은 소리가 가운데), 파형은 위 줄 왼쪽/아래 줄 오른쪽, 원형은 왼쪽 반원 왼쪽/오른쪽 반원 오른쪽.
+두 채널이 구분되도록 `data-viz-color2`를 다른 색으로 준다. 모양에 맞게 상자를 잡는다 — 막대·미러·파형·LED는
+가로로 길게(높이 120px 이상이 보기 좋다; 54px 한 줄 플레이어는 `bars` 모노가 무난), 원형은 정사각형(300px 이상).
+```html
+<div data-viz="circle" data-viz-channels="stereo"
+     style="position:absolute;left:1360px;top:560px;width:360px;height:360px;overflow:hidden;">
+  <audio controls data-advance="end" src="audio/song1.mp3" data-viz-color="#f97316" data-viz-color2="#22d3ee"
+         style="display:block;width:360px;height:360px;border-radius:180px;background:rgba(15,23,42,0.6);"></audio>
+</div>
+```
+
 **오디오·영상 재생 옵션** — `<audio>`/`<video>`(또는 바로 위 래퍼 div)에 단다. 발표의 '음성 후 자동
 진행'·'반복 재생(전시회)'에서 쓰인다(손으로 넘기는 발표에는 영향 없음).
 
