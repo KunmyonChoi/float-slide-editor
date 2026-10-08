@@ -7,6 +7,7 @@ import { openCapabilities } from './CapabilitiesModal'
 import { openGenitorSkill } from './GenitorSkillModal'
 import { openShareLinkModal } from './ShareLinkModal'
 import { runPptExport, openPptSettings } from './PptExport'
+import { openVideoExport } from './videoExportState'
 import { openFile } from '../core/FilePicker'
 import { confirmDialog } from './ConfirmDialog'
 import { isBundlerHtml } from '../core/BundlerUnpacker'
@@ -396,6 +397,9 @@ export default function FileMenu({ fallbackSample }) {
         { id: 'sepPdf', type: 'separator' },
         { id: 'exportPdf', label: 'PDF — 현재 페이지', shortcut: 'PDF', action: handleExportPdf },
         { id: 'exportPdfAll', label: 'PDF — 전체 페이지', shortcut: 'PDF', action: handleExportPdfAll },
+        { id: 'sepVideo', type: 'separator' },
+        // 발표 화면을 실제로 재생하며 녹화(나레이션·BGM 포함) — 덱 길이만큼 걸린다
+        { id: 'exportVideo', label: '영상으로 내보내기 (MP4)', shortcut: '녹화', action: () => { setOpen(false); openVideoExport() } },
         { id: 'sepE2', type: 'separator' },
         { id: 'exportJson', label: 'JSON — 현재 페이지', action: handleExportJson },
         { id: 'exportJsonAll', label: 'JSON — 전체 페이지', action: handleExportJsonAll },

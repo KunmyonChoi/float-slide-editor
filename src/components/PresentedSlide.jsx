@@ -19,13 +19,14 @@ import { slideTransitionCss, slideTransitionVars } from '../core/slideTransition
  *                            추정값을 돌려준다. 자막이 매 프레임 호출한다.
  * @param {number} captionSpaceBelow 슬라이드 아래 레터박스 여백(캔버스 단위). 자막이 들어갈
  *                            만큼 넓으면 슬라이드를 덮는 대신 그 아래에 그린다.
+ * @param {boolean} stageMarker 영상 녹화 중 — 녹화기가 잘라 낼 슬라이드 영역 표시(data-present-stage)
  */
 export default function PresentedSlide({
   slideKey, page, elements, animInfo, revealed, playingStep,
   scale, canvasSize,
   penActive = false, penTool, penColor, penWidth,
   blackout = false, strokes = [], onCommitStroke, onEraseStroke,
-  captionWords, getAudioTime, captionSpaceBelow = 0,
+  captionWords, getAudioTime, captionSpaceBelow = 0, stageMarker = false,
 }) {
   // KaraokeCaptions는 `audioEl.currentTime`을 매 프레임 읽는다 — 엘리먼트 대신
   // 같은 모양의 얇은 어댑터를 넘겨 컴포넌트를 그대로 재사용한다.
@@ -39,7 +40,7 @@ export default function PresentedSlide({
   }), [page?.transition])
 
   return (
-    <div style={{
+    <div data-present-stage={stageMarker ? '' : undefined} style={{
       position: 'absolute',
       top: '50%',
       left: '50%',

@@ -12,6 +12,7 @@ import { hasApiKey } from './OpenAIClient'
 import { openAiSettings } from '../components/AiSettingsModal'
 import { waitMediaIds, onMediaSignal, mediaAdvanceDecision, applySlideAdvance, effectiveAdvanceMode, activeBgm } from './mediaAdvance'
 import { getAudioClock } from './audioClock'
+import { DEFAULT_ADVANCE_AFTER_SEC } from './deckMotion'
 
 /**
  * usePresentationEngine — 발표 상태 일체(덱·현재 슬라이드·빌드 단계·잉크·나레이션·자막)를
@@ -102,7 +103,7 @@ function mergePageCaptions(setAllPages, key, notesCaptions) {
 
 export function usePresentationEngine({ onExit } = {}) {
   const [allPages, setAllPages] = useState(null)
-  const [loading, setLoading] = useState(true)
+  const [deckLoading, setLoading] = useState(true)
   const [loadingCaptions, setLoadingCaptions] = useState(false) // 첫 슬라이드 자막 준비 중(로딩 화면 문구용)
 
   // 미방문 페이지 포함 전체 페이지 비동기 추출 (프리로드 완료 대기)
@@ -143,6 +144,15 @@ export function usePresentationEngine({ onExit } = {}) {
 
   const sortedKeys = useMemo(() => (allPages ? sortedPageKeys(allPages) : []), [allPages])
 
+  // ── 영상 내보내기(녹화) 모드 ──
+  // 녹화기가 화면 공유를 받아 녹화를 시작할 때까지(preparing) 덱을 틀지 않고 붙든다 — 아래 모든
+  // 재생·타이머가 loading을 보고 멈춰 있으므로, 붙드는 동안은 loading으로 취급한다.
+  // 녹화 중에는 사람이 없으니 루프·전시회처럼 자동으로 흘려보내되, 마지막 장이 끝나면 처음으로
+  // 돌아가지 않고 '덱 끝'을 알린다.
+  const recording = useEditorStore(s => !!s.videoRecording)
+  const recordHold = useEditorStore(s => s.videoRecording?.phase === 'preparing')
+  const loading = deckLoading || recordHold
+
   // 최신 allPages를 ref로도 들고 있는다 — 아래 백그라운드 프리페치 루프가 자기 자신의 자막
   // 저장으로 인한 allPages 갱신 때문에 매번 처음부터 재시작하지 않고, 최신 값만 읽게 하기 위함.
   const allPagesRef = useRef(allPages)
@@ -181,7 +191,10 @@ export function usePresentationEngine({ onExit } = {}) {
   const nextPage = allPages?.[sortedKeys[currentSlide + 1]] || null
 
   // 루프 발표(전시회처럼 무인으로 계속 틀어두기) — 마지막 장 다음은 처음으로 돌아간다.
-  const loopPresentation = useEditorStore(s => s.loopPresentation)
+  // 녹화 중에는 루프를 끈다(덱이 끝나면 녹화도 끝나야 한다).
+  const loopPresentation = useEditorStore(s => s.loopPresentation) && !recording
+  // 무인 재생 — 루프 또는 녹화. 음성 없는 장의 머무는 시간·빌드 자동 재생·자동 진행이 따른다.
+  const unattended = loopPresentation || recording
   // 루프 회차. 한 장짜리 덱은 되감아도 currentSlide가 그대로라 이펙트가 다시 돌지 않는다 —
   // 회차를 의존성에 넣어 '같은 장으로 되감기'도 새 진입으로 취급한다.
   const [loopCycle, setLoopCycle] = useState(0)
@@ -197,9 +210,13 @@ export function usePresentationEngine({ onExit } = {}) {
       setRevealed(0)
       setCurrentSlide(0)
       setLoopCycle(c => c + 1)
+    } else if (recording) {
+      // 녹화: 마지막 장이 끝났다 — 녹화기가 여유를 두고 녹화를 멈춘다(화면은 이 장에 머문다).
+      const rec = useEditorStore.getState().videoRecording
+      if (rec?.phase === 'playing') useEditorStore.getState().updateVideoRecording({ phase: 'finished' })
     }
     // 루프가 꺼져 있으면 마지막 장에 그대로 머문다(기존 동작)
-  }, [currentSlide, totalSlides, loopPresentation])
+  }, [currentSlide, totalSlides, loopPresentation, recording])
 
   // ── 네비게이션 — 빌드 단계 먼저 진행, 다 끝나면 슬라이드 이동 ──
   const goNext = useCallback(() => {
@@ -318,9 +335,12 @@ export function usePresentationEngine({ onExit } = {}) {
   //   auto(기본): 끝까지 재생할 미디어가 있으면 all, 없으면 narration
   // 미디어 신호는 슬라이드 진입 회차(token)별로 모은다 — 이전 장에서 늦게 도착한 신호가 다음 장의
   // 기다림을 풀어 버리지 않게.
-  const autoOn = autoAdvance || loopPresentation
+  const autoOn = autoAdvance || unattended
   const allWaitIds = useMemo(() => waitMediaIds(elements), [elements])
-  const effMode = effectiveAdvanceMode(advanceMode, allWaitIds.length)
+  const baseMode = effectiveAdvanceMode(advanceMode, allWaitIds.length)
+  // 녹화 중 '클릭' 장은 눌러 줄 사람이 없어 녹화가 멈춰 버린다 — 시간 기본값(10초)으로 넘긴다.
+  // (전시회 루프는 클릭 장에서 멈추는 게 의도된 동작이라 그대로 둔다.)
+  const effMode = recording && baseMode === 'click' ? 'time' : baseMode
   const waitIds = useMemo(() => (effMode === 'media' || effMode === 'all' ? allWaitIds : []), [effMode, allWaitIds])
   const waitKey = waitIds.join('|')
   const slideToken = `${currentSlide}:${loopCycle}`
@@ -371,7 +391,8 @@ export function usePresentationEngine({ onExit } = {}) {
   //     나레이션을 읽기 힘든 상황용. 마지막 단계까지 나오면 그대로 멈춘다.
   //  3) 루프 발표: 눌러 줄 사람이 없으니 당연히 자동이어야 한다.
   // (슬라이드→슬라이드 자동 전환은 '음성 후 자동 진행'과 루프가 담당.)
-  const autoPlaySteps = autoBuild || loopPresentation || (narration && hasAudio)
+  //  4) 녹화: 루프와 같은 이유.
+  const autoPlaySteps = autoBuild || unattended || (narration && hasAudio)
   useEffect(() => {
     if (loading || !autoPlaySteps || animInfo.stepCount === 0) return
     const durs = stepDurations(animInfo, elements)
@@ -396,7 +417,7 @@ export function usePresentationEngine({ onExit } = {}) {
   // 슬라이드가 필요 이상으로 오래 머문다.
   const buildTotalMs = autoBuildTotalMs(animInfo, elements)
   // narration 기준인 장만 — 미디어를 기다리는 장·시간 지정·클릭 전용 장은 각자 규칙이 맡는다.
-  const dwellOn = !loading && loopPresentation && effMode === 'narration' && !audioWillPlay
+  const dwellOn = !loading && unattended && effMode === 'narration' && !audioWillPlay
   useEffect(() => {
     if (!dwellOn) return
     const t = setTimeout(advanceSlide, buildTotalMs + LOOP_DWELL_MS)
@@ -404,7 +425,8 @@ export function usePresentationEngine({ onExit } = {}) {
   }, [dwellOn, buildTotalMs, advanceSlide, currentSlide, loopCycle])
 
   // 시간 지정(time) — 장에 들어선 뒤 N초. 나레이션·미디어와 무관.
-  const advanceAfterMs = effMode === 'time' ? Math.max(1, page?.advance?.seconds || 10) * 1000 : 0
+  const advanceAfterMs = effMode === 'time'
+    ? Math.max(1, page?.advance?.seconds || DEFAULT_ADVANCE_AFTER_SEC) * 1000 : 0
   useEffect(() => {
     if (loading || !autoOn || !advanceAfterMs) return
     const t = setTimeout(advanceSlide, advanceAfterMs)
@@ -421,10 +443,10 @@ export function usePresentationEngine({ onExit } = {}) {
   useEffect(() => {
     if (mediaDecision === 'advance') { advanceSlide(); return }
     if (mediaDecision !== 'dwell') return
-    if (!loopPresentation) { if (audioWillPlay) advanceSlide(); return }
+    if (!unattended) { if (audioWillPlay) advanceSlide(); return }
     const t = setTimeout(advanceSlide, buildTotalMs + LOOP_DWELL_MS)
     return () => clearTimeout(t)
-  }, [mediaDecision, waitKey, loopPresentation, audioWillPlay, buildTotalMs, advanceSlide])
+  }, [mediaDecision, waitKey, unattended, audioWillPlay, buildTotalMs, advanceSlide])
 
   // ── 다음 장까지 남은 시간(초) — 발표자 표시용. 알 수 없으면 null ──
   // 미디어 길이는 재생 중인 요소(audioClock 등록부)에서 읽는다. 최대 재생 시간이 있으면 그만큼만.
@@ -433,7 +455,7 @@ export function usePresentationEngine({ onExit } = {}) {
     const now = Date.now()
     if (effMode === 'time') return Math.max(0, (slideStartRef.current + advanceAfterMs - now) / 1000)
     if (effMode === 'narration' && !audioWillPlay) {
-      return loopPresentation
+      return unattended
         ? Math.max(0, (slideStartRef.current + buildTotalMs + LOOP_DWELL_MS - now) / 1000)
         : null
     }
@@ -450,7 +472,7 @@ export function usePresentationEngine({ onExit } = {}) {
     }
     if (!parts.length || parts.some(v => v == null)) return null
     return Math.max(...parts)
-  }, [autoOn, loading, effMode, advanceAfterMs, audioWillPlay, loopPresentation, buildTotalMs,
+  }, [autoOn, loading, effMode, advanceAfterMs, audioWillPlay, unattended, buildTotalMs,
     narrationPlaying, waitIds, curMedia.status, elements])
 
   // ── 여러 장에 걸쳐 흐르는 BGM(bgmSpan) — 슬라이드를 넘겨도 끊기지 않게 발표 화면 밖에서 재생 ──
@@ -515,6 +537,11 @@ export function usePresentationEngine({ onExit } = {}) {
   // ── 발표 중 키보드 ──
   // Escape는 2단계: 펜이 켜져 있으면 펜만 끄고(+블랙아웃 해제), 아니면 발표 종료.
   const handleKeyDown = useCallback((e) => {
+    // 녹화 중에는 Esc(녹화 정지·저장)만 받는다 — 펜·넘기기 단축키가 녹화 화면을 흐트리지 않게.
+    if (recording) {
+      if (e.key === 'Escape') { e.preventDefault(); onExit?.() }
+      return
+    }
     if (e.key === 'Escape') {
       if (penActive) { setPenActive(false); setBlackout(false); return }
       onExit?.()
@@ -536,11 +563,13 @@ export function usePresentationEngine({ onExit } = {}) {
       e.preventDefault()
       goPrev()
     }
-  }, [penActive, onExit, goNext, goPrev, clearSlideInk])
+  }, [recording, penActive, onExit, goNext, goPrev, clearSlideInk])
 
   return {
     // 덱
     allPages, sortedKeys, loading, loadingCaptions,
+    // 녹화 모드 — deckLoading: 덱 준비 중(녹화 대기와 구분) · recordHold: 녹화 시작 대기
+    recording, recordHold, deckLoading,
     page, nextPage, elements, canvasSize, animInfo,
     // 진행
     currentSlide, totalSlides, revealed, playingStep, goNext, goPrev, goToSlide, advanceSlide,
