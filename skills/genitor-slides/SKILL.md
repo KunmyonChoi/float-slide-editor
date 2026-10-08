@@ -144,6 +144,15 @@ body { width: 1920px; height: 1080px; overflow: hidden; position: relative; back
             border-radius:24px;box-shadow:0 15px 45px rgba(0,0,0,0.3);"></div>
 ```
 
+**유리 패널(간유리)** — 반투명 채움 + `backdrop-filter:blur(Npx) saturate(1.4)`이면 뒤의 그림·글자가 흐리게 비친다.
+사진 위 재생기·정보 카드에 좋다. 채움은 반투명(알파 0.1~0.35)이어야 효과가 보이고, 얇은 밝은 테두리를 함께 주면 유리 가장자리처럼
+보인다. 유리 패널에는 투명도를 바꾸는 반복 효과(breathe·blink)를 걸지 않는다(그동안 흐림이 꺼진다). PPTX에서는 흐림 없이 반투명 채움만 남는다.
+```html
+<div style="position:absolute;left:1180px;top:240px;width:640px;height:600px;border-radius:32px;
+     background:rgba(255,255,255,0.14);border:1px solid rgba(255,255,255,0.35);
+     backdrop-filter:blur(22px) saturate(1.4);-webkit-backdrop-filter:blur(22px) saturate(1.4);"></div>
+```
+
 **카드 + 텍스트(병합)** — 배경/테두리가 있는 div에 **텍스트 노드 한 줄만** 있을 때, 하나의
 편집 가능한 텍스트 요소로 병합된다. 카드 안의 글은 중앙정렬이 깔끔. **이 레시피는 한 줄짜리
 카드 전용이다.** `<br>`이나 두 개 이상의 `<strong>`/`<span>`이 필요해지는 순간 아래
@@ -221,6 +230,18 @@ body { width: 1920px; height: 1080px; overflow: hidden; position: relative; back
 </div>
 ```
 
+**곡선 글자** — 텍스트 div에 `data-text-arc="−100~100"`을 달면 Genitor가 글자를 원호를 따라 휘어 그린다
+(+ 위로 볼록한 아치 ∩, − 아래로 오목한 미소 ∪, 100이면 반원). 배지·스탬프·로고처럼 **한 줄 글자**에 쓴다(여러 줄은
+한 줄로 이어진다). 글꼴·크기·자간·색·외곽선·그림자는 그대로 따른다. 원호는 div 폭에 걸치므로 폭을 원 지름쯤으로,
+높이는 글자 크기 + 볼록한 높이(폭 × 휘기/200)쯤으로 준다. 브라우저에서 HTML을 바로 열면 곧게 보인다(Genitor에서 휜다).
+```html
+<!-- 원형 배지: 위 글자는 아치, 아래 글자는 미소 -->
+<div data-text-arc="70" style="position:absolute;left:700px;top:300px;width:520px;height:200px;
+     font-family:'Bebas Neue',sans-serif;font-size:72px;letter-spacing:8px;color:#13294B;text-align:center;">SUNSET LOUNGE</div>
+<div data-text-arc="-60" style="position:absolute;left:700px;top:600px;width:520px;height:200px;
+     font-family:'Bebas Neue',sans-serif;font-size:56px;color:#FFF6E0;text-align:center;">CITY POP · FUNK</div>
+```
+
 **글머리 목록** — `<ul>/<li>`의 마커(•)가 보존된다(각 li가 텍스트 요소로):
 ```html
 <div style="position:absolute;left:120px;top:360px;width:1680px;height:450px;
@@ -238,6 +259,18 @@ body { width: 1920px; height: 1080px; overflow: hidden; position: relative; back
   <img src="https://example.com/photo.jpg" alt=""
        style="width:100%;height:100%;object-fit:cover;display:block;
               border-radius:24px;border:1px solid rgba(255,255,255,0.15);box-sizing:border-box;" />
+</div>
+```
+
+**그림 보정** — 이미지·영상(또는 바로 위 래퍼 div)에 `data-img-fx`를 달면 Genitor가 보정해 그린다.
+`brightness`·`contrast`·`saturation`(%, 0~200, 기본 100) · `warmth`(−100 차갑게 ~ 100 따뜻하게) · `blur`(px, 0~40) ·
+`vignette`(0~100, 가장자리를 어둡게). 글자를 얹을 배경 사진은 **어둡게 + 비네팅**이 검은 오버레이 도형보다 낫다(그림을
+덮지 않으므로 그림 선택·이미지 AI가 그대로 된다). 화면을 꽉 채운 배경 그림에도 쓸 수 있다. 밝기·대비·채도·흐림은 CSS
+`filter`로도 함께 주면 브라우저에서 바로 보인다(색온도·비네팅은 Genitor에서만).
+```html
+<div data-img-fx="brightness:80;contrast:110;warmth:30;vignette:60"
+     style="position:absolute;left:0px;top:0px;width:1920px;height:1080px;overflow:hidden;">
+  <img src="images/bg.jpg" alt="" style="width:100%;height:100%;object-fit:cover;display:block;filter:brightness(0.8) contrast(1.1);" />
 </div>
 ```
 
@@ -264,6 +297,27 @@ body { width: 1920px; height: 1080px; overflow: hidden; position: relative; back
 <div style="position:absolute;left:840px;top:900px;width:960px;height:54px;overflow:hidden;">
   <audio controls src="audio/song1.mp3"
          style="display:block;width:960px;height:54px;border-radius:27px;background:#2a4157;"></audio>
+</div>
+```
+
+**비주얼라이저 모양·스테레오** — `<audio>`(또는 바로 위 래퍼 div)에 단다. 없으면 모노 막대.
+
+| 속성 | 값 | 뜻 |
+|---|---|---|
+| `data-viz` | `bars` `mirror` `wave` `circle` `blocks` | 막대(아래→위) · 미러(가운데 상하) · 파형(선) · 원형(둘레 막대) · LED 칸 |
+| `data-viz-channels` | `mono` `stereo` | 스테레오면 왼쪽·오른쪽 채널을 따로 그린다(아래) |
+| `data-viz-color` | CSS 색 | 막대 색(스테레오면 왼쪽 채널). 없으면 플레이어 배경에 맞춰 자동 |
+| `data-viz-color2` | CSS 색 | 스테레오 오른쪽 채널 색(없으면 `data-viz-color`) |
+
+스테레오 배치: 막대·LED는 가운데 선 위로 왼쪽/아래로 오른쪽, 미러는 가운데에서 왼쪽으로 왼쪽/오른쪽으로
+오른쪽(낮은 소리가 가운데), 파형은 위 줄 왼쪽/아래 줄 오른쪽, 원형은 왼쪽 반원 왼쪽/오른쪽 반원 오른쪽.
+두 채널이 구분되도록 `data-viz-color2`를 다른 색으로 준다. 모양에 맞게 상자를 잡는다 — 막대·미러·파형·LED는
+가로로 길게(높이 120px 이상이 보기 좋다; 54px 한 줄 플레이어는 `bars` 모노가 무난), 원형은 정사각형(300px 이상).
+```html
+<div data-viz="circle" data-viz-channels="stereo"
+     style="position:absolute;left:1360px;top:560px;width:360px;height:360px;overflow:hidden;">
+  <audio controls data-advance="end" src="audio/song1.mp3" data-viz-color="#f97316" data-viz-color2="#22d3ee"
+         style="display:block;width:360px;height:360px;border-radius:180px;background:rgba(15,23,42,0.6);"></audio>
 </div>
 ```
 

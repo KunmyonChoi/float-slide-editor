@@ -1,4 +1,4 @@
-import { useCallback, useState, useEffect, useRef, useMemo } from 'react'
+import { useCallback, useState, useEffect, useRef, useMemo, useId } from 'react'
 import { useFlatStore, isBackgroundLayer } from '../store/flatStore'
 import { useEditorStore } from '../store/editorStore'
 import { BlobStore } from '../core/BlobStore'
@@ -11,6 +11,8 @@ import LyricScroller from './LyricScroller'
 import { hasLyricSync } from '../core/lyricSync'
 import ChromaVideoPlayer from './ChromaVideoPlayer'
 import { waitsForEnd, effectiveAutoplay, effectiveLoop } from '../core/mediaAdvance'
+import { isCurvedText, curvedTextSvg } from '../core/curvedText'
+import { normalizeFx, fxFilterCss, fxOverlayStyles } from '../core/imageFx'
 import MediaSignalBox from './MediaSignalBox'
 import MatteVideoPlayer from './MatteVideoPlayer'
 
@@ -50,6 +52,8 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
   // 배경은 캔버스에서 클릭으로 선택되지 않음 — pointer-events:none으로 클릭이
   // 위 요소/빈 캔버스로 통과(속성창 '배경 레이어'에서만 선택).
   const isFullCanvasBg = isBackgroundLayer(element, canvasSize)
+  // 곡선 글자 path id — 같은 요소가 썸네일·발표에 여러 번 그려져도 겹치지 않게
+  const arcUid = useId().replace(/[^\w-]/g, '')
 
   const handleMouseDown = useCallback((e) => {
     // 그리기 모드 중에는 요소 선택 차단
@@ -130,12 +134,20 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
     transformOrigin: element.rotation ? 'center center' : undefined,
   }
 
+  // 그림 보정(밝기·대비·채도·흐림 = filter, 색온도·비네팅 = 덮는 레이어) — imageFx.js
+  const fx = normalizeFx(element.imageFx)
+  const fxFilter = fx ? fxFilterCss(fx) : ''
+  const fxLayers = fx ? fxOverlayStyles(fx) : []
+
   if (type === 'image') {
     const ct = cropCss(element, styles)
+    // 크롭·흐림·덮는 레이어가 있으면 상자 밖으로 번지지 않게 자른다
+    const clip = ct || fxLayers.length || (fx && fx.blur)
     return (
-      <div style={ct ? { ...baseStyle, overflow: 'hidden', borderRadius: styles.borderRadius } : baseStyle}
+      <div style={clip ? { ...baseStyle, overflow: 'hidden', borderRadius: styles.borderRadius } : baseStyle}
         onMouseDown={handleMouseDown} onClick={handleClick} onDoubleClick={handleDoubleClick}>
-        <ImageContent content={content} styles={styles} transform={ct} />
+        <ImageContent content={content} styles={styles} transform={ct} filter={fxFilter} />
+        <FxOverlays layers={fxLayers} radius={styles.borderRadius} />
       </div>
     )
   }
@@ -159,6 +171,8 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
 
     // 빈 레이아웃 텍스트: 흐린 안내문(placeholder) 표시 — 입력 시작하면 사라짐
     const showPlaceholder = !isEditing && !content && !!element.placeholder
+    // 곡선 글자: 편집 중이 아닐 때만 원호(SVG)로 그린다 — 편집할 땐 평소처럼 곧은 글자
+    const curved = !isEditing && !showPlaceholder && isCurvedText(element)
     const textContent = isRich
       ? <span dangerouslySetInnerHTML={{ __html: content }} />
       : content
@@ -193,10 +207,13 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
           ...borderProps,
           boxShadow: styles.boxShadow,
           // 그래디언트 텍스트: textShadow는 내부 span의 drop-shadow로 처리
-          textShadow: isGradientText ? undefined : styles.textShadow,
+          // 곡선 글자는 그림자·외곽선을 SVG 안에서 그린다(바깥 div에 두면 두 번 그려진다)
+          textShadow: isGradientText || curved ? undefined : styles.textShadow,
           // 외곽선(텍스트 스트로크) — 그래디언트가 아니면 div에 직접 적용
-          ...(!isGradientText && styles.textStroke && styles.textStroke !== 'none' ? { WebkitTextStroke: styles.textStroke, paintOrder: 'stroke fill' } : {}),
+          ...(!isGradientText && !curved && styles.textStroke && styles.textStroke !== 'none' ? { WebkitTextStroke: styles.textStroke, paintOrder: 'stroke fill' } : {}),
           opacity: styles.opacity,
+          // 유리 효과(뒤 그림 흐리기) — 배경이 반투명일 때 의미가 있다
+          ...glassStyle(styles),
           padding: styles.padding,
           overflow: (styles.overflow === 'hidden' || styles.overflow === 'auto' || styles.overflow === 'scroll' ||
                      styles.overflowX === 'hidden' || styles.overflowX === 'auto' || styles.overflowX === 'scroll')
@@ -240,7 +257,9 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
         onDoubleClick={handleDoubleClick}
       >
         {/* 가사 싱크: 발표 중에는 오디오에 맞춰 가사가 흐르는 보기로 바꾼다(편집 중에는 그대로 텍스트) */}
-        {playNowProp === true && hasLyricSync(element) ? <LyricScroller sync={element.lyricSync} textStyle={styles} /> : (() => {
+        {playNowProp === true && hasLyricSync(element) ? <LyricScroller sync={element.lyricSync} textStyle={styles} /> : curved ? (
+          <div style={{ width: '100%', height: '100%' }} dangerouslySetInnerHTML={{ __html: curvedTextSvg(element, arcUid) }} />
+        ) : (() => {
           const inner = showPlaceholder
             ? element.placeholder
             : isGradientText
@@ -325,6 +344,7 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
           borderRadius: styles.borderRadius,
           overflow: 'hidden',
           opacity: styles.opacity,
+          filter: fxFilter || undefined,
         }}>
           {(BlobStore.isIdbRef(content) || isDirectVideo)
             ? (element.chroma?.enabled
@@ -376,6 +396,7 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
                 {hideControls && <div style={{ position: 'absolute', inset: 0, zIndex: 1 }} />}
               </>
           }
+          <FxOverlays layers={fxLayers} radius={vidInnerRadius} />
         </MediaSignalBox>
       </div>
     )
@@ -562,6 +583,8 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
   const shapeBorderProps = resolveBorders(styles)
   const bgImage = styles.backgroundImage
   const hasIdbBg = bgImage && bgImage.includes('idb://')
+  // 보정은 url 그림이 있는 배경에만 — 그라디언트·단색 도형에는 쓰지 않는다
+  const fxBg = fx && bgImage && bgImage.includes('url(')
 
   const shapeContentStyle = content ? {
     color: styles.color || '#000',
@@ -589,13 +612,14 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
   const shapeStyle = {
     ...baseStyle,
     backgroundColor: styles.backgroundColor,
-    backgroundImage: hasIdbBg ? undefined : bgImage,
+    backgroundImage: hasIdbBg || fxBg ? undefined : bgImage,
     backgroundSize: styles.backgroundSize,
     backgroundPosition: styles.backgroundPosition,
     borderRadius: styles.borderRadius,
     ...shapeBorderProps,
     boxShadow: styles.boxShadow,
     opacity: styles.opacity,
+    ...glassStyle(styles),
   }
 
   if (hasIdbBg) {
@@ -610,13 +634,16 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
         content={content}
         contentStyle={shapeContentStyle}
         isRich={element.isRich}
+        fxFilter={fxBg ? fxFilter : ''}
+        fxLayers={fxBg ? fxLayers : null}
       />
     )
   }
 
   const partialFill = renderPartialFill(element)
   return (
-    <div style={partialFill ? { ...shapeStyle, overflow: 'hidden' } : shapeStyle} onMouseDown={handleMouseDown} onClick={handleClick}>
+    <div style={partialFill || fxBg ? { ...shapeStyle, overflow: 'hidden' } : shapeStyle} onMouseDown={handleMouseDown} onClick={handleClick}>
+      {fxBg && <FxBgImage bgImage={bgImage} styles={styles} filter={fxFilter} layers={fxLayers} />}
       {partialFill}
       {content && (
         element.isRich
@@ -766,7 +793,36 @@ function useVideoPoster(url, enabled) {
  * 이미지 요소 — content가 idb:// 참조면 blob URL로 해석해 표시(데이터/HTTP URL은 그대로).
  * (피사체 뒤 텍스트 컷아웃 등 idb 저장 이미지가 안 보이던 문제 수정)
  */
-function ImageContent({ content, styles, transform }) {
+/** 유리 효과(backdrop-filter) — 'none'이 아니면 웹킷 접두어와 함께. */
+function glassStyle(styles) {
+  const bf = styles.backdropFilter
+  return bf && bf !== 'none' ? { backdropFilter: bf, WebkitBackdropFilter: bf } : {}
+}
+
+/** 색온도·비네팅 덮는 레이어 — 클릭은 아래로 통과. */
+function FxOverlays({ layers, radius }) {
+  if (!layers?.length) return null
+  return layers.map((st, i) => (
+    <div key={i} style={{ position: 'absolute', inset: 0, pointerEvents: 'none', borderRadius: radius, ...st }} />
+  ))
+}
+
+/** 배경 그림(url)을 따로 한 겹 두고 보정을 그 겹에만 건다 — 도형의 글자·테두리는 흐려지지 않게. */
+function FxBgImage({ bgImage, styles, filter, layers }) {
+  return (
+    <>
+      <div style={{
+        position: 'absolute', inset: 0, pointerEvents: 'none', borderRadius: styles.borderRadius,
+        backgroundImage: bgImage, backgroundSize: styles.backgroundSize || 'cover',
+        backgroundPosition: styles.backgroundPosition || 'center', backgroundRepeat: styles.backgroundRepeat,
+        filter: filter || undefined,
+      }} />
+      <FxOverlays layers={layers} radius={styles.borderRadius} />
+    </>
+  )
+}
+
+function ImageContent({ content, styles, transform, filter }) {
   const isIdb = BlobStore.isIdbRef(content)
   const [idbUrl, setIdbUrl] = useState(null)
   useEffect(() => {
@@ -791,6 +847,7 @@ function ImageContent({ content, styles, transform }) {
         border: styles.border,
         opacity: styles.opacity,
         display: 'block',
+        filter: filter || undefined,
         // 채우기 크롭(확대·이동) — cover에서만. 박스 중심 기준으로 스케일·이동.
         transform: transform || undefined,
         transformOrigin: 'center center',
@@ -852,7 +909,7 @@ function VideoPlayer({ content, playNow, autoplay, loop, muted, hideControls, ob
 /**
  * IndexedDB 참조 배경 이미지를 가진 shape — blob URL로 변환하여 렌더링
  */
-function IdbBgShape({ baseStyle, styles, shapeBorderProps, bgImageStr, onMouseDown, onClick, content, contentStyle, isRich }) {
+function IdbBgShape({ baseStyle, styles, shapeBorderProps, bgImageStr, onMouseDown, onClick, content, contentStyle, isRich, fxFilter, fxLayers }) {
   const [resolvedBg, setResolvedBg] = useState(bgImageStr)
 
   useEffect(() => {
@@ -874,17 +931,19 @@ function IdbBgShape({ baseStyle, styles, shapeBorderProps, bgImageStr, onMouseDo
       style={{
         ...baseStyle,
         backgroundColor: styles.backgroundColor,
-        backgroundImage: resolvedBg,
+        backgroundImage: fxLayers ? undefined : resolvedBg,
         backgroundSize: styles.backgroundSize || 'cover',
         backgroundPosition: styles.backgroundPosition || 'center',
         borderRadius: styles.borderRadius,
         ...shapeBorderProps,
         boxShadow: styles.boxShadow,
         opacity: styles.opacity,
+        ...(fxLayers ? { overflow: 'hidden' } : {}),
       }}
       onMouseDown={onMouseDown}
       onClick={onClick}
     >
+      {fxLayers && <FxBgImage bgImage={resolvedBg} styles={styles} filter={fxFilter} layers={fxLayers} />}
       {content && (
         isRich
           ? <div style={contentStyle} dangerouslySetInnerHTML={{ __html: content }} />

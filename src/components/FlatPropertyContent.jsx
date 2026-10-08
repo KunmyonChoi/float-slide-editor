@@ -13,7 +13,7 @@ import { detectListType, applyListType } from '../core/TextListTransform'
 import { addRow, removeRow, addCol, removeCol, setHeaderRow, setBorder } from '../core/slideTable'
 import { useScrub } from './useScrub'
 import { isCoarsePointer } from '../core/pointerEnv'
-import { DEFAULT_VIZ, VIZ_SHAPES } from '../core/audioViz'
+import { DEFAULT_VIZ, VIZ_SHAPES, VIZ_CHANNELS } from '../core/audioViz'
 import { setFontSizeUniformPx, stripInlineFormatting, richToPlainText, FORMAT_STRIP } from '../core/TextStyleScope'
 import { generateImage, hasApiKey } from '../core/OpenAIClient'
 import { openAiSettings } from './AiSettingsModal'
@@ -27,6 +27,8 @@ import { EFFECTS, effectHasDir, LOOP_EFFECTS, makeLoopAnim, isEntrance } from '.
 import DiagramIconPanel from './DiagramIconPanel'
 import MediaPreview from './MediaPreview'
 import { waitsForEnd, canWaitForEnd, isBgm, effectiveAutoplay, effectiveLoop } from '../core/mediaAdvance'
+import { textArcOf, TEXT_ARC_MIN, TEXT_ARC_MAX } from '../core/curvedText'
+import { fullFx, normalizeFx, FX_RANGES } from '../core/imageFx'
 
 // ── 글꼴 크기 프리셋 ────────────────────────────────
 
@@ -198,8 +200,9 @@ function SingleElementPanel({ el, animTab, setAnimTab, updateFlatElement, previe
         )}
 
         {el.type === 'image' && (
-          <div className="pt-1 border-t border-white/5">
+          <div className="pt-1 border-t border-white/5 space-y-3">
             <ImageSection el={el} updateStyle={updateStyle} previewStyle={previewStyle} />
+            <ImageFxControls el={el} />
           </div>
         )}
 
@@ -211,8 +214,9 @@ function SingleElementPanel({ el, animTab, setAnimTab, updateFlatElement, previe
         )}
 
         {el.type === 'video' && (
-          <div className="pt-1 border-t border-white/5">
+          <div className="pt-1 border-t border-white/5 space-y-3">
             <VideoSection el={el} update={update} updateStyle={updateStyle} previewStyle={previewStyle} />
+            <ImageFxControls el={el} />
           </div>
         )}
 
@@ -268,7 +272,7 @@ function SingleElementPanel({ el, animTab, setAnimTab, updateFlatElement, previe
         {/* 효과 — text, normal shape만 (boxShadow는 CSS box model에만 적용) */}
         {!el.shapeType && (el.type === 'text' || el.type === 'shape') && (
           <div className="pt-1 border-t border-white/5">
-            <EffectSection styles={el.styles} updateStyle={updateStyle} isText={el.type === 'text'} />
+            <EffectSection styles={el.styles} updateStyle={updateStyle} isText={el.type === 'text'} el={el} update={update} />
           </div>
         )}
 
@@ -1851,6 +1855,50 @@ function ObjectFitControl({ el, updateStyle, previewStyle }) {
   )
 }
 
+// 그림 보정 — 이미지·영상·배경 그림 공용(imageFx.js). 드래그 중엔 미리보기, 놓으면 저장(실행 취소 1단계).
+const FX_SLIDERS = [
+  ['brightness', '밝기', '%'], ['contrast', '대비', '%'], ['saturation', '채도', '%'],
+  ['warmth', '색온도', ''], ['blur', '흐림', 'px'], ['vignette', '비네팅', ''],
+]
+function ImageFxControls({ el }) {
+  const fx = fullFx(el.imageFx)
+  const active = !!normalizeFx(el.imageFx)
+  const st = () => useFlatStore.getState()
+  const next = (k, v) => normalizeFx({ ...fx, [k]: v }) || undefined
+  const label = (k, v) => k === 'warmth' ? (v > 0 ? `따뜻하게 ${v}` : v < 0 ? `차갑게 ${-v}` : '0') : `${v}`
+  return (
+    <div className="space-y-2">
+      <SectionTitle>
+        <span className="flex items-center justify-between w-full">
+          <span>그림 보정</span>
+          {active && (
+            <button type="button" onMouseDown={e => e.preventDefault()}
+              onClick={() => st().updateFlatElement(el.id, { imageFx: undefined })}
+              className="text-[11px] font-normal text-indigo-300 hover:text-indigo-200">초기화</button>
+          )}
+        </span>
+      </SectionTitle>
+      {FX_SLIDERS.map(([k, name, unit]) => {
+        const [lo, hi] = FX_RANGES[k]
+        return (
+          <div key={k}>
+            <div className="flex items-center justify-between">
+              <p className={labelClass}>{name}</p>
+              <span className="text-[11px] tabular-nums text-slate-400">{label(k, fx[k])}{k !== 'warmth' ? unit : ''}</span>
+            </div>
+            <input type="range" min={lo} max={hi} step="1" value={fx[k]}
+              onChange={e => st().previewFlatElement(el.id, { imageFx: next(k, Number(e.target.value)) })}
+              onMouseUp={e => st().updateFlatElement(el.id, { imageFx: next(k, Number(e.target.value)) })}
+              onTouchEnd={e => st().updateFlatElement(el.id, { imageFx: next(k, Number(e.target.value)) })}
+              onKeyUp={e => st().updateFlatElement(el.id, { imageFx: next(k, Number(e.target.value)) })}
+              className="w-full" style={{ accentColor: '#6366f1' }} />
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 function ImageSection({ el, updateStyle, previewStyle }) {
   return (
     <div className="space-y-2">
@@ -1943,7 +1991,57 @@ function ImageChromaKey({ elementId }) {
   )
 }
 
-function EffectSection({ styles, updateStyle, isText }) {
+// 유리 효과 — 뒤에 있는 그림·글자를 흐리게 비춘다(backdrop-filter). 채도를 살짝 올려 실제 간유리처럼 보이게.
+// 채움이 불투명하면 뒤가 안 보이므로, 켤 때 안내한다.
+function glassBlurOf(bf) {
+  const m = /blur\(([\d.]+)px\)/.exec(bf || '')
+  return m ? Math.round(parseFloat(m[1])) : 0
+}
+function GlassControl({ styles, updateStyle }) {
+  const blur = glassBlurOf(styles.backdropFilter)
+  const set = (v) => updateStyle('backdropFilter', v > 0 ? `blur(${v}px) saturate(1.4)` : 'none')
+  const bg = styles.backgroundColor || ''
+  const alpha = /rgba?\([^)]*,\s*([\d.]+)\s*\)/.exec(bg)
+  const opaque = blur > 0 && (!alpha || parseFloat(alpha[1]) >= 0.95) && !/^rgba\(0, 0, 0, 0\)$/.test(bg)
+  return (
+    <div title="뒤에 있는 그림·글자를 흐리게 비춥니다(간유리). 채움을 반투명하게 두어야 보입니다.">
+      <div className="flex items-center justify-between mb-0.5">
+        <p className={labelClass}>유리 효과 (뒤 흐리기)</p>
+        <span className="text-[11px] tabular-nums text-slate-400">{blur ? `${blur}px` : '끔'}</span>
+      </div>
+      <input type="range" min="0" max="40" step="1" value={blur}
+        onChange={e => set(parseInt(e.target.value, 10))}
+        className="w-full" style={{ accentColor: '#6366f1' }} />
+      {opaque && <p className="text-[11px] text-amber-300/80 mt-0.5">채움이 불투명해서 뒤가 비치지 않습니다 — 배경색 투명도를 낮춰 주세요.</p>}
+    </div>
+  )
+}
+
+// 곡선 글자 — 원호를 따라 휘는 정도(+ 위로 볼록한 아치, − 아래로 오목한 미소, 0 = 곧게).
+// 배지·로고처럼 한 줄 글자에 쓴다. 편집(더블클릭)하는 동안은 곧게 보인다.
+function TextArcControl({ el, update }) {
+  const v = textArcOf(el)
+  const set = (n) => update({ textArc: n ? Math.max(TEXT_ARC_MIN, Math.min(TEXT_ARC_MAX, Math.round(n))) : undefined })
+  return (
+    <div title="글자를 원호를 따라 휩니다. + 위로 볼록(∩), − 아래로 오목(∪). 편집하는 동안은 곧게 보입니다.">
+      <div className="flex items-center justify-between mb-0.5">
+        <p className={labelClass}>곡선 (휘기)</p>
+        <div className="flex items-center gap-1.5">
+          <span className="text-[11px] tabular-nums text-slate-400">{v > 0 ? `∩ ${v}` : v < 0 ? `∪ ${-v}` : '곧게'}</span>
+          {v !== 0 && (
+            <button type="button" onClick={() => set(0)} onMouseDown={e => e.preventDefault()}
+              className="text-[11px] text-indigo-300 hover:text-indigo-200">초기화</button>
+          )}
+        </div>
+      </div>
+      <input type="range" min={TEXT_ARC_MIN} max={TEXT_ARC_MAX} step="5" value={v}
+        onChange={e => set(parseInt(e.target.value, 10))}
+        className="w-full" style={{ accentColor: '#6366f1' }} />
+    </div>
+  )
+}
+
+function EffectSection({ styles, updateStyle, isText, el, update }) {
   return (
     <div className="space-y-2">
       <SectionTitle>효과</SectionTitle>
@@ -1972,6 +2070,8 @@ function EffectSection({ styles, updateStyle, isText }) {
           />
         </div>
       )}
+      {isText && el && <TextArcControl el={el} update={update} />}
+      {el && (el.type === 'shape' || el.type === 'text') && <GlassControl styles={styles} updateStyle={updateStyle} />}
     </div>
   )
 }
@@ -2902,6 +3002,14 @@ function VideoChromaKey({ el, update }) {
   )
 }
 
+const STEREO_HINT = {
+  bars: '가운데 선 위로 왼쪽 채널, 아래로 오른쪽 채널이 뻗습니다.',
+  blocks: '가운데 선 위로 왼쪽 채널, 아래로 오른쪽 채널 칸이 켜집니다.',
+  mirror: '가운데에서 왼쪽으로 왼쪽 채널, 오른쪽으로 오른쪽 채널이 펼쳐집니다(낮은 소리가 가운데).',
+  wave: '위 줄이 왼쪽 채널, 아래 줄이 오른쪽 채널 파형입니다.',
+  circle: '왼쪽 반원이 왼쪽 채널, 오른쪽 반원이 오른쪽 채널입니다.',
+}
+
 function AudioVizSection({ el, update, updateStyle }) {
   const waitEnd = waitsForEnd(el)
   const autoplay = effectiveAutoplay(el)
@@ -2914,7 +3022,7 @@ function AudioVizSection({ el, update, updateStyle }) {
     <div className="space-y-2">
       <SectionTitle>오디오 비주얼라이저</SectionTitle>
       <p className="text-[11px] text-slate-500 leading-relaxed">
-        발표 모드에서 음악이 재생되며 막대가 주파수에 맞춰 반응합니다. 편집 화면은 미리보기(정적)입니다.
+        발표 모드에서 음악이 재생되며 막대(파형은 선)가 소리에 맞춰 반응합니다. 편집 화면은 미리보기(정적)입니다.
       </p>
 
       {/* 모양 */}
@@ -2924,6 +3032,19 @@ function AudioVizSection({ el, update, updateStyle }) {
         options={VIZ_SHAPES}
         onChange={v => updateViz({ shape: v })}
       />
+
+      {/* 채널 — 스테레오면 왼쪽·오른쪽을 따로 그린다 */}
+      <SelectInput
+        label="채널"
+        value={viz.channels}
+        options={VIZ_CHANNELS}
+        onChange={v => updateViz({ channels: v })}
+      />
+      {viz.channels === 'stereo' && (
+        <p className="text-[11px] text-slate-500 leading-relaxed">
+          {STEREO_HINT[viz.shape] || STEREO_HINT.bars}
+        </p>
+      )}
 
       {/* 막대 두께 / 간격 */}
       <div className="grid grid-cols-2 gap-1.5">
@@ -2947,9 +3068,15 @@ function AudioVizSection({ el, update, updateStyle }) {
 
       {/* 막대 색 */}
       <div>
-        <p className={`${labelClass} mb-0.5`}>막대 색</p>
+        <p className={`${labelClass} mb-0.5`}>{viz.channels === 'stereo' ? '왼쪽 채널 색' : '막대 색'}</p>
         <ColorPicker value={viz.color} onChange={v => updateViz({ color: v })} />
       </div>
+      {viz.channels === 'stereo' && (
+        <div>
+          <p className={`${labelClass} mb-0.5`}>오른쪽 채널 색</p>
+          <ColorPicker value={viz.color2 || viz.color} onChange={v => updateViz({ color2: v })} />
+        </div>
+      )}
 
       {/* 박스 배경 / 모서리 */}
       <div>
@@ -3775,6 +3902,9 @@ function SlideBackgroundPanel() {
                   className="w-full" style={{ accentColor: '#6366f1' }}
                 />
               </div>
+
+              {/* 배경 그림 보정 — url 그림이 있는 배경 레이어 */}
+              {styles.backgroundImage?.includes('url(') && <ImageFxControls el={currentBg} />}
 
               {/* 배경 이미지 */}
               <div className="space-y-1.5">
