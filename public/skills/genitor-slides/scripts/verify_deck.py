@@ -394,7 +394,8 @@ CHECK_JS = """
         }
         if (ma === 'end') warnings.push(`${at} MEDIA BGM은 여러 장에 걸치므로 data-advance="end"가 무시된다`);
       }
-      if (m.tagName === 'AUDIO' && !m.hasAttribute('controls')) {
+      // Genitor 자체 비주얼라이저 형식(.fe-audioviz 상자 안 숨은 <audio>)은 정상 — data-cfg로 복원된다
+      if (m.tagName === 'AUDIO' && !m.hasAttribute('controls') && !m.closest('.fe-audioviz')) {
         problems.push(`${at} MEDIA controls 없는 <audio>는 가져오지 않는다 — 재생 옵션도 사라진다`);
       }
       if (ma === 'end' && m.tagName === 'VIDEO' && m.hasAttribute('loop')) {

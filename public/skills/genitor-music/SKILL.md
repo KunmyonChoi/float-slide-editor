@@ -78,7 +78,9 @@ DEVICE=mps
 ## 2. One GPU job at a time
 
 **Linux:** one YuE2 run per GPU. Pick a GPU with little memory in use from `nvidia-smi` and prefix each
-command with `CUDA_VISIBLE_DEVICES=<index>`; runs on different GPUs can go in parallel. A run needs about
+command with `CUDA_DEVICE_ORDER=PCI_BUS_ID CUDA_VISIBLE_DEVICES=<index>`; runs on different GPUs can go in parallel.
+Without `CUDA_DEVICE_ORDER=PCI_BUS_ID`, CUDA numbers GPUs fastest-first, so on a machine with mixed GPU models
+`<index>` can point at a different card than the one `nvidia-smi` showed as free (and run out of memory there). A run needs about
 24 GB of GPU memory.
 
 **macOS:** the Genitor music server (`launch.command`, port 8326) may already be generating. Two YuE2 runs at once can exhaust 16 GB of unified memory. Check before every run:

@@ -824,6 +824,10 @@ function extractStyles(cs, el) {
     // normal/pre-wrap은 미설정 → 렌더러 기본값 pre-wrap으로 \n·공백 보존.
     ...(/^(pre|pre-line|nowrap)$/.test(cs.whiteSpace || '') ? { whiteSpace: cs.whiteSpace } : {}),
     textShadow: cs.textShadow,
+    // 글자 외곽선(-webkit-text-stroke) — 계산 스타일엔 단축 속성이 없어 두께·색을 합친다.
+    // 빠뜨리면 '속이 빈 외곽선 글자'(color: transparent)가 통째로 보이지 않게 된다.
+    ...(parseFloat(cs.webkitTextStrokeWidth) > 0
+      ? { textStroke: `${cs.webkitTextStrokeWidth} ${cs.webkitTextStrokeColor || 'currentcolor'}` } : {}),
     // flex 정렬 (inline-flex/flex 요소의 내부 정렬)
     display: cs.display,
     alignItems: cs.alignItems,

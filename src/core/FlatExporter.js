@@ -311,6 +311,7 @@ function textStyleBase(s, includeGradient, excludeTextShadow) {
     s.boxShadow && s.boxShadow !== 'none' ? `box-shadow:${s.boxShadow}` : '',
     // 그래디언트 텍스트: textShadow는 내부 span의 drop-shadow filter로 처리
     !excludeTextShadow && s.textShadow && s.textShadow !== 'none' ? `text-shadow:${s.textShadow}` : '',
+    s.textStroke && s.textStroke !== 'none' ? `-webkit-text-stroke:${s.textStroke};paint-order:stroke fill` : '',
     s.padding && s.padding !== '0px' ? `padding:${s.padding}` : '',
     s.opacity && s.opacity !== '1' ? `opacity:${s.opacity}` : '',
     `white-space:${s.whiteSpace || 'pre-wrap'}`,
