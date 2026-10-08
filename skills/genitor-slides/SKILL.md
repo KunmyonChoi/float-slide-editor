@@ -221,6 +221,18 @@ body { width: 1920px; height: 1080px; overflow: hidden; position: relative; back
 </div>
 ```
 
+**곡선 글자** — 텍스트 div에 `data-text-arc="−100~100"`을 달면 Genitor가 글자를 원호를 따라 휘어 그린다
+(+ 위로 볼록한 아치 ∩, − 아래로 오목한 미소 ∪, 100이면 반원). 배지·스탬프·로고처럼 **한 줄 글자**에 쓴다(여러 줄은
+한 줄로 이어진다). 글꼴·크기·자간·색·외곽선·그림자는 그대로 따른다. 원호는 div 폭에 걸치므로 폭을 원 지름쯤으로,
+높이는 글자 크기 + 볼록한 높이(폭 × 휘기/200)쯤으로 준다. 브라우저에서 HTML을 바로 열면 곧게 보인다(Genitor에서 휜다).
+```html
+<!-- 원형 배지: 위 글자는 아치, 아래 글자는 미소 -->
+<div data-text-arc="70" style="position:absolute;left:700px;top:300px;width:520px;height:200px;
+     font-family:'Bebas Neue',sans-serif;font-size:72px;letter-spacing:8px;color:#13294B;text-align:center;">SUNSET LOUNGE</div>
+<div data-text-arc="-60" style="position:absolute;left:700px;top:600px;width:520px;height:200px;
+     font-family:'Bebas Neue',sans-serif;font-size:56px;color:#FFF6E0;text-align:center;">CITY POP · FUNK</div>
+```
+
 **글머리 목록** — `<ul>/<li>`의 마커(•)가 보존된다(각 li가 텍스트 요소로):
 ```html
 <div style="position:absolute;left:120px;top:360px;width:1680px;height:450px;

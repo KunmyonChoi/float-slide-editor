@@ -2,6 +2,7 @@
  * PptExporter — PPTX 내보내기 (pptxgenjs, lazy import)
  */
 import { htmlToTextRuns, cssColorToHex, applyTextTransform } from './HtmlToTextRuns'
+import { isCurvedText, curvedTextSvg } from './curvedText'
 import { animObjectName, applyMotionToPptx, isPptLoop } from './PptMotion'
 import { BlobStore } from './BlobStore'
 import { parseGradient } from './GradientParser'
@@ -155,7 +156,9 @@ async function addElementToSlide(rawSlide, el, canvasSize) {
 
   switch (el.type) {
     case 'text':
-      await addText(slide, el, { x, y, w, h, rotate })
+      // 곡선 글자는 파워포인트 표 글자로 옮길 수 없어(pptxgenjs에 글자 휘기 없음) 같은 SVG를 그림으로 넣는다
+      if (isCurvedText(el)) await addSvg(slide, { ...el, content: curvedTextSvg(el, 'ppt') }, { x, y, w, h, rotate })
+      else await addText(slide, el, { x, y, w, h, rotate })
       break
     case 'image':
       await addImage(slide, el, { x, y, w, h, rotate })

@@ -1302,6 +1302,11 @@ function buildFlatElement(el, rect, cs, domOrder, forceType, transformScale = 1,
     // 원본 레이아웃 (너비 보정 전 getBoundingClientRect 결과)
     originalRect: { x: rect.left, y: rect.top, w: rect.width, h: rect.height },
   }
+  // 곡선 글자(data-text-arc="−100~100") — 렌더러가 원호를 따라 휘어 그린다(curvedText.js)
+  if (type === 'text') {
+    const arc = parseFloat(el.getAttribute('data-text-arc'))
+    if (Number.isFinite(arc) && arc !== 0) result.textArc = Math.max(-100, Math.min(100, Math.round(arc)))
+  }
 
   // ::before / ::after 의사 요소 추출 — CSS로 렌더링되는 불릿, 도트, 장식 등.
   // 단, <li> 마커로 이미 텍스트에 포함된 ::before(화살표·불릿)는 중복이므로 제외.

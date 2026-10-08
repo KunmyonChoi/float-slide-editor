@@ -1,4 +1,4 @@
-import { useCallback, useState, useEffect, useRef, useMemo } from 'react'
+import { useCallback, useState, useEffect, useRef, useMemo, useId } from 'react'
 import { useFlatStore, isBackgroundLayer } from '../store/flatStore'
 import { useEditorStore } from '../store/editorStore'
 import { BlobStore } from '../core/BlobStore'
@@ -11,6 +11,7 @@ import LyricScroller from './LyricScroller'
 import { hasLyricSync } from '../core/lyricSync'
 import ChromaVideoPlayer from './ChromaVideoPlayer'
 import { waitsForEnd, effectiveAutoplay, effectiveLoop } from '../core/mediaAdvance'
+import { isCurvedText, curvedTextSvg } from '../core/curvedText'
 import MediaSignalBox from './MediaSignalBox'
 import MatteVideoPlayer from './MatteVideoPlayer'
 
@@ -50,6 +51,8 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
   // 배경은 캔버스에서 클릭으로 선택되지 않음 — pointer-events:none으로 클릭이
   // 위 요소/빈 캔버스로 통과(속성창 '배경 레이어'에서만 선택).
   const isFullCanvasBg = isBackgroundLayer(element, canvasSize)
+  // 곡선 글자 path id — 같은 요소가 썸네일·발표에 여러 번 그려져도 겹치지 않게
+  const arcUid = useId().replace(/[^\w-]/g, '')
 
   const handleMouseDown = useCallback((e) => {
     // 그리기 모드 중에는 요소 선택 차단
@@ -159,6 +162,8 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
 
     // 빈 레이아웃 텍스트: 흐린 안내문(placeholder) 표시 — 입력 시작하면 사라짐
     const showPlaceholder = !isEditing && !content && !!element.placeholder
+    // 곡선 글자: 편집 중이 아닐 때만 원호(SVG)로 그린다 — 편집할 땐 평소처럼 곧은 글자
+    const curved = !isEditing && !showPlaceholder && isCurvedText(element)
     const textContent = isRich
       ? <span dangerouslySetInnerHTML={{ __html: content }} />
       : content
@@ -193,9 +198,10 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
           ...borderProps,
           boxShadow: styles.boxShadow,
           // 그래디언트 텍스트: textShadow는 내부 span의 drop-shadow로 처리
-          textShadow: isGradientText ? undefined : styles.textShadow,
+          // 곡선 글자는 그림자·외곽선을 SVG 안에서 그린다(바깥 div에 두면 두 번 그려진다)
+          textShadow: isGradientText || curved ? undefined : styles.textShadow,
           // 외곽선(텍스트 스트로크) — 그래디언트가 아니면 div에 직접 적용
-          ...(!isGradientText && styles.textStroke && styles.textStroke !== 'none' ? { WebkitTextStroke: styles.textStroke, paintOrder: 'stroke fill' } : {}),
+          ...(!isGradientText && !curved && styles.textStroke && styles.textStroke !== 'none' ? { WebkitTextStroke: styles.textStroke, paintOrder: 'stroke fill' } : {}),
           opacity: styles.opacity,
           padding: styles.padding,
           overflow: (styles.overflow === 'hidden' || styles.overflow === 'auto' || styles.overflow === 'scroll' ||
@@ -240,7 +246,9 @@ export default function FlatElementRenderer({ element, isSelected, isEditing, sc
         onDoubleClick={handleDoubleClick}
       >
         {/* 가사 싱크: 발표 중에는 오디오에 맞춰 가사가 흐르는 보기로 바꾼다(편집 중에는 그대로 텍스트) */}
-        {playNowProp === true && hasLyricSync(element) ? <LyricScroller sync={element.lyricSync} textStyle={styles} /> : (() => {
+        {playNowProp === true && hasLyricSync(element) ? <LyricScroller sync={element.lyricSync} textStyle={styles} /> : curved ? (
+          <div style={{ width: '100%', height: '100%' }} dangerouslySetInnerHTML={{ __html: curvedTextSvg(element, arcUid) }} />
+        ) : (() => {
           const inner = showPlaceholder
             ? element.placeholder
             : isGradientText

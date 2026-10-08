@@ -27,6 +27,7 @@ import { EFFECTS, effectHasDir, LOOP_EFFECTS, makeLoopAnim, isEntrance } from '.
 import DiagramIconPanel from './DiagramIconPanel'
 import MediaPreview from './MediaPreview'
 import { waitsForEnd, canWaitForEnd, isBgm, effectiveAutoplay, effectiveLoop } from '../core/mediaAdvance'
+import { textArcOf, TEXT_ARC_MIN, TEXT_ARC_MAX } from '../core/curvedText'
 
 // ── 글꼴 크기 프리셋 ────────────────────────────────
 
@@ -268,7 +269,7 @@ function SingleElementPanel({ el, animTab, setAnimTab, updateFlatElement, previe
         {/* 효과 — text, normal shape만 (boxShadow는 CSS box model에만 적용) */}
         {!el.shapeType && (el.type === 'text' || el.type === 'shape') && (
           <div className="pt-1 border-t border-white/5">
-            <EffectSection styles={el.styles} updateStyle={updateStyle} isText={el.type === 'text'} />
+            <EffectSection styles={el.styles} updateStyle={updateStyle} isText={el.type === 'text'} el={el} update={update} />
           </div>
         )}
 
@@ -1943,7 +1944,31 @@ function ImageChromaKey({ elementId }) {
   )
 }
 
-function EffectSection({ styles, updateStyle, isText }) {
+// 곡선 글자 — 원호를 따라 휘는 정도(+ 위로 볼록한 아치, − 아래로 오목한 미소, 0 = 곧게).
+// 배지·로고처럼 한 줄 글자에 쓴다. 편집(더블클릭)하는 동안은 곧게 보인다.
+function TextArcControl({ el, update }) {
+  const v = textArcOf(el)
+  const set = (n) => update({ textArc: n ? Math.max(TEXT_ARC_MIN, Math.min(TEXT_ARC_MAX, Math.round(n))) : undefined })
+  return (
+    <div title="글자를 원호를 따라 휩니다. + 위로 볼록(∩), − 아래로 오목(∪). 편집하는 동안은 곧게 보입니다.">
+      <div className="flex items-center justify-between mb-0.5">
+        <p className={labelClass}>곡선 (휘기)</p>
+        <div className="flex items-center gap-1.5">
+          <span className="text-[11px] tabular-nums text-slate-400">{v > 0 ? `∩ ${v}` : v < 0 ? `∪ ${-v}` : '곧게'}</span>
+          {v !== 0 && (
+            <button type="button" onClick={() => set(0)} onMouseDown={e => e.preventDefault()}
+              className="text-[11px] text-indigo-300 hover:text-indigo-200">초기화</button>
+          )}
+        </div>
+      </div>
+      <input type="range" min={TEXT_ARC_MIN} max={TEXT_ARC_MAX} step="5" value={v}
+        onChange={e => set(parseInt(e.target.value, 10))}
+        className="w-full" style={{ accentColor: '#6366f1' }} />
+    </div>
+  )
+}
+
+function EffectSection({ styles, updateStyle, isText, el, update }) {
   return (
     <div className="space-y-2">
       <SectionTitle>효과</SectionTitle>
@@ -1972,6 +1997,7 @@ function EffectSection({ styles, updateStyle, isText }) {
           />
         </div>
       )}
+      {isText && el && <TextArcControl el={el} update={update} />}
     </div>
   )
 }
