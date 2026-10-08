@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   pickRecorderMime, videoExtension, videoOutputSize, captureCropRect,
   videoFileName, formatElapsed, captureErrorMessage, VIDEO_MIME_CANDIDATES,
+  expectedStagePixels, isUpscaled, upscaleNotice,
 } from '../core/videoExport'
 
 describe('영상 내보내기 — 녹화 형식 선택', () => {
@@ -80,5 +81,28 @@ describe('영상 내보내기 — 파일 이름·시간·오류 문구', () => {
     expect(captureErrorMessage({ name: 'NotAllowedError' })).toMatch(/화면 공유/)
     expect(captureErrorMessage({ name: 'NotSupportedError' })).toMatch(/지원하지 않습니다/)
     expect(captureErrorMessage(new Error('boom'))).toMatch(/boom/)
+  })
+})
+
+describe('영상 내보내기 — 지금 창에서 담길 슬라이드 크기(늘어남 경고)', () => {
+  it('덱 비율을 창(아래 REC 표시줄 제외)에 맞추고 기기 배율을 곱한다', () => {
+    // 1280×764 창 → 슬라이드 영역 1280×720 → 16:9는 1280×720, 배율 2면 2560×1440
+    expect(expectedStagePixels({ w: 1280, h: 720 }, { w: 1280, h: 764 }, 1)).toEqual({ w: 1280, h: 720 })
+    expect(expectedStagePixels({ w: 1280, h: 720 }, { w: 1280, h: 764 }, 2)).toEqual({ w: 2560, h: 1440 })
+    // 세로 9:16은 높이에 맞춘다
+    expect(expectedStagePixels({ w: 1080, h: 1920 }, { w: 1920, h: 1004 }, 1)).toEqual({ w: 540, h: 960 })
+  })
+  it('표시줄 높이를 따로 줄 수 있고, 창 정보가 없으면 0', () => {
+    expect(expectedStagePixels({ w: 100, h: 100 }, { w: 200, h: 100 }, 1, 0)).toEqual({ w: 100, h: 100 })
+    expect(expectedStagePixels({ w: 100, h: 100 }, null, 1)).toEqual({ w: 0, h: 0 })
+  })
+  it('출력보다 작을 때만 늘어남으로 보고 안내한다', () => {
+    expect(isUpscaled({ w: 1280, h: 720 }, { w: 1920, h: 1080 })).toBe(true)
+    expect(isUpscaled({ w: 1919, h: 1079 }, { w: 1920, h: 1080 })).toBe(false) // 반올림 오차
+    expect(isUpscaled({ w: 2560, h: 1440 }, { w: 1920, h: 1080 })).toBe(false)
+    expect(isUpscaled(null, { w: 1920, h: 1080 })).toBe(false)
+    expect(upscaleNotice({ w: 1280, h: 720 }, { w: 1920, h: 1080 }))
+      .toBe('지금 창에서는 슬라이드가 1280×720으로 보여 1920×1080으로 늘어나 흐릴 수 있습니다 — 창을 최대화하거나 전체 화면(F11)으로 녹화하세요.')
+    expect(upscaleNotice({ w: 1920, h: 1080 }, { w: 1920, h: 1080 })).toBe('')
   })
 })

@@ -49,7 +49,8 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms))
  * @param {number} opts.startIndex  시작 슬라이드(0=처음)
  * @param {() => void} [opts.onShared] 화면 공유를 허락받았을 때 — 대화창을 닫는다(녹화 화면에 비치지 않게)
  * @returns {Promise<{ ok: boolean, error?: string, fileName?: string, noAudio?: boolean,
- *                     durationMs?: number, size?: number, stoppedEarly?: boolean }>}
+ *                     durationMs?: number, size?: number, stoppedEarly?: boolean,
+ *                     captureSize?: {w,h}|null, outputSize?: {w,h} }>}
  */
 export async function runVideoExport({ resolution = 'canvas', fps = 30, quality = 'normal', startIndex = 0, onShared } = {}) {
   if (active) return { ok: false, error: '이미 녹화 중입니다.' }
@@ -145,6 +146,8 @@ async function record({ videoTrack, audioTracks, noAudio, resolution, fps, quali
 
     let stageEl = null
     let raf = 0
+    // 실제로 잘라 담은 슬라이드 크기(영상 픽셀) — 가장 작았던 값. 출력보다 작으면 결과 창에서 알린다.
+    let captured = null
     const draw = () => {
       raf = requestAnimationFrame(draw)
       if (!stageEl || !stageEl.isConnected) stageEl = document.querySelector(STAGE_SELECTOR)
@@ -154,6 +157,7 @@ async function record({ videoTrack, audioTracks, noAudio, resolution, fps, quali
         { w: window.innerWidth, h: window.innerHeight },
         { w: video.videoWidth, h: video.videoHeight })
       if (!crop) return
+      if (!captured || crop.sw < captured.w) captured = { w: Math.round(crop.sw), h: Math.round(crop.sh) }
       ctx.drawImage(video, crop.sx, crop.sy, crop.sw, crop.sh, 0, 0, out.w, out.h)
     }
     draw()
@@ -192,7 +196,10 @@ async function record({ videoTrack, audioTracks, noAudio, resolution, fps, quali
     const base = useFlatStore.getState().getExportBaseName?.() || ''
     const fileName = videoFileName(base, type)
     downloadBlob(blob, fileName)
-    return { ok: true, fileName, noAudio, durationMs, size: blob.size, stoppedEarly: how !== 'finished' }
+    return {
+      ok: true, fileName, noAudio, durationMs, size: blob.size, stoppedEarly: how !== 'finished',
+      captureSize: captured, outputSize: out,
+    }
   } finally {
     cleanup()
   }

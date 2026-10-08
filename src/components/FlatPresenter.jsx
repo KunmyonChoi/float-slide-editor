@@ -7,11 +7,9 @@ import { usePresentationEngine } from '../core/usePresentationEngine'
 import { useWebFontImports } from '../core/useWebFontImports'
 import { useWakeLock } from '../core/useWakeLock'
 import { captionSpaceBelow as captionSpaceBelowOf } from '../core/captionPlacement'
-import { formatElapsed } from '../core/videoExport'
-
-// 영상 녹화 중 화면 아래에 비워 두는 REC 표시줄 높이(px) — 슬라이드는 그 위 영역에만 그려서
+// REC_BAR_H: 영상 녹화 중 화면 아래에 비워 두는 REC 표시줄 높이 — 슬라이드는 그 위 영역에만 그려서
 // 녹화(슬라이드 영역만 잘라 담는다)에 표시줄·정지 버튼이 절대 비치지 않게 한다.
-const REC_BAR_H = 44
+import { formatElapsed, REC_BAR_H } from '../core/videoExport'
 
 /**
  * FlatPresenter — 단일 화면 발표(현재 창을 전체화면으로).
@@ -32,6 +30,7 @@ export default function FlatPresenter() {
   const eng = usePresentationEngine({ onExit: recordingOn ? requestStopRecording : exitPresentation })
   const { canvasSize, loading, loadingCaptions, penActive, totalSlides, currentSlide, setAudioEl } = eng
   const recording = eng.recording
+  const recordStartIndex = useEditorStore(s => s.videoRecording?.startIndex ?? -1)
 
   // 배율 = 뷰포트에 슬라이드를 꽉 채우는 값. 창 크기만 상태로 두고 배율은 파생값으로 —
   // 이펙트에서 곧바로 setState를 부르면 마운트마다 렌더가 한 번 더 돈다.
@@ -100,16 +99,6 @@ export default function FlatPresenter() {
       }}
       onClick={handleClick}
     >
-      {/* 녹화 시작 대기 — 덱은 준비됐지만 아직 틀지 않는다. 녹화기가 잘라 낼 자리만 검게 잡아 둔다. */}
-      {recording && eng.recordHold && !eng.deckLoading && (
-        <div data-present-stage="" style={{
-          position: 'absolute', top: '50%', left: '50%',
-          width: canvasSize.w, height: canvasSize.h,
-          transform: `translate(-50%, -50%) scale(${scale})`, transformOrigin: 'center center',
-          background: '#000',
-        }} />
-      )}
-
       {loading && !recording && (
         <div style={{
           position: 'absolute', inset: 0,
@@ -121,9 +110,13 @@ export default function FlatPresenter() {
         </div>
       )}
 
-      {!loading && (
+      {/* 녹화 시작 대기(recordHold) 중에는 시작 장을 t=0 모습으로 멈춰 그린다 — 영상이 검은 화면이 아니라
+          슬라이드로 열린다. 재생이 시작되면 key가 바뀌어 다시 마운트되며 애니메이션·미디어가 처음부터 돈다. */}
+      {(!loading || (recording && eng.recordHold && !eng.deckLoading)) && (
         <PresentedSlide
-          slideKey={currentSlide}
+          slideKey={eng.recordHold ? `hold-${currentSlide}` : currentSlide}
+          frozen={recording && eng.recordHold}
+          noTransition={recording && currentSlide === recordStartIndex}
           page={eng.page}
           elements={eng.elements}
           animInfo={eng.animInfo}

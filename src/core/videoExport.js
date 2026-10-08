@@ -24,6 +24,42 @@ export const VIDEO_QUALITIES = [
 /** 녹화를 시작한 뒤 첫 장을 틀기 전·마지막 장이 끝난 뒤 녹화를 멈추기 전 여유(ms) */
 export const RECORD_PAD_MS = 500
 
+/**
+ * 녹화 중 발표 화면 아래에 비워 두는 REC 표시줄 높이(CSS px) — 슬라이드는 그 위에만 맞춰 그린다.
+ * (FlatPresenter와 녹화 전 예상 크기 계산이 같은 값을 써야 한다)
+ */
+export const REC_BAR_H = 44
+
+/**
+ * 지금 창에서 녹화하면 슬라이드가 화면에 실제로 그려질 크기(기기 픽셀). 녹화는 이 픽셀을 잘라
+ * 담으므로 출력 크기보다 작으면 늘어나 흐려진다.
+ * @param {{w:number,h:number}} canvasSize 덱 캔버스
+ * @param {{w:number,h:number}} viewport   window.innerWidth/innerHeight (CSS px)
+ * @param {number} dpr                      window.devicePixelRatio
+ * @param {number} [barH]                   아래 REC 표시줄 높이
+ * @returns {{w:number,h:number}}
+ */
+export function expectedStagePixels(canvasSize, viewport, dpr = 1, barH = REC_BAR_H) {
+  const cw = Math.max(1, canvasSize?.w || 1280)
+  const ch = Math.max(1, canvasSize?.h || 720)
+  const vw = Math.max(0, viewport?.w || 0)
+  const vh = Math.max(0, (viewport?.h || 0) - barH)
+  const k = Math.min(vw / cw, vh / ch) * (dpr > 0 ? dpr : 1)
+  return { w: Math.max(0, Math.round(cw * k)), h: Math.max(0, Math.round(ch * k)) }
+}
+
+/** 담긴 슬라이드 픽셀이 출력 크기보다 작아 늘려야 하는가(반올림 오차 2px은 무시) */
+export function isUpscaled(stage, out) {
+  if (!stage?.w || !stage?.h || !out?.w || !out?.h) return false
+  return stage.w < out.w - 2 || stage.h < out.h - 2
+}
+
+/** 늘어나 흐릴 수 있다는 안내 문구(녹화 전) */
+export function upscaleNotice(stage, out) {
+  if (!isUpscaled(stage, out)) return ''
+  return `지금 창에서는 슬라이드가 ${stage.w}×${stage.h}으로 보여 ${out.w}×${out.h}으로 늘어나 흐릴 수 있습니다 — 창을 최대화하거나 전체 화면(F11)으로 녹화하세요.`
+}
+
 /** MediaRecorder에 차례로 물어볼 형식 — MP4(H.264/AAC)가 되면 그것, 아니면 WebM. */
 export const VIDEO_MIME_CANDIDATES = [
   'video/mp4;codecs=avc1.640028,mp4a.40.2',

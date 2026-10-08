@@ -3,7 +3,7 @@ import FlatElementRenderer from './FlatElementRenderer'
 import PresenterInkOverlay from './PresenterInkOverlay'
 import KaraokeCaptions from './KaraokeCaptions'
 import LoopLayer from './LoopLayer'
-import { isHiddenAt, animationCss, directionVars, hasLoop, loopStartMs } from '../core/slideAnimation'
+import { isHiddenAt, animationCss, directionVars, hasLoop, loopStartMs, isEntrance } from '../core/slideAnimation'
 import { slideTransitionCss, slideTransitionVars } from '../core/slideTransition'
 
 /**
@@ -20,6 +20,9 @@ import { slideTransitionCss, slideTransitionVars } from '../core/slideTransition
  * @param {number} captionSpaceBelow 슬라이드 아래 레터박스 여백(캔버스 단위). 자막이 들어갈
  *                            만큼 넓으면 슬라이드를 덮는 대신 그 아래에 그린다.
  * @param {boolean} stageMarker 영상 녹화 중 — 녹화기가 잘라 낼 슬라이드 영역 표시(data-present-stage)
+ * @param {boolean} frozen    이 장의 t=0 모습으로 멈춰 그린다(영상 녹화 시작 대기) — 등장 전 요소는 숨기고,
+ *                            애니메이션·반복 효과·미디어 재생은 하지 않는다(playNow=false)
+ * @param {boolean} noTransition 슬라이드 전환 효과 없이 진입(녹화의 첫 장 — 멈춘 화면에서 그대로 이어지게)
  */
 export default function PresentedSlide({
   slideKey, page, elements, animInfo, revealed, playingStep,
@@ -27,6 +30,7 @@ export default function PresentedSlide({
   penActive = false, penTool, penColor, penWidth,
   blackout = false, strokes = [], onCommitStroke, onEraseStroke,
   captionWords, getAudioTime, captionSpaceBelow = 0, stageMarker = false,
+  frozen = false, noTransition = false,
 }) {
   // KaraokeCaptions는 `audioEl.currentTime`을 매 프레임 읽는다 — 엘리먼트 대신
   // 같은 모양의 얇은 어댑터를 넘겨 컴포넌트를 그대로 재사용한다.
@@ -34,10 +38,12 @@ export default function PresentedSlide({
     () => (getAudioTime ? { get currentTime() { return getAudioTime() } } : null),
     [getAudioTime])
 
-  const transitionStyle = useMemo(() => ({
+  const skipTransition = frozen || noTransition
+  const transitionStyle = useMemo(() => (skipTransition ? {} : {
     animation: slideTransitionCss(page?.transition),
     ...(slideTransitionVars(page?.transition) || {}),
-  }), [page?.transition])
+  }), [page?.transition, skipTransition])
+  const playNow = !frozen
 
   return (
     <div data-present-stage={stageMarker ? '' : undefined} style={{
@@ -66,17 +72,20 @@ export default function PresentedSlide({
           // 자동(auto) 요소: 슬라이드 진입 즉시 CSS animation 재생.
           // 외부 div에 key={slideKey}가 있으므로 슬라이드 전환 시 remount → 애니 재시작.
           if (step == null && el.anim?.trigger?.mode === 'auto' && el.anim?.effect && el.anim.effect !== 'none') {
+            // 멈춘 t=0 화면: 등장 효과 요소는 아직 나오기 전이라 숨기고, 퇴장 효과 요소는 그대로 보인다.
+            const preEnter = frozen && isEntrance(el.anim.effect)
             return (
               <div key={el.id} style={{
                 position: 'absolute', left: el.x, top: el.y, width: el.width, height: el.height,
                 zIndex: el.zIndex,
                 transformOrigin: 'center center',
-                animation: animationCss(el.anim, animInfo.autoOffsets?.[el.id] ?? 0),
-                ...(directionVars(el.anim) || {}),
+                animation: frozen ? undefined : animationCss(el.anim, animInfo.autoOffsets?.[el.id] ?? 0),
+                ...(frozen ? {} : (directionVars(el.anim) || {})),
+                ...(preEnter ? { opacity: 0, visibility: 'hidden' } : {}),
               }}>
-                <LoopLayer el={el} startMs={loopStartMs(animInfo, el)}>
+                <LoopLayer el={el} startMs={loopStartMs(animInfo, el)} active={!frozen}>
                   <FlatElementRenderer element={{ ...el, x: 0, y: 0 }} isSelected={false}
-                    isEditing={false} scale={scale} canvasSize={canvasSize} playNow={true} />
+                    isEditing={false} scale={scale} canvasSize={canvasSize} playNow={playNow} />
                 </LoopLayer>
               </div>
             )
@@ -89,9 +98,9 @@ export default function PresentedSlide({
                 position: 'absolute', left: el.x, top: el.y, width: el.width, height: el.height,
                 zIndex: el.zIndex,
               }}>
-                <LoopLayer el={el} startMs={loopStartMs(animInfo, el)}>
+                <LoopLayer el={el} startMs={loopStartMs(animInfo, el)} active={!frozen}>
                   <FlatElementRenderer element={{ ...el, x: 0, y: 0 }} isSelected={false}
-                    isEditing={false} scale={scale} canvasSize={canvasSize} playNow={true} />
+                    isEditing={false} scale={scale} canvasSize={canvasSize} playNow={playNow} />
                 </LoopLayer>
               </div>
             )
@@ -101,7 +110,7 @@ export default function PresentedSlide({
           if (step == null) {
             return (
               <FlatElementRenderer key={el.id} element={el} isSelected={false}
-                isEditing={false} scale={scale} canvasSize={canvasSize} playNow={true} />
+                isEditing={false} scale={scale} canvasSize={canvasSize} playNow={playNow} />
             )
           }
           return (
@@ -115,9 +124,9 @@ export default function PresentedSlide({
               ...(playing ? (directionVars(el.anim) || {}) : {}),
             }}>
               {/* 보이는 동안만 반복 — 단계가 드러나는 순간 시작하고, 되돌아가 숨으면 멈춘다 */}
-              <LoopLayer el={el} startMs={loopStartMs(animInfo, el)} active={!showHidden}>
+              <LoopLayer el={el} startMs={loopStartMs(animInfo, el)} active={!showHidden && !frozen}>
                 <FlatElementRenderer element={{ ...el, x: 0, y: 0 }} isSelected={false}
-                  isEditing={false} scale={scale} canvasSize={canvasSize} playNow={true} />
+                  isEditing={false} scale={scale} canvasSize={canvasSize} playNow={playNow} />
               </LoopLayer>
             </div>
           )

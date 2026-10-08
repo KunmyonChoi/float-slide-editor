@@ -1,7 +1,10 @@
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useFlatStore } from '../store/flatStore'
-import { VIDEO_RESOLUTIONS, VIDEO_FPS, VIDEO_QUALITIES, videoOutputSize, formatElapsed } from '../core/videoExport'
+import {
+  VIDEO_RESOLUTIONS, VIDEO_FPS, VIDEO_QUALITIES, videoOutputSize, formatElapsed,
+  expectedStagePixels, upscaleNotice, isUpscaled,
+} from '../core/videoExport'
 import { useVideoExportStore, closeVideoExport, startExport, recorderModule } from './videoExportState'
 
 /**
@@ -82,6 +85,17 @@ function VideoExportModal() {
 
   const sizeOf = (id) => { const s = videoOutputSize(canvasSize, id); return `${s.w}×${s.h}` }
 
+  // 지금 창에서 슬라이드가 그려질 기기 픽셀 — 출력보다 작으면 늘어나 흐려진다는 안내(창 크기 바뀌면 다시)
+  const [win, setWin] = useState(readWindow)
+  useEffect(() => {
+    const onResize = () => setWin(readWindow())
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
+  const notice = upscaleNotice(
+    expectedStagePixels(canvasSize, win, win.dpr),
+    videoOutputSize(canvasSize, opts.resolution))
+
   return (
     <Modal title="영상으로 내보내기 (MP4)" onClose={closeVideoExport}>
       <Group label="해상도">
@@ -118,6 +132,13 @@ function VideoExportModal() {
         녹화 중에는 다른 탭으로 옮기거나 창을 가리지 마세요. Esc 또는 정지를 누르면 거기까지 저장합니다.
       </div>
 
+      {notice && (
+        <div style={{
+          fontSize: 12, color: '#fde68a', background: 'rgba(245,158,11,0.15)',
+          border: '1px solid rgba(245,158,11,0.35)', borderRadius: 8, padding: '8px 10px',
+        }}>{notice}</div>
+      )}
+
       {error && (
         <div style={{
           fontSize: 12, color: '#fecaca', background: 'rgba(239,68,68,0.15)',
@@ -149,6 +170,13 @@ function VideoExportResult() {
           {result.stoppedEarly ? ' · 도중에 멈춘 곳까지 저장' : ''}
         </div>
       </div>
+      {isUpscaled(result.captureSize, result.outputSize) && (
+        <div style={{ fontSize: 11.5, color: 'rgba(255,255,255,0.55)' }}>
+          화면에서 담긴 슬라이드는 {result.captureSize.w}×{result.captureSize.h}이라
+          {' '}{result.outputSize.w}×{result.outputSize.h}으로 늘려 저장했습니다(조금 흐릴 수 있습니다).
+          창을 최대화하거나 전체 화면(F11)에서 녹화하면 더 선명합니다.
+        </div>
+      )}
       {result.noAudio && (
         <div style={{
           fontSize: 12, color: '#fde68a', background: 'rgba(245,158,11,0.15)',
@@ -168,6 +196,10 @@ function VideoExportResult() {
       </div>
     </Modal>
   )
+}
+
+function readWindow() {
+  return { w: window.innerWidth, h: window.innerHeight, dpr: window.devicePixelRatio || 1 }
 }
 
 function Group({ label, children }) {
