@@ -271,6 +271,8 @@ body { width: 1920px; height: 1080px; overflow: hidden; position: relative; back
 (+ 위로 볼록한 아치 ∩, − 아래로 오목한 미소 ∪, 100이면 반원). 배지·스탬프·로고처럼 **한 줄 글자**에 쓴다(여러 줄은
 한 줄로 이어진다). 글꼴·크기·자간·색·외곽선·그림자는 그대로 따른다. 원호는 div 폭에 걸치므로 폭을 원 지름쯤으로,
 높이는 글자 크기 + 볼록한 높이(폭 × 휘기/200)쯤으로 준다. 브라우저에서 HTML을 바로 열면 곧게 보인다(Genitor에서 휜다).
+**한 줄 글자 길이가 원호 길이(휘기 60이면 폭의 약 1.2배, 100이면 약 1.5배)를 넘으면 끝이 원호 밖으로 넘친다** — 글자를 줄이거나
+폭·휘기를 키운다. `white-space:nowrap`을 주면 브라우저 미리보기에서도 한 줄로 보인다. 검증의 **ARC**가 이 길이를 잰다.
 ```html
 <!-- 원형 배지: 위 글자는 아치, 아래 글자는 미소 -->
 <div data-text-arc="70" style="position:absolute;left:700px;top:300px;width:520px;height:200px;
@@ -707,6 +709,7 @@ Genitor에서 아래 요소를 고르기 어렵다. `viewBox`로 캔버스 좌�
 노트·모션 규약도 함께 검사한다 — 이쪽은 조용히 어긋나므로(가져가 봐야 안다) 특히 중요하다:
 
 5. **ANIM** — 알 수 없는 효과/트리거/방향, 중복된 `data-anim-name`
+5-1. **ARC** — 곡선 글자(`data-text-arc`)가 원호보다 길어 넘치는 요소(곡선 글자는 WRAP 대신 이 검사를 받는다)
 6. **ANIM-REF** — `with`/`after`가 가리킬 `data-anim-ref`가 없거나 같은 슬라이드에 그 이름이 없음
 7. **NOTES** — `<script class="fe-notes">`에 `type="text/plain"`이 없거나 한 슬라이드에 둘 이상
 8. **LOOP** — 알 수 없는 반복 효과(`data-anim-loop`)/시작값
