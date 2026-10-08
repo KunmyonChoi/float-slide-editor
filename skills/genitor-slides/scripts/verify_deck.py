@@ -9,6 +9,7 @@
                  <br>은 줄바꿈이 되지 않는다. 여러 줄 카드는 도형 + 절대 위치
                  텍스트 블록으로 분리할 것.
   WRAP           선언한 <br> 수보다 실제 렌더된 줄이 많은 요소(의도치 않은 줄바꿈).
+  ARC            곡선 글자(data-text-arc)가 원호 길이보다 길어 끝이 넘치는 요소.
   OVERFLOW       내용 높이가 지정 height를 넘는 요소.
   OUTSIDE        캔버스 밖으로 나간 요소.
   NAV            "01 / 04"처럼 숫자만 있는 N / M 텍스트(Genitor가 페이지 번호로 보고 뺀다).
@@ -85,7 +86,23 @@ CHECK_JS = """
         problems.push(`${at} FLEX+children -> ${kids} :: ${label}`);
       }
 
-      if (text) {
+      // 곡선 글자(data-text-arc)는 한 줄로 원호를 따라 그려진다 — 상자 높이에 원호가 들어 있으므로 줄 수 대신
+      // 글자 길이가 원호 길이 안에 드는지 본다(Genitor curvedText.arcGeometry와 같은 식).
+      const bend = Math.max(-100, Math.min(100, Math.round(Number(el.getAttribute('data-text-arc')) || 0)));
+      if (text && bend) {
+        const fs = parseFloat(cs.fontSize) || 32;
+        const range = document.createRange();
+        range.selectNodeContents(el);
+        const textW = [...range.getClientRects()].reduce((a, r) => a + r.width, 0);
+        const pad = Math.min(box.width * 0.1, fs * 0.25), chord = Math.max(1, box.width - 2 * pad);
+        const sg = Math.max(0.5, Math.abs(bend) / 100 * chord / 2);
+        const rad = (chord * chord / 4 + sg * sg) / (2 * sg);
+        const arcLen = 2 * rad * Math.asin(Math.min(1, chord / 2 / rad));
+        if (textW > arcLen * 0.98) {
+          problems.push(`${at} ARC 곡선 글자가 원호보다 길다 (글자 ${Math.round(textW)}px > 원호 ${Math.round(arcLen)}px — ` +
+            `글자를 줄이거나 폭·휘기를 키울 것) :: ${label}`);
+        }
+      } else if (text) {
         const declared = (el.innerHTML.match(/<br/gi) || []).length + 1;
         const lh = parseFloat(cs.lineHeight) || parseFloat(cs.fontSize) * 1.2;
         const rendered = Math.round(el.scrollHeight / lh);
