@@ -25,6 +25,17 @@ export const VIDEO_QUALITIES = [
 export const RECORD_PAD_MS = 500
 
 /**
+ * MediaRecorder.stop() 뒤 stop 이벤트를 기다리는 최대 시간(ms). 브라우저가 끝내 알리지 않아도
+ * (인코더 오류·멈춤) 지금까지 받은 조각으로 저장하고 편집 화면으로 돌아간다.
+ */
+export const RECORDER_STOP_TIMEOUT_MS = 4000
+
+/** 녹화 중 이 키 입력이 '녹화 정지'(Esc)인가. 키를 누르고 있어 반복되는 입력은 빼고 본다. */
+export function isRecordStopKey(e) {
+  return !!e && !e.repeat && (e.key === 'Escape' || e.key === 'Esc' || e.code === 'Escape')
+}
+
+/**
  * 녹화 중 발표 화면 아래에 비워 두는 REC 표시줄 높이(CSS px) — 슬라이드는 그 위에만 맞춰 그린다.
  * (FlatPresenter와 녹화 전 예상 크기 계산이 같은 값을 써야 한다)
  */
@@ -71,13 +82,29 @@ export const VIDEO_MIME_CANDIDATES = [
 ]
 
 /**
+ * 오디오 트랙 없이 영상만 담을 때 물어볼 형식 — 오디오 코덱을 뺀다.
+ * Firefox는 'video/webm;codecs=vp8,opus'를 지원한다고 답하지만, 그 형식으로 오디오 트랙이 없는
+ * 스트림을 담으면 데이터를 하나도 내지 않고, stop()을 불러도 stop 이벤트가 오지 않는다(녹화가 끝나지
+ * 않는다). Firefox는 탭 오디오를 주지 않으므로 Firefox에서는 늘 이 경우다.
+ */
+export const VIDEO_ONLY_MIME_CANDIDATES = [
+  'video/mp4;codecs=avc1.640028',
+  'video/mp4;codecs=avc1',
+  'video/mp4',
+  'video/webm;codecs=vp9',
+  'video/webm;codecs=vp8',
+  'video/webm',
+]
+
+/**
  * 브라우저가 녹화할 수 있는 첫 형식.
  * @param {(mime: string) => boolean} isTypeSupported  보통 MediaRecorder.isTypeSupported
+ * @param {{audio?: boolean}} [opts]  audio=false: 오디오 트랙 없이 영상만 — 오디오 코덱 없는 형식만 고른다
  * @returns {string} 지원하는 것이 없으면 '' (브라우저 기본값에 맡긴다)
  */
-export function pickRecorderMime(isTypeSupported) {
+export function pickRecorderMime(isTypeSupported, { audio = true } = {}) {
   if (typeof isTypeSupported !== 'function') return ''
-  for (const m of VIDEO_MIME_CANDIDATES) {
+  for (const m of (audio ? VIDEO_MIME_CANDIDATES : VIDEO_ONLY_MIME_CANDIDATES)) {
     try { if (isTypeSupported(m)) return m } catch { /* 다음 후보 */ }
   }
   return ''

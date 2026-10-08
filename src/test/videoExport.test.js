@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   pickRecorderMime, videoExtension, videoOutputSize, captureCropRect, cropBounds,
   videoFileName, formatElapsed, captureErrorMessage, VIDEO_MIME_CANDIDATES,
-  expectedStagePixels, isUpscaled, upscaleNotice,
+  expectedStagePixels, isUpscaled, upscaleNotice, VIDEO_ONLY_MIME_CANDIDATES, isRecordStopKey,
 } from '../core/videoExport'
 
 describe('영상 내보내기 — 녹화 형식 선택', () => {
@@ -13,6 +13,20 @@ describe('영상 내보내기 — 녹화 형식 선택', () => {
     expect(pickRecorderMime(m => m.startsWith('video/webm'))).toBe('video/webm;codecs=vp9,opus')
     expect(pickRecorderMime(m => m === 'video/webm;codecs=vp8,opus' || m === 'video/webm')).toBe('video/webm;codecs=vp8,opus')
     expect(pickRecorderMime(m => m === 'video/mp4')).toBe('video/mp4')
+  })
+  it('오디오 트랙이 없으면 오디오 코덱 없는 형식만 — Firefox가 vp8,opus로 영상만 담다 멈추지 않게', () => {
+    const firefox = m => m.startsWith('video/webm') && !m.includes('vp9')
+    expect(pickRecorderMime(firefox)).toBe('video/webm;codecs=vp8,opus')
+    expect(pickRecorderMime(firefox, { audio: false })).toBe('video/webm;codecs=vp8')
+    expect(pickRecorderMime(() => true, { audio: false })).toBe('video/mp4;codecs=avc1.640028')
+    for (const m of VIDEO_ONLY_MIME_CANDIDATES) expect(m).not.toMatch(/opus|mp4a/)
+  })
+  it('녹화 정지 키는 Esc(반복 입력 제외)', () => {
+    expect(isRecordStopKey({ key: 'Escape' })).toBe(true)
+    expect(isRecordStopKey({ key: 'Esc' })).toBe(true)
+    expect(isRecordStopKey({ key: 'Escape', repeat: true })).toBe(false)
+    expect(isRecordStopKey({ key: 'Enter' })).toBe(false)
+    expect(isRecordStopKey(null)).toBe(false)
   })
   it('아무것도 안 되거나 판정 함수가 없거나 던지면 빈 문자열', () => {
     expect(pickRecorderMime(() => false)).toBe('')

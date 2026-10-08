@@ -2,7 +2,7 @@ import { useEditorStore } from '../store/editorStore'
 import { useFlatStore } from '../store/flatStore'
 import {
   pickRecorderMime, videoOutputSize, captureCropRect, cropBounds, videoFileName,
-  VIDEO_QUALITIES, RECORD_PAD_MS, captureErrorMessage,
+  VIDEO_QUALITIES, RECORD_PAD_MS, RECORDER_STOP_TIMEOUT_MS, captureErrorMessage, isRecordStopKey,
 } from './videoExport'
 
 /**
@@ -13,7 +13,7 @@ import {
  *  3) 슬라이드 영역([data-present-stage])이 뜨면 캡처 영상을 숨은 <video>로 틀어 매 프레임
  *     그 영역만 잘라 출력 크기 캔버스에 그리고, canvas.captureStream + 탭 오디오를 MediaRecorder로 담는다.
  *  4) 0.5초 뒤 덱 재생(phase 'playing') → 엔진이 마지막 장을 마치면 'finished' → 0.5초 뒤 정지.
- *     정지 버튼·Esc('stopping')·화면 공유 종료도 지금까지 담은 것을 저장하고 끝낸다.
+ *     정지 버튼·Esc('stopping')·전체 화면 해제·화면 공유 종료도 지금까지 담은 것을 저장하고 끝낸다.
  *
  * 브라우저 API 의존부라 단위 테스트 대신 실제 브라우저로 검증한다. 계산은 videoExport.js.
  */
@@ -114,9 +114,13 @@ async function record({ videoTrack, audioTracks, noAudio, resolution, fps, quali
     es.beginVideoRecording({ startIndex, noAudio })
 
     // 공유가 도중에 끊기면(브라우저의 "공유 중지") 지금까지 담은 것을 저장한다.
-    const onTrackEnded = () => useEditorStore.getState().requestStopVideoRecording()
-    videoTrack.addEventListener('ended', onTrackEnded)
-    cleanups.push(() => videoTrack.removeEventListener('ended', onTrackEnded))
+    const requestStop = () => useEditorStore.getState().requestStopVideoRecording()
+    // onended도 함께 단다 — Firefox에서는 addEventListener('ended')로 단 처리기가 불리지 않는 경우가
+    // 있었다(onended는 불린다). 정지 요청은 여러 번 와도 한 번만 처리된다.
+    videoTrack.addEventListener('ended', requestStop)
+    videoTrack.onended = requestStop
+    cleanups.push(() => { videoTrack.removeEventListener('ended', requestStop); videoTrack.onended = null })
+    cleanups.push(listenForStop(requestStop))
 
     // 캡처 영상을 숨은 <video>로 재생 — 매 프레임 여기서 잘라 그린다.
     const video = document.createElement('video')
@@ -176,15 +180,26 @@ async function record({ videoTrack, audioTracks, noAudio, resolution, fps, quali
     cleanups.push(() => canvasStream.getTracks().forEach(t => t.stop()))
     const recStream = new MediaStream([...canvasStream.getVideoTracks(), ...audioTracks])
 
-    const mimeType = pickRecorderMime(t => window.MediaRecorder.isTypeSupported(t))
-    const recorder = new window.MediaRecorder(recStream, {
-      ...(mimeType ? { mimeType } : {}),
+    // 오디오 트랙이 없으면 오디오 코덱 없는 형식으로 — Firefox는 'vp8,opus'로 영상만 담으면 멈춰 버린다.
+    let mimeType = pickRecorderMime(t => window.MediaRecorder.isTypeSupported(t), { audio: audioTracks.length > 0 })
+    const recOpts = {
       videoBitsPerSecond: bitrate,
       ...(noAudio ? {} : { audioBitsPerSecond: 192000 }),
-    })
+    }
+    let recorder
+    try {
+      recorder = new window.MediaRecorder(recStream, { ...(mimeType ? { mimeType } : {}), ...recOpts })
+    } catch (err) {
+      if (!mimeType) throw err
+      // 지원한다던 형식을 막상 거절하는 브라우저 — 형식은 브라우저 기본값에 맡긴다.
+      mimeType = ''
+      recorder = new window.MediaRecorder(recStream, recOpts)
+    }
     const chunks = []
     recorder.ondataavailable = (e) => { if (e.data?.size) chunks.push(e.data) }
+    recorder.onerror = (e) => console.error('[영상 내보내기] 녹화기 오류:', e?.error || e)
     const stopped = new Promise(r => { recorder.onstop = r })
+    cleanups.push(() => { if (recorder.state !== 'inactive') { try { recorder.stop() } catch { /* 무시 */ } } })
     recorder.start(1000)
     const startedAt = Date.now()
     useEditorStore.getState().updateVideoRecording({ startedAt })
@@ -195,8 +210,12 @@ async function record({ videoTrack, audioTracks, noAudio, resolution, fps, quali
     const how = await waitForEnd()
     if (how === 'finished') await sleep(RECORD_PAD_MS)
 
-    if (recorder.state !== 'inactive') recorder.stop()
-    await stopped
+    if (recorder.state !== 'inactive') {
+      try { recorder.stop() } catch { /* 이미 멈춤 */ }
+    }
+    // stop 이벤트가 끝내 오지 않아도(인코더 멈춤) 받은 조각으로 저장하고 빠져나간다 — 녹화가 영영
+    // 끝나지 않고 발표 화면에 갇히는 일이 없게.
+    await Promise.race([stopped, sleep(RECORDER_STOP_TIMEOUT_MS)])
     const durationMs = Date.now() - startedAt
     const type = recorder.mimeType || mimeType || 'video/webm'
     const blob = new Blob(chunks, { type: type.split(';')[0] })
@@ -211,6 +230,34 @@ async function record({ videoTrack, audioTracks, noAudio, resolution, fps, quali
     }
   } finally {
     cleanup()
+  }
+}
+
+/**
+ * 녹화를 멈추라는 사용자 신호를 페이지 전체에서 받는다. 반환 함수로 해제.
+ *  - Esc: 창의 캡처 단계에서 받는다 — 포커스가 어디 있든(대화창·편집 iframe·REC 표시줄 버튼),
+ *    다른 단축키 처리기가 이벤트를 삼키기 전에. 편집 iframe 문서에도 단다(포커스가 남아 있을 수 있다).
+ *  - 전체 화면 해제: 요소 전체 화면에서는 브라우저가 Esc를 가져가 전체 화면만 풀고 페이지에는 키를
+ *    주지 않는다(Firefox·Chrome) — 녹화 중 전체 화면이 풀리면 Esc를 누른 것으로 본다.
+ */
+function listenForStop(requestStop) {
+  const onKey = (e) => {
+    if (!isRecordStopKey(e)) return
+    e.preventDefault()
+    e.stopPropagation()
+    requestStop()
+  }
+  const onFullscreen = () => { if (!document.fullscreenElement) requestStop() }
+  const iframeDoc = (() => {
+    try { return useEditorStore.getState().iframeRef?.current?.contentDocument || null } catch { return null }
+  })()
+  window.addEventListener('keydown', onKey, true)
+  iframeDoc?.addEventListener('keydown', onKey, true)
+  document.addEventListener('fullscreenchange', onFullscreen)
+  return () => {
+    window.removeEventListener('keydown', onKey, true)
+    iframeDoc?.removeEventListener('keydown', onKey, true)
+    document.removeEventListener('fullscreenchange', onFullscreen)
   }
 }
 

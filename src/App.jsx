@@ -168,7 +168,9 @@ export default function App() {
     const onFsChange = () => {
       const es = useEditorStore.getState()
       if (!document.fullscreenElement && es.mode === 'present' && !es.presenterActive) {
-        es.exitPresentation()
+        // 영상 녹화 중이면 녹화 정지만 요청한다 — 녹화기가 지금까지 담은 것을 저장한 뒤 발표를 닫는다.
+        if (es.videoRecording) es.requestStopVideoRecording()
+        else es.exitPresentation()
       }
     }
     document.addEventListener('fullscreenchange', onFsChange)
