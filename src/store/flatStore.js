@@ -53,6 +53,60 @@ export function makeDefaultCustomTheme() {
 }
 
 const _history = new HistoryStack()
+
+// ── 슬라이더 되돌리기 단위 ──
+// ① 미리보기 전 값: previewFlatElement가 처음 바꾸기 직전 값(요소별 필드·스타일 키). 끄는 동안 미리보기만 하고
+//    놓을 때 저장하는 컨트롤은 저장 시점의 요소가 이미 미리보기 값이라, 이것을 '이전 값'으로 써야 되돌리기가 원래로 간다.
+const _previewBase = new Map()  // id → { fields: {키: 값}, styles: {스타일 키: 값} }
+// ② 한 동작(슬라이더·색상 창 끌기): 그동안 같은 요소·같은 속성을 바꾼 기록을 하나로 합친다(처음 이전 값 + 마지막 새 값).
+let _gesture = null             // { cmd } — 이 동작에서 마지막으로 쌓은 기록
+
+function rememberPreviewBase(old, changes) {
+  let b = _previewBase.get(old.id)
+  if (!b) { b = { fields: {}, styles: {} }; _previewBase.set(old.id, b) }
+  for (const k of Object.keys(changes)) {
+    if (k === 'styles') {
+      for (const sk of Object.keys(changes.styles || {})) if (!(sk in b.styles)) b.styles[sk] = old.styles?.[sk]
+    } else if (!(k in b.fields)) b.fields[k] = old[k]
+  }
+}
+
+/** 저장할 때의 이전 값 — 미리보기로 바뀐 키는 미리보기 전 값으로. 쓴 미리보기 값은 지운다. raw: 스타일 머지 전 변경 */
+function takeOldValues(old, raw, merged) {
+  const b = _previewBase.get(old.id)
+  const out = {}
+  for (const key of Object.keys(merged)) {
+    if (key === 'styles') {
+      const prev = { ...(old.styles || {}) }
+      if (b) for (const sk of Object.keys(raw.styles || {})) if (sk in b.styles) { prev[sk] = b.styles[sk]; delete b.styles[sk] }
+      out.styles = prev
+    } else if (b && key in b.fields) {
+      out[key] = b.fields[key]; delete b.fields[key]
+    } else out[key] = old[key]
+  }
+  if (b && !Object.keys(b.fields).length && !Object.keys(b.styles).length) _previewBase.delete(old.id)
+  return out
+}
+
+/** 같은 대상인지 비교할 서명 — 'textArc', 'styles.backdropFilter' 처럼 바꾼 키들 */
+function changeSig(raw) {
+  return Object.keys(raw).flatMap(k => k === 'styles' ? Object.keys(raw.styles || {}).map(sk => 'styles.' + sk) : [k]).sort().join(',')
+}
+
+/** 기록 쌓기 — 동작 중이고 바로 앞 기록이 같은 대상이면 합친다 */
+function pushHistory(cmd) {
+  const last = _gesture?.cmd
+  if (last && _history.isTop(last) && last.type === cmd.type && last.sig === cmd.sig) {
+    if (cmd.type === 'update' && last.id === cmd.id) { last.newValues = cmd.newValues; return }
+    if (cmd.type === 'batch' && last.entries.length === cmd.entries.length
+        && last.entries.every((e, i) => e.id === cmd.entries[i].id)) {
+      last.entries.forEach((e, i) => { e.newValues = cmd.entries[i].newValues })
+      return
+    }
+  }
+  _history.push(cmd)
+  if (_gesture) _gesture.cmd = cmd
+}
 const _pageCache = {}   // { [pageKey]: { elements, canvasSize, fontImports, history } }
 let _currentPageKey = null
 let _clipboardPageKey = null // 복사 시점의 페이지 — 붙여넣기 위치(오프셋 여부) 판단용
@@ -1509,16 +1563,14 @@ export const useFlatStore = create((set, get) => ({
     if (idx === -1) return
 
     const old = els[idx]
+    const raw = changes
     // styles 중첩 머지 — 개별 스타일 키만 변경해도 나머지 보존
     if (changes.styles && old.styles) {
       changes = { ...changes, styles: { ...old.styles, ...changes.styles } }
     }
-    const oldValues = {}
-    for (const key of Object.keys(changes)) {
-      oldValues[key] = old[key]
-    }
+    const oldValues = takeOldValues(old, raw, changes)
 
-    _history.push({ type: 'update', id, oldValues, newValues: { ...changes } })
+    pushHistory({ type: 'update', id, sig: changeSig(raw), oldValues, newValues: { ...changes } })
 
     const updated = [...els]
     updated[idx] = { ...old, ...changes }
@@ -1552,6 +1604,7 @@ export const useFlatStore = create((set, get) => ({
     const idx = els.findIndex(e => e.id === id)
     if (idx === -1) return
 
+    rememberPreviewBase(els[idx], changes)
     if (changes.styles && els[idx].styles) {
       changes = { ...changes, styles: { ...els[idx].styles, ...changes.styles } }
     }
@@ -1559,6 +1612,10 @@ export const useFlatStore = create((set, get) => ({
     updated[idx] = { ...updated[idx], ...changes }
     set({ flatElements: updated })
   },
+
+  /** 한 동작(슬라이더·색상 창 끌기) 시작/끝 — 그 사이 같은 대상의 변경은 되돌리기 한 번이 된다 */
+  beginHistoryGesture() { _gesture = { cmd: null } },
+  endHistoryGesture() { _gesture = null },
 
   /** flat 요소 삭제 */
   removeFlatElement(id) {
@@ -1975,7 +2032,7 @@ export const useFlatStore = create((set, get) => ({
   /** 여러 요소에 동일 changes 적용 + batch 히스토리 */
   batchUpdateFlatElements(ids, changes) {
     const els = get().flatElements
-    const entries = []
+    const entries = [], sigs = []
     const updated = [...els]
     for (const id of ids) {
       const idx = updated.findIndex(e => e.id === id)
@@ -1985,13 +2042,13 @@ export const useFlatStore = create((set, get) => ({
       if (merged.styles && old.styles) {
         merged = { ...merged, styles: { ...old.styles, ...merged.styles } }
       }
-      const oldValues = {}
-      for (const key of Object.keys(merged)) oldValues[key] = old[key]
+      const oldValues = takeOldValues(old, changes, merged)
       entries.push({ id, oldValues, newValues: { ...merged } })
+      sigs.push(changeSig(changes))
       updated[idx] = { ...old, ...merged }
     }
     if (entries.length === 0) return
-    _history.push({ type: 'batch', entries })
+    pushHistory({ type: 'batch', sig: sigs.join('|'), entries })
     set({ flatElements: updated, canUndo: _history.canUndo, canRedo: _history.canRedo })
   },
 
@@ -1999,7 +2056,7 @@ export const useFlatStore = create((set, get) => ({
   batchUpdateFlatElementsIndividual(changesMap) {
     // changesMap: [{ id, changes }]
     const els = get().flatElements
-    const entries = []
+    const entries = [], sigs = []
     const updated = [...els]
     for (const { id, changes } of changesMap) {
       const idx = updated.findIndex(e => e.id === id)
@@ -2009,13 +2066,13 @@ export const useFlatStore = create((set, get) => ({
       if (merged.styles && old.styles) {
         merged = { ...merged, styles: { ...old.styles, ...merged.styles } }
       }
-      const oldValues = {}
-      for (const key of Object.keys(merged)) oldValues[key] = old[key]
+      const oldValues = takeOldValues(old, changes, merged)
       entries.push({ id, oldValues, newValues: { ...merged } })
+      sigs.push(changeSig(changes))
       updated[idx] = { ...old, ...merged }
     }
     if (entries.length === 0) return
-    _history.push({ type: 'batch', entries })
+    pushHistory({ type: 'batch', sig: sigs.join('|'), entries })
     set({ flatElements: updated, canUndo: _history.canUndo, canRedo: _history.canRedo })
   },
 
@@ -2028,6 +2085,7 @@ export const useFlatStore = create((set, get) => ({
       const idx = updated.findIndex(e => e.id === id)
       if (idx === -1) continue
       const old = updated[idx]
+      rememberPreviewBase(old, changes)
       let merged = { ...changes }
       if (merged.styles && old.styles) {
         merged = { ...merged, styles: { ...old.styles, ...merged.styles } }
@@ -2160,6 +2218,7 @@ export const useFlatStore = create((set, get) => ({
   },
 
   undo() {
+    _previewBase.clear()
     const cmd = _history.undo()
     if (!cmd) return
     const els = get().flatElements
@@ -2215,6 +2274,7 @@ export const useFlatStore = create((set, get) => ({
   },
 
   redo() {
+    _previewBase.clear()
     const cmd = _history.redo()
     if (!cmd) return
     const els = get().flatElements
@@ -2269,6 +2329,7 @@ export const useFlatStore = create((set, get) => ({
   /** 히스토리 초기화 */
   clearHistory() {
     _history.clear()
+    _previewBase.clear()
     set({ canUndo: false, canRedo: false })
   },
 
