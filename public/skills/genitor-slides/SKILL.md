@@ -11,7 +11,10 @@ description: >-
   Instagram Reels and feed, and TikTok. Output extracts cleanly into editable text/shape/image
   elements because the markup mirrors Genitor's own HTML export; notes ride in
   a per-slide script block with class fe-notes, and motion in data-anim
-  attributes.
+  attributes. Also covers Genitor's visual effects — curved text (data-text-arc),
+  image filters (data-img-fx), frosted-glass panels (backdrop-filter), looping
+  accents and falling particles (data-anim-loop), and audio visualizer shapes
+  with stereo display (data-viz) — with a table of which deck calls for which.
 ---
 
 # Genitor 슬라이드 HTML 작성 규약
@@ -159,6 +162,24 @@ body { width: 1920px; height: 1080px; overflow: hidden; position: relative; back
   가독 크기(예: 36~52px), 충분한 행간·여백. 대비를 준다.
 - **여백·리듬**: 요소를 빽빽이 채우지 말고 호흡을 둔다. 강조 요소는 크게, 보조는 작게.
 - **형식만은 항상 동일**: 고정 캔버스 + `position:absolute` + px 좌표 + `.slide.active`.
+
+## 효과 고르기 (어떤 덱에 무엇을)
+
+아래 레시피의 효과들은 **장식이 아니라 역할**이 있을 때 쓴다. 덱 성격을 정한 뒤 이 표에서 한두 개를 고르고,
+고른 효과는 **모든 장에서 같은 자리·같은 값**으로 통일한다(장마다 다른 효과를 섞으면 산만하다).
+
+| 덱 / 장면 | 쓰면 좋은 효과 | 쓰지 말 것 |
+|---|---|---|
+| 음악·플레이리스트·재생기 | 유리 패널(재생기 카드) · 비주얼라이저 모양+스테레오 · 회전 원판(`spin`) 1개 · 원판 둘레 곡선 글자 · 장면에 맞는 파티클(비·눈·먼지) | 패널에 breathe·blink |
+| 사진 배경 위 표지·인용 | 그림 보정(어둡게+비네팅 — 검은 오버레이 대신) · 필요하면 유리 패널 | 사진 전체를 덮는 도형 |
+| 행사·전시·대기 화면 | 로고·배지 곡선 글자 · `shimmer`/`pulse` 강조 1개 · 은은한 파티클 | 반복 효과 여러 개 동시 |
+| 제품·브랜드 소개 | 원형 배지·스탬프 곡선 글자("NEW · 2026") · 행동 유도 버튼 `pulse` · 제품 사진 그림 보정(밝기·채도 살짝) | 흐림(blur) 보정 |
+| 계절·날씨·감성 테마 | 파티클(`fall` — 눈·꽃잎·빗줄기) · 색온도 보정(따뜻 +/차갑게 −) | 글자 위 파티클 |
+| 보고서·강의·데이터 | 등장 모션(`data-anim`)만 기본. 효과는 표지 1장에 한정 | 파티클·곡선 글자 남발 |
+| 세로 9:16 쇼츠·릴스 | 그림 보정 + 유리 패널(글자 가독성) · 짧은 곡선 배지 | 안전 영역 밖 곡선 글자 |
+
+- 오디오가 있는 덱이면 비주얼라이저 모양을 상자 모양에 맞춰 반드시 정한다(가로 긴 상자 → `bars`/`mirror`/`wave`, 정사각 → `circle`). 스테레오 곡이면 `data-viz-channels="stereo"` + 두 강조색.
+- 효과는 Genitor에서 적용된다 — 브라우저에서 HTML을 바로 열면 곡선 글자는 곧게, 색온도·비네팅은 빠진 채 보이는 게 정상이다.
 
 ## 요소 레시피 (각 요소 = `.slide` 직계 자식 div)
 
