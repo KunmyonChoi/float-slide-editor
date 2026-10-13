@@ -2,8 +2,10 @@ import { describe, it, expect } from 'vitest'
 import {
   pickRecorderMime, videoExtension, videoOutputSize, captureCropRect, cropBounds,
   videoFileName, formatElapsed, captureErrorMessage, VIDEO_MIME_CANDIDATES,
-  expectedStagePixels, isUpscaled, upscaleNotice,
+  expectedStagePixels, isUpscaled, upscaleNotice, VIDEO_ONLY_MIME_CANDIDATES, isRecordStopKey,
+  calibrationMarkers, findMarkers, solveCaptureMapping, scaleMapping, calibrationFailedMessage,
 } from '../core/videoExport'
+import { paintCaptureFrame } from './fixtures/calibFrame'
 
 describe('영상 내보내기 — 녹화 형식 선택', () => {
   it('MP4(H.264/AAC)를 먼저 고른다', () => {
@@ -13,6 +15,20 @@ describe('영상 내보내기 — 녹화 형식 선택', () => {
     expect(pickRecorderMime(m => m.startsWith('video/webm'))).toBe('video/webm;codecs=vp9,opus')
     expect(pickRecorderMime(m => m === 'video/webm;codecs=vp8,opus' || m === 'video/webm')).toBe('video/webm;codecs=vp8,opus')
     expect(pickRecorderMime(m => m === 'video/mp4')).toBe('video/mp4')
+  })
+  it('오디오 트랙이 없으면 오디오 코덱 없는 형식만 — Firefox가 vp8,opus로 영상만 담다 멈추지 않게', () => {
+    const firefox = m => m.startsWith('video/webm') && !m.includes('vp9')
+    expect(pickRecorderMime(firefox)).toBe('video/webm;codecs=vp8,opus')
+    expect(pickRecorderMime(firefox, { audio: false })).toBe('video/webm;codecs=vp8')
+    expect(pickRecorderMime(() => true, { audio: false })).toBe('video/mp4;codecs=avc1.640028')
+    for (const m of VIDEO_ONLY_MIME_CANDIDATES) expect(m).not.toMatch(/opus|mp4a/)
+  })
+  it('녹화 정지 키는 Esc(반복 입력 제외)', () => {
+    expect(isRecordStopKey({ key: 'Escape' })).toBe(true)
+    expect(isRecordStopKey({ key: 'Esc' })).toBe(true)
+    expect(isRecordStopKey({ key: 'Escape', repeat: true })).toBe(false)
+    expect(isRecordStopKey({ key: 'Enter' })).toBe(false)
+    expect(isRecordStopKey(null)).toBe(false)
   })
   it('아무것도 안 되거나 판정 함수가 없거나 던지면 빈 문자열', () => {
     expect(pickRecorderMime(() => false)).toBe('')
@@ -152,5 +168,103 @@ describe('영상 내보내기 — 지금 창에서 담길 슬라이드 크기(�
     expect(upscaleNotice({ w: 1280, h: 720 }, { w: 1920, h: 1080 }))
       .toBe('지금 창에서는 슬라이드가 1280×720으로 보여 1920×1080으로 늘어나 흐릴 수 있습니다 — 창을 최대화하거나 전체 화면(F11)으로 녹화하세요.')
     expect(upscaleNotice({ w: 1920, h: 1080 }, { w: 1920, h: 1080 })).toBe('')
+  })
+})
+
+describe('영상 내보내기 — 화면 위치 보정(창·화면 공유)', () => {
+  const VP = { w: 1280, h: 720 }
+  const solve = (frame, viewport = VP) => {
+    const markers = calibrationMarkers(viewport)
+    return solveCaptureMapping(markers, findMarkers(frame, markers), { w: frame.width, h: frame.height }, viewport)
+  }
+  const near = (m, want, eps = 0.6) => {
+    expect(m).toBeTruthy()
+    expect(Math.abs(m.sx - want.sx)).toBeLessThan(0.01)
+    expect(Math.abs(m.sy - want.sy)).toBeLessThan(0.01)
+    expect(Math.abs(m.ox - want.ox)).toBeLessThan(eps)
+    expect(Math.abs(m.oy - want.oy)).toBeLessThan(eps)
+  }
+
+  it('표식은 네 귀퉁이 — 색이 서로 다르고 뷰포트 안', () => {
+    const ms = calibrationMarkers(VP)
+    expect(ms.map(m => m.id)).toEqual(['tl', 'tr', 'bl', 'br'])
+    expect(new Set(ms.map(m => m.color.join())).size).toBe(4)
+    for (const m of ms) {
+      expect(m.left).toBeGreaterThan(0)
+      expect(m.top).toBeGreaterThan(0)
+      expect(m.left + m.size).toBeLessThan(VP.w)
+      expect(m.top + m.size).toBeLessThan(VP.h)
+    }
+  })
+
+  it('창 공유: 위 도구 막대(85px)·왼쪽 테두리(8px)만큼 밀린 자리를 찾는다', () => {
+    const map = { sx: 1, sy: 1, ox: 8, oy: 85 }
+    near(solve(paintCaptureFrame({ fw: 1296, fh: 813, viewport: VP, map })).map, map)
+  })
+
+  it('화면 공유: 배율 1.25 · 창이 화면 가운데쯤', () => {
+    const vp = { w: 1200, h: 700 }
+    const map = { sx: 1.25, sy: 1.25, ox: 100, oy: 150 }
+    near(solve(paintCaptureFrame({ fw: 1920, fh: 1080, viewport: vp, map }), vp).map, map)
+  })
+
+  it('기기 배율 2(탭 공유와 같은 모양)', () => {
+    const map = { sx: 2, sy: 2, ox: 0, oy: 0 }
+    near(solve(paintCaptureFrame({ fw: 2560, fh: 1440, viewport: VP, map })).map, map)
+  })
+
+  it('표식 하나가 가려져도 대각선 둘 이상이면 잰다 · 한 줄만 남거나 하나뿐이면 실패', () => {
+    const map = { sx: 1, sy: 1, ox: 8, oy: 85 }
+    const frame = (drop) => paintCaptureFrame({ fw: 1296, fh: 813, viewport: VP, map, drop })
+    near(solve(frame(['br'])).map, map)
+    near(solve(frame(['tr', 'bl'])).map, map)
+    expect(solve(frame(['tl', 'tr'])).map).toBe(null) // 아래 줄만 — 세로 배율을 알 수 없다
+    expect(solve(frame(['tl', 'tr', 'bl'])).map).toBe(null)
+  })
+
+  it('표식이 없으면(페이지가 영상에 없음·가려짐) 실패', () => {
+    const r = solve(paintCaptureFrame({ fw: 1296, fh: 813, viewport: VP, map: { sx: 1, sy: 1, ox: 8, oy: 85 }, markers: false }))
+    expect(r.map).toBe(null)
+    expect(r.reason).toBe('markers')
+  })
+
+  it('바탕화면에 같은 색이 있어 중심이 끌려가면 믿지 않는다', () => {
+    const frame = paintCaptureFrame({
+      fw: 1920, fh: 1080, viewport: VP, map: { sx: 1, sy: 1, ox: 300, oy: 200 },
+      extra: [{ x: 10, y: 10, w: 120, h: 60, color: [255, 0, 0] }],
+    })
+    expect(solve(frame).map).toBe(null)
+  })
+
+  it('페이지가 영상 밖으로 나가면(화면 공유에서 창이 화면 끝에 걸침) 실패', () => {
+    const markers = calibrationMarkers(VP)
+    const found = markers.map(m => ({ id: m.id, x: m.x + 900, y: m.y, count: 784, w: 28, h: 28 }))
+    expect(solveCaptureMapping(markers, found, { w: 1920, h: 1080 }, VP).reason).toBe('outside')
+  })
+
+  it('가로·세로 배율이 다르면 실패(표식을 잘못 짝지음)', () => {
+    const markers = calibrationMarkers(VP)
+    const found = markers.map(m => ({ id: m.id, x: m.x, y: m.y * 1.3, count: 784, w: 28, h: 36 }))
+    expect(solveCaptureMapping(markers, found, { w: 1920, h: 1080 }, VP).reason).toBe('aspect')
+  })
+
+  it('줄여 읽은 버퍼에서 잰 대응을 원래 영상 크기로 늘린다', () => {
+    expect(scaleMapping({ sx: 1, sy: 1, ox: 8, oy: 85 }, 2)).toEqual({ sx: 2, sy: 2, ox: 16, oy: 170 })
+    // 3840×2160 화면을 1920 폭으로 줄여 잰 경우
+    const map = { sx: 1, sy: 1, ox: 50, oy: 90 }
+    const r = solve(paintCaptureFrame({ fw: 1920, fh: 1080, viewport: VP, map }))
+    near(scaleMapping(r.map, 2), { sx: 2, sy: 2, ox: 100, oy: 180 }, 1.2)
+  })
+
+  it('대응이 있으면 잘라낼 사각형에 자리·배율을 그대로 쓴다', () => {
+    const map = { sx: 1.25, sy: 1.25, ox: 10, oy: 90 }
+    const crop = captureCropRect({ left: 0, top: 0, width: 1280, height: 720 }, VP, { w: 1620, h: 1000 }, map)
+    expect(crop).toEqual({ sx: 10, sy: 90, sw: 1600, sh: 900 })
+  })
+
+  it('보정 실패 문구 — Firefox는 창 선택·가리지 않기', () => {
+    expect(calibrationFailedMessage(true)).toMatch(/브라우저 창/)
+    expect(calibrationFailedMessage(true)).toMatch(/가리지/)
+    expect(calibrationFailedMessage(false)).toMatch(/이 탭/)
   })
 })

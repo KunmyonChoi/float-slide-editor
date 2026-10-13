@@ -21,6 +21,7 @@ vi.mock('../store/flatStore', () => ({
 
 const { usePresentationEngine, LOOP_DWELL_MS } = await import('../core/usePresentationEngine')
 const { useEditorStore } = await import('../store/editorStore')
+const { reportMediaEnded } = await import('../core/mediaAdvance')
 
 const tick = (ms) => act(async () => { await vi.advanceTimersByTimeAsync(ms) })
 const phase = () => useEditorStore.getState().videoRecording?.phase
@@ -134,5 +135,77 @@ describe('영상 녹화 모드 발표', () => {
     expect(result.current.penActive).toBe(false)
     act(() => result.current.handleKeyDown(ev('Escape')))
     expect(onExit).toHaveBeenCalledTimes(1)
+  })
+})
+
+// 사용자 환경 재현: 전시회 모드(루프)·자동 진행이 켜진 채로 녹화. 곡 하나 = 슬라이드 하나인 플레이어 덱
+// (오디오 data-advance="end" · 클릭 단계 · 노트 글(음성 없음) · 반복 효과 fall).
+describe('영상 녹화 — 전시회(루프)·자동 진행이 켜져 있어도 덱 끝에서 끝난다', () => {
+  const song = (id) => page({
+    notes: '첫 문단\n\n둘째 문단',
+    elements: [
+      { id: `t-${id}`, type: 'text', anim: anim(0) },
+      { id: `p-${id}`, type: 'shape', loopAnim: { effect: 'fall', periodMs: 4000 } },
+      { id, type: 'audio', content: `idb://${id}`, advanceOnEnd: true },
+    ],
+  })
+  beforeEach(() => {
+    vi.useFakeTimers()
+    useEditorStore.getState().setLoopPresentation(true)
+    useEditorStore.getState().setAutoAdvance(true)
+    useEditorStore.getState().setAutoBuild(false)
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+    useEditorStore.setState({ videoRecording: null, presentStartIndex: 0 })
+    useEditorStore.getState().setLoopPresentation(false)
+    useEditorStore.getState().setAutoAdvance(false)
+  })
+
+  it('마지막 장이 시간 지정이면 그 시간 뒤 finished — 처음으로 되감지 않는다', async () => {
+    deck = { '0-0': song('a1'), '1-0': page({ advance: { mode: 'time', seconds: 2 } }) }
+    const { result } = await startRecordingEngine()
+    act(() => useEditorStore.getState().updateVideoRecording({ phase: 'playing' }))
+    expect(result.current.loopPresentation).toBe(false)
+    act(() => reportMediaEnded('a1'))
+    expect(result.current.currentSlide).toBe(1)
+    await tick(2050)
+    expect(result.current.currentSlide).toBe(1)
+    expect(phase()).toBe('finished')
+    expect(useEditorStore.getState().loopPresentation).toBe(true) // 설정은 그대로
+  })
+
+  it('표지(시간) → 곡 → 곡: 마지막 곡이 끝나면 finished', async () => {
+    deck = { '0-0': page({ advance: { mode: 'time', seconds: 2 } }), '1-0': song('a1'), '2-0': song('a2') }
+    const { result } = await startRecordingEngine()
+    act(() => useEditorStore.getState().updateVideoRecording({ phase: 'playing' }))
+    await tick(2050)
+    expect(result.current.currentSlide).toBe(1)
+    expect(result.current.advanceMode).toBe('all')
+    await tick(1000)
+    expect(result.current.revealed).toBe(1) // 클릭 단계도 자동으로 나온다
+    act(() => reportMediaEnded('a1'))
+    expect(result.current.currentSlide).toBe(2)
+    expect(phase()).toBe('playing')
+    act(() => reportMediaEnded('a2'))
+    expect(result.current.currentSlide).toBe(2)
+    expect(phase()).toBe('finished')
+    // 그 뒤로 머무는 시간·반복 효과 타이머가 덱을 되감거나 상태를 되돌리지 않는다
+    await tick(LOOP_DWELL_MS * 3)
+    expect(result.current.currentSlide).toBe(2)
+    expect(phase()).toBe('finished')
+  })
+
+  it('모든 장이 곡(미디어 끝)인 덱도 마지막 곡이 끝나면 finished', async () => {
+    deck = { '0-0': song('a1'), '1-0': song('a2'), '2-0': song('a3') }
+    const { result } = await startRecordingEngine()
+    act(() => useEditorStore.getState().updateVideoRecording({ phase: 'playing' }))
+    for (const [i, id] of ['a1', 'a2', 'a3'].entries()) {
+      expect(result.current.currentSlide).toBe(i)
+      await tick(800)
+      act(() => reportMediaEnded(id))
+    }
+    expect(result.current.currentSlide).toBe(2)
+    expect(phase()).toBe('finished')
   })
 })

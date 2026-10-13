@@ -11,11 +11,13 @@ import { useVideoExportStore, closeVideoExport, startExport, recorderModule } fr
  * 영상으로 내보내기(MP4) — 파일 ▸ 내보내기 메뉴에서 부르는 옵션 대화창 + 결과 안내.
  *
  * 앱 어딘가에 <VideoExportHost />를 한 번 마운트하고 openVideoExport()(videoExportState.js)를 부른다.
- * "녹화 시작"을 누르면 브라우저가 "이 탭" 공유를 묻고, 허락하면 대화창이 닫히고 덱이 발표
+ * "녹화 시작"을 누르면 브라우저가 화면 공유("이 탭" 권장, 창·화면도 됨)를 묻고, 허락하면 대화창이 닫히고 덱이 발표
  * 화면에서 처음(또는 현재 장)부터 끝까지 재생되는 동안 녹화된다(videoRecorder.js).
  */
 
 const PREF_KEY = 'video-export-options'
+// Firefox는 탭 공유·탭 오디오가 없다 — 창 공유로 안내한다.
+const FIREFOX = typeof navigator !== 'undefined' && /firefox/i.test(navigator.userAgent || '')
 const DEFAULTS = { resolution: 'canvas', fps: 30, quality: 'normal', range: 'all' }
 
 function loadPrefs() {
@@ -126,9 +128,21 @@ function VideoExportModal() {
         fontSize: 11.5, lineHeight: 1.55, color: 'rgba(255,255,255,0.6)',
         background: 'rgba(255,255,255,0.05)', borderRadius: 8, padding: '8px 10px',
       }}>
-        녹화 시작을 누르면 브라우저가 화면 공유를 묻습니다 — <b style={{ color: '#e2e8f0' }}>“이 탭”</b>을 고르고
-        <b style={{ color: '#e2e8f0' }}> 탭 오디오 공유</b>를 켜 두세요(나레이션·배경음악이 함께 담깁니다).
-        덱이 실제로 재생되는 시간만큼 녹화가 걸리고, 클릭으로 넘기는 장은 10초 뒤 넘어갑니다.
+        {FIREFOX ? (
+          <>
+            녹화 시작을 누르면 브라우저가 화면 공유를 묻습니다 — Firefox는 탭 공유가 없으니
+            <b style={{ color: '#e2e8f0' }}> “창”에서 지금 이 브라우저 창</b>을 고르세요.
+            Firefox에서는 <b style={{ color: '#fde68a' }}>소리가 담기지 않습니다</b>(영상만 저장 — 소리까지 담으려면 Chrome·Edge).
+            녹화하는 동안 창을 다른 창으로 가리거나 옮기거나 크기를 바꾸지 마세요.
+          </>
+        ) : (
+          <>
+            녹화 시작을 누르면 브라우저가 화면 공유를 묻습니다 — <b style={{ color: '#e2e8f0' }}>“이 탭”</b>을 고르고
+            <b style={{ color: '#e2e8f0' }}> 탭 오디오 공유</b>를 켜 두세요(나레이션·배경음악이 함께 담깁니다).
+            창이나 화면 전체를 공유해도 슬라이드만 잘라 담지만, 탭 공유가 가장 정확하고 소리도 함께 담깁니다.
+          </>
+        )}
+        {' '}덱이 실제로 재생되는 시간만큼 녹화가 걸리고, 클릭으로 넘기는 장은 10초 뒤 넘어갑니다.
         녹화 중에는 다른 탭으로 옮기거나 창을 가리지 마세요. Esc 또는 정지를 누르면 거기까지 저장합니다.
       </div>
 
@@ -170,6 +184,15 @@ function VideoExportResult() {
           {result.stoppedEarly ? ' · 도중에 멈춘 곳까지 저장' : ''}
         </div>
       </div>
+      {result.stopReason === 'resized' && (
+        <div style={{
+          fontSize: 12, color: '#fde68a', background: 'rgba(245,158,11,0.15)',
+          border: '1px solid rgba(245,158,11,0.35)', borderRadius: 8, padding: '8px 10px',
+        }}>
+          녹화 중 창 크기(또는 공유 화면 크기)가 바뀌어 슬라이드 위치가 어긋나기 전에 거기까지만 저장했습니다.
+          끝까지 담으려면 창 크기를 그대로 두고 다시 녹화해 주세요.
+        </div>
+      )}
       {isUpscaled(result.captureSize, result.outputSize) && (
         <div style={{ fontSize: 11.5, color: 'rgba(255,255,255,0.55)' }}>
           화면에서 담긴 슬라이드는 {result.captureSize.w}×{result.captureSize.h}이라
@@ -182,8 +205,9 @@ function VideoExportResult() {
           fontSize: 12, color: '#fde68a', background: 'rgba(245,158,11,0.15)',
           border: '1px solid rgba(245,158,11,0.35)', borderRadius: 8, padding: '8px 10px',
         }}>
-          탭 오디오가 공유되지 않아 소리 없이 영상만 저장했습니다. 소리까지 담으려면 화면 공유 창에서
-          “탭 오디오도 공유”를 켜 주세요.
+          {FIREFOX
+            ? 'Firefox는 화면 공유에 소리를 담지 못해 소리 없이 영상만 저장했습니다. 소리까지 담으려면 Chrome·Edge에서 녹화해 주세요.'
+            : '탭 오디오가 공유되지 않아 소리 없이 영상만 저장했습니다. 소리까지 담으려면 화면 공유 창에서 “이 탭”을 고르고 “탭 오디오도 공유”를 켜 주세요.'}
         </div>
       )}
       {/\.webm$/i.test(result.fileName || '') && (
