@@ -330,11 +330,12 @@ export default function FileMenu({ fallbackSample }) {
     if (!canvasNode) { alert('캔버스를 찾을 수 없습니다'); return }
     const { exportCurrentPageToPdf } = await import('../core/PdfExporter.js')
     try {
-      await exportCurrentPageToPdf(canvasNode, useFlatStore.getState(), { scale: 2 })
+      await exportCurrentPageToPdf(canvasNode, useFlatStore.getState(),
+        { scale: printScale().scale, printMm: useEditorStore.getState().printMm })
     } catch (err) {
       alert('PDF 내보내기 실패: ' + err.message)
     }
-  }, [])
+  }, [printScale])
 
   // PDF 내보내기 (전체 페이지)
   const handleExportPdfAll = useCallback(async () => {
@@ -344,11 +345,12 @@ export default function FileMenu({ fallbackSample }) {
     if (!canvasNode) { alert('캔버스를 찾을 수 없습니다'); return }
     const { exportToPdf } = await import('../core/PdfExporter.js')
     try {
-      await exportToPdf(canvasNode, useFlatStore.getState(), { scale: 2 })
+      await exportToPdf(canvasNode, useFlatStore.getState(),
+        { scale: printScale().scale, printMm: useEditorStore.getState().printMm })
     } catch (err) {
       alert('PDF 내보내기 실패: ' + err.message)
     }
-  }, [])
+  }, [printScale])
 
   // PPT 내보내기 본체는 PptExport.jsx — 진행 오버레이·서버 설정을 함께 들고 있다.
 

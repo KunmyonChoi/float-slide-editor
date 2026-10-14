@@ -11,6 +11,7 @@ genitor-slides의 verify_deck.py에서 레이아웃 검사를 그대로 가져�
   DIST    보는 거리 기준 최소 글자 크기 미달 — 안 읽힌다
   LINE    2 mm 아래 선·획 — 멀리서 사라진다
   ROT     (경고) 회전 요소의 저장 좌표가 캔버스 밖 — 인쇄는 정상, 편집기에서만 불편
+  INK     (경고) CMYK에서 탁해지는 색 — 형광에 가까운 순색
   INERT   data-anim·fe-notes 등 인쇄물에서 아무 효과 없는 속성
 
 여백에 일부러 두는 것(세로 레일·재단 표시·인쇄 지시)에는 data-print-mark를 달면
@@ -106,7 +107,28 @@ PRINT_JS = r"""
           out.push(`${at} BLEED 글자가 안전 영역(가장자리 ${Math.round(safePx / ppmm)}mm) 밖 ` +
                    `${w}x${h} :: ${label}`);
         }
-      } else {
+      }
+
+      // ── INK: CMYK에서 탁해지는 색. 밝고 채도가 높은 순색이 위험하다.
+      //    제대로 하려면 ICC 프로파일이 필요하지만 브라우저에선 현실적이지 않다 —
+      //    실제로 문제를 일으키는 색의 성질만 본다.
+      if (!isDeco && (w * h) > safePx * safePx * 0.25) {
+        for (const c of [cs.backgroundColor, own ? cs.color : null]) {
+          const m = c && c.match(/rgba?\(\s*([\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)(?:[\s,/]+([\d.]+))?/);
+          if (!m) continue;
+          if (m[4] !== undefined && parseFloat(m[4]) < 0.5) continue;
+          const r = +m[1], g = +m[2], bl = +m[3];
+          const mx = Math.max(r, g, bl), mn = Math.min(r, g, bl);
+          const v = mx / 255, sat = mx === 0 ? 0 : (mx - mn) / mx;
+          if (v > 0.72 && sat > 0.62) {
+            const hue = mx === r ? '빨강·주황' : mx === g ? '초록' : '파랑·사이안';
+            out.push(`WARN ${at} INK 밝고 채도 높은 ${hue} (${c}) — CMYK에서 탁해진다 :: ${label}`);
+            break;
+          }
+        }
+      }
+
+      if (!own) {
         // ── LINE: 선·획으로 쓰인 가는 도형
         const bg = cs.backgroundColor;
         const painted = bg && bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent';

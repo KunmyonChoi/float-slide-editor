@@ -139,3 +139,56 @@ export function parseMm(text) {
   if (!(w > 0) || !(h > 0)) return null
   return { w, h }
 }
+
+
+// ─────────────────────────────────────────────────────────────────────
+//  색 — 화면은 RGB, 인쇄는 CMYK
+// ─────────────────────────────────────────────────────────────────────
+
+/**
+ * CMYK 색역 밖인지 어림한다.
+ *
+ * 제대로 하려면 ICC 프로파일이 필요하지만 브라우저에서 그건 현실적이지 않다.
+ * 대신 **실제로 문제를 일으키는 색의 성질**을 본다 — 형광에 가까운 순색이다.
+ * 밝기와 채도가 둘 다 높은 색(네온 사이안·마젠타·그린)은 CMYK 잉크로 그 선명도를
+ * 못 내서 눈에 띄게 탁해진다. 어두운 순색이나 파스텔은 비교적 잘 나온다.
+ *
+ * @returns {{out:boolean, why:string}|null} 판단 불가면 null
+ */
+export function outOfCmykGamut(rgb) {
+  if (!rgb) return null
+  const { r, g, b } = rgb
+  if (![r, g, b].every(v => Number.isFinite(v))) return null
+  const max = Math.max(r, g, b), min = Math.min(r, g, b)
+  const v = max / 255
+  const sat = max === 0 ? 0 : (max - min) / max
+  if (v > 0.72 && sat > 0.62) {
+    const hue = max === r ? '빨강·주황' : max === g ? '초록' : '파랑·사이안'
+    return { out: true, why: `밝고 채도가 높은 ${hue} 계열 — CMYK에서 탁해진다` }
+  }
+  return { out: false, why: '' }
+}
+
+/** `#rgb` · `#rrggbb(aa)` · `rgb()` · `rgba()` → {r,g,b}. 못 읽으면 null. */
+export function parseColor(css) {
+  const t = String(css || '').trim()
+  let m = t.match(/^#([0-9a-f]{3})$/i)
+  if (m) {
+    const [a, b, c] = m[1]
+    return { r: parseInt(a + a, 16), g: parseInt(b + b, 16), b: parseInt(c + c, 16) }
+  }
+  m = t.match(/^#([0-9a-f]{6})([0-9a-f]{2})?$/i)
+  if (m) {
+    const h = m[1]
+    return { r: parseInt(h.slice(0, 2), 16), g: parseInt(h.slice(2, 4), 16), b: parseInt(h.slice(4, 6), 16) }
+  }
+  m = t.match(/^rgba?\(\s*([\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)/i)
+  if (m) return { r: +m[1], g: +m[2], b: +m[3] }
+  return null
+}
+
+/** 순수 검정은 잉크가 몰려 번진다. 아주 짙은 무채색을 걸러낸다. */
+export function tooBlack(rgb) {
+  if (!rgb) return false
+  return rgb.r < 12 && rgb.g < 12 && rgb.b < 12
+}

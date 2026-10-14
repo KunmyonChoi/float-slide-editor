@@ -3,6 +3,7 @@ import {
   MM_PER_IN, BLEED_MM, SAFE_MM, PRINT_FORMATS,
   swap, dpiForDistance, dpiFor, scaleForDpi, canvasForPrint,
   ratioMatches, printGuides, minFontPx, minLinePx, parseMm,
+  outOfCmykGamut, parseColor, tooBlack,
 } from '../core/printSize'
 
 // 이 세션에서 실제로 만든 부스 포스터. 숫자가 손으로 계산한 값과 맞는지 못박는다.
@@ -146,4 +147,49 @@ describe('규격 목록', () => {
     expect(a4).toMatchObject({ w: 210, h: 297 })
     expect(MM_PER_IN).toBe(25.4)
   })
+})
+
+describe('색 — 화면 RGB가 인쇄 CMYK에서 어떻게 되나', () => {
+  it('이번 포스터의 강조색 #22D3EE는 색역 밖이다', () => {
+    const c = parseColor('#22D3EE')
+    expect(outOfCmykGamut(c).out).toBe(true)
+    expect(outOfCmykGamut(c).why).toContain('파랑·사이안')
+  })
+
+  it('네온 그린도 걸린다', () => {
+    expect(outOfCmykGamut(parseColor('#39FF14')).out).toBe(true)
+  })
+
+  it('어두운 순색은 통과한다 — 인쇄에서 잘 나온다', () => {
+    expect(outOfCmykGamut(parseColor('#0E3A8A')).out).toBe(false)
+  })
+
+  it('파스텔도 통과한다 — 밝지만 채도가 낮다', () => {
+    expect(outOfCmykGamut(parseColor('#CFE8F5')).out).toBe(false)
+  })
+
+  it('판단할 수 없으면 null', () => {
+    expect(outOfCmykGamut(null)).toBeNull()
+    expect(outOfCmykGamut({ r: NaN, g: 0, b: 0 })).toBeNull()
+  })
+})
+
+describe('parseColor', () => {
+  it('여러 표기를 읽는다', () => {
+    expect(parseColor('#f00')).toEqual({ r: 255, g: 0, b: 0 })
+    expect(parseColor('#22D3EE')).toEqual({ r: 34, g: 211, b: 238 })
+    expect(parseColor('#22D3EE80')).toEqual({ r: 34, g: 211, b: 238 })
+    expect(parseColor('rgb(34, 211, 238)')).toEqual({ r: 34, g: 211, b: 238 })
+    expect(parseColor('rgba(34 211 238 / 0.5)')).toEqual({ r: 34, g: 211, b: 238 })
+  })
+
+  it('못 읽으면 null', () => {
+    expect(parseColor('')).toBeNull()
+    expect(parseColor('tomato')).toBeNull()
+  })
+})
+
+describe('tooBlack — 순수 검정 배경은 잉크가 몰린다', () => {
+  it('#000은 걸린다', () => expect(tooBlack(parseColor('#000'))).toBe(true))
+  it('살짝 띄운 #0A1322는 통과', () => expect(tooBlack(parseColor('#0A1322'))).toBe(false))
 })
