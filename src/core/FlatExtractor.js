@@ -840,6 +840,23 @@ function extractStyles(cs, el) {
 }
 
 /**
+ * 병합된 텍스트(배경 있는 div + 직접 글자)의 스타일.
+ *
+ * 예전엔 이 경로가 스타일 목록을 따로 들고 있었다. extractStyles에 새 속성이 들어올 때마다
+ * 여기에는 빠졌고 — 그라데이션 글자(background-clip:text), 글자 그림자, 유리 효과,
+ * nowrap, 글자 외곽선 — 그래서 배경이 있는 글자 div에 그라데이션을 걸면 Genitor가
+ * 글자를 투명하게 둔 채 배경만 사각형으로 칠했다. 같은 일을 하는 목록이 두 벌이면
+ * 반드시 갈라지므로 extractStyles를 그대로 쓰고, 병합이 따로 정하는 레이아웃만 덮는다.
+ *
+ * display는 넣지 않는다 — 병합 텍스트의 레이아웃은 종전처럼 isFlex로만 표현한다.
+ */
+export function mergedTextStyles(cs, el, layout) {
+  // eslint-disable-next-line no-unused-vars -- display는 의도적으로 버린다(위 주석)
+  const { display, ...base } = extractStyles(cs, el)
+  return { ...base, ...layout }
+}
+
+/**
  * 부모의 overflow:hidden + border-radius에 의한 클리핑을 감지하여
  * 자식 요소에 적용할 유효 border-radius를 계산한다.
  * 자식이 부모 모서리에 붙어있는 경우에만 해당 코너의 radius를 상속.
@@ -1538,34 +1555,7 @@ function tryMergeContainerText(containerEl, containerRect, containerCs, win) {
       height: containerRect.height,
       content: text,
       isRich: false,
-      styles: {
-        backgroundColor: containerCs.backgroundColor,
-        backgroundImage: containerCs.backgroundImage,
-        borderRadius: containerCs.borderRadius,
-        border: containerCs.border,
-        borderTop: containerCs.borderTop,
-        borderRight: containerCs.borderRight,
-        borderBottom: containerCs.borderBottom,
-        borderLeft: containerCs.borderLeft,
-        boxShadow: containerCs.boxShadow,
-        opacity: containerCs.opacity,
-        padding: containerCs.padding,
-        color: containerCs.color,
-        fontSize: containerCs.fontSize,
-        fontFamily: containerCs.fontFamily,
-        fontWeight: containerCs.fontWeight,
-        fontStyle: containerCs.fontStyle,
-        fontVariationSettings: containerCs.fontVariationSettings,
-        fontFeatureSettings: containerCs.fontFeatureSettings,
-        lineHeight: containerCs.lineHeight,
-        textAlign: containerCs.textAlign,
-        letterSpacing: containerCs.letterSpacing,
-        textTransform: containerCs.textTransform,
-        textDecoration: containerCs.textDecoration,
-        isFlex,
-        justifyContent: origJustify,
-        alignItems: origAlign,
-      },
+      styles: mergedTextStyles(containerCs, containerEl, { isFlex, justifyContent: origJustify, alignItems: origAlign }),
       merged: true,
     }
   }
@@ -2081,7 +2071,12 @@ export function extractTableData(tableEl, win) {
       const valign = ccs.verticalAlign
       if (valign === 'top' || valign === 'bottom') cell.valign = valign
       const bg = ccs.backgroundColor
-      if (bg && bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent') cell.bg = bg
+      const clear = !bg || bg === 'rgba(0, 0, 0, 0)' || bg === 'transparent'
+      if (!clear) cell.bg = bg
+      // 머리줄은 렌더러가 배경이 없으면 기본 회색(TABLE_HEADER_BG)을 칠한다. 편집기에서 새로
+      // 만든 표엔 맞는 기본값이지만, 원본이 '투명'이라고 말한 머리줄까지 칠하면 어두운
+      // 포스터 위에 흰 띠가 생긴다. 원본의 투명을 그대로 기록해 기본값이 끼어들지 않게 한다.
+      else if (headerRow && r === 0) cell.bg = 'transparent'
       if (ccs.color && ccs.color !== font.color) cell.color = ccs.color
       const fw = parseInt(ccs.fontWeight, 10)
       if (Number.isFinite(fw) && fw >= 600) cell.fontWeight = String(fw)
