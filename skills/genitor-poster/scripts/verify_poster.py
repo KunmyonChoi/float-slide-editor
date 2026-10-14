@@ -118,11 +118,17 @@ PRINT_JS = r"""
           if (!m) continue;
           if (m[4] !== undefined && parseFloat(m[4]) < 0.5) continue;
           const r = +m[1], g = +m[2], bl = +m[3];
-          const mx = Math.max(r, g, bl), mn = Math.min(r, g, bl);
-          const v = mx / 255, sat = mx === 0 ? 0 : (mx - mn) / mx;
-          if (v > 0.72 && sat > 0.62) {
-            const hue = mx === r ? '빨강·주황' : mx === g ? '초록' : '파랑·사이안';
-            out.push(`WARN ${at} INK 밝고 채도 높은 ${hue} (${c}) — CMYK에서 탁해진다 :: ${label}`);
+          const mx = Math.max(r, g, bl), mn = Math.min(r, g, bl), dd = mx - mn;
+          const v = mx / 255, sat = mx === 0 ? 0 : dd / mx;
+          let hue = 0;
+          if (dd) {
+            hue = mx === r ? ((g - bl) / dd) % 6 : mx === g ? (bl - r) / dd + 2 : (r - g) / dd + 4;
+            hue = hue * 60; if (hue < 0) hue += 360;
+          }
+          // 빨강·주황·노랑은 CMYK가 잘 낸다 — 초록~보라(75°~300°)만 본다(printSize.js와 같은 식)
+          if (v > 0.72 && sat > 0.62 && hue >= 75 && hue <= 300) {
+            const name = hue < 165 ? '초록' : hue < 200 ? '사이안' : hue < 260 ? '파랑' : '보라';
+            out.push(`WARN ${at} INK 밝고 채도 높은 ${name} (${c}) — CMYK에서 탁해진다 :: ${label}`);
             break;
           }
         }
@@ -210,7 +216,11 @@ def main():
               if not any(f" {k} " in f" {p} " for k in SCREEN_ONLY)]
     raw = res.get("extra") or []
     printing = [p for p in raw if not p.startswith("WARN ")]
-    warns = [p[5:] for p in raw if p.startswith("WARN ")] + list(res.get("warnings", []))
+    # 덱 검사의 경고 중 화면용(노트 없음·반복 효과 개수 등)도 걸러낸다 — 문제만 거르고
+    # 경고를 그대로 넘겼더니 포스터에 "NOTES 없음 — 발표자가 할 말이 비어 있다"가 떴다.
+    deck_warns = [w for w in res.get("warnings", [])
+                  if not any(f" {k} " in f" {w} " for k in SCREEN_ONLY)]
+    warns = [p[5:] for p in raw if p.startswith("WARN ")] + deck_warns
 
     src = open(os.path.abspath(args.html), encoding="utf-8").read()
     inert = [a for a in INERT_ATTRS if f'{a}="' in src]

@@ -102,7 +102,9 @@ CHECK_JS = """
           problems.push(`${at} ARC 곡선 글자가 원호보다 길다 (글자 ${Math.round(textW)}px > 원호 ${Math.round(arcLen)}px — ` +
             `글자를 줄이거나 폭·휘기를 키울 것) :: ${label}`);
         }
-      } else if (text) {
+      } else if (text && !el.querySelector('table')) {
+        // 표는 제외한다 — 셀 글자가 전부 textContent로 이어붙어 "1줄 선언 → 24줄 렌더"처럼
+        // 읽힌다. <br> 개수로 줄 수를 세는 이 검사는 표에 의미가 없다(행이 넘치면 OVERFLOW가 잡는다).
         const declared = (el.innerHTML.match(/<br/gi) || []).length + 1;
         const lh = parseFloat(cs.lineHeight) || parseFloat(cs.fontSize) * 1.2;
         const rendered = Math.round(el.scrollHeight / lh);

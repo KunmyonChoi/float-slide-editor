@@ -162,11 +162,27 @@ export function outOfCmykGamut(rgb) {
   const max = Math.max(r, g, b), min = Math.min(r, g, b)
   const v = max / 255
   const sat = max === 0 ? 0 : (max - min) / max
-  if (v > 0.72 && sat > 0.62) {
-    const hue = max === r ? '빨강·주황' : max === g ? '초록' : '파랑·사이안'
-    return { out: true, why: `밝고 채도가 높은 ${hue} 계열 — CMYK에서 탁해진다` }
+  const hue = hueOf(r, g, b)
+  // 색상도 본다. 빨강·주황·노랑은 마젠타+옐로 잉크로 CMYK가 가장 잘 내는 색이라
+  // 밝고 진해도 괜찮다 — 처음엔 이 조건 없이 짰다가 주황(#FF8A4C)을 열세 번 잘못 잡았다.
+  // 정말 탁해지는 쪽은 초록 → 사이안 → 파랑 → 보라(대략 75°~300°)다.
+  if (v > 0.72 && sat > 0.62 && hue >= 75 && hue <= 300) {
+    const name = hue < 165 ? '초록' : hue < 200 ? '사이안' : hue < 260 ? '파랑' : '보라'
+    return { out: true, why: `밝고 채도가 높은 ${name} 계열 — CMYK에서 탁해진다` }
   }
   return { out: false, why: '' }
+}
+
+/** HSV 색상(0~360°). */
+export function hueOf(r, g, b) {
+  const max = Math.max(r, g, b), min = Math.min(r, g, b), d = max - min
+  if (d === 0) return 0
+  let h
+  if (max === r) h = ((g - b) / d) % 6
+  else if (max === g) h = (b - r) / d + 2
+  else h = (r - g) / d + 4
+  h *= 60
+  return h < 0 ? h + 360 : h
 }
 
 /** `#rgb` · `#rrggbb(aa)` · `rgb()` · `rgba()` → {r,g,b}. 못 읽으면 null. */
