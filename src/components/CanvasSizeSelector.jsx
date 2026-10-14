@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { useEditorStore } from '../store/editorStore'
 import { useFlatStore } from '../store/flatStore'
 import AnchoredMenu from './AnchoredMenu'
+import { PRINT_FORMATS, canvasForPrint, dpiFor, parseMm } from '../core/printSize'
 
 export const CANVAS_PRESETS = [
   { id: 'auto',      label: '자동 감지',    w: null, h: null,  ratio: null       },
@@ -22,7 +23,23 @@ export const CANVAS_PRESETS = [
   { id: '720x1280',  label: '720 × 1280',  w: 720,  h: 1280,  ratio: '9 : 16', group: 'social' },
   { id: '1080x1350', label: '1080 × 1350', w: 1080, h: 1350,  ratio: '4 : 5  인스타 피드', group: 'social' },
   { id: '1080x1080', label: '1080 × 1080', w: 1080, h: 1080,  ratio: '1 : 1  정사각', group: 'social' },
+  // ── 인쇄 (mm에서 캔버스를 역산) ───────────────────────────────
+  // 캔버스를 인쇄 픽셀(300dpi)로 잡지 않는다 — A2만 해도 4961×7016이라 상한을 넘고
+  // 에디터의 좌표 감각과도 어긋난다. 비율만 맞추고 해상도는 내보내기 배율로 만든다.
+  ...PRINT_FORMATS.map(f => {
+    const c = canvasForPrint({ w: f.w, h: f.h })
+    return {
+      id: `print-${f.id}`,
+      label: `${f.label}  ${f.w}×${f.h}mm`,
+      w: c.w, h: c.h,
+      ratio: `${c.w} × ${c.h}`,
+      group: 'print',
+      printMm: { w: f.w, h: f.h },
+    }
+  }),
 ]
+
+const GROUP_LABELS = { social: '세로 · 소셜', print: '인쇄 — 포스터 · 배너' }
 
 /**
  * 새 프로젝트를 시작할 때 고르는 타겟 화면 — 용도별 대표 해상도.
@@ -41,12 +58,13 @@ export const CANVAS_TARGETS = [
  * 현재 크기를 버튼으로 표시하고 클릭하면 드롭다운이 나타난다.
  */
 export default function CanvasSizeSelector() {
-  const { canvasSize, setCanvasSize } = useEditorStore()
+  const { canvasSize, setCanvasSize, printMm, setPrintMm } = useEditorStore()
   const detectedCs = useFlatStore(s => s.canvasSize) // 자동 모드에서 실제 감지된 크기
   const [open, setOpen] = useState(false)
   const [customW, setCustomW] = useState('')
   const [customH, setCustomH] = useState('')
   const [customErr, setCustomErr] = useState('')
+  const [mmMode, setMmMode] = useState(false)   // 커스텀 입력을 px이 아니라 mm으로 받는다
   const ref = useRef(null)
 
   // 현재 선택된 프리셋 찾기
@@ -68,8 +86,9 @@ export default function CanvasSizeSelector() {
     return () => document.removeEventListener('mousedown', handler)
   }, [open])
 
-  const applySize = (size) => {
+  const applySize = (size, mm = null) => {
     setCanvasSize(size) // editorStore 오버라이드(HTML iframe 크기)
+    setPrintMm(mm)      // 인쇄 규격이면 mm을 함께 기록(내보내기가 dpi를 계산한다)
     if (size) {
       // 구체 해상도: 모든 flat 페이지를 새 크기에 비례 스케일(통합 — HTML/처음부터 동일).
       // 모든 페이지 보존, iframe 재추출 안 함.
@@ -80,19 +99,31 @@ export default function CanvasSizeSelector() {
 
   const selectPreset = (preset) => {
     if (preset.id === 'auto') applySize(null)
-    else applySize({ w: preset.w, h: preset.h })
+    else applySize({ w: preset.w, h: preset.h }, preset.printMm || null)
     setOpen(false)
     setCustomErr('')
   }
 
   const applyCustom = () => {
-    const w = parseInt(customW)
-    const h = parseInt(customH)
-    if (!w || !h || w < 200 || h < 100 || w > 7680 || h > 4320) {
-      setCustomErr('200–7680 × 100–4320 범위로 입력하세요')
+    // "750x1250" 꼴을 mm 칸에 적으면 인쇄 규격으로 본다 — 캔버스는 역산한다
+    const mm = mmMode ? parseMm(`${customW}x${customH}`) : null
+    if (mmMode) {
+      if (!mm) { setCustomErr('mm 크기를 숫자로 입력하세요 (예: 750 × 1250)'); return }
+      const c = canvasForPrint(mm)
+      if (!c || c.w > 7680 || c.h > 12000) { setCustomErr('캔버스 상한을 넘습니다'); return }
+      applySize({ w: c.w, h: c.h }, mm)
+      setOpen(false); setCustomErr(''); setCustomW(''); setCustomH('')
       return
     }
-    applySize({ w, h })
+    const w = parseInt(customW)
+    const h = parseInt(customH)
+    // 세로 상한을 12000으로 올린다 — 4320은 화면(4K)을 전제한 값이라 세로로 긴
+    // 인쇄 규격이 바로 걸렸다. 롤업 배너 850×2000mm는 3px/mm에서 6000px이다.
+    if (!w || !h || w < 200 || h < 100 || w > 7680 || h > 12000) {
+      setCustomErr('200–7680 × 100–12000 범위로 입력하세요')
+      return
+    }
+    applySize({ w, h }, null)
     setOpen(false)
     setCustomErr('')
     setCustomW('')
@@ -144,7 +175,7 @@ export default function CanvasSizeSelector() {
                 <div key={preset.id}>
                 {groupStart && (
                   <p style={{ fontSize: 11, color: '#475569', margin: '8px 10px 4px', paddingTop: 6, borderTop: '1px solid rgba(255,255,255,0.07)' }}>
-                    세로 · 소셜
+                    {GROUP_LABELS[preset.group] ?? preset.group}
                   </p>
                 )}
                 <button
@@ -175,12 +206,52 @@ export default function CanvasSizeSelector() {
           {/* 구분선 */}
           <div style={{ margin: '6px 10px', borderTop: '1px solid rgba(255,255,255,0.07)' }} />
 
+          {/* 인쇄 규격일 때의 해상도 안내 — 캔버스 px만으로는 dpi를 알 수 없다 */}
+          {printMm && canvasSize && (
+            <div style={{ padding: '0 10px 8px' }}>
+              <div style={{
+                padding: '8px 10px', borderRadius: 8,
+                background: 'rgba(99,102,241,0.10)', border: '1px solid rgba(99,102,241,0.22)',
+              }}>
+                <p style={{ fontSize: 11, color: '#a5b4fc', marginBottom: 4 }}>
+                  인쇄 {printMm.w}×{printMm.h}mm · {(canvasSize.w / printMm.w).toFixed(1)}px/mm
+                </p>
+                {[1, 2, 3].map(sc => {
+                  const dpi = Math.round(dpiFor(canvasSize.w, printMm.w, sc))
+                  const good = dpi >= 140 && dpi <= 220
+                  return (
+                    <p key={sc} style={{ fontSize: 10.5, color: good ? '#86efac' : '#64748b', fontFamily: 'monospace' }}>
+                      {sc}× 내보내기 → {canvasSize.w * sc}×{canvasSize.h * sc} = {dpi}dpi{good ? '  ← 권장' : ''}
+                    </p>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
           {/* 직접 입력 */}
           <div style={{ padding: '0 10px 10px' }}>
-            <p style={{ fontSize: 11, color: '#475569', marginBottom: 6 }}>직접 입력</p>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+              <p style={{ fontSize: 11, color: '#475569' }}>직접 입력</p>
+              {/* px이냐 mm이냐 — mm이면 캔버스를 역산하고 인쇄 크기로 기억한다 */}
+              <div style={{ display: 'flex', gap: 2 }}>
+                {[['px', false], ['mm', true]].map(([t, on]) => (
+                  <button
+                    key={t} type="button"
+                    onClick={() => { setMmMode(on); setCustomErr('') }}
+                    style={{
+                      padding: '2px 8px', borderRadius: 5, border: 'none', cursor: 'pointer',
+                      fontSize: 11, fontFamily: 'monospace',
+                      background: mmMode === on ? 'rgba(99,102,241,0.28)' : 'transparent',
+                      color: mmMode === on ? '#a5b4fc' : '#64748b',
+                    }}
+                  >{t}</button>
+                ))}
+              </div>
+            </div>
             <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
               <input
-                type="number" placeholder="너비"
+                type="number" placeholder={mmMode ? "너비 mm" : "너비"}
                 value={customW}
                 onChange={e => { setCustomW(e.target.value); setCustomErr('') }}
                 onKeyDown={e => e.key === 'Enter' && applyCustom()}
@@ -188,7 +259,7 @@ export default function CanvasSizeSelector() {
               />
               <span style={{ color: '#475569', fontSize: 12, flexShrink: 0 }}>×</span>
               <input
-                type="number" placeholder="높이"
+                type="number" placeholder={mmMode ? "높이 mm" : "높이"}
                 value={customH}
                 onChange={e => { setCustomH(e.target.value); setCustomErr('') }}
                 onKeyDown={e => e.key === 'Enter' && applyCustom()}

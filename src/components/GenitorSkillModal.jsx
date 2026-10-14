@@ -4,7 +4,7 @@ import { createPortal } from 'react-dom'
 
 /**
  * Claude 슬라이드 스킬 설치 안내 모달 — 파일 메뉴에서 openGenitorSkill()로 연다.
- * Claude Code용 스킬 3종(genitor-slides, genitor-higgsfield, genitor-music)을 zip으로 내려받아
+ * Claude Code용 스킬 4종(genitor-slides, genitor-poster, genitor-higgsfield, genitor-music)을 zip으로 내려받아
  * ~/.claude/skills/ 에 설치하는 방법을 안내한다. 스킬 원본은 /public/skills/ 에서 서빙된다.
  */
 const useStore = create(() => ({ open: false }))
@@ -18,6 +18,11 @@ const SKILLS = [
     name: 'genitor-slides',
     title: 'genitor-slides',
     desc: 'Claude(Design/Code/Web)에서 Genitor가 손실 없이 가져오는 형식으로 편집 가능한 슬라이드 덱 HTML을 작성하는 규약.',
+  },
+  {
+    name: 'genitor-poster',
+    title: 'genitor-poster',
+    desc: '전시회 부스 포스터·배너처럼 인쇄해 거는 것을 만드는 규약. mm에서 캔버스를 역산하고, 보는 거리에서 글자·선 굵기를 정하고, 재단 여백과 CMYK를 챙긴다. 형식 계약은 genitor-slides를 따르므로 함께 설치.',
   },
   {
     name: 'genitor-higgsfield',
@@ -38,6 +43,9 @@ const skillUrl = (name, path) => `${base}skills/${name}/${path}`
 // scripts/verify_deck.py를 참조하므로 같이 내려받아야 검증 스크립트를 실제로 쓸 수 있다.
 const EXTRA_FILES = {
   'genitor-slides': ['scripts/verify_deck.py'],
+  // verify_poster.py는 genitor-slides의 verify_deck.py를 import해 레이아웃 검사를 재사용한다
+  // (형식 계약을 두 벌로 두지 않기 위해서다) — 둘을 함께 설치해야 동작한다.
+  'genitor-poster': ['scripts/verify_poster.py'],
   // 설치 스크립트·MPS/CUDA 래퍼·모션그래픽용 예시 악보(SKILL.md가 모두 경로로 참조한다)
   'genitor-music': [
     'scripts/install_mac.sh', 'scripts/yue2_mac.py',

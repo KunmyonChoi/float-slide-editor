@@ -6,6 +6,7 @@ import { openAiSettings } from './AiSettingsModal'
 import { openCapabilities } from './CapabilitiesModal'
 import { openGenitorSkill } from './GenitorSkillModal'
 import { openShareLinkModal } from './ShareLinkModal'
+import { dpiFor, dpiForDistance, scaleForDpi } from '../core/printSize'
 import { runPptExport, openPptSettings } from './PptExport'
 import { openVideoExport } from './videoExportState'
 import { openFile } from '../core/FilePicker'
@@ -276,6 +277,21 @@ export default function FileMenu({ fallbackSample }) {
     downloadHtml(html, 'slide-export-all.html')
   }, [])
 
+  /**
+   * 내보내기 배율. 인쇄 크기가 정해져 있으면 **목표 해상도에서 역산**한다 —
+   * 캔버스 px만으로는 dpi를 알 수 없다(같은 2250px도 750mm면 76dpi, 210mm면 272dpi).
+   * 화면용이면 종전대로 2배(레티나).
+   */
+  const printScale = useCallback(() => {
+    const { printMm, canvasSize } = useEditorStore.getState()
+    const cs = canvasSize || useFlatStore.getState().canvasSize
+    if (!printMm || !cs?.w) return { scale: 2, dpi: null }
+    const dist = printMm.h >= 900 ? 1.5 : 0.5        // 큰 인쇄물은 멀리서 본다
+    const target = dpiForDistance(dist)
+    const scale = scaleForDpi(cs.w, printMm.w, target)
+    return { scale, dpi: Math.round(dpiFor(cs.w, printMm.w, scale)) }
+  }, [])
+
   // 이미지 내보내기 (현재 페이지)
   const handleExportImage = useCallback(async () => {
     setOpen(false)
@@ -283,12 +299,13 @@ export default function FileMenu({ fallbackSample }) {
     if (!canvasNode) { alert('캔버스를 찾을 수 없습니다'); return }
     const { exportAsImage, downloadImage } = await import('../core/ImageExporter.js')
     try {
-      const dataUrl = await exportAsImage(canvasNode, { format: 'png', scale: 2 })
-      downloadImage(dataUrl, 'slide-export.png')
+      const { scale, dpi } = printScale()
+      const dataUrl = await exportAsImage(canvasNode, { format: 'png', scale })
+      downloadImage(dataUrl, dpi ? `poster-${dpi}dpi.png` : 'slide-export.png')
     } catch (err) {
       alert('이미지 내보내기 실패: ' + err.message)
     }
-  }, [])
+  }, [printScale])
 
   // 이미지 내보내기 (전체 페이지)
   const handleExportImageAll = useCallback(async () => {
@@ -299,12 +316,12 @@ export default function FileMenu({ fallbackSample }) {
     if (!canvasNode) { alert('캔버스를 찾을 수 없습니다'); return }
     const { exportAllPagesAsImages, downloadImagesAsZip } = await import('../core/ImageExporter.js')
     try {
-      const results = await exportAllPagesAsImages(canvasNode, useFlatStore.getState(), { format: 'png', scale: 2 })
+      const results = await exportAllPagesAsImages(canvasNode, useFlatStore.getState(), { format: 'png', scale: printScale().scale })
       await downloadImagesAsZip(results, { zipName: 'slide-images.zip', format: 'png' })
     } catch (err) {
       alert('이미지 내보내기 실패: ' + err.message)
     }
-  }, [])
+  }, [printScale])
 
   // PDF 내보내기 (현재 페이지) — 브라우저 렌더를 래스터로 굳혀 폰트/플랫폼 무관 동일 표시
   const handleExportPdf = useCallback(async () => {
@@ -313,11 +330,12 @@ export default function FileMenu({ fallbackSample }) {
     if (!canvasNode) { alert('캔버스를 찾을 수 없습니다'); return }
     const { exportCurrentPageToPdf } = await import('../core/PdfExporter.js')
     try {
-      await exportCurrentPageToPdf(canvasNode, useFlatStore.getState(), { scale: 2 })
+      await exportCurrentPageToPdf(canvasNode, useFlatStore.getState(),
+        { scale: printScale().scale, printMm: useEditorStore.getState().printMm })
     } catch (err) {
       alert('PDF 내보내기 실패: ' + err.message)
     }
-  }, [])
+  }, [printScale])
 
   // PDF 내보내기 (전체 페이지)
   const handleExportPdfAll = useCallback(async () => {
@@ -327,11 +345,12 @@ export default function FileMenu({ fallbackSample }) {
     if (!canvasNode) { alert('캔버스를 찾을 수 없습니다'); return }
     const { exportToPdf } = await import('../core/PdfExporter.js')
     try {
-      await exportToPdf(canvasNode, useFlatStore.getState(), { scale: 2 })
+      await exportToPdf(canvasNode, useFlatStore.getState(),
+        { scale: printScale().scale, printMm: useEditorStore.getState().printMm })
     } catch (err) {
       alert('PDF 내보내기 실패: ' + err.message)
     }
-  }, [])
+  }, [printScale])
 
   // PPT 내보내기 본체는 PptExport.jsx — 진행 오버레이·서버 설정을 함께 들고 있다.
 

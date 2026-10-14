@@ -104,6 +104,15 @@ export const useEditorStore = create((set, get) => ({
    */
   canvasSize: null,
 
+  /**
+   * 인쇄 크기(mm). 인쇄 규격을 고르면 함께 기록된다.
+   * 캔버스 px만으로는 해상도를 알 수 없다 — 같은 2250px도 750mm면 76dpi,
+   * 210mm면 272dpi다. 내보내기가 dpi를 계산하려면 이 값이 있어야 한다.
+   * null = 화면용(인쇄 아님)
+   * @type {{ w: number, h: number } | null}
+   */
+  printMm: null,
+
   /** Undo/Redo 상태 (파생) */
   canUndo: false,
   canRedo: false,
@@ -172,6 +181,11 @@ export const useEditorStore = create((set, get) => ({
   /** @param {{ w: number, h: number } | null} size */
   setCanvasSize(size) {
     set({ canvasSize: size })
+  },
+
+  /** @param {{ w: number, h: number } | null} mm 인쇄 크기(mm). 화면용으로 돌아가면 null */
+  setPrintMm(mm) {
+    set({ printMm: mm && mm.w > 0 && mm.h > 0 ? { w: mm.w, h: mm.h } : null })
   },
 
   /** 외부 HTML 임포트 플래그 직접 설정 (예: flat 프로젝트 열기 시 false) */

@@ -488,16 +488,21 @@ def contact_sheet(paths, out_path, cw, ch, cols=3, scale=0.42):
     print(f"컨택트시트: {out_path}")
 
 
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("html")
-    ap.add_argument("--shots", metavar="DIR", help="슬라이드별 PNG와 컨택트시트를 저장할 디렉터리")
-    ap.add_argument("--size", default="1920x1080", help="캔버스 크기 (기본 1920x1080)")
-    ap.add_argument("--wait", type=int, default=2500, help="웹폰트 로딩 대기 ms")
-    args = ap.parse_args()
+def run_checks(html_path, cw, ch, wait=2500, shots_dir=None, extra_js=None, extra_args=None):
+    """브라우저에 띄워 검사하고 결과를 돌려준다.
 
-    cw, ch = (int(v) for v in args.size.lower().split("x"))
-    path = os.path.abspath(args.html)
+    main()에서 떼어낸 것은 다른 스킬이 이 검사를 재사용하기 위해서다 —
+    인쇄물(genitor-poster)은 레이아웃 검사(FLEX·WRAP·OVERFLOW·PAD·OUTSIDE)가 똑같이
+    필요하고 모션·노트 검사만 필요 없다. 복사해 두면 반드시 갈라지므로 여기서 부른다.
+
+    extra_js를 주면 같은 페이지에서 한 번 더 평가해 그 결과를 'extra'로 함께 돌려준다
+    (재단 여백·거리별 글자 크기처럼 매체마다 다른 검사를 얹는 자리).
+    그 JS가 받을 인자는 extra_args로 준다 — 빠뜨리면 임계값이 undefined가 되어
+    비교가 전부 거짓이 되고 검사가 조용히 통과한다.
+
+    @returns {problems, warnings, summary, slideCount, shots, extra}
+    """
+    path = os.path.abspath(html_path)
     if not os.path.exists(path):
         sys.exit(f"파일 없음: {path}")
 
@@ -507,31 +512,50 @@ def main():
         sys.exit("playwright 미설치: pip install playwright --break-system-packages "
                  "&& playwright install chromium")
 
+    shots = []
     with sync_playwright() as p:
         browser = p.chromium.launch()
         page = browser.new_page(viewport={"width": cw, "height": ch})
         page.goto("file://" + path)
-        page.wait_for_timeout(args.wait)
+        page.wait_for_timeout(wait)
 
         result = page.evaluate(CHECK_JS, [cw, ch])
-        problems, count = result["problems"], result["slideCount"]
-        warnings, summary = result.get("warnings", []), result.get("summary", [])
+        result["extra"] = page.evaluate(
+            extra_js, extra_args if extra_args is not None else [cw, ch]) if extra_js else None
 
-        if args.shots:
-            os.makedirs(args.shots, exist_ok=True)
-            shots = []
-            for i in range(count):
+        if shots_dir:
+            os.makedirs(shots_dir, exist_ok=True)
+            for i in range(result["slideCount"]):
                 page.evaluate(
                     "i => document.querySelectorAll('.slide')"
                     ".forEach((s, j) => s.classList.toggle('active', i === j))", i)
                 page.wait_for_timeout(200)
-                out = os.path.join(args.shots, f"slide{i + 1:02d}.png")
+                out = os.path.join(shots_dir, f"slide{i + 1:02d}.png")
                 page.screenshot(path=out)
                 shots.append(out)
-            print(f"슬라이드 PNG {len(shots)}장: {args.shots}")
-            contact_sheet(shots, os.path.join(args.shots, "contact-sheet.png"), cw, ch)
+            contact_sheet(shots, os.path.join(shots_dir, "contact-sheet.png"), cw, ch)
 
         browser.close()
+
+    result["shots"] = shots
+    return result
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("html")
+    ap.add_argument("--shots", metavar="DIR", help="슬라이드별 PNG와 컨택트시트를 저장할 디렉터리")
+    ap.add_argument("--size", default="1920x1080", help="캔버스 크기 (기본 1920x1080)")
+    ap.add_argument("--wait", type=int, default=2500, help="웹폰트 로딩 대기 ms")
+    args = ap.parse_args()
+
+    cw, ch = (int(v) for v in args.size.lower().split("x"))
+
+    result = run_checks(args.html, cw, ch, wait=args.wait, shots_dir=args.shots)
+    problems, count = result["problems"], result["slideCount"]
+    warnings, summary = result.get("warnings", []), result.get("summary", [])
+    if args.shots:
+        print(f"슬라이드 PNG {len(result['shots'])}장: {args.shots}")
 
     print(f"\n슬라이드 {count}장 검사 완료.")
 

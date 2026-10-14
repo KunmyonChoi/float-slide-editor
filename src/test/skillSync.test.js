@@ -10,10 +10,15 @@ import { join, relative } from 'node:path'
 const SRC = 'skills'
 const PUB = 'public/skills'
 
+// 파이썬이 import할 때 만드는 캐시는 산출물이지 스킬이 아니다. verify_poster.py가
+// verify_deck.py를 import하므로 검사만 돌려도 생긴다(.gitignore에도 이미 있다).
+const IGNORE = /(^|[/\\])__pycache__([/\\]|$)|\.pyc$|(^|[/\\])\.DS_Store$/
+
 function filesUnder(dir) {
   const out = []
   for (const name of readdirSync(dir)) {
     const p = join(dir, name)
+    if (IGNORE.test(p)) continue
     if (statSync(p).isDirectory()) out.push(...filesUnder(p))
     else out.push(p)
   }
