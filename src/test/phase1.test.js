@@ -474,11 +474,27 @@ describe('CanvasSizeSelector — 캔버스 크기 프리셋', () => {
     }
   })
 
-  it('세로·소셜 프리셋(9:16·4:5·1:1)은 목록 끝에 한 그룹으로 모여 있다', () => {
+  it('그룹은 뭉쳐 있고 순서가 화면 → 세로·소셜 → 인쇄다', () => {
     const social = CANVAS_PRESETS.filter((p) => p.group === 'social').map((p) => `${p.w}x${p.h}`)
     expect(social).toEqual(['1080x1920', '720x1280', '1080x1350', '1080x1080'])
-    const firstSocial = CANVAS_PRESETS.findIndex((p) => p.group === 'social')
-    expect(CANVAS_PRESETS.slice(firstSocial).every((p) => p.group === 'social')).toBe(true)
+    // 같은 group은 연속해야 드롭다운에서 제목이 한 번만 붙는다
+    const groups = CANVAS_PRESETS.map((p) => p.group ?? 'screen')
+    expect(groups).toEqual([...new Set(groups)].flatMap(g => groups.filter(x => x === g)))
+    expect([...new Set(groups)]).toEqual(['screen', 'social', 'print'])
+  })
+
+  it('인쇄 프리셋은 mm을 들고 있고 캔버스 비율이 인쇄 비율과 맞는다', () => {
+    const print = CANVAS_PRESETS.filter((p) => p.group === 'print')
+    expect(print.length).toBeGreaterThanOrEqual(8)
+    for (const p of print) {
+      // mm이 없으면 내보내기가 dpi를 계산할 수 없다
+      expect(p.printMm).toBeTruthy()
+      // 비율이 어긋나면 내보낼 때 늘어나거나 잘린다
+      expect(p.w / p.h).toBeCloseTo(p.printMm.w / p.printMm.h, 2)
+    }
+    // 이번에 실제로 만든 부스 포스터가 들어 있다
+    const booth = print.find((p) => p.printMm.w === 750 && p.printMm.h === 1250)
+    expect(booth).toMatchObject({ w: 2250, h: 3750 })
   })
 
   it('새 프로젝트 타겟 화면 — 16:9·9:16·4:5·1:1', async () => {
