@@ -8,6 +8,7 @@ import { highlightCode } from '../core/codeHighlight'
 import { renderMarkdown } from '../core/markdown'
 import { applyAutoFit } from '../core/autoFit'
 import { awsIconDataUrl, ICON_LABEL, GROUP_BY_KIND } from '../core/awsIcons'
+import { insertCenter } from '../core/viewNav'
 
 // 배경 레이어 판정 — SnapEngine의 canonical 헬퍼 재노출(명시 플래그/__bg 기반)
 export { isBackgroundElement as isBackgroundLayer }
@@ -1878,7 +1879,7 @@ export const useFlatStore = create((set, get) => ({
 
   /**
    * AWS 아이콘 삽입 (다이어그램 모드) — 아이콘 이미지 + 서비스명 라벨을 한 그룹으로 추가.
-   * dropX/dropY 미지정 시 캔버스 중앙. 단일 undo, 둘 다 선택 상태로.
+   * dropX/dropY 미지정 시 지금 보고 있는 화면 가운데. 단일 undo, 둘 다 선택 상태로.
    */
   insertAwsIcon(iconId, dropX, dropY) {
     const dataUrl = awsIconDataUrl(iconId)
@@ -1887,8 +1888,9 @@ export const useFlatStore = create((set, get) => ({
     const els = get().flatElements
     const maxZ = els.length > 0 ? Math.max(...els.map(e => e.zIndex)) : 0
     const SIZE = 56, LABEL_W = 110, LABEL_H = 22, GAP = 2
-    const cx = dropX != null ? dropX : cs.w / 2
-    const cy = dropY != null ? dropY : cs.h / 2
+    const c = insertCenter(get()._canvasRef?.current, cs) // 드롭 위치가 없으면 지금 보고 있는 화면 가운데
+    const cx = dropX != null ? dropX : c.x
+    const cy = dropY != null ? dropY : c.y
     let ix = Math.round(cx - SIZE / 2)
     let iy = Math.round(cy - SIZE / 2)
     ix = Math.max(0, Math.min(ix, cs.w - SIZE))
@@ -1932,8 +1934,9 @@ export const useFlatStore = create((set, get) => ({
     const els = get().flatElements
     const maxZ = els.length > 0 ? Math.max(...els.map(e => e.zIndex)) : 0
     const W = Math.min(340, cs.w * 0.5), H = Math.min(240, cs.h * 0.5)
-    const cx = dropX != null ? dropX : cs.w / 2
-    const cy = dropY != null ? dropY : cs.h / 2
+    const c = insertCenter(get()._canvasRef?.current, cs) // 드롭 위치가 없으면 지금 보고 있는 화면 가운데
+    const cx = dropX != null ? dropX : c.x
+    const cy = dropY != null ? dropY : c.y
     let x = Math.round(cx - W / 2), y = Math.round(cy - H / 2)
     x = Math.max(0, Math.min(x, cs.w - W))
     y = Math.max(0, Math.min(y, cs.h - H))

@@ -4,6 +4,7 @@ import { useEditorStore } from '../store/editorStore'
 import { isBackgroundElement } from '../core/SnapEngine'
 import { useIsTouch } from '../core/pointerEnv'
 import { wheelSource } from '../core/wheelInput'
+import { insertCenter, placeAtViewCenter } from '../core/viewNav'
 import { resolveConnectors, resolveConnectorEndpoints, resolveConnectorCurve, attachTargetAt, connectionPoints, nearestConnectionPoint } from '../core/ConnectorRouting'
 import { getRotatedAABB } from '../core/RotationUtils'
 import { computeSteps, isHiddenAt, animationCss, directionVars, stepDurations, DEFAULT_DUR, hasLoop, loopStartMs, loopPeriodMs } from '../core/slideAnimation'
@@ -217,9 +218,10 @@ export default function FlatCanvas() {
         w = Math.round(w * ratio)
         h = Math.round(h * ratio)
       }
-      // 드롭 위치가 주어지면 그 위치 중심, 아니면 캔버스 중앙
-      const cx = dropX ?? canvasSize.w / 2
-      const cy = dropY ?? canvasSize.h / 2
+      // 드롭 위치가 주어지면 그 위치 중심, 아니면 지금 보고 있는 화면 가운데
+      const c = insertCenter(canvasRef.current, canvasSize)
+      const cx = dropX ?? c.x
+      const cy = dropY ?? c.y
       let ex = cx - w / 2, ey = cy - h / 2
       ex = Math.max(0, Math.min(ex, canvasSize.w - w))
       ey = Math.max(0, Math.min(ey, canvasSize.h - h))
@@ -250,7 +252,7 @@ export default function FlatCanvas() {
     reader.readAsDataURL(file)
   }, [insertImageFromDataUrl])
 
-  // 텍스트 문자열 → 캔버스 중앙에 텍스트 요소 삽입
+  // 텍스트 문자열 → 지금 보고 있는 화면 가운데에 텍스트 요소 삽입
   const insertTextString = useCallback((text) => {
     const { canvasSize: cs, flatElements: els, addFlatElement, setSelectedFlat } = useFlatStore.getState()
     const maxZ = els.length > 0 ? Math.max(...els.map(el => el.zIndex)) : 0
@@ -260,7 +262,7 @@ export default function FlatCanvas() {
     const el = {
       id: nextFlatId(), sourceId: null, type: 'text',
       content: text.trim().replace(/\n/g, '<br>'), isRich: text.includes('\n'), merged: false,
-      x: Math.round((cs.w - estWidth) / 2), y: Math.round((cs.h - estHeight) / 2),
+      ...placeAtViewCenter(estWidth, estHeight, cs, canvasRef.current),
       width: Math.round(estWidth), height: estHeight, zIndex: maxZ + 1,
       styles: {
         backgroundColor: 'rgba(0,0,0,0)', color: '#1e293b',
@@ -313,8 +315,9 @@ export default function FlatCanvas() {
       w = Math.round(w * ratio); h = Math.round(h * ratio)
     }
     const maxZ = flatElements.length > 0 ? Math.max(...flatElements.map(el => el.zIndex)) : 0
-    const x = dropX != null ? Math.max(0, Math.min(dropX - w / 2, canvasSize.w - w)) : (canvasSize.w - w) / 2
-    const y = dropY != null ? Math.max(0, Math.min(dropY - h / 2, canvasSize.h - h)) : (canvasSize.h - h) / 2
+    const at = placeAtViewCenter(w, h, canvasSize, canvasRef.current) // 드롭 위치가 없으면 지금 보고 있는 화면 가운데
+    const x = dropX != null ? Math.max(0, Math.min(dropX - w / 2, canvasSize.w - w)) : at.x
+    const y = dropY != null ? Math.max(0, Math.min(dropY - h / 2, canvasSize.h - h)) : at.y
     const el = {
       id: nextFlatId(), sourceId: null,
       type: 'video', width: w, height: h,
@@ -336,8 +339,9 @@ export default function FlatCanvas() {
     const w = Math.min(640, Math.round(canvasSize.w * 0.6)), h = 160
     const maxZ = useFlatStore.getState().flatElements.length > 0
       ? Math.max(...useFlatStore.getState().flatElements.map(el => el.zIndex)) : 0
-    const cx = dropX != null ? dropX : canvasSize.w / 2
-    const cy = dropY != null ? dropY : canvasSize.h / 2
+    const c = insertCenter(canvasRef.current, canvasSize) // 드롭 위치가 없으면 지금 보고 있는 화면 가운데
+    const cx = dropX != null ? dropX : c.x
+    const cy = dropY != null ? dropY : c.y
     const el = {
       id: nextFlatId(), sourceId: null,
       type: 'audio', width: w, height: h,
@@ -652,8 +656,7 @@ export default function FlatCanvas() {
           content: text.trim().replace(/\n/g, '<br>'),
           isRich: text.includes('\n'),
           merged: false,
-          x: Math.round((cs.w - estWidth) / 2),
-          y: Math.round((cs.h - estHeight) / 2),
+          ...placeAtViewCenter(estWidth, estHeight, cs, canvasRef.current),
           width: Math.round(estWidth),
           height: Math.round(estHeight),
           zIndex: maxZ + 1,
