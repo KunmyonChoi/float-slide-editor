@@ -59,7 +59,7 @@ export default function SnippetMenu({ onPick }) {
       <AnchoredMenu anchorRef={ref} open={open} z={10060}>
         <div
           className="thin-scrollbar rounded-xl border border-white/10 shadow-xl overflow-y-auto"
-          style={{ width: 380, maxWidth: 'calc(100vw - 16px)', maxHeight: 440, backgroundColor: '#1e293b' }}
+          style={{ width: 380, maxWidth: 'calc(100vw - 16px)', maxHeight: 'min(440px, var(--anchored-max-h, 440px))', backgroundColor: '#1e293b' }}
         >
           {GROUPS.map(g => (
             <div key={g}>
