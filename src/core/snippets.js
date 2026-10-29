@@ -6,6 +6,7 @@
  * docs/snippet-elements.md 참고.
  */
 import { highlightCode, CODE_FONT } from './codeHighlight'
+import { qrChanges, QR_DEFAULT } from './qrCode'
 
 const ACCENT_FALLBACK = '#6366f1'
 
@@ -590,6 +591,23 @@ SNIPPETS.push({
       textSpec({ x: tx, y: y + 8, w: tw, h: 26, content: '이름', bg: 'rgba(0,0,0,0)', color: titleC, size: 17, weight: 700, align: 'left' }),
       textSpec({ x: tx, y: y + 36, w: tw, h: 22, content: '직함 · 회사', bg: 'rgba(0,0,0,0)', color: muteC, size: 13, weight: 400, align: 'left' }),
     ]
+  },
+})
+
+// QR 코드 — 링크·메일·전화. 내용·색은 속성 패널 QR 섹션에서(el.qr → SVG 다시 생성)
+SNIPPETS.push({
+  id: 'qrCode', group: '공유', label: 'QR 코드', desc: '링크·메일·전화 QR (속성에서 내용·색 수정)',
+  build: (cs) => {
+    const s = Math.round(Math.min(cs.w, cs.h) * 0.28)
+    const { x, y } = center(cs, s, s)
+    const q = qrChanges(QR_DEFAULT)
+    return [{
+      type: 'image', x, y, width: s, height: s, content: q.content, qr: q.qr, isRich: false, merged: false,
+      styles: {
+        backgroundColor: 'rgba(0, 0, 0, 0)', backgroundImage: 'none', objectFit: 'contain',
+        borderRadius: '0px', border: '0px none', boxShadow: 'none', opacity: '1',
+      },
+    }]
   },
 })
 
