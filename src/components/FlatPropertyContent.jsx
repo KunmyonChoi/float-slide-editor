@@ -29,6 +29,7 @@ import MediaPreview from './MediaPreview'
 import { waitsForEnd, canWaitForEnd, isBgm, effectiveAutoplay, effectiveLoop } from '../core/mediaAdvance'
 import { textArcOf, TEXT_ARC_MIN, TEXT_ARC_MAX } from '../core/curvedText'
 import { fullFx, normalizeFx, FX_RANGES } from '../core/imageFx'
+import { qrPayload, qrChanges, qrColorWarning } from '../core/qrCode'
 
 // ── 글꼴 크기 프리셋 ────────────────────────────────
 
@@ -196,6 +197,12 @@ function SingleElementPanel({ el, animTab, setAnimTab, updateFlatElement, previe
         {el.type === 'text' && el.lyricSync && (
           <div className="pt-1 border-t border-white/5">
             <LyricSyncSection el={el} />
+          </div>
+        )}
+
+        {el.type === 'image' && el.qr && (
+          <div className="pt-1 border-t border-white/5">
+            <QrSection key={el.id} el={el} />
           </div>
         )}
 
@@ -986,6 +993,87 @@ function CodeSection({ el }) {
           <p className="text-[10px] text-slate-600 mt-1">더블클릭하면 원본 코드로 편집, 끝내면 자동 색칠됩니다.</p>
         </div>
       )}
+    </div>
+  )
+}
+
+const QR_KIND_LABEL = { url: '링크', mail: '메일', tel: '전화', text: '텍스트' }
+
+/** QR 코드(스니펫으로 넣은 image + el.qr) — 내용·색을 바꾸면 SVG를 다시 만든다. */
+function QrSection({ el }) {
+  const qr = el.qr
+  const [draft, setDraft] = useState(qr.text)
+  const startRef = useRef(null) // 입력 시작 시점의 { content, qr } — 끝낼 때 실행 취소 1건으로 묶는다
+  const st = useFlatStore.getState
+  const parsed = qrPayload(draft)
+  const ok = !!qrChanges({ ...qr, text: draft })
+  const warn = qrColorWarning(qr.fg, qr.bg)
+
+  const onText = (v) => {
+    setDraft(v)
+    if (!startRef.current) startRef.current = { content: el.content, qr }
+    const ch = qrChanges({ ...qr, text: v })
+    if (ch) st().previewFlatElement(el.id, ch) // 만들 수 없는 내용이면 직전 QR을 그대로 둔다
+  }
+  const commitText = () => {
+    const start = startRef.current
+    startRef.current = null
+    if (!start) return
+    const ch = qrChanges({ ...qr, text: draft })
+    st().previewFlatElement(el.id, start)
+    if (ch && draft !== start.qr.text) st().updateFlatElement(el.id, ch)
+    else setDraft(start.qr.text)
+  }
+  const setColor = (key, v) => {
+    const ch = qrChanges({ ...qr, [key]: v })
+    if (ch) st().updateFlatElement(el.id, ch)
+  }
+  const themeAccent = () => st()._currentTheme()?.accent
+
+  return (
+    <div className="space-y-2">
+      <SectionTitle>QR 코드</SectionTitle>
+      <div>
+        <p className={`${labelClass} mb-0.5`}>내용</p>
+        <textarea
+          value={draft}
+          rows={2}
+          onChange={e => onText(e.target.value)}
+          onBlur={commitText}
+          onKeyDown={e => {
+            e.stopPropagation()
+            if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); e.currentTarget.blur() }
+          }}
+          placeholder="https://… · 메일 주소 · 전화번호"
+          className={`${inputClass} resize-none`}
+        />
+        <p className={`text-[10px] mt-0.5 break-all ${ok ? 'text-slate-500' : 'text-amber-400'}`}>
+          {parsed.kind === 'empty' ? '내용을 입력하세요.'
+            : !ok ? '내용이 너무 깁니다. QR 하나에 담을 수 없습니다.'
+            : parsed.payload !== draft.trim() ? `${QR_KIND_LABEL[parsed.kind]} · ${parsed.payload}`
+            : QR_KIND_LABEL[parsed.kind]}
+        </p>
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <div>
+          <div className="flex items-center justify-between mb-0.5 h-5">
+            <p className={labelClass}>모듈</p>
+            {themeAccent() && (
+              <button
+                onClick={() => setColor('fg', themeAccent())}
+                className="text-[10px] px-1.5 py-0.5 rounded bg-white/5 text-slate-400 border border-white/10 hover:bg-white/10"
+                title="테마 강조색으로"
+              >테마색</button>
+            )}
+          </div>
+          <ColorPicker value={qr.fg} onChange={v => setColor('fg', v)} />
+        </div>
+        <div>
+          <div className="flex items-center mb-0.5 h-5"><p className={labelClass}>바탕</p></div>
+          <ColorPicker value={qr.bg} onChange={v => setColor('bg', v)} />
+        </div>
+      </div>
+      {warn && <p className="text-[10px] text-amber-400">{warn}</p>}
     </div>
   )
 }
