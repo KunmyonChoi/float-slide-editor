@@ -1,6 +1,7 @@
-import { useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { isBackgroundElement } from '../core/SnapEngine'
 import { visibleRect, panToCenter, minimapSize, zoomRange, scaleToT, snapZoom } from '../core/viewNav'
+import { createOneEuro2D } from '../core/oneEuro'
 
 /**
  * 터치 기기용 화면 이동 내비게이터 — 캔버스 우하단(데스크톱의 ZoomControl 자리).
@@ -105,12 +106,33 @@ export default function TouchZoomNav({ scale, pan, fit, stage, canvas, elements,
   )
 }
 
-/** 미니맵 패드 — 슬라이드 축소판(배경색 + 요소 상자) 위에 보이는 영역 사각형. */
+// 미니맵 끌기 필터 — 단위는 패드 px. 느리게(10px/s) ≈ 2Hz로 떨림을 거르고, 빠르게(400px/s) ≈ 25Hz로 바로 따라간다.
+const PAD_FILTER = { minCutoff: 1.5, beta: 0.06, dCutoff: 1 }
+const SETTLE_CUTOFF = 5 // 손을 뗀 뒤에는 적어도 이 차단 주파수로 빨리 자리 잡는다(τ ≈ 32ms)
+const STILL_PX = 0.5    // 화면 px — 거른 위치가 손가락 자리에 이만큼 가까우면 그 자리로 맞추고 쉰다
+const TAP_PX = 2        // 패드 px — 사각형 안을 이만큼도 안 움직이고 떼면 탭(화면은 그대로)
+
+/**
+ * 미니맵 패드 — 슬라이드 축소판(배경색 + 요소 상자) 위에 보이는 영역 사각형.
+ *
+ * 패드는 슬라이드를 수십 분의 1로 줄인 지도라 손가락 1px이 화면 수십 px가 된다(큰 포스터일수록 더).
+ * 정수 터치 좌표의 계단과 손 떨림이 그대로 커지지 않도록, 손가락 위치는 One Euro 필터로 거르고
+ * 화면은 매 프레임(requestAnimationFrame) 그 결과로 옮긴다(onPan). 손가락이 멈추면 쉬고, 다른 입력이
+ * 화면을 옮기면(손 도구·휠·줌) 미니맵은 손을 뗀다 — 남의 이동을 덮어쓰지 않도록.
+ */
 function MinimapPad({ scale, pan, stage, canvas, elements, onPan, extra }) {
   const { w: mw, h: mh, k } = minimapSize(canvas)
   const vr = visibleRect(stage, canvas, scale, pan)
-  const grabRef = useRef(null) // { id, dx, dy } — 손가락이 사각형 가운데에서 떨어진 거리(캔버스 px)
+  // { id, dx, dy, start, raw, up, moved, lastT, startPan, sent } — dx/dy: 손가락이 사각형 가운데에서
+  // 떨어진 거리(캔버스 px), start·raw: 손가락(패드 px), sent: 최근에 보낸 이동(다른 입력 감지용)
+  const grabRef = useRef(null)
+  const filterRef = useRef(null)
+  const rafRef = useRef(0)
   const [active, setActive] = useState(false)
+  // 프레임 루프가 최신 값을 읽도록(렌더가 끝난 뒤 갱신)
+  const latest = useRef(null)
+  useLayoutEffect(() => { latest.current = { scale, canvas, vr, extra, onPan, pan } })
+  useEffect(() => () => cancelAnimationFrame(rafRef.current), [])
 
   const { bgColor, boxes } = useMemo(() => {
     // 배경 레이어는 여러 겹일 수 있다(페이지 바탕 위에 슬라이드 바탕) — 맨 위에서부터 보이는 것
@@ -132,32 +154,97 @@ function MinimapPad({ scale, pan, stage, canvas, elements, onPan, extra }) {
     return { bgColor, boxes }
   }, [elements])
 
-  const toCanvas = (e) => {
+  // 요소 상자는 화면을 옮겨도 그대로 — 끄는 동안 매 프레임 상자 수백 개를 다시 만들지 않게(보이는 영역 사각형만 바뀐다)
+  const boxRects = useMemo(() => boxes.map(b => (
+    <rect
+      key={b.id}
+      x={b.x * k} y={b.y * k} width={Math.max(1, b.w * k)} height={Math.max(1, b.h * k)}
+      rx={1} fill={b.fill}
+    />
+  )), [boxes, k])
+
+  const toPad = (e) => {
     const r = e.currentTarget.getBoundingClientRect()
-    return { x: (e.clientX - r.left) / k, y: (e.clientY - r.top) / k }
+    return { x: e.clientX - r.left, y: e.clientY - r.top }
   }
+  // 거른 손가락 위치(패드 px) → 화면 이동
+  const panAt = (g, fx, fy) => {
+    const { canvas, scale, vr, extra } = latest.current
+    return panToCenter(fx / k - g.dx, fy / k - g.dy, canvas, scale, vr, extra)
+  }
+  const end = () => {
+    cancelAnimationFrame(rafRef.current)
+    rafRef.current = 0
+    grabRef.current = null
+    setActive(false)
+  }
+  const emit = (g, p) => {
+    const last = g.sent[g.sent.length - 1]
+    if (last && Math.abs(last.x - p.x) < 0.01 && Math.abs(last.y - p.y) < 0.01) return
+    g.sent.push(latest.current.onPan(p) || p) // 실제로 적용된(클램프한) 값
+    if (g.sent.length > 8) g.sent.shift()
+  }
+  const tick = (t) => {
+    rafRef.current = 0
+    const g = grabRef.current
+    if (!g) return
+    // 지금 화면이 미니맵이 보낸 이동이 아니면 다른 입력이 옮긴 것 — 그만둔다(덮어쓰지 않음)
+    const cur = latest.current.pan
+    const near = (q) => Math.abs(q.x - cur.x) < 0.5 && Math.abs(q.y - cur.y) < 0.5
+    if (!near(g.startPan) && !g.sent.some(near)) { end(); return }
+    const dt = g.lastT == null ? 1 / 60 : Math.min(0.05, Math.max(0.004, (t - g.lastT) / 1000))
+    g.lastT = t
+    const o = filterRef.current.step(g.raw.x, g.raw.y, dt, g.up ? SETTLE_CUTOFF : 0)
+    // 남은 거리를 화면 px로 — 큰 포스터·높은 배율에서도 마지막에 손가락 자리로 맞출 때 튀지 않게
+    if (Math.hypot(o.x - g.raw.x, o.y - g.raw.y) * latest.current.scale / k < STILL_PX) {
+      emit(g, panAt(g, g.raw.x, g.raw.y))
+      filterRef.current.reset(g.raw.x, g.raw.y)
+      g.lastT = null
+      if (g.up) end() // 손을 뗐으면 끝, 아니면 손가락이 다시 움직일 때까지 쉰다
+      return
+    }
+    emit(g, panAt(g, o.x, o.y))
+    rafRef.current = requestAnimationFrame(tick)
+  }
+  const wake = () => { if (!rafRef.current) rafRef.current = requestAnimationFrame(tick) }
+
   const onDown = (e) => {
     e.preventDefault(); e.stopPropagation()
-    if (grabRef.current) return // 둘째 손가락은 무시
+    if (grabRef.current && !grabRef.current.up) return // 둘째 손가락은 무시(자리 잡는 중이면 새로 잡는다)
     try { e.currentTarget.setPointerCapture(e.pointerId) } catch { /* 무시 */ }
-    const p = toCanvas(e)
-    const inside = p.x >= vr.x && p.x <= vr.x + vr.w && p.y >= vr.y && p.y <= vr.y + vr.h
+    const p = toPad(e)
+    const pc = { x: p.x / k, y: p.y / k }
+    const inside = pc.x >= vr.x && pc.x <= vr.x + vr.w && pc.y >= vr.y && pc.y <= vr.y + vr.h
     const cx = vr.x + vr.w / 2, cy = vr.y + vr.h / 2
-    // 사각형 안을 잡으면 잡은 자리 그대로 끌고, 밖을 탭하면 그곳을 가운데로 가져온 뒤 이어서 끈다
-    grabRef.current = { id: e.pointerId, dx: inside ? p.x - cx : 0, dy: inside ? p.y - cy : 0 }
-    if (!inside) onPan(panToCenter(p.x, p.y, canvas, scale, vr, extra))
+    // 사각형 안을 잡으면 잡은 자리 그대로 끌고(조금 움직인 뒤부터), 밖을 탭하면 그곳이 가운데로 오도록 미끄러진다
+    grabRef.current = {
+      id: e.pointerId, dx: inside ? pc.x - cx : 0, dy: inside ? pc.y - cy : 0,
+      start: p, raw: p, up: false, moved: !inside, lastT: null, startPan: { ...pan }, sent: [],
+    }
+    // 필터는 지금 화면에 해당하는 손가락 위치에서 출발 — 안을 잡으면 손가락 자리, 밖을 탭하면 지금 화면 자리
+    filterRef.current = createOneEuro2D(PAD_FILTER)
+    filterRef.current.reset((cx + grabRef.current.dx) * k, (cy + grabRef.current.dy) * k)
+    cancelAnimationFrame(rafRef.current)
+    rafRef.current = 0
+    if (!inside) wake()
     setActive(true)
   }
   const onMove = (e) => {
     const g = grabRef.current
-    if (!g || g.id !== e.pointerId) return
-    const p = toCanvas(e)
-    onPan(panToCenter(p.x - g.dx, p.y - g.dy, canvas, scale, vr, extra))
+    if (!g || g.up || g.id !== e.pointerId) return
+    g.raw = toPad(e)
+    if (!g.moved) {
+      if (Math.hypot(g.raw.x - g.start.x, g.raw.y - g.start.y) <= TAP_PX) return
+      g.moved = true // 끌기 시작 — 잡은 자리에서 손가락까지 부드럽게 따라붙는다
+    }
+    wake()
   }
   const onUp = (e) => {
-    if (grabRef.current?.id !== e.pointerId) return
-    grabRef.current = null
-    setActive(false)
+    const g = grabRef.current
+    if (!g || g.up || g.id !== e.pointerId) return
+    if (!g.moved) { end(); return } // 탭 — 화면은 그대로
+    g.up = true // 프레임 루프가 마저 자리 잡고 끝낸다
+    wake()
   }
 
   // 보이는 영역을 슬라이드 안으로 잘라 그린다(맞춤 근처에선 화면이 슬라이드보다 넓다)
@@ -178,13 +265,7 @@ function MinimapPad({ scale, pan, stage, canvas, elements, onPan, extra }) {
       }}
     >
       <svg width={mw} height={mh} style={{ display: 'block', pointerEvents: 'none' }}>
-        {boxes.map(b => (
-          <rect
-            key={b.id}
-            x={b.x * k} y={b.y * k} width={Math.max(1, b.w * k)} height={Math.max(1, b.h * k)}
-            rx={1} fill={b.fill}
-          />
-        ))}
+        {boxRects}
         {x1 > x0 && y1 > y0 && (
           <rect
             data-testid="minimap-view"

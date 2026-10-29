@@ -84,7 +84,7 @@ export default function ShortcutsButton() {
       <AnchoredMenu anchorRef={ref} open={open} z={10060}>
         <div
           className="thin-scrollbar rounded-xl border border-white/10 shadow-xl overflow-y-auto p-1"
-          style={{ width: 320, maxWidth: 'calc(100vw - 16px)', maxHeight: 'calc(100vh - 80px)', background: 'rgba(15,23,42,0.97)', backdropFilter: 'blur(12px)' }}
+          style={{ width: 320, maxWidth: 'calc(100vw - 16px)', maxHeight: 'min(calc(100vh - 80px), var(--anchored-max-h, 100vh))', background: 'rgba(15,23,42,0.97)', backdropFilter: 'blur(12px)' }}
         >
           <p className="text-[11px] font-semibold text-slate-200 px-2.5 pt-1.5 pb-1">키보드 단축키</p>
           {GROUPS.map(g => (

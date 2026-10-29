@@ -176,6 +176,77 @@ export default function FlatCanvas() {
   const selectedEl = selectedEls.length === 1 ? selectedEls[0] : null
   const animInfo = useMemo(() => computeSteps(renderElements), [renderElements])
 
+  // 요소 레이어 — 화면 이동(pan)만 바뀔 때는 같은 JSX를 돌려줘 React가 요소를 다시 그리지 않는다.
+  // 미니맵을 끄는 동안 매 프레임 setPan해도 큰 포스터의 요소 전체가 다시 그려지지 않도록.
+  const elementLayer = useMemo(() => renderElements.map(el => {
+    // 미리보기 중: 발표 모드와 동일하게 등장/퇴장 적용
+    if (animPreview) {
+      const step = animInfo.stepOf[el.id]
+      const isAutoEl = el.anim?.trigger?.mode === 'auto' && el.anim?.effect && el.anim.effect !== 'none'
+
+      // 자동 요소: key에 animPreviewTick 포함 → 미리보기 시작마다 remount → 애니 재시작
+      if (isAutoEl) {
+        return (
+          <div key={`auto-${el.id}-${animPreviewTick}`} style={{
+            position: 'absolute', left: el.x, top: el.y, width: el.width, height: el.height,
+            zIndex: el.zIndex,
+            transformOrigin: 'center center',
+            animation: animationCss(el.anim, animInfo.autoOffsets?.[el.id] ?? 0),
+            ...(directionVars(el.anim) || {}),
+          }}>
+            <LoopLayer el={el} startMs={loopStartMs(animInfo, el)}>
+              <FlatElementRenderer element={{ ...el, x: 0, y: 0 }} isSelected={false} isEditing={false} scale={scale} playNow={false} />
+            </LoopLayer>
+          </div>
+        )
+      }
+
+      // 반복 효과만 있는 요소 — 미리보기 시작마다 처음부터 반복
+      if (step == null && hasLoop(el)) {
+        return (
+          <div key={`loop-${el.id}-${animPreviewTick}`} style={{
+            position: 'absolute', left: el.x, top: el.y, width: el.width, height: el.height,
+            zIndex: el.zIndex,
+          }}>
+            <LoopLayer el={el} startMs={loopStartMs(animInfo, el)}>
+              <FlatElementRenderer element={{ ...el, x: 0, y: 0 }} isSelected={false} isEditing={false} scale={scale} playNow={false} />
+            </LoopLayer>
+          </div>
+        )
+      }
+
+      if (step != null) {
+        const playing = animPreview.playingStep >= 0 && step === animPreview.playingStep
+        const showHidden = isHiddenAt(animInfo, el, animPreview.revealed) && !playing
+        return (
+          <div key={el.id} style={{
+            position: 'absolute', left: el.x, top: el.y, width: el.width, height: el.height,
+            zIndex: el.zIndex, // 래퍼가 요소 z를 보존(안 하면 z:auto로 양수 z 형제 아래로 깔림)
+            transformOrigin: 'center center',
+            opacity: showHidden ? 0 : undefined,
+            visibility: showHidden ? 'hidden' : undefined,
+            animation: playing ? animationCss(el.anim, animInfo.offsetOf[el.id]) : undefined,
+            ...(playing ? (directionVars(el.anim) || {}) : {}),
+          }}>
+            <LoopLayer el={el} startMs={loopStartMs(animInfo, el)} active={!showHidden}>
+              <FlatElementRenderer element={{ ...el, x: 0, y: 0 }} isSelected={false} isEditing={false} scale={scale} playNow={false} />
+            </LoopLayer>
+          </div>
+        )
+      }
+    }
+    return (
+      <FlatElementRenderer
+        key={el.id}
+        element={el}
+        isSelected={!animPreview && selectedFlatIds.includes(el.id)}
+        isEditing={el.id === editingFlatId}
+        scale={scale}
+        playNow={false}
+      />
+    )
+  }), [renderElements, animPreview, animInfo, animPreviewTick, scale, selectedFlatIds, editingFlatId])
+
   // 애니메이션 미리보기 — 재생 버튼(playAnimPreview) 누르면 단계별 자동 진행 후 정상 복귀
   useEffect(() => {
     if (!animPreviewTick) return
@@ -983,6 +1054,13 @@ export default function FlatCanvas() {
     setScale(ns)
   }, [clampPan])
 
+  // 미니맵 끌기 — 매 프레임 호출된다. 실제로 적용된(클램프한) 이동을 돌려준다.
+  const panTo = useCallback((p) => {
+    const c = clampPan(p, scaleRef.current)
+    setPan(c)
+    return c
+  }, [clampPan])
+
   const fitToWindow = useCallback(() => {
     fitModeRef.current = true
     setScale(fitScaleRef.current)
@@ -1424,74 +1502,7 @@ export default function FlatCanvas() {
             onMouseMove={drawMode ? handleDrawMouseMove : (diagramMode ? handleDiagramHover : undefined)}
             onMouseLeave={diagramMode ? () => setHoverShapeId(null) : undefined}
           >
-            {renderElements.map(el => {
-              // 미리보기 중: 발표 모드와 동일하게 등장/퇴장 적용
-              if (animPreview) {
-                const step = animInfo.stepOf[el.id]
-                const isAutoEl = el.anim?.trigger?.mode === 'auto' && el.anim?.effect && el.anim.effect !== 'none'
-
-                // 자동 요소: key에 animPreviewTick 포함 → 미리보기 시작마다 remount → 애니 재시작
-                if (isAutoEl) {
-                  return (
-                    <div key={`auto-${el.id}-${animPreviewTick}`} style={{
-                      position: 'absolute', left: el.x, top: el.y, width: el.width, height: el.height,
-                      zIndex: el.zIndex,
-                      transformOrigin: 'center center',
-                      animation: animationCss(el.anim, animInfo.autoOffsets?.[el.id] ?? 0),
-                      ...(directionVars(el.anim) || {}),
-                    }}>
-                      <LoopLayer el={el} startMs={loopStartMs(animInfo, el)}>
-                        <FlatElementRenderer element={{ ...el, x: 0, y: 0 }} isSelected={false} isEditing={false} scale={scale} playNow={false} />
-                      </LoopLayer>
-                    </div>
-                  )
-                }
-
-                // 반복 효과만 있는 요소 — 미리보기 시작마다 처음부터 반복
-                if (step == null && hasLoop(el)) {
-                  return (
-                    <div key={`loop-${el.id}-${animPreviewTick}`} style={{
-                      position: 'absolute', left: el.x, top: el.y, width: el.width, height: el.height,
-                      zIndex: el.zIndex,
-                    }}>
-                      <LoopLayer el={el} startMs={loopStartMs(animInfo, el)}>
-                        <FlatElementRenderer element={{ ...el, x: 0, y: 0 }} isSelected={false} isEditing={false} scale={scale} playNow={false} />
-                      </LoopLayer>
-                    </div>
-                  )
-                }
-
-                if (step != null) {
-                  const playing = animPreview.playingStep >= 0 && step === animPreview.playingStep
-                  const showHidden = isHiddenAt(animInfo, el, animPreview.revealed) && !playing
-                  return (
-                    <div key={el.id} style={{
-                      position: 'absolute', left: el.x, top: el.y, width: el.width, height: el.height,
-                      zIndex: el.zIndex, // 래퍼가 요소 z를 보존(안 하면 z:auto로 양수 z 형제 아래로 깔림)
-                      transformOrigin: 'center center',
-                      opacity: showHidden ? 0 : undefined,
-                      visibility: showHidden ? 'hidden' : undefined,
-                      animation: playing ? animationCss(el.anim, animInfo.offsetOf[el.id]) : undefined,
-                      ...(playing ? (directionVars(el.anim) || {}) : {}),
-                    }}>
-                      <LoopLayer el={el} startMs={loopStartMs(animInfo, el)} active={!showHidden}>
-                        <FlatElementRenderer element={{ ...el, x: 0, y: 0 }} isSelected={false} isEditing={false} scale={scale} playNow={false} />
-                      </LoopLayer>
-                    </div>
-                  )
-                }
-              }
-              return (
-                <FlatElementRenderer
-                  key={el.id}
-                  element={el}
-                  isSelected={!animPreview && selectedFlatIds.includes(el.id)}
-                  isEditing={el.id === editingFlatId}
-                  scale={scale}
-                  playNow={false}
-                />
-              )
-            })}
+            {elementLayer}
             {animPanelOpen && !animPreview && <AnimationBadges elements={renderElements} scale={scale} />}
             {/* 크롭 중에는 선택 오버레이를 숨김 — 안 그러면 그 위(zIndex 9999)에서 드래그를
                 가로채 크롭(objectPosition) 대신 요소 자체가 이동한다. */}
@@ -1850,7 +1861,7 @@ export default function FlatCanvas() {
           stage={stageBox}
           canvas={canvasSize}
           elements={flatElements}
-          onPan={(p) => setPan(clampPan(p, scaleRef.current))}
+          onPan={panTo}
           onZoom={applyZoom}
           onFit={fitToWindow}
           panTool={panTool}
