@@ -6,7 +6,7 @@
  * (코드 블록이 el.code를 두고 색칠된 content를 다시 만드는 것과 같은 방식)
  */
 import { encode } from 'uqr'
-import { cssColorToRgba } from './cssColor'
+import { cssColorToRgba } from './CssColor'
 
 export const QR_DEFAULT = { text: 'https://example.com', fg: '#000000', bg: '#ffffff' }
 const QUIET = 4 // 둘레 빈 칸(모듈) — 스캐너가 QR 경계를 찾는 데 필요한 표준 여백
