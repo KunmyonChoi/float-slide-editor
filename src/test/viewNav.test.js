@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { visibleRect, panToCenter, minimapSize, zoomRange, scaleToT, tToScale, snapZoom } from '../core/viewNav'
+import { visibleRect, panToCenter, minimapSize, zoomRange, scaleToT, tToScale, snapZoom, viewCenterOnCanvas, centerSpecsAt, insertCenter, placeAtViewCenter } from '../core/viewNav'
 
 const canvas = { w: 1920, h: 1080 }
 const stage = { w: 400, h: 300 }
@@ -97,5 +97,74 @@ describe('줌 슬라이더 — 로그 눈금 · 자석', () => {
     expect(snapZoom(-0.3, r).fit).toBe(true)
     expect(snapZoom(scaleToT(1, r) + 0.03, r)).toEqual({ fit: false, scale: 1 })
     expect(snapZoom(0.3, r).scale).toBeCloseTo(tToScale(0.3, r))
+  })
+})
+
+// 화면 영역(stage) 안에 배율·이동이 걸린 캔버스 요소 — getBoundingClientRect만 흉내
+function fakeCanvasEl(stageRect, canvasRect) {
+  return { getBoundingClientRect: () => canvasRect, parentElement: { getBoundingClientRect: () => stageRect } }
+}
+
+describe('viewCenterOnCanvas — 지금 보고 있는 화면 가운데의 캔버스 좌표', () => {
+  const stageRect = { left: 0, top: 0, width: 400, height: 300 }
+
+  it('맞춤처럼 가운데 둔 캔버스면 캔버스 가운데', () => {
+    const el = fakeCanvasEl(stageRect, { left: 200 - 960, top: 150 - 540, width: 1920, height: 1080 })
+    expect(viewCenterOnCanvas(el, canvas)).toEqual({ x: 960, y: 540 })
+  })
+
+  it('확대해 옮겨 둔 상태면 그 자리(배율 반영)', () => {
+    const el = fakeCanvasEl(stageRect, { left: -1500, top: -900, width: 3840, height: 2160 }) // 배율 2
+    expect(viewCenterOnCanvas(el, canvas)).toEqual({ x: 850, y: 525 })
+  })
+
+  it('요소가 없거나 크기가 0이면 null', () => {
+    expect(viewCenterOnCanvas(null, canvas)).toBeNull()
+    expect(viewCenterOnCanvas(fakeCanvasEl(stageRect, { left: 0, top: 0, width: 0, height: 0 }), canvas)).toBeNull()
+  })
+})
+
+describe('centerSpecsAt — 스니펫 묶음을 화면 가운데로', () => {
+  const specs = [
+    { x: 100, y: 100, width: 120, height: 100 },
+    { x: 240, y: 150, width: 60, height: 50 },   // 묶음 bbox (100,100)~(300,200)
+  ]
+
+  it('묶음 가운데가 그 점에 오고, 묶음 안의 배치는 그대로', () => {
+    const out = centerSpecsAt(specs, { x: 1500, y: 800 }, canvas)
+    expect(out.map(s => [s.x, s.y])).toEqual([[1400, 750], [1540, 800]])
+  })
+
+  it('캔버스 밖으로는 나가지 않는다(미니맵으로 슬라이드 밖까지 옮겨 둔 경우)', () => {
+    const out = centerSpecsAt(specs, { x: 2100, y: 1300 }, canvas)
+    expect([out[0].x, out[0].y]).toEqual([1920 - 200, 1080 - 100])
+    expect(centerSpecsAt(specs, { x: -50, y: -50 }, canvas)[0]).toMatchObject({ x: 0, y: 0 })
+  })
+
+  it('캔버스보다 큰 축은 캔버스 가운데', () => {
+    const out = centerSpecsAt([{ x: 0, y: 0, width: 2000, height: 50 }], { x: 300, y: 300 }, canvas)
+    expect(out[0]).toMatchObject({ x: -40, y: 275 })
+  })
+})
+
+describe('placeAtViewCenter — 새 요소(텍스트·도형·표·이미지·영상)를 화면 가운데에', () => {
+  const stageRect = { left: 0, top: 0, width: 400, height: 300 }
+  const zoomed = fakeCanvasEl(stageRect, { left: -1500, top: -900, width: 3840, height: 2160 }) // 화면 가운데 = (850, 525)
+
+  it('확대해 옮겨 둔 화면이면 그 가운데', () => {
+    expect(insertCenter(zoomed, canvas)).toEqual({ x: 850, y: 525 })
+    expect(placeAtViewCenter(200, 100, canvas, zoomed)).toEqual({ x: 750, y: 475 })
+  })
+
+  it('화면을 모르면 예전처럼 캔버스 가운데 — 같은 반올림', () => {
+    expect(insertCenter(null, canvas)).toEqual({ x: 960, y: 540 })
+    for (const [w, h] of [[200, 100], [131, 77], [301.5, 40], [2000, 50]]) {
+      expect(placeAtViewCenter(w, h, canvas, null)).toEqual({ x: Math.round((1920 - w) / 2), y: Math.round((1080 - h) / 2) })
+    }
+  })
+
+  it('캔버스 밖으로는 나가지 않는다', () => {
+    const edge = fakeCanvasEl(stageRect, { left: -1900, top: -1000, width: 1920, height: 1080 }) // 화면 가운데 = (2100, 1150)
+    expect(placeAtViewCenter(200, 100, canvas, edge)).toEqual({ x: 1720, y: 980 })
   })
 })

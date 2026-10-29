@@ -10,6 +10,7 @@ import { themeRoleStyles } from '../core/themes'
 import { SNIPPETS } from '../core/snippets'
 import SnippetMenu from './SnippetMenu'
 import { createTableElement } from '../core/slideTable'
+import { viewCenterOnCanvas, centerSpecsAt, placeAtViewCenter } from '../core/viewNav'
 import { BlobStore } from '../core/BlobStore'
 import { DEFAULT_VIZ } from '../core/audioViz'
 import { ToolBtn, Divider, UndoIcon, RedoIcon } from './FloatingToolbar'
@@ -20,6 +21,9 @@ const HTML_INSERT_ITEMS = [
   { tag: 'img', label: '이미지', icon: '🖼', attrs: { src: 'https://placehold.co/400x300', alt: '이미지' } },
   { tag: 'div', label: '박스',   icon: '📦', attrs: {} },
 ]
+
+// 새 요소는 지금 보고 있는 화면 가운데에 놓는다(확대해 옮겨 둔 상태면 그 자리) — FlatCanvas가 넘겨 둔 캔버스 요소로 계산
+const canvasEl = () => useFlatStore.getState()._canvasRef?.current
 
 const DEFAULT_STYLES = {
   backgroundColor: 'rgba(0, 0, 0, 0)', backgroundImage: 'none',
@@ -126,8 +130,7 @@ export default function EditToolbar() {
       sourceId: null,
       ...p,
       styles: { ...p.styles, ...(themeText ? { color: themeText.color, fontWeight: themeText.fontWeight, textShadow: themeText.textShadow } : {}) },
-      x: Math.round((canvasSize.w - p.width) / 2),
-      y: Math.round((canvasSize.h - p.height) / 2),
+      ...placeAtViewCenter(p.width, p.height, canvasSize, canvasEl()),
       zIndex: maxZ + 1,
     }
     addFlatElement(el)
@@ -175,13 +178,16 @@ export default function EditToolbar() {
     setSelectedFlat(null)
   }, [flatElements, canvasSize, addFlatElements, applyLayoutElements, setSelectedFlat])
 
-  // 스니펫(데코 요소) 삽입 — 현재 테마 색 사용, 중앙 배치, 복합은 그룹으로
+  // 스니펫(데코 요소) 삽입 — 현재 테마 색 사용, 지금 보고 있는 화면 가운데 배치, 복합은 그룹으로
   const insertSnippet = useCallback((snippetId) => {
     const snip = SNIPPETS.find(s => s.id === snippetId)
     if (!snip) return
     const theme = useFlatStore.getState()._currentTheme()
-    const specs = snip.build(canvasSize, theme)
-    if (!specs || specs.length === 0) return
+    const built = snip.build(canvasSize, theme)
+    if (!built || built.length === 0) return
+    // 스니펫은 캔버스 가운데 기준으로 만들어진다 — 확대해 옮겨 둔 화면이면 그 가운데로 묶음째 옮긴다
+    const at = viewCenterOnCanvas(canvasEl(), canvasSize)
+    const specs = at ? centerSpecsAt(built, at, canvasSize) : built
     const maxZ = flatElements.length > 0 ? Math.max(...flatElements.map(e => e.zIndex)) : 0
     const groupId = specs.length > 1
       ? 'grp-' + (globalThis.crypto?.randomUUID?.() || Math.random().toString(36).slice(2, 11))
@@ -206,8 +212,7 @@ export default function EditToolbar() {
       sourceId: null,
       rotation: 0,
       ...partial,
-      x: Math.round(((canvasSize?.w || 1280) - partial.width) / 2),
-      y: Math.round(((canvasSize?.h || 720) - partial.height) / 2),
+      ...placeAtViewCenter(partial.width, partial.height, canvasSize || { w: 1280, h: 720 }, canvasEl()),
       zIndex: maxZ + 1,
     }
     addFlatElement(el)
@@ -235,8 +240,7 @@ export default function EditToolbar() {
           type: 'image', width: w, height: h,
           content: ev.target.result,
           isRich: false, merged: false,
-          x: Math.round((canvasSize.w - w) / 2),
-          y: Math.round((canvasSize.h - h) / 2),
+          ...placeAtViewCenter(w, h, canvasSize, canvasEl()),
           zIndex: maxZ + 1,
           styles: { ...DEFAULT_STYLES, objectFit: 'contain' },
         }
@@ -266,8 +270,7 @@ export default function EditToolbar() {
       content: embedUrl,
       isRich: false, merged: false,
       autoplay: true, loop: false, muted: false, hideControls: true, // 기본: 자동재생 on, 반복·음소거 off, 컨트롤 숨김
-      x: Math.round((canvasSize.w - w) / 2),
-      y: Math.round((canvasSize.h - h) / 2),
+      ...placeAtViewCenter(w, h, canvasSize, canvasEl()),
       zIndex: maxZ + 1,
       styles: { ...DEFAULT_STYLES, borderRadius: '8px' },
     }
@@ -298,8 +301,7 @@ export default function EditToolbar() {
         isRich: false, merged: false,
         autoplay: true, loop: true, muted: false, // 기본: 발표 시 자동재생·반복
         viz: { ...DEFAULT_VIZ },
-        x: Math.round((canvasSize.w - w) / 2),
-        y: Math.round((canvasSize.h - h) / 2),
+        ...placeAtViewCenter(w, h, canvasSize, canvasEl()),
         zIndex: maxZ + 1,
         styles: { ...DEFAULT_STYLES, borderRadius: '8px' },
       }
@@ -329,8 +331,7 @@ export default function EditToolbar() {
       content: BlobStore.toRef(key),
       isRich: false, merged: false,
       autoplay: true, loop: false, muted: false, hideControls: true, // 기본: 자동재생 on, 반복·음소거 off, 컨트롤 숨김
-      x: Math.round((canvasSize.w - w) / 2),
-      y: Math.round((canvasSize.h - h) / 2),
+      ...placeAtViewCenter(w, h, canvasSize, canvasEl()),
       zIndex: maxZ + 1,
       styles: { ...DEFAULT_STYLES, borderRadius: '8px' },
     }
