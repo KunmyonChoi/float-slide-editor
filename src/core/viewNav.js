@@ -21,10 +21,13 @@ export function visibleRect(stage, canvas, scale, pan) {
  * 캔버스 점 (cx, cy)를 화면 가운데에 두는 pan.
  * 보이는 영역이 슬라이드 밖으로 나가지 않게 가운데 점을 제한하고,
  * 그 축이 슬라이드보다 넓게 보이면 그 축은 가운데에 고정한다.
+ * extra(캔버스 px)만큼은 오른쪽·아래로 슬라이드 밖까지 더 갈 수 있다 — 화면 오른쪽 아래를
+ * 덮는 컨트롤(미니맵·슬라이더) 밑에 깔린 슬라이드 구석을 꺼내 보기 위해서다.
  */
-export function panToCenter(cx, cy, canvas, scale, view) {
-  const x = view.w >= canvas.w ? canvas.w / 2 : clamp(cx, view.w / 2, canvas.w - view.w / 2)
-  const y = view.h >= canvas.h ? canvas.h / 2 : clamp(cy, view.h / 2, canvas.h - view.h / 2)
+export function panToCenter(cx, cy, canvas, scale, view, extra = { w: 0, h: 0 }) {
+  const axis = (c, v, size, more) => clamp(c, Math.min(v, size) / 2, Math.max(size - v / 2, size / 2) + more)
+  const x = axis(cx, view.w, canvas.w, extra.w)
+  const y = axis(cy, view.h, canvas.h, extra.h)
   return { x: (canvas.w / 2 - x) * scale, y: (canvas.h / 2 - y) * scale }
 }
 

@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { isBackgroundElement } from '../core/SnapEngine'
 import { visibleRect, panToCenter, minimapSize, zoomRange, scaleToT, snapZoom } from '../core/viewNav'
 
@@ -6,6 +6,7 @@ import { visibleRect, panToCenter, minimapSize, zoomRange, scaleToT, snapZoom } 
  * 터치 기기용 화면 이동 내비게이터 — 캔버스 우하단(데스크톱의 ZoomControl 자리).
  *  - 미니맵 패드: 슬라이드 축소판 위에 지금 보이는 영역 사각형. 사각형을 끌면 화면이 따라가고
  *    손을 떼면 그 자리에 멈춘다. 다른 곳을 탭하면 그곳이 가운데로 온다. 확대해서 움직일 곳이 있을 때만 보인다.
+ *    이 컨트롤 크기만큼은 오른쪽·아래로 슬라이드 밖까지 더 갈 수 있어, 컨트롤에 가린 구석도 꺼내 볼 수 있다.
  *  - 줌 슬라이더: 왼쪽 끝 = 맞춤, 오른쪽 끝 = 200%(로그 눈금). 맞춤·100%에서 자석. 화면 가운데 기준으로 확대.
  *  - % 버튼: 맞춤 ↔ 100%.
  * 캔버스를 만지지 않으므로 요소 선택·이동과 부딪히지 않는다.
@@ -13,6 +14,19 @@ import { visibleRect, panToCenter, minimapSize, zoomRange, scaleToT, snapZoom } 
 export default function TouchZoomNav({ scale, pan, fit, stage, canvas, elements, onPan, onZoom, onFit, panTool, onTogglePan, handIcon }) {
   const [mapOpen, setMapOpen] = useState(true)
   const zoomed = scale > fit * 1.001
+  // 이 컨트롤이 화면 오른쪽 아래를 덮는 크기(가장자리 여백 12px 포함) — 미니맵을 접고 펴면 달라진다
+  const rootRef = useRef(null)
+  const [cover, setCover] = useState({ w: 0, h: 0 })
+  useLayoutEffect(() => {
+    const node = rootRef.current
+    if (!node) return
+    const measure = () => setCover({ w: node.offsetWidth + 12, h: node.offsetHeight + 12 })
+    measure()
+    if (typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(measure)
+    ro.observe(node)
+    return () => ro.disconnect()
+  }, [])
   // 패드·슬라이더를 만지는 동안 캔버스 쪽(마키·선택 해제·손 도구 팬·롱프레스 메뉴)으로 새지 않게
   const stop = (e) => { e.stopPropagation(); e.preventDefault() }
 
@@ -28,6 +42,7 @@ export default function TouchZoomNav({ scale, pan, fit, stage, canvas, elements,
 
   return (
     <div
+      ref={rootRef}
       data-no-pan="true"
       data-testid="touch-zoom-nav"
       onMouseDown={stop}
@@ -48,7 +63,8 @@ export default function TouchZoomNav({ scale, pan, fit, stage, canvas, elements,
             onClick={() => setMapOpen(false)}
             style={{ ...btn, width: 22, height: 'auto', border: 'none', background: 'transparent', color: '#64748b', fontSize: 14 }}
           >›</button>
-          <MinimapPad scale={scale} pan={pan} stage={stage} canvas={canvas} elements={elements} onPan={onPan} />
+          <MinimapPad scale={scale} pan={pan} stage={stage} canvas={canvas} elements={elements} onPan={onPan}
+            extra={{ w: cover.w / scale, h: cover.h / scale }} />
         </div>
       ) : (
         <button
@@ -90,7 +106,7 @@ export default function TouchZoomNav({ scale, pan, fit, stage, canvas, elements,
 }
 
 /** 미니맵 패드 — 슬라이드 축소판(배경색 + 요소 상자) 위에 보이는 영역 사각형. */
-function MinimapPad({ scale, pan, stage, canvas, elements, onPan }) {
+function MinimapPad({ scale, pan, stage, canvas, elements, onPan, extra }) {
   const { w: mw, h: mh, k } = minimapSize(canvas)
   const vr = visibleRect(stage, canvas, scale, pan)
   const grabRef = useRef(null) // { id, dx, dy } — 손가락이 사각형 가운데에서 떨어진 거리(캔버스 px)
@@ -129,14 +145,14 @@ function MinimapPad({ scale, pan, stage, canvas, elements, onPan }) {
     const cx = vr.x + vr.w / 2, cy = vr.y + vr.h / 2
     // 사각형 안을 잡으면 잡은 자리 그대로 끌고, 밖을 탭하면 그곳을 가운데로 가져온 뒤 이어서 끈다
     grabRef.current = { id: e.pointerId, dx: inside ? p.x - cx : 0, dy: inside ? p.y - cy : 0 }
-    if (!inside) onPan(panToCenter(p.x, p.y, canvas, scale, vr))
+    if (!inside) onPan(panToCenter(p.x, p.y, canvas, scale, vr, extra))
     setActive(true)
   }
   const onMove = (e) => {
     const g = grabRef.current
     if (!g || g.id !== e.pointerId) return
     const p = toCanvas(e)
-    onPan(panToCenter(p.x - g.dx, p.y - g.dy, canvas, scale, vr))
+    onPan(panToCenter(p.x - g.dx, p.y - g.dy, canvas, scale, vr, extra))
   }
   const onUp = (e) => {
     if (grabRef.current?.id !== e.pointerId) return

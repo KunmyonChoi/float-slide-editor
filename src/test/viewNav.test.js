@@ -43,6 +43,25 @@ describe('panToCenter — 미니맵에서 고른 점을 화면 가운데로', ()
   })
 })
 
+describe('panToCenter — 오른쪽 아래 컨트롤에 가린 구석 꺼내 보기(extra)', () => {
+  it('오른쪽·아래로는 extra만큼 슬라이드 밖까지 간다', () => {
+    // 보이는 영역 오른쪽 끝이 1920+200, 아래 끝이 1080+100까지
+    expect(panToCenter(5000, 5000, canvas, 1, stage, { w: 200, h: 100 })).toEqual({ x: -960, y: -490 })
+  })
+
+  it('왼쪽·위로는 늘지 않는다', () => {
+    expect(panToCenter(0, 0, canvas, 1, stage, { w: 200, h: 100 })).toEqual({ x: 760, y: 390 })
+  })
+
+  it('슬라이드보다 넓게 보이는 축도 extra만큼은 슬라이드를 왼쪽·위로 밀 수 있다', () => {
+    const view = { w: 2000, h: 1000 }
+    const p = panToCenter(5000, 5000, canvas, 0.3, view, { w: 300, h: 50 })
+    expect(p.x).toBeCloseTo((960 - 1260) * 0.3)   // 가운데에서 300만큼
+    expect(p.y).toBeCloseTo((540 - 630) * 0.3)    // 1080 - 500 + 50
+    expect(panToCenter(0, 0, canvas, 0.3, view, { w: 300, h: 50 }).x).toBeCloseTo(0) // 오른쪽으로는 가운데까지만
+  })
+})
+
 describe('minimapSize', () => {
   it('가로 슬라이드는 폭 132에 맞춘다', () => {
     expect(minimapSize(canvas)).toEqual({ w: 132, h: 74, k: 132 / 1920 })

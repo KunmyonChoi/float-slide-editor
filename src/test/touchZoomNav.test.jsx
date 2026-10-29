@@ -79,6 +79,25 @@ describe('TouchZoomNav — 미니맵 패드 · 줌 슬라이더', () => {
     expect(last.y).toBeCloseTo(0)
   })
 
+  it('컨트롤 크기만큼 오른쪽·아래 슬라이드 밖까지 끌 수 있다(가린 구석 꺼내 보기)', () => {
+    const ow = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetWidth')
+    const oh = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetHeight')
+    Object.defineProperty(HTMLElement.prototype, 'offsetWidth', { configurable: true, get() { return this.dataset.testid === 'touch-zoom-nav' ? 206 : 0 } })
+    Object.defineProperty(HTMLElement.prototype, 'offsetHeight', { configurable: true, get() { return this.dataset.testid === 'touch-zoom-nav' ? 128 : 0 } })
+    try {
+      const { getByTestId, props } = setup({ scale: 1 })
+      const pad = getByTestId('minimap-pad')
+      const k = 132 / 1920
+      fireEvent.pointerDown(pad, { pointerId: 1, clientX: 960 * k, clientY: 540 * k })
+      fireEvent.pointerMove(pad, { pointerId: 1, clientX: 500, clientY: 500 })
+      // 컨트롤 206×128 + 가장자리 12 → 오른쪽 218, 아래 140 더
+      expect(props.onPan).toHaveBeenLastCalledWith({ x: 960 - (1920 - 200 + 218), y: 540 - (1080 - 150 + 140) })
+    } finally {
+      Object.defineProperty(HTMLElement.prototype, 'offsetWidth', ow)
+      Object.defineProperty(HTMLElement.prototype, 'offsetHeight', oh)
+    }
+  })
+
   it('슬라이더 왼쪽 끝은 맞춤, 끌면 로그 눈금 배율', () => {
     const { getByTestId, props } = setup()
     const slider = getByTestId('zoom-slider') // 폭 112, 손잡이 18 → 이동 거리 94
