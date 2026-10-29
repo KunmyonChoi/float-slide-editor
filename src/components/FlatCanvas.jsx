@@ -3,6 +3,7 @@ import { useFlatStore, isBackgroundLayer } from '../store/flatStore'
 import { useEditorStore } from '../store/editorStore'
 import { isBackgroundElement } from '../core/SnapEngine'
 import { useIsTouch } from '../core/pointerEnv'
+import { wheelSource } from '../core/wheelInput'
 import { resolveConnectors, resolveConnectorEndpoints, resolveConnectorCurve, attachTargetAt, connectionPoints, nearestConnectionPoint } from '../core/ConnectorRouting'
 import { getRotatedAABB } from '../core/RotationUtils'
 import { computeSteps, isHiddenAt, animationCss, directionVars, stepDurations, DEFAULT_DUR, hasLoop, loopStartMs, loopPeriodMs } from '../core/slideAnimation'
@@ -984,7 +985,8 @@ export default function FlatCanvas() {
 
   const zoomTo100 = useCallback(() => { applyZoom(1) }, [applyZoom])
 
-  // 휠: Ctrl/Cmd+휠=커서 기준 줌, 휠=세로 팬, Shift+휠=가로 팬
+  // 휠: 마우스 휠·핀치·Ctrl/Cmd+휠 = 커서 기준 줌,
+  //     트랙패드 두 손가락 스크롤 = 팬(줌 상태에서), Shift+휠 = 가로 팬(줌 상태에서)
   useEffect(() => {
     const stage = stageRef.current
     if (!stage) return
@@ -993,8 +995,8 @@ export default function FlatCanvas() {
       if (st.editingFlatId) return
       // 크롭(위치·크기 조정) 중에는 휠이 콘텐츠 확대에 쓰이므로 캔버스 줌은 막는다(스크롤만 차단).
       if (st.croppingFlatId) { e.preventDefault(); return }
-      // 마우스 휠 = 커서 기준 줌. (Shift+휠은 줌 상태에서 가로 팬)
-      if (e.shiftKey && scaleRef.current > fitScaleRef.current + 1e-6) {
+      const zoomed = scaleRef.current > fitScaleRef.current + 1e-6
+      if (e.shiftKey && zoomed) {
         e.preventDefault()
         setPan(prev => clampPan({ x: prev.x - (e.deltaX || e.deltaY), y: prev.y }, scaleRef.current))
         return
@@ -1003,6 +1005,11 @@ export default function FlatCanvas() {
       // 핀치(macOS 트랙패드)는 ctrlKey가 합성되며 deltaY가 작아 같은 민감도면 줌이 느림 →
       // ctrlKey일 때 민감도를 높여 휠 스와이프 줌처럼 시원하게.
       const sensitivity = e.ctrlKey ? 0.01 : 0.0015
+      // 트랙패드 두 손가락 스크롤은 줌이 아니라 이동 — 맞춤 크기 이하에서는 움직일 곳이 없다
+      if (wheelSource(e) === 'trackpad') {
+        if (zoomed) setPan(prev => clampPan({ x: prev.x - e.deltaX, y: prev.y - e.deltaY }, scaleRef.current))
+        return
+      }
       const factor = Math.exp(-e.deltaY * sensitivity)
       applyZoom(scaleRef.current * factor, { clientX: e.clientX, clientY: e.clientY })
     }
