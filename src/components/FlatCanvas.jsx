@@ -3,6 +3,7 @@ import { useFlatStore, isBackgroundLayer } from '../store/flatStore'
 import { useEditorStore } from '../store/editorStore'
 import { isBackgroundElement } from '../core/SnapEngine'
 import { useIsTouch } from '../core/pointerEnv'
+import { wheelSource } from '../core/wheelInput'
 import { resolveConnectors, resolveConnectorEndpoints, resolveConnectorCurve, attachTargetAt, connectionPoints, nearestConnectionPoint } from '../core/ConnectorRouting'
 import { getRotatedAABB } from '../core/RotationUtils'
 import { computeSteps, isHiddenAt, animationCss, directionVars, stepDurations, DEFAULT_DUR, hasLoop, loopStartMs, loopPeriodMs } from '../core/slideAnimation'
@@ -15,6 +16,7 @@ import ConnectorLabelEditor from './ConnectorLabelEditor'
 import FlatInlineEditor from './FlatInlineEditor'
 import FlatTableEditor from './FlatTableEditor'
 import FlatContextMenu from './FlatContextMenu'
+import TouchZoomNav from './TouchZoomNav'
 import ImageCropOverlay from './ImageCropOverlay'
 import { nextFlatId, isFontUrl } from '../core/FlatExtractor'
 import { AWS_ICON_MIME, AWS_GROUP_MIME } from '../core/awsIcons'
@@ -92,6 +94,7 @@ export default function FlatCanvas() {
   const [pan, setPan] = useState({ x: 0, y: 0 })  // 줌 초과 시 화면 px 오프셋
   const fitScaleRef = useRef(1)        // 현재 '맞춤' 스케일
   const fitModeRef = useRef(true)      // true면 리사이즈 시 자동 맞춤 유지
+  const [stageBox, setStageBox] = useState({ w: 0, h: 0, fit: 1 }) // 터치 내비게이터용 stage 크기·맞춤 배율
   const spaceDownRef = useRef(false)   // 스페이스 누름(팬 모드)
   const panDragRef = useRef(null)      // 스페이스+드래그 팬 진행 상태
   const [panTool, setPanTool] = useState(false) // ✋ 손 도구(한 손가락/마우스 드래그 팬 — 모바일용)
@@ -922,6 +925,7 @@ export default function FlatCanvas() {
       1,
     )
     fitScaleRef.current = fit
+    setStageBox({ w: r.width, h: r.height, fit })
     if (fitModeRef.current) { setScale(fit); setPan({ x: 0, y: 0 }) }
   }, [canvasSize])
 
@@ -984,7 +988,8 @@ export default function FlatCanvas() {
 
   const zoomTo100 = useCallback(() => { applyZoom(1) }, [applyZoom])
 
-  // 휠: Ctrl/Cmd+휠=커서 기준 줌, 휠=세로 팬, Shift+휠=가로 팬
+  // 휠: 마우스 휠·핀치·Ctrl/Cmd+휠 = 커서 기준 줌,
+  //     트랙패드 두 손가락 스크롤 = 팬(줌 상태에서), Shift+휠 = 가로 팬(줌 상태에서)
   useEffect(() => {
     const stage = stageRef.current
     if (!stage) return
@@ -993,13 +998,18 @@ export default function FlatCanvas() {
       if (st.editingFlatId) return
       // 크롭(위치·크기 조정) 중에는 휠이 콘텐츠 확대에 쓰이므로 캔버스 줌은 막는다(스크롤만 차단).
       if (st.croppingFlatId) { e.preventDefault(); return }
-      // 마우스 휠 = 커서 기준 줌. (Shift+휠은 줌 상태에서 가로 팬)
-      if (e.shiftKey && scaleRef.current > fitScaleRef.current + 1e-6) {
+      const zoomed = scaleRef.current > fitScaleRef.current + 1e-6
+      if (e.shiftKey && zoomed) {
         e.preventDefault()
         setPan(prev => clampPan({ x: prev.x - (e.deltaX || e.deltaY), y: prev.y }, scaleRef.current))
         return
       }
       e.preventDefault()
+      // 트랙패드 두 손가락 스크롤은 줌이 아니라 이동 — 맞춤 크기 이하에서는 움직일 곳이 없다
+      if (wheelSource(e) === 'trackpad') {
+        if (zoomed) setPan(prev => clampPan({ x: prev.x - e.deltaX, y: prev.y - e.deltaY }, scaleRef.current))
+        return
+      }
       // 핀치(macOS 트랙패드)는 ctrlKey가 합성되며 deltaY가 작아 같은 민감도면 줌이 느림 →
       // ctrlKey일 때 민감도를 높여 휠 스와이프 줌처럼 시원하게.
       const sensitivity = e.ctrlKey ? 0.01 : 0.0015
@@ -1828,8 +1838,24 @@ export default function FlatCanvas() {
         </button>
       )}
 
-      {/* 줌 컨트롤 (우하단 플로팅) */}
-      {canvasSize?.w > 0 && (
+      {/* 줌 컨트롤 (우하단 플로팅) — 터치 기기는 미니맵 패드 + 줌 슬라이더 */}
+      {canvasSize?.w > 0 && isTouch && (
+        <TouchZoomNav
+          scale={scale}
+          pan={pan}
+          fit={stageBox.fit}
+          stage={stageBox}
+          canvas={canvasSize}
+          elements={flatElements}
+          onPan={(p) => setPan(clampPan(p, scaleRef.current))}
+          onZoom={applyZoom}
+          onFit={fitToWindow}
+          panTool={panTool}
+          onTogglePan={() => setPanTool(v => !v)}
+          handIcon={<HandIcon />}
+        />
+      )}
+      {canvasSize?.w > 0 && !isTouch && (
         <ZoomControl
           scale={scale}
           onZoomIn={() => applyZoom(scaleRef.current * 1.2)}
